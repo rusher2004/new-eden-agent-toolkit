@@ -33,3 +33,6 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Compiled macOS URL-scheme wrapper (built via `make urlscheme-macos-bundle`)
+/urlscheme/macos/build/

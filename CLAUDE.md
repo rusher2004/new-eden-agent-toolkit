@@ -11,12 +11,25 @@ Flat package structure at repo root. No `internal/`. One package per responsibil
 | Package | Responsibility |
 |---|---|
 | `cmd/` | `main.go` entrypoint only |
-| `commands/` | `urfave/cli/v3` command tree (`version`, `setup`, and more to come) |
+| `commands/` | `urfave/cli/v3` command tree (`version`, `setup`, `callback-handler` (hidden — invoked only by the OS on URL-scheme activation), and more to come) |
 | `config/` | Non-secret state in `~/.neat/config.json` |
 | `creds/` | OS keychain wrapper (`zalando/go-keyring`), service name `"neat"` |
+| `urlscheme/` | Per-OS registration of `eveauth-neat://` as the ESI OAuth redirect handler. macOS embeds a real compiled Swift/Cocoa wrapper (`urlscheme/macos/`, built via `make urlscheme-macos-bundle`) via `go:embed` — a bare executable can't receive macOS's `kAEGetURL` Apple Event. Windows (registry) and Linux (`.desktop` + `xdg-mime`) exist but have no CI execution yet — see "Known gaps" below |
+| `sso/` | ESI OAuth2/PKCE login flow: PKCE + state generation, a two-socket Unix IPC handoff for the callback (a lock socket that's bound but never `Accept()`-ed, plus a separate delivery socket), orchestration via `github.com/fnt-eve/goesi-openapi`, refresh-token persistence via `creds/` |
 
-More packages (`sso/`, `urlscheme/`, `esi/`, `sde/`, `mcp/`) land in follow-up plans — see
-`docs/superpowers/plans/`.
+More packages (`esi/`, `sde/`, `mcp/`) land in follow-up plans — see `docs/superpowers/plans/`.
+
+## Known gaps (tracked, not silently accepted)
+
+- ~~No CI configuration exists in this repo at all.~~ Resolved: `.github/workflows/test.yml` runs
+  `go build`/`go vet`/`go test -race` on real `ubuntu-latest`, `macos-latest`, and `windows-latest`
+  runners on every push/PR — the Windows and Linux `urlscheme` tests now actually execute for the
+  first time, not just cross-compile.
+- **Cross-process TOCTOU in `sso.bindExclusive`'s stale-socket recovery path**: if several separate
+  `neat` processes race to recover the *same* crashed process's stale lock file at the exact same
+  instant, they can still collide (the common two-live-callers case is fixed and tested). Would need
+  a PID-tracked lockfile or equivalent to close fully; judged disproportionate to the actual risk
+  given `addCharacterMu` already serializes same-process callers.
 
 ## Hard rules
 
@@ -64,6 +77,13 @@ Before opening a PR, sanity-check that `README.md` and this file still describe 
 actually does.
 
 ## Build
+
+On macOS, first build the embedded URL-scheme handler (required before `go build`/`go test` will
+compile — `go:embed` fails if the path doesn't exist):
+
+```bash
+make urlscheme-macos-bundle
+```
 
 ```bash
 go build -ldflags "-X main.version=$(cat VERSION 2>/dev/null || echo dev)" -o neat ./cmd

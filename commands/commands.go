@@ -13,6 +13,7 @@ func Root(version string) *cli.Command {
 		Commands: []*cli.Command{
 			versionCommand(version),
 			setupCommand(),
+			callbackHandlerCommand(),
 		},
 	}
 }
