@@ -61,18 +61,18 @@ type oauthConfig interface {
 // AddCharacter runs the full OAuth2/PKCE flow for a new character: opens
 // the browser, waits for the callback, exchanges the code, and persists
 // the refresh token.
-func AddCharacter(ctx context.Context, clientID string, scopes []string) (Character, error) {
-	cfg, err := newOAuthConfig(ctx, clientID)
+func AddCharacter(ctx context.Context, clientID, userAgent string, scopes []string) (Character, error) {
+	cfg, err := newOAuthConfig(ctx, clientID, userAgent)
 	if err != nil {
 		return Character{}, fmt.Errorf("build OAuth config: %w", err)
 	}
-	return addCharacter(ctx, cfg, scopes)
+	return addCharacter(ctx, cfg, userAgent, scopes)
 }
 
-func newOAuthConfig(ctx context.Context, clientID string) (oauthConfig, error) {
-	keyFunc, err := goesi.ESIDefaultKeyfunc(ctx)
+func newOAuthConfig(ctx context.Context, clientID, userAgent string) (oauthConfig, error) {
+	keyFunc, err := newKeyfunc(ctx, userAgent)
 	if err != nil {
-		return nil, fmt.Errorf("fetch ESI JWT signing keys: %w", err)
+		return nil, err
 	}
 	cfg, err := goesi.NewConfig(clientID, RedirectURI, &keyFunc)
 	if err != nil {
@@ -81,11 +81,13 @@ func newOAuthConfig(ctx context.Context, clientID string) (oauthConfig, error) {
 	return cfg, nil
 }
 
-func addCharacter(ctx context.Context, cfg oauthConfig, scopes []string) (Character, error) {
+func addCharacter(ctx context.Context, cfg oauthConfig, userAgent string, scopes []string) (Character, error) {
 	if !addCharacterMu.TryLock() {
 		return Character{}, ErrAddCharacterInProgress
 	}
 	defer addCharacterMu.Unlock()
+
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, userAgentClient(userAgent))
 
 	lockPath, err := callbackLockPath()
 	if err != nil {
@@ -111,7 +113,7 @@ func addCharacter(ctx context.Context, cfg oauthConfig, scopes []string) (Charac
 		return Character{}, fmt.Errorf("open browser: %w", err)
 	}
 
-	rawCallback, err := receiveCallback(listener.delivery, callbackTimeout)
+	rawCallback, err := receiveCallback(ctx, listener.delivery, callbackTimeout)
 	if err != nil {
 		return Character{}, err
 	}
@@ -159,8 +161,8 @@ func parseCallback(rawURL string) (code, state string, err error) {
 func ExportedAddCharacter(ctx context.Context, cfg interface {
 	AuthURL(state string, scopes []string) string
 	Exchange(ctx context.Context, code, state, expectedState string) (*oauth2.Token, *goesi.ESIJWTClaims, error)
-}, scopes []string) (Character, error) {
-	return addCharacter(ctx, cfg, scopes)
+}, userAgent string, scopes []string) (Character, error) {
+	return addCharacter(ctx, cfg, userAgent, scopes)
 }
 
 // SetOpenBrowserForTest overrides the browser launcher for tests.

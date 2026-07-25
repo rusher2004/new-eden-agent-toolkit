@@ -3,6 +3,8 @@ package sso_test
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
 	"time"
@@ -77,7 +79,7 @@ func TestAddCharacter_FullFlow_Succeeds(t *testing.T) {
 	}
 	resultCh := make(chan addResult, 1)
 	go func() {
-		char, err := sso.ExportedAddCharacter(context.Background(), fake, []string{"publicData"})
+		char, err := sso.ExportedAddCharacter(context.Background(), fake, "test-agent", []string{"publicData"})
 		resultCh <- addResult{char, err}
 	}()
 
@@ -144,7 +146,7 @@ func TestAddCharacter_CallbackStateMismatch_Fails(t *testing.T) {
 		err  error
 	}, 1)
 	go func() {
-		char, err := sso.ExportedAddCharacter(context.Background(), fake, []string{"publicData"})
+		char, err := sso.ExportedAddCharacter(context.Background(), fake, "test-agent", []string{"publicData"})
 		resultCh <- struct {
 			char sso.Character
 			err  error
@@ -197,15 +199,165 @@ func TestAddCharacter_SecondCallWhileFirstInFlight_Fails(t *testing.T) {
 
 	go func() {
 		defer close(firstDone)
-		sso.ExportedAddCharacter(context.Background(), fake, nil) //nolint:errcheck // first call is left running deliberately; awaited in cleanup above
+		sso.ExportedAddCharacter(context.Background(), fake, "test-agent", nil) //nolint:errcheck // first call is left running deliberately; awaited in cleanup above
 	}()
 
 	// Give the first call's goroutine time to reach listenForCallback
 	// before starting the second.
 	time.Sleep(50 * time.Millisecond)
 
-	_, err := sso.ExportedAddCharacter(context.Background(), fake, nil)
+	_, err := sso.ExportedAddCharacter(context.Background(), fake, "test-agent", nil)
 	if !errors.Is(err, sso.ErrAddCharacterInProgress) {
 		t.Errorf("err = %v, want wrapping ErrAddCharacterInProgress", err)
+	}
+}
+
+// TestAddCharacter_ContextCancelled_ReleasesLockPromptlyForRetry proves the
+// fix for a real usability gap found via live testing: previously,
+// cancelling an MCP client's in-flight add_character call (e.g. "Stop
+// Task") only stopped the client from waiting on the result -- the
+// server-side goroutine kept holding addCharacterMu and the callback
+// socket until callbackTimeout elapsed (up to 5 minutes), so an immediate
+// retry always failed with ErrAddCharacterInProgress. Cancelling ctx must
+// now release both right away.
+func TestAddCharacter_ContextCancelled_ReleasesLockPromptlyForRetry(t *testing.T) {
+	// See TestAddCharacter_FullFlow_Succeeds for why shortTempHome is used
+	// instead of t.TempDir() directly.
+	tmpHome := shortTempHome(t)
+	t.Setenv("HOME", tmpHome)
+	t.Setenv("USERPROFILE", tmpHome)
+
+	sso.SetOpenBrowserForTest(func(rawURL string) error { return nil })
+	t.Cleanup(sso.ResetOpenBrowserForTest)
+	sso.SetCallbackTimeoutForTest(5 * time.Minute)
+	t.Cleanup(sso.ResetCallbackTimeoutForTest)
+
+	fake := &fakeOAuthConfig{}
+	ctx, cancel := context.WithCancel(context.Background())
+
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := sso.ExportedAddCharacter(ctx, fake, "test-agent", nil)
+		firstDone <- err
+	}()
+
+	// Give the first call's goroutine time to reach listenForCallback and
+	// start blocking in receiveCallback before cancelling it.
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-firstDone:
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("first call err = %v, want wrapping context.Canceled", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("first call did not return promptly after context cancellation")
+	}
+
+	// A second call, immediately after, must not get
+	// ErrAddCharacterInProgress -- that would mean cancellation didn't
+	// actually release the lock/sockets. Shrink the timeout so this call
+	// (which also never receives a real callback) resolves quickly too;
+	// its own timeout error is expected and fine, only
+	// ErrAddCharacterInProgress would indicate the bug this test guards
+	// against.
+	sso.SetCallbackTimeoutForTest(100 * time.Millisecond)
+	_, err := sso.ExportedAddCharacter(context.Background(), fake, "test-agent", nil)
+	if errors.Is(err, sso.ErrAddCharacterInProgress) {
+		t.Fatal("second call got ErrAddCharacterInProgress -- cancelling the first call did not release its lock/sockets")
+	}
+}
+
+type fakeOAuthConfigWithUpstreamRequest struct {
+	token       *oauth2.Token
+	claims      *goesi.ESIJWTClaims
+	upstreamURL string
+}
+
+func (f *fakeOAuthConfigWithUpstreamRequest) AuthURL(state string, scopes []string) string {
+	return "https://login.eveonline.com/v2/oauth/authorize?state=" + state
+}
+
+func (f *fakeOAuthConfigWithUpstreamRequest) Exchange(ctx context.Context, code, state, expectedState string) (*oauth2.Token, *goesi.ESIJWTClaims, error) {
+	if state != expectedState {
+		return nil, nil, errors.New("state mismatch")
+	}
+	client, _ := ctx.Value(oauth2.HTTPClient).(*http.Client)
+	if client == nil {
+		client = http.DefaultClient
+	}
+	resp, err := client.Get(f.upstreamURL)
+	if err != nil {
+		return nil, nil, err
+	}
+	resp.Body.Close()
+	return f.token, f.claims, nil
+}
+
+func TestAddCharacter_InjectsUserAgentIntoExchangeContext(t *testing.T) {
+	// See TestAddCharacter_FullFlow_Succeeds for why shortTempHome (not
+	// t.TempDir() directly) plus forcing TMPDIR is required here too.
+	tmpHome := shortTempHome(t)
+	t.Setenv("HOME", tmpHome)
+	t.Setenv("USERPROFILE", tmpHome)
+
+	var gotUserAgent string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotUserAgent = r.Header.Get("User-Agent")
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(upstream.Close)
+
+	var capturedAuthURL string
+	browserOpened := make(chan struct{})
+	sso.SetOpenBrowserForTest(func(rawURL string) error {
+		capturedAuthURL = rawURL
+		close(browserOpened)
+		return nil
+	})
+	t.Cleanup(sso.ResetOpenBrowserForTest)
+	sso.SetCallbackTimeoutForTest(5 * time.Second)
+	t.Cleanup(sso.ResetCallbackTimeoutForTest)
+
+	fake := &fakeOAuthConfigWithUpstreamRequest{
+		token: &oauth2.Token{RefreshToken: "refresh-ua-test"},
+		claims: &goesi.ESIJWTClaims{
+			RegisteredClaims: jwt.RegisteredClaims{Subject: "CHARACTER:EVE:112233"},
+			Name:             "UA Pilot",
+		},
+		upstreamURL: upstream.URL,
+	}
+
+	type addResult struct {
+		char sso.Character
+		err  error
+	}
+	resultCh := make(chan addResult, 1)
+	go func() {
+		char, err := sso.ExportedAddCharacter(context.Background(), fake, "neat/test-ua-check", []string{"publicData"})
+		resultCh <- addResult{char, err}
+	}()
+
+	<-browserOpened
+	parsed, err := url.Parse(capturedAuthURL)
+	if err != nil {
+		t.Fatalf("parse captured auth URL: %v", err)
+	}
+	state := parsed.Query().Get("state")
+	if state == "" {
+		t.Fatal("captured auth URL had no state parameter")
+	}
+
+	if err := sso.DeliverCallback("eveauth-neat://callback?code=auth-code-123&state=" + state); err != nil {
+		t.Fatalf("DeliverCallback returned error: %v", err)
+	}
+
+	res := <-resultCh
+	if res.err != nil {
+		t.Fatalf("addCharacter returned error: %v", res.err)
+	}
+	if gotUserAgent != "neat/test-ua-check" {
+		t.Errorf("upstream received User-Agent = %q, want %q", gotUserAgent, "neat/test-ua-check")
 	}
 }

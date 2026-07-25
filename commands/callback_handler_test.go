@@ -13,7 +13,7 @@ import (
 )
 
 func TestCallbackHandlerCommand_RequiresExactlyOneArgument(t *testing.T) {
-	root := commands.Root("dev")
+	root := commands.Root("dev", "test-client-id")
 
 	err := root.Run(context.Background(), []string{"neat", "callback-handler"})
 	if err == nil {
@@ -22,7 +22,7 @@ func TestCallbackHandlerCommand_RequiresExactlyOneArgument(t *testing.T) {
 }
 
 func TestCallbackHandlerCommand_RejectsTooManyArguments(t *testing.T) {
-	root := commands.Root("dev")
+	root := commands.Root("dev", "test-client-id")
 
 	err := root.Run(context.Background(), []string{"neat", "callback-handler", "url1", "url2"})
 	if err == nil {
@@ -31,7 +31,7 @@ func TestCallbackHandlerCommand_RejectsTooManyArguments(t *testing.T) {
 }
 
 func TestCallbackHandlerCommand_RejectsUnexpectedScheme(t *testing.T) {
-	root := commands.Root("dev")
+	root := commands.Root("dev", "test-client-id")
 
 	err := root.Run(context.Background(), []string{"neat", "callback-handler", "https://evil.example.com/callback"})
 	if err == nil {
@@ -71,11 +71,11 @@ func TestCallbackHandlerCommand_DeliversValidCallback(t *testing.T) {
 	}
 	resultCh := make(chan result, 1)
 	go func() {
-		url, err := sso.ExportedReceiveCallback(listener.Delivery(), 5*time.Second)
+		url, err := sso.ExportedReceiveCallback(context.Background(), listener.Delivery(), 5*time.Second)
 		resultCh <- result{url, err}
 	}()
 
-	root := commands.Root("dev")
+	root := commands.Root("dev", "test-client-id")
 	const wantURL = "eveauth-neat://callback?code=abc&state=xyz"
 	if err := root.Run(context.Background(), []string{"neat", "callback-handler", wantURL}); err != nil {
 		t.Fatalf("Run returned error: %v", err)
@@ -91,7 +91,7 @@ func TestCallbackHandlerCommand_DeliversValidCallback(t *testing.T) {
 }
 
 func TestCallbackHandlerCommand_IsHidden(t *testing.T) {
-	root := commands.Root("dev")
+	root := commands.Root("dev", "test-client-id")
 
 	for _, cmd := range root.Commands {
 		if cmd.Name == "callback-handler" {

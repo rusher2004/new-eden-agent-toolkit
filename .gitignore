@@ -36,3 +36,6 @@ go.work.sum
 
 # Compiled macOS URL-scheme wrapper (built via `make urlscheme-macos-bundle`)
 /urlscheme/macos/build/
+
+# Local dev build output (built via `make build`)
+/bin/

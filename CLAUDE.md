@@ -11,13 +11,14 @@ Flat package structure at repo root. No `internal/`. One package per responsibil
 | Package | Responsibility |
 |---|---|
 | `cmd/` | `main.go` entrypoint only |
-| `commands/` | `urfave/cli/v3` command tree (`version`, `setup`, `callback-handler` (hidden — invoked only by the OS on URL-scheme activation), and more to come) |
+| `commands/` | `urfave/cli/v3` command tree (`version`, `setup`, `mcp`, `callback-handler` (hidden — invoked only by the OS on URL-scheme activation)) |
 | `config/` | Non-secret state in `~/.neat/config.json` |
 | `creds/` | OS keychain wrapper (`zalando/go-keyring`), service name `"neat"` |
 | `urlscheme/` | Per-OS registration of `eveauth-neat://` as the ESI OAuth redirect handler. macOS embeds a real compiled Swift/Cocoa wrapper (`urlscheme/macos/`, built via `make urlscheme-macos-bundle`) via `go:embed` — a bare executable can't receive macOS's `kAEGetURL` Apple Event. Windows (registry) and Linux (`.desktop` + `xdg-mime`) exist but have no CI execution yet — see "Known gaps" below |
-| `sso/` | ESI OAuth2/PKCE login flow: PKCE + state generation, a two-socket Unix IPC handoff for the callback (a lock socket that's bound but never `Accept()`-ed, plus a separate delivery socket), orchestration via `github.com/fnt-eve/goesi-openapi`, refresh-token persistence via `creds/` |
+| `sso/` | ESI OAuth2/PKCE login flow: PKCE + state generation, a two-socket Unix IPC handoff for the callback (a lock socket that's bound but never `Accept()`-ed, plus a separate delivery socket), orchestration via `github.com/fnt-eve/goesi-openapi`, refresh-token persistence via `creds/`. All outbound requests to CCP (JWKS fetch, OAuth2 token exchange) carry `sso.UserAgent(version)`, per ESI's User-Agent best practices |
+| `mcp/` | MCP server (official `github.com/modelcontextprotocol/go-sdk`) and its three tools: `add_character`, `list_characters`, `remove_character` |
 
-More packages (`esi/`, `sde/`, `mcp/`) land in follow-up plans — see `docs/superpowers/plans/`.
+More packages (`esi/`, `sde/`) land in follow-up plans — see `docs/superpowers/plans/`.
 
 ## Known gaps (tracked, not silently accepted)
 
@@ -30,6 +31,15 @@ More packages (`esi/`, `sde/`, `mcp/`) land in follow-up plans — see `docs/sup
   instant, they can still collide (the common two-live-callers case is fixed and tested). Would need
   a PID-tracked lockfile or equivalent to close fully; judged disproportionate to the actual risk
   given `addCharacterMu` already serializes same-process callers.
+- **The browser tab never closes/navigates after a successful `add_character` login**, even though
+  the character add itself completes correctly. `eveauth-neat://callback` is a custom scheme, not
+  HTTP(S), so the tab has no response body to render for it — the OS hands the URL to our registered
+  handler and the tab is just left showing CCP's authorize page mid-click. This is standard behavior
+  for RFC 8252-style native-app custom-scheme OAuth redirects (same as Slack/Spotify/Zoom's desktop
+  login flows) and isn't fixable from `neat`'s side — a "you can close this tab" message would have
+  to come from CCP's own `login.eveonline.com` page, which we don't control. Accepted trade-off of
+  the custom-scheme-over-loopback-HTTP decision in the foundation design spec; a loopback server
+  could serve its own success page, but was rejected for other reasons.
 
 ## Hard rules
 
@@ -38,6 +48,7 @@ More packages (`esi/`, `sde/`, `mcp/`) land in follow-up plans — see `docs/sup
 - **No environment variables for config/credentials.** Config lives under `~/.neat/`; credentials
   live in the OS keychain only.
 - **No client secret.** The ESI app is a PKCE-only public app — nothing secret ships in the binary.
+- **ESI User-Agent compliance**: every outbound request to CCP's login/ESI endpoints must carry `sso.UserAgent(version)`. CCP's best-practices guidance treats non-compliant User-Agents as grounds for a temporary ban — see `sso/useragent.go`.
 
 ## Conventions
 
@@ -85,8 +96,11 @@ compile — `go:embed` fails if the path doesn't exist):
 make urlscheme-macos-bundle
 ```
 
+`clientID` (the ESI OAuth2 client ID) is also injected via `-ldflags` from the git-ignored
+`app_config.json` — `make build` wraps this for local development.
+
 ```bash
-go build -ldflags "-X main.version=$(cat VERSION 2>/dev/null || echo dev)" -o neat ./cmd
+go build -ldflags "-X main.version=$(cat VERSION 2>/dev/null || echo dev) -X main.clientID=$(jq -r .clientId app_config.json)" -o neat ./cmd
 ```
 
 ## Test

@@ -1,6 +1,7 @@
 package sso_test
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -54,7 +55,7 @@ func TestListenAndDeliverCallback_RoundTrips(t *testing.T) {
 		err error
 	}, 1)
 	go func() {
-		url, err := sso.ExportedReceiveCallback(listener.Delivery(), 5*time.Second)
+		url, err := sso.ExportedReceiveCallback(context.Background(), listener.Delivery(), 5*time.Second)
 		resultCh <- struct {
 			url string
 			err error
@@ -112,7 +113,7 @@ func TestListenForCallback_CollisionProbeDoesNotCorruptFirstFlowsCallback(t *tes
 		err error
 	}, 1)
 	go func() {
-		url, err := sso.ExportedReceiveCallback(first.Delivery(), 5*time.Second)
+		url, err := sso.ExportedReceiveCallback(context.Background(), first.Delivery(), 5*time.Second)
 		resultCh <- struct {
 			url string
 			err error
@@ -242,8 +243,56 @@ func TestReceiveCallback_TimesOut(t *testing.T) {
 	}
 	defer listener.Close()
 
-	_, err = sso.ExportedReceiveCallback(listener.Delivery(), 50*time.Millisecond)
+	_, err = sso.ExportedReceiveCallback(context.Background(), listener.Delivery(), 50*time.Millisecond)
 	if err == nil {
 		t.Fatal("receiveCallback returned nil error, want a timeout error")
+	}
+}
+
+// TestReceiveCallback_ContextCancellation_ReturnsImmediately proves that
+// cancelling the caller's context unblocks receiveCallback right away,
+// rather than forcing callers to wait out the full timeout — this is what
+// lets an MCP client's cancellation of an in-flight add_character call
+// (e.g. Claude Code's "Stop Task") actually release the socket/lock
+// promptly instead of after up to 5 minutes.
+func TestReceiveCallback_ContextCancellation_ReturnsImmediately(t *testing.T) {
+	tmpHome := shortTempHome(t)
+	t.Setenv("HOME", tmpHome)
+	t.Setenv("USERPROFILE", tmpHome)
+	lockPath := filepath.Join(tmpHome, ".neat", "run", "callback.lock")
+	deliveryPath := filepath.Join(tmpHome, ".neat", "run", "callback.sock")
+
+	listener, err := sso.ExportedListenForCallback(lockPath, deliveryPath)
+	if err != nil {
+		t.Fatalf("listenForCallback returned error: %v", err)
+	}
+	defer listener.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	resultCh := make(chan struct {
+		url string
+		err error
+	}, 1)
+	go func() {
+		url, err := sso.ExportedReceiveCallback(ctx, listener.Delivery(), 5*time.Minute)
+		resultCh <- struct {
+			url string
+			err error
+		}{url, err}
+	}()
+
+	// Give receiveCallback's goroutine time to reach Accept() before
+	// cancelling, so this genuinely exercises the "already blocked" case.
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+
+	select {
+	case res := <-resultCh:
+		if !errors.Is(res.err, context.Canceled) {
+			t.Errorf("err = %v, want wrapping context.Canceled", res.err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("receiveCallback did not return promptly after context cancellation")
 	}
 }

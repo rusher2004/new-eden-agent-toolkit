@@ -1,6 +1,7 @@
 package sso
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -120,8 +121,11 @@ func bindExclusive(path string) (net.Listener, error) {
 }
 
 // receiveCallback blocks until a callback-handler process delivers the
-// redirect URL via DeliverCallback, or timeout elapses.
-func receiveCallback(l net.Listener, timeout time.Duration) (string, error) {
+// redirect URL via DeliverCallback, timeout elapses, or ctx is cancelled.
+// Cancelling ctx (e.g. an MCP client cancelling an in-flight add_character
+// call) closes l to unblock the pending Accept(), releasing the caller's
+// lock/socket immediately instead of forcing it to wait out timeout.
+func receiveCallback(ctx context.Context, l net.Listener, timeout time.Duration) (string, error) {
 	type result struct {
 		url string
 		err error
@@ -149,6 +153,9 @@ func receiveCallback(l net.Listener, timeout time.Duration) (string, error) {
 		return res.url, res.err
 	case <-time.After(timeout):
 		return "", fmt.Errorf("timed out after %s waiting for browser callback", timeout)
+	case <-ctx.Done():
+		l.Close()
+		return "", ctx.Err()
 	}
 }
 
@@ -205,6 +212,6 @@ func ExportedListenForCallback(lockPath, deliveryPath string) (*ExportedCallback
 }
 
 // ExportedReceiveCallback exposes receiveCallback for external tests.
-func ExportedReceiveCallback(l net.Listener, timeout time.Duration) (string, error) {
-	return receiveCallback(l, timeout)
+func ExportedReceiveCallback(ctx context.Context, l net.Listener, timeout time.Duration) (string, error) {
+	return receiveCallback(ctx, l, timeout)
 }
