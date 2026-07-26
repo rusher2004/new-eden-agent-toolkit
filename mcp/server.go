@@ -8,7 +8,7 @@ import (
 )
 
 // NewServer builds neat's MCP server with add_character, list_characters,
-// and remove_character registered.
+// remove_character, and get_wallet_balance registered.
 func NewServer(version, clientID string, store *config.Store) *mcpsdk.Server {
 	server := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "neat", Version: version}, nil)
 
@@ -26,6 +26,11 @@ func NewServer(version, clientID string, store *config.Store) *mcpsdk.Server {
 		Name:        "remove_character",
 		Description: "Remove a logged-in EVE Online character, deleting its stored credentials.",
 	}, removeCharacterHandler(store))
+
+	mcpsdk.AddTool(server, &mcpsdk.Tool{
+		Name:        "get_wallet_balance",
+		Description: "Get a logged-in EVE Online character's current ISK wallet balance.",
+	}, getWalletBalanceHandler(version, clientID, store))
 
 	return server
 }

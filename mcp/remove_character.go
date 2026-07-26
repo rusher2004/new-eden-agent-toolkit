@@ -8,12 +8,17 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
-	"github.com/rusher2004/new-eden-agent-toolkit/creds"
+	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
 // ErrCharacterNotFound is returned (wrapped) when remove_character is
 // called with a character ID that isn't in the local config.
 var ErrCharacterNotFound = errors.New("character not found")
+
+// removeCharacterCreds is overridable in tests. It deletes the character's
+// refresh token from the keychain and evicts its cached authenticated
+// client atomically -- see sso.RemoveCharacter's doc comment.
+var removeCharacterCreds = sso.RemoveCharacter
 
 // RemoveCharacterInput is remove_character's tool input.
 type RemoveCharacterInput struct {
@@ -39,13 +44,13 @@ func removeCharacterHandler(store *config.Store) mcpsdk.ToolHandlerFor[RemoveCha
 		}
 		removed := cfg.Characters[idx]
 
-		if err := creds.DeleteCharacterRefreshToken(removed.ID); err != nil {
-			return nil, CharacterInfo{}, fmt.Errorf("delete refresh token: %w", err)
+		if err := removeCharacterCreds(removed.ID); err != nil {
+			return nil, CharacterInfo{}, fmt.Errorf("remove character credentials: %w", err)
 		}
 
 		cfg.Characters = append(cfg.Characters[:idx], cfg.Characters[idx+1:]...)
 		if err := store.Save(cfg); err != nil {
-			return nil, CharacterInfo{}, fmt.Errorf("save config: %w", err)
+			return nil, CharacterInfo{}, fmt.Errorf("save config (character's credentials were already removed): %w", err)
 		}
 
 		return nil, CharacterInfo{CharacterID: removed.ID, CharacterName: removed.Name}, nil

@@ -47,7 +47,7 @@ func TestServer_AllToolsRegistered(t *testing.T) {
 	for _, tool := range res.Tools {
 		names[tool.Name] = true
 	}
-	for _, want := range []string{"add_character", "list_characters", "remove_character"} {
+	for _, want := range []string{"add_character", "list_characters", "remove_character", "get_wallet_balance"} {
 		if !names[want] {
 			t.Errorf("missing tool %q, got %v", want, names)
 		}

@@ -15,10 +15,11 @@ Flat package structure at repo root. No `internal/`. One package per responsibil
 | `config/` | Non-secret state in `~/.neat/config.json` |
 | `creds/` | OS keychain wrapper (`zalando/go-keyring`), service name `"neat"` |
 | `urlscheme/` | Per-OS registration of `eveauth-neat://` as the ESI OAuth redirect handler. macOS embeds a real compiled Swift/Cocoa wrapper (`urlscheme/macos/`, built via `make urlscheme-macos-bundle`) via `go:embed` — a bare executable can't receive macOS's `kAEGetURL` Apple Event. Windows (registry) and Linux (`.desktop` + `xdg-mime`) exist but have no CI execution yet — see "Known gaps" below |
-| `sso/` | ESI OAuth2/PKCE login flow: PKCE + state generation, a two-socket Unix IPC handoff for the callback (a lock socket that's bound but never `Accept()`-ed, plus a separate delivery socket), orchestration via `github.com/fnt-eve/goesi-openapi`, refresh-token persistence via `creds/`. All outbound requests to CCP (JWKS fetch, OAuth2 token exchange) carry `sso.UserAgent(version)`, per ESI's User-Agent best practices |
-| `mcp/` | MCP server (official `github.com/modelcontextprotocol/go-sdk`) and its three tools: `add_character`, `list_characters`, `remove_character` |
+| `sso/` | ESI OAuth2/PKCE login flow: PKCE + state generation, a two-socket Unix IPC handoff for the callback (a lock socket that's bound but never `Accept()`-ed, plus a separate delivery socket), orchestration via `github.com/fnt-eve/goesi-openapi`, refresh-token persistence via `creds/`. All outbound requests to CCP (JWKS fetch, OAuth2 token exchange) carry `sso.UserAgent(version)`, per ESI's User-Agent best practices. Also caches a per-character auto-refreshing HTTP client (`AuthenticatedClient`/`RemoveCharacter`) for `esi/`'s use — refreshing relies entirely on `golang.org/x/oauth2`'s own token source (with rotated refresh tokens persisted back to `creds/` if CCP ever returns one), not hand-rolled expiry tracking. `AuthenticatedClient` and `RemoveCharacter` share one mutex across their entire keychain operation, not just the cache map, so the two can never interleave |
+| `mcp/` | MCP server (official `github.com/modelcontextprotocol/go-sdk`) and its four tools: `add_character`, `list_characters`, `remove_character`, `get_wallet_balance` |
+| `esi/` | Thin facade over `github.com/fnt-eve/goesi-openapi` — builds a per-character authenticated ESI API client from `sso.AuthenticatedClient`'s cached, auto-refreshing HTTP client. Holds no state of its own |
 
-More packages (`esi/`, `sde/`) land in follow-up plans — see `docs/superpowers/plans/`.
+More packages (`sde/`) land in follow-up plans — see `docs/superpowers/plans/`.
 
 ## Known gaps (tracked, not silently accepted)
 
@@ -49,6 +50,7 @@ More packages (`esi/`, `sde/`) land in follow-up plans — see `docs/superpowers
   live in the OS keychain only.
 - **No client secret.** The ESI app is a PKCE-only public app — nothing secret ships in the binary.
 - **ESI User-Agent compliance**: every outbound request to CCP's login/ESI endpoints must carry `sso.UserAgent(version)`. CCP's best-practices guidance treats non-compliant User-Agents as grounds for a temporary ban — see `sso/useragent.go`.
+- **ESI error detail must not be discarded**: every `esi/` method that calls `.Execute()` on a generated API request must route its error and `*http.Response` through `describeError` (`esi/error.go`) before wrapping and returning it. `goesi-openapi`'s generated error type degrades to a bare HTTP status string on its own — its message formatter looks for `Title`/`Detail` fields via reflection, but ESI's actual error model uses `Error`/`Details` instead, so the real detail (invalid scope, expired token, etc.) and the `X-Esi-Error-Limit-Remain`/`-Reset` rate-limit headers are silently lost unless routed through this helper. Confirmed via direct reproduction against `goesi-openapi` v0.0.37 — see `esi/wallet.go` for the pattern every new `esi/` method should follow.
 
 ## Conventions
 
