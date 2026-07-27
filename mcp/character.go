@@ -1,0 +1,692 @@
+package mcp
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/rusher2004/new-eden-agent-toolkit/config"
+	"github.com/rusher2004/new-eden-agent-toolkit/esi"
+	"github.com/rusher2004/new-eden-agent-toolkit/sso"
+)
+
+// --- Public: get_character ---
+
+type GetCharacterOutput struct {
+	CharacterID      int64     `json:"characterId"`
+	Name             string    `json:"name"`
+	CorporationID    int64     `json:"corporationId"`
+	AllianceID       *int64    `json:"allianceId,omitempty"`
+	FactionID        *int64    `json:"factionId,omitempty"`
+	Birthday         time.Time `json:"birthday"`
+	BloodlineID      int64     `json:"bloodlineId"`
+	RaceID           int64     `json:"raceId"`
+	Gender           string    `json:"gender"`
+	SecurityStatus   *float64  `json:"securityStatus,omitempty"`
+	Description      *string   `json:"description,omitempty"`
+	Title            *string   `json:"title,omitempty"`
+	AchievementScore int64     `json:"achievementScore"`
+}
+
+var getCharacterDetail = func(ctx context.Context, userAgent string, characterID int64) (GetCharacterOutput, error) {
+	client := esi.NewPublicClient(userAgent)
+	detail, err := client.CharacterDetail(ctx, characterID)
+	if err != nil {
+		return GetCharacterOutput{}, err
+	}
+	return GetCharacterOutput{
+		CharacterID: characterID, Name: detail.Name, CorporationID: detail.CorporationId,
+		AllianceID: detail.AllianceId, FactionID: detail.FactionId, Birthday: detail.Birthday,
+		BloodlineID: detail.BloodlineId, RaceID: detail.RaceId, Gender: detail.Gender,
+		SecurityStatus: detail.SecurityStatus, Description: detail.Description,
+		Title: detail.CorporationTitle, AchievementScore: detail.AchievementScore,
+	}, nil
+}
+
+type GetCharacterInput struct {
+	CharacterID int64 `json:"characterId" jsonschema:"the character ID to look up"`
+}
+
+func getCharacterHandler(version string) mcpsdk.ToolHandlerFor[GetCharacterInput, GetCharacterOutput] {
+	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterInput) (*mcpsdk.CallToolResult, GetCharacterOutput, error) {
+		out, err := getCharacterDetail(ctx, sso.UserAgent(version), in.CharacterID)
+		if err != nil {
+			return nil, GetCharacterOutput{}, fmt.Errorf("get character: %w", err)
+		}
+		return nil, out, nil
+	}
+}
+
+// --- Public: get_character_affiliations ---
+
+type CharacterAffiliation struct {
+	CharacterID   int64  `json:"characterId"`
+	CorporationID int64  `json:"corporationId"`
+	AllianceID    *int64 `json:"allianceId,omitempty"`
+	FactionID     *int64 `json:"factionId,omitempty"`
+}
+
+var getCharacterAffiliations = func(ctx context.Context, userAgent string, characterIDs []int64) ([]CharacterAffiliation, error) {
+	client := esi.NewPublicClient(userAgent)
+	affs, err := client.CharacterAffiliations(ctx, characterIDs)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]CharacterAffiliation, len(affs))
+	for i, a := range affs {
+		out[i] = CharacterAffiliation{CharacterID: a.CharacterId, CorporationID: a.CorporationId, AllianceID: a.AllianceId, FactionID: a.FactionId}
+	}
+	return out, nil
+}
+
+type GetCharacterAffiliationsInput struct {
+	CharacterIDs []int64 `json:"characterIds" jsonschema:"character IDs to resolve"`
+}
+type GetCharacterAffiliationsOutput struct {
+	Affiliations []CharacterAffiliation `json:"affiliations"`
+}
+
+func getCharacterAffiliationsHandler(version string) mcpsdk.ToolHandlerFor[GetCharacterAffiliationsInput, GetCharacterAffiliationsOutput] {
+	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterAffiliationsInput) (*mcpsdk.CallToolResult, GetCharacterAffiliationsOutput, error) {
+		affs, err := getCharacterAffiliations(ctx, sso.UserAgent(version), in.CharacterIDs)
+		if err != nil {
+			return nil, GetCharacterAffiliationsOutput{}, fmt.Errorf("get character affiliations: %w", err)
+		}
+		return nil, GetCharacterAffiliationsOutput{Affiliations: affs}, nil
+	}
+}
+
+// --- Public: list_character_corporation_history ---
+
+type CorporationHistoryEntry struct {
+	CorporationID int64     `json:"corporationId"`
+	RecordID      int64     `json:"recordId"`
+	StartDate     time.Time `json:"startDate"`
+	IsDeleted     *bool     `json:"isDeleted,omitempty"`
+}
+
+var listCharacterCorporationHistory = func(ctx context.Context, userAgent string, characterID int64) ([]CorporationHistoryEntry, error) {
+	client := esi.NewPublicClient(userAgent)
+	hist, err := client.CharacterCorporationHistory(ctx, characterID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]CorporationHistoryEntry, len(hist))
+	for i, h := range hist {
+		out[i] = CorporationHistoryEntry{CorporationID: h.CorporationId, RecordID: h.RecordId, StartDate: h.StartDate, IsDeleted: h.IsDeleted}
+	}
+	return out, nil
+}
+
+type ListCharacterCorporationHistoryInput struct {
+	CharacterID int64 `json:"characterId" jsonschema:"the character ID to look up"`
+}
+type ListCharacterCorporationHistoryOutput struct {
+	CharacterID int64                     `json:"characterId"`
+	History     []CorporationHistoryEntry `json:"history"`
+}
+
+func listCharacterCorporationHistoryHandler(version string) mcpsdk.ToolHandlerFor[ListCharacterCorporationHistoryInput, ListCharacterCorporationHistoryOutput] {
+	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterCorporationHistoryInput) (*mcpsdk.CallToolResult, ListCharacterCorporationHistoryOutput, error) {
+		hist, err := listCharacterCorporationHistory(ctx, sso.UserAgent(version), in.CharacterID)
+		if err != nil {
+			return nil, ListCharacterCorporationHistoryOutput{}, fmt.Errorf("list character corporation history: %w", err)
+		}
+		return nil, ListCharacterCorporationHistoryOutput{CharacterID: in.CharacterID, History: hist}, nil
+	}
+}
+
+// --- Public: get_character_portrait ---
+
+type GetCharacterPortraitOutput struct {
+	CharacterID int64   `json:"characterId"`
+	Px64x64     *string `json:"px64x64,omitempty"`
+	Px128x128   *string `json:"px128x128,omitempty"`
+	Px256x256   *string `json:"px256x256,omitempty"`
+	Px512x512   *string `json:"px512x512,omitempty"`
+}
+
+var getCharacterPortrait = func(ctx context.Context, userAgent string, characterID int64) (GetCharacterPortraitOutput, error) {
+	client := esi.NewPublicClient(userAgent)
+	portrait, err := client.CharacterPortrait(ctx, characterID)
+	if err != nil {
+		return GetCharacterPortraitOutput{}, err
+	}
+	return GetCharacterPortraitOutput{
+		CharacterID: characterID, Px64x64: portrait.Px64x64, Px128x128: portrait.Px128x128,
+		Px256x256: portrait.Px256x256, Px512x512: portrait.Px512x512,
+	}, nil
+}
+
+type GetCharacterPortraitInput struct {
+	CharacterID int64 `json:"characterId" jsonschema:"the character ID to look up"`
+}
+
+func getCharacterPortraitHandler(version string) mcpsdk.ToolHandlerFor[GetCharacterPortraitInput, GetCharacterPortraitOutput] {
+	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterPortraitInput) (*mcpsdk.CallToolResult, GetCharacterPortraitOutput, error) {
+		out, err := getCharacterPortrait(ctx, sso.UserAgent(version), in.CharacterID)
+		if err != nil {
+			return nil, GetCharacterPortraitOutput{}, fmt.Errorf("get character portrait: %w", err)
+		}
+		return nil, out, nil
+	}
+}
+
+// --- shared existence-check helper for the private tools below ---
+
+// characterExists reports whether characterID is a logged-in character in store. New in this
+// file: with 10 private tools sharing the same check, duplicating the loop 10 times crosses the
+// DRY threshold that made sense for smaller batches.
+func characterExists(store *config.Store, characterID int32) (bool, error) {
+	cfg, err := store.Load()
+	if err != nil {
+		return false, fmt.Errorf("load config: %w", err)
+	}
+	for _, c := range cfg.Characters {
+		if c.ID == characterID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// --- Private: list_character_agents_research ---
+
+type AgentResearch struct {
+	AgentID         int64     `json:"agentId"`
+	SkillTypeID     int64     `json:"skillTypeId"`
+	PointsPerDay    float64   `json:"pointsPerDay"`
+	RemainderPoints float64   `json:"remainderPoints"`
+	StartedAt       time.Time `json:"startedAt"`
+}
+
+var listCharacterAgentsResearch = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]AgentResearch, error) {
+	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
+	if err != nil {
+		return nil, fmt.Errorf("build ESI client: %w", err)
+	}
+	agents, err := client.CharacterAgentsResearch(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]AgentResearch, len(agents))
+	for i, a := range agents {
+		out[i] = AgentResearch{AgentID: a.AgentId, SkillTypeID: a.SkillTypeId, PointsPerDay: a.PointsPerDay, RemainderPoints: a.RemainderPoints, StartedAt: a.StartedAt}
+	}
+	return out, nil
+}
+
+type ListCharacterAgentsResearchInput struct {
+	CharacterID int32 `json:"characterId" jsonschema:"the character ID to check"`
+}
+type ListCharacterAgentsResearchOutput struct {
+	CharacterID int32           `json:"characterId"`
+	Agents      []AgentResearch `json:"agents"`
+}
+
+func listCharacterAgentsResearchHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCharacterAgentsResearchInput, ListCharacterAgentsResearchOutput] {
+	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterAgentsResearchInput) (*mcpsdk.CallToolResult, ListCharacterAgentsResearchOutput, error) {
+		found, err := characterExists(store, in.CharacterID)
+		if err != nil {
+			return nil, ListCharacterAgentsResearchOutput{}, err
+		}
+		if !found {
+			return nil, ListCharacterAgentsResearchOutput{}, fmt.Errorf("list character agents research for character %d: %w", in.CharacterID, ErrCharacterNotFound)
+		}
+		agents, err := listCharacterAgentsResearch(ctx, clientID, in.CharacterID, sso.UserAgent(version))
+		if err != nil {
+			return nil, ListCharacterAgentsResearchOutput{}, fmt.Errorf("list character agents research: %w", err)
+		}
+		return nil, ListCharacterAgentsResearchOutput{CharacterID: in.CharacterID, Agents: agents}, nil
+	}
+}
+
+// --- Private: list_character_blueprints ---
+
+type Blueprint struct {
+	ItemID             int64  `json:"itemId"`
+	TypeID             int64  `json:"typeId"`
+	LocationID         int64  `json:"locationId"`
+	LocationFlag       string `json:"locationFlag"`
+	Quantity           int64  `json:"quantity"`
+	Runs               int64  `json:"runs"`
+	MaterialEfficiency int64  `json:"materialEfficiency"`
+	TimeEfficiency     int64  `json:"timeEfficiency"`
+}
+
+var listCharacterBlueprints = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]Blueprint, int32, error) {
+	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
+	if err != nil {
+		return nil, 0, fmt.Errorf("build ESI client: %w", err)
+	}
+	bps, totalPages, err := client.CharacterBlueprints(ctx, page)
+	if err != nil {
+		return nil, 0, err
+	}
+	out := make([]Blueprint, len(bps))
+	for i, b := range bps {
+		out[i] = Blueprint{ItemID: b.ItemId, TypeID: b.TypeId, LocationID: b.LocationId, LocationFlag: b.LocationFlag, Quantity: b.Quantity, Runs: b.Runs, MaterialEfficiency: b.MaterialEfficiency, TimeEfficiency: b.TimeEfficiency}
+	}
+	return out, totalPages, nil
+}
+
+type ListCharacterBlueprintsInput struct {
+	CharacterID int32 `json:"characterId" jsonschema:"the character ID to check"`
+	Page        int32 `json:"page,omitempty" jsonschema:"page number, 1-indexed; omit for page 1"`
+}
+type ListCharacterBlueprintsOutput struct {
+	CharacterID int32       `json:"characterId"`
+	Page        int32       `json:"page"`
+	TotalPages  int32       `json:"totalPages"`
+	Blueprints  []Blueprint `json:"blueprints"`
+}
+
+func listCharacterBlueprintsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCharacterBlueprintsInput, ListCharacterBlueprintsOutput] {
+	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterBlueprintsInput) (*mcpsdk.CallToolResult, ListCharacterBlueprintsOutput, error) {
+		found, err := characterExists(store, in.CharacterID)
+		if err != nil {
+			return nil, ListCharacterBlueprintsOutput{}, err
+		}
+		if !found {
+			return nil, ListCharacterBlueprintsOutput{}, fmt.Errorf("list character blueprints for character %d: %w", in.CharacterID, ErrCharacterNotFound)
+		}
+		bps, totalPages, err := listCharacterBlueprints(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.Page)
+		if err != nil {
+			return nil, ListCharacterBlueprintsOutput{}, fmt.Errorf("list character blueprints: %w", err)
+		}
+		page := in.Page
+		if page <= 0 {
+			page = 1
+		}
+		return nil, ListCharacterBlueprintsOutput{CharacterID: in.CharacterID, Page: page, TotalPages: totalPages, Blueprints: bps}, nil
+	}
+}
+
+// --- Private: get_character_fatigue ---
+
+type GetCharacterFatigueOutput struct {
+	CharacterID           int32      `json:"characterId"`
+	JumpFatigueExpireDate *time.Time `json:"jumpFatigueExpireDate,omitempty"`
+	LastJumpDate          *time.Time `json:"lastJumpDate,omitempty"`
+	LastUpdateDate        *time.Time `json:"lastUpdateDate,omitempty"`
+}
+
+var getCharacterFatigue = func(ctx context.Context, clientID string, characterID int32, userAgent string) (GetCharacterFatigueOutput, error) {
+	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
+	if err != nil {
+		return GetCharacterFatigueOutput{}, fmt.Errorf("build ESI client: %w", err)
+	}
+	fatigue, err := client.CharacterFatigue(ctx)
+	if err != nil {
+		return GetCharacterFatigueOutput{}, err
+	}
+	return GetCharacterFatigueOutput{CharacterID: characterID, JumpFatigueExpireDate: fatigue.JumpFatigueExpireDate, LastJumpDate: fatigue.LastJumpDate, LastUpdateDate: fatigue.LastUpdateDate}, nil
+}
+
+type GetCharacterFatigueInput struct {
+	CharacterID int32 `json:"characterId" jsonschema:"the character ID to check"`
+}
+
+func getCharacterFatigueHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[GetCharacterFatigueInput, GetCharacterFatigueOutput] {
+	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterFatigueInput) (*mcpsdk.CallToolResult, GetCharacterFatigueOutput, error) {
+		found, err := characterExists(store, in.CharacterID)
+		if err != nil {
+			return nil, GetCharacterFatigueOutput{}, err
+		}
+		if !found {
+			return nil, GetCharacterFatigueOutput{}, fmt.Errorf("get character fatigue for character %d: %w", in.CharacterID, ErrCharacterNotFound)
+		}
+		out, err := getCharacterFatigue(ctx, clientID, in.CharacterID, sso.UserAgent(version))
+		if err != nil {
+			return nil, GetCharacterFatigueOutput{}, fmt.Errorf("get character fatigue: %w", err)
+		}
+		return nil, out, nil
+	}
+}
+
+// --- Private: list_character_medals ---
+
+type MedalGraphic struct {
+	Graphic string `json:"graphic"`
+	Layer   int64  `json:"layer"`
+	Part    int64  `json:"part"`
+	Color   *int64 `json:"color,omitempty"`
+}
+type Medal struct {
+	MedalID       int64          `json:"medalId"`
+	CorporationID int64          `json:"corporationId"`
+	IssuerID      int64          `json:"issuerId"`
+	Date          time.Time      `json:"date"`
+	Description   string         `json:"description"`
+	Reason        string         `json:"reason"`
+	Status        string         `json:"status"`
+	Title         string         `json:"title"`
+	Graphics      []MedalGraphic `json:"graphics"`
+}
+
+var listCharacterMedals = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]Medal, error) {
+	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
+	if err != nil {
+		return nil, fmt.Errorf("build ESI client: %w", err)
+	}
+	medals, err := client.CharacterMedals(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Medal, len(medals))
+	for i, m := range medals {
+		graphics := make([]MedalGraphic, len(m.Graphics))
+		for j, g := range m.Graphics {
+			graphics[j] = MedalGraphic{Graphic: g.Graphic, Layer: g.Layer, Part: g.Part, Color: g.Color}
+		}
+		out[i] = Medal{MedalID: m.MedalId, CorporationID: m.CorporationId, IssuerID: m.IssuerId, Date: m.Date, Description: m.Description, Reason: m.Reason, Status: m.Status, Title: m.Title, Graphics: graphics}
+	}
+	return out, nil
+}
+
+type ListCharacterMedalsInput struct {
+	CharacterID int32 `json:"characterId" jsonschema:"the character ID to check"`
+}
+type ListCharacterMedalsOutput struct {
+	CharacterID int32   `json:"characterId"`
+	Medals      []Medal `json:"medals"`
+}
+
+func listCharacterMedalsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCharacterMedalsInput, ListCharacterMedalsOutput] {
+	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterMedalsInput) (*mcpsdk.CallToolResult, ListCharacterMedalsOutput, error) {
+		found, err := characterExists(store, in.CharacterID)
+		if err != nil {
+			return nil, ListCharacterMedalsOutput{}, err
+		}
+		if !found {
+			return nil, ListCharacterMedalsOutput{}, fmt.Errorf("list character medals for character %d: %w", in.CharacterID, ErrCharacterNotFound)
+		}
+		medals, err := listCharacterMedals(ctx, clientID, in.CharacterID, sso.UserAgent(version))
+		if err != nil {
+			return nil, ListCharacterMedalsOutput{}, fmt.Errorf("list character medals: %w", err)
+		}
+		return nil, ListCharacterMedalsOutput{CharacterID: in.CharacterID, Medals: medals}, nil
+	}
+}
+
+// --- Private: list_character_notifications ---
+
+type Notification struct {
+	NotificationID int64     `json:"notificationId"`
+	SenderID       int64     `json:"senderId"`
+	SenderType     string    `json:"senderType"`
+	Type           string    `json:"type"`
+	Timestamp      time.Time `json:"timestamp"`
+	IsRead         *bool     `json:"isRead,omitempty"`
+	Text           *string   `json:"text,omitempty"`
+}
+
+var listCharacterNotifications = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]Notification, error) {
+	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
+	if err != nil {
+		return nil, fmt.Errorf("build ESI client: %w", err)
+	}
+	notifs, err := client.CharacterNotifications(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Notification, len(notifs))
+	for i, n := range notifs {
+		out[i] = Notification{NotificationID: n.NotificationId, SenderID: n.SenderId, SenderType: n.SenderType, Type: n.Type, Timestamp: n.Timestamp, IsRead: n.IsRead, Text: n.Text}
+	}
+	return out, nil
+}
+
+type ListCharacterNotificationsInput struct {
+	CharacterID int32 `json:"characterId" jsonschema:"the character ID to check"`
+}
+type ListCharacterNotificationsOutput struct {
+	CharacterID   int32          `json:"characterId"`
+	Notifications []Notification `json:"notifications"`
+}
+
+func listCharacterNotificationsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCharacterNotificationsInput, ListCharacterNotificationsOutput] {
+	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterNotificationsInput) (*mcpsdk.CallToolResult, ListCharacterNotificationsOutput, error) {
+		found, err := characterExists(store, in.CharacterID)
+		if err != nil {
+			return nil, ListCharacterNotificationsOutput{}, err
+		}
+		if !found {
+			return nil, ListCharacterNotificationsOutput{}, fmt.Errorf("list character notifications for character %d: %w", in.CharacterID, ErrCharacterNotFound)
+		}
+		notifs, err := listCharacterNotifications(ctx, clientID, in.CharacterID, sso.UserAgent(version))
+		if err != nil {
+			return nil, ListCharacterNotificationsOutput{}, fmt.Errorf("list character notifications: %w", err)
+		}
+		return nil, ListCharacterNotificationsOutput{CharacterID: in.CharacterID, Notifications: notifs}, nil
+	}
+}
+
+// --- Private: list_character_notification_contacts ---
+
+type ContactNotification struct {
+	NotificationID    int64     `json:"notificationId"`
+	SenderCharacterID int64     `json:"senderCharacterId"`
+	SendDate          time.Time `json:"sendDate"`
+	StandingLevel     float64   `json:"standingLevel"`
+	Message           string    `json:"message"`
+}
+
+var listCharacterNotificationContacts = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]ContactNotification, error) {
+	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
+	if err != nil {
+		return nil, fmt.Errorf("build ESI client: %w", err)
+	}
+	notifs, err := client.CharacterNotificationContacts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ContactNotification, len(notifs))
+	for i, n := range notifs {
+		out[i] = ContactNotification{NotificationID: n.NotificationId, SenderCharacterID: n.SenderCharacterId, SendDate: n.SendDate, StandingLevel: n.StandingLevel, Message: n.Message}
+	}
+	return out, nil
+}
+
+type ListCharacterNotificationContactsInput struct {
+	CharacterID int32 `json:"characterId" jsonschema:"the character ID to check"`
+}
+type ListCharacterNotificationContactsOutput struct {
+	CharacterID   int32                 `json:"characterId"`
+	Notifications []ContactNotification `json:"notifications"`
+}
+
+func listCharacterNotificationContactsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCharacterNotificationContactsInput, ListCharacterNotificationContactsOutput] {
+	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterNotificationContactsInput) (*mcpsdk.CallToolResult, ListCharacterNotificationContactsOutput, error) {
+		found, err := characterExists(store, in.CharacterID)
+		if err != nil {
+			return nil, ListCharacterNotificationContactsOutput{}, err
+		}
+		if !found {
+			return nil, ListCharacterNotificationContactsOutput{}, fmt.Errorf("list character notification contacts for character %d: %w", in.CharacterID, ErrCharacterNotFound)
+		}
+		notifs, err := listCharacterNotificationContacts(ctx, clientID, in.CharacterID, sso.UserAgent(version))
+		if err != nil {
+			return nil, ListCharacterNotificationContactsOutput{}, fmt.Errorf("list character notification contacts: %w", err)
+		}
+		return nil, ListCharacterNotificationContactsOutput{CharacterID: in.CharacterID, Notifications: notifs}, nil
+	}
+}
+
+// --- Private: get_character_roles ---
+
+type GetCharacterRolesOutput struct {
+	CharacterID  int32    `json:"characterId"`
+	Roles        []string `json:"roles,omitempty"`
+	RolesAtBase  []string `json:"rolesAtBase,omitempty"`
+	RolesAtHq    []string `json:"rolesAtHq,omitempty"`
+	RolesAtOther []string `json:"rolesAtOther,omitempty"`
+}
+
+var getCharacterRoles = func(ctx context.Context, clientID string, characterID int32, userAgent string) (GetCharacterRolesOutput, error) {
+	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
+	if err != nil {
+		return GetCharacterRolesOutput{}, fmt.Errorf("build ESI client: %w", err)
+	}
+	roles, err := client.CharacterRoles(ctx)
+	if err != nil {
+		return GetCharacterRolesOutput{}, err
+	}
+	return GetCharacterRolesOutput{CharacterID: characterID, Roles: roles.Roles, RolesAtBase: roles.RolesAtBase, RolesAtHq: roles.RolesAtHq, RolesAtOther: roles.RolesAtOther}, nil
+}
+
+type GetCharacterRolesInput struct {
+	CharacterID int32 `json:"characterId" jsonschema:"the character ID to check"`
+}
+
+func getCharacterRolesHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[GetCharacterRolesInput, GetCharacterRolesOutput] {
+	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterRolesInput) (*mcpsdk.CallToolResult, GetCharacterRolesOutput, error) {
+		found, err := characterExists(store, in.CharacterID)
+		if err != nil {
+			return nil, GetCharacterRolesOutput{}, err
+		}
+		if !found {
+			return nil, GetCharacterRolesOutput{}, fmt.Errorf("get character roles for character %d: %w", in.CharacterID, ErrCharacterNotFound)
+		}
+		out, err := getCharacterRoles(ctx, clientID, in.CharacterID, sso.UserAgent(version))
+		if err != nil {
+			return nil, GetCharacterRolesOutput{}, fmt.Errorf("get character roles: %w", err)
+		}
+		return nil, out, nil
+	}
+}
+
+// --- Private: list_character_standings ---
+
+type Standing struct {
+	FromID   int64   `json:"fromId"`
+	FromType string  `json:"fromType"`
+	Standing float64 `json:"standing"`
+}
+
+var listCharacterStandings = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]Standing, error) {
+	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
+	if err != nil {
+		return nil, fmt.Errorf("build ESI client: %w", err)
+	}
+	standings, err := client.CharacterStandings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Standing, len(standings))
+	for i, s := range standings {
+		out[i] = Standing{FromID: s.FromId, FromType: s.FromType, Standing: s.Standing}
+	}
+	return out, nil
+}
+
+type ListCharacterStandingsInput struct {
+	CharacterID int32 `json:"characterId" jsonschema:"the character ID to check"`
+}
+type ListCharacterStandingsOutput struct {
+	CharacterID int32      `json:"characterId"`
+	Standings   []Standing `json:"standings"`
+}
+
+func listCharacterStandingsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCharacterStandingsInput, ListCharacterStandingsOutput] {
+	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterStandingsInput) (*mcpsdk.CallToolResult, ListCharacterStandingsOutput, error) {
+		found, err := characterExists(store, in.CharacterID)
+		if err != nil {
+			return nil, ListCharacterStandingsOutput{}, err
+		}
+		if !found {
+			return nil, ListCharacterStandingsOutput{}, fmt.Errorf("list character standings for character %d: %w", in.CharacterID, ErrCharacterNotFound)
+		}
+		standings, err := listCharacterStandings(ctx, clientID, in.CharacterID, sso.UserAgent(version))
+		if err != nil {
+			return nil, ListCharacterStandingsOutput{}, fmt.Errorf("list character standings: %w", err)
+		}
+		return nil, ListCharacterStandingsOutput{CharacterID: in.CharacterID, Standings: standings}, nil
+	}
+}
+
+// --- Private: list_character_titles ---
+
+type Title struct {
+	TitleID *int64  `json:"titleId,omitempty"`
+	Name    *string `json:"name,omitempty"`
+}
+
+var listCharacterTitles = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]Title, error) {
+	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
+	if err != nil {
+		return nil, fmt.Errorf("build ESI client: %w", err)
+	}
+	titles, err := client.CharacterTitles(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Title, len(titles))
+	for i, t := range titles {
+		out[i] = Title{TitleID: t.TitleId, Name: t.Name}
+	}
+	return out, nil
+}
+
+type ListCharacterTitlesInput struct {
+	CharacterID int32 `json:"characterId" jsonschema:"the character ID to check"`
+}
+type ListCharacterTitlesOutput struct {
+	CharacterID int32   `json:"characterId"`
+	Titles      []Title `json:"titles"`
+}
+
+func listCharacterTitlesHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCharacterTitlesInput, ListCharacterTitlesOutput] {
+	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterTitlesInput) (*mcpsdk.CallToolResult, ListCharacterTitlesOutput, error) {
+		found, err := characterExists(store, in.CharacterID)
+		if err != nil {
+			return nil, ListCharacterTitlesOutput{}, err
+		}
+		if !found {
+			return nil, ListCharacterTitlesOutput{}, fmt.Errorf("list character titles for character %d: %w", in.CharacterID, ErrCharacterNotFound)
+		}
+		titles, err := listCharacterTitles(ctx, clientID, in.CharacterID, sso.UserAgent(version))
+		if err != nil {
+			return nil, ListCharacterTitlesOutput{}, fmt.Errorf("list character titles: %w", err)
+		}
+		return nil, ListCharacterTitlesOutput{CharacterID: in.CharacterID, Titles: titles}, nil
+	}
+}
+
+// --- Private: get_character_cspa_cost ---
+
+var getCharacterCSPACost = func(ctx context.Context, clientID string, characterID int32, userAgent string, targetCharacterIDs []int64) (float64, error) {
+	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
+	if err != nil {
+		return 0, fmt.Errorf("build ESI client: %w", err)
+	}
+	return client.CharacterCSPACost(ctx, targetCharacterIDs)
+}
+
+type GetCharacterCSPACostInput struct {
+	CharacterID        int32   `json:"characterId" jsonschema:"the character ID to check"`
+	TargetCharacterIDs []int64 `json:"targetCharacterIds" jsonschema:"target character IDs to calculate CSPA cost for"`
+}
+type GetCharacterCSPACostOutput struct {
+	CharacterID int32   `json:"characterId"`
+	Cost        float64 `json:"cost"`
+}
+
+func getCharacterCSPACostHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[GetCharacterCSPACostInput, GetCharacterCSPACostOutput] {
+	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterCSPACostInput) (*mcpsdk.CallToolResult, GetCharacterCSPACostOutput, error) {
+		found, err := characterExists(store, in.CharacterID)
+		if err != nil {
+			return nil, GetCharacterCSPACostOutput{}, err
+		}
+		if !found {
+			return nil, GetCharacterCSPACostOutput{}, fmt.Errorf("get character cspa cost for character %d: %w", in.CharacterID, ErrCharacterNotFound)
+		}
+		cost, err := getCharacterCSPACost(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.TargetCharacterIDs)
+		if err != nil {
+			return nil, GetCharacterCSPACostOutput{}, fmt.Errorf("get character cspa cost: %w", err)
+		}
+		return nil, GetCharacterCSPACostOutput{CharacterID: in.CharacterID, Cost: cost}, nil
+	}
+}

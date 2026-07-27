@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/zalando/go-keyring"
@@ -66,5 +67,23 @@ func TestAddCharacterHandler_ReAddSameCharacter_ReplacesNotDuplicates(t *testing
 	}
 	if len(cfg.Characters) != 1 || cfg.Characters[0].Name != "Renamed Pilot" {
 		t.Errorf("cfg.Characters = %+v, want exactly one updated entry", cfg.Characters)
+	}
+}
+
+func TestAddCharacterHandler_PropagatesError(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+
+	orig := addCharacter
+	t.Cleanup(func() { addCharacter = orig })
+	wantErr := errors.New("upstream failure")
+	addCharacter = func(ctx context.Context, clientID, userAgent string, scopes []string) (sso.Character, error) {
+		return sso.Character{}, wantErr
+	}
+
+	handler := addCharacterHandler("v1", "client-id", store)
+	_, _, err := handler(context.Background(), nil, nil)
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
 	}
 }

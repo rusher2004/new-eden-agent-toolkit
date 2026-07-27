@@ -40,3 +40,19 @@ func ExportedNewClientWithOptions(httpClient *http.Client, characterID int32, op
 	api := goesi.NewESIClientWithOptions(httpClient, options)
 	return &Client{api: api, characterID: characterID}
 }
+
+// NewPublicClient builds an unauthenticated ESI client for calling public endpoints — no
+// character, no OAuth2 token. Used by resource groups where every endpoint is public (e.g.
+// Alliance); see docs/superpowers/specs/2026-07-25-esi-alliance-design.md.
+func NewPublicClient(userAgent string) *Client {
+	api := goesi.NewPublicESIClient(userAgent)
+	return &Client{api: api}
+}
+
+// ExportedNewPublicClientWithOptions exposes a Client built from an explicit httpClient and
+// public ClientOptions for external tests, so tests can point the generated client at an
+// httptest.Server instead of real ESI.
+func ExportedNewPublicClientWithOptions(httpClient *http.Client, options goesi.ClientOptions) *Client {
+	api := goesi.NewESIClientWithOptions(httpClient, options)
+	return &Client{api: api}
+}

@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/zalando/go-keyring"
@@ -52,5 +53,20 @@ func TestListCharactersHandler_ReturnsKnownCharacters(t *testing.T) {
 		if out.Characters[i] != want[i] {
 			t.Errorf("out.Characters[%d] = %+v, want %+v", i, out.Characters[i], want[i])
 		}
+	}
+}
+
+func TestListCharactersHandler_PropagatesError(t *testing.T) {
+	keyring.MockInit()
+	path := t.TempDir() + "/config.json"
+	if err := os.WriteFile(path, []byte("not valid json"), 0o600); err != nil {
+		t.Fatalf("os.WriteFile: %v", err)
+	}
+	store := config.NewStoreAt(path)
+
+	handler := listCharactersHandler(store)
+	_, _, err := handler(context.Background(), nil, nil)
+	if err == nil {
+		t.Error("err = nil, want an error from a malformed config file")
 	}
 }
