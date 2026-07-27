@@ -10,6 +10,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 	github.com/urfave/cli/v3 v3.10.1
 	github.com/zalando/go-keyring v0.2.8
+	go.etcd.io/bbolt v1.5.0
 	golang.org/x/oauth2 v0.35.0
 	golang.org/x/sys v0.47.0
 )

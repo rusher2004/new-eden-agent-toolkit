@@ -19,7 +19,6 @@ type Character struct {
 // Config is neat's persisted, non-secret state.
 type Config struct {
 	Characters []Character `json:"characters"`
-	SDEVersion string      `json:"sdeVersion"`
 }
 
 // Store reads and writes a Config to a fixed path on disk.
