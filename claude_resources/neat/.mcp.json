@@ -1,0 +1,6 @@
+{
+  "neat": {
+    "command": "neat",
+    "args": ["mcp"]
+  }
+}

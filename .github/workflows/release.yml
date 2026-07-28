@@ -1,0 +1,68 @@
+name: Release
+
+# Releases are driven by the top-level VERSION file, the single source of
+# truth for the neat CLI version, the plugin manifest version, and the git
+# tag. On a push to main, if no `v<VERSION>` tag exists yet, this workflow
+# creates+pushes the tag and runs GoReleaser in the same job. Doing both here
+# (rather than tagging in one workflow and releasing in another) sidesteps
+# GitHub's rule that a tag pushed with GITHUB_TOKEN does not trigger another
+# workflow. To cut a release: bump VERSION in a PR and merge.
+# workflow_dispatch allows a manual re-run against the current VERSION.
+#
+# Runs on macos-latest (not ubuntu-latest): the darwin build embeds a
+# swiftc-compiled .app bundle via go:embed (urlscheme/urlscheme_darwin.go),
+# which needs `make urlscheme-macos-bundle` -- swiftc only exists on macOS.
+# Go itself cross-compiles the linux/windows targets fine from this runner.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version and check for an existing tag
+        id: ver
+        run: |
+          version="$(tr -d '[:space:]' < VERSION)"
+          if [ -z "$version" ]; then
+            echo "VERSION is empty" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if git rev-parse "v$version" >/dev/null 2>&1; then
+            echo "tag v$version already exists — nothing to release"
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create and push tag
+        if: steps.ver.outputs.release == 'true'
+        run: |
+          git tag "v${{ steps.ver.outputs.version }}"
+          git push origin "v${{ steps.ver.outputs.version }}"
+
+      - uses: actions/setup-go@v6
+        if: steps.ver.outputs.release == 'true'
+        with:
+          go-version-file: go.mod
+
+      - name: Run GoReleaser
+        if: steps.ver.outputs.release == 'true'
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ESI_CLIENT_ID: ${{ vars.ESI_CLIENT_ID }}

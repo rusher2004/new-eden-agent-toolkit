@@ -1,0 +1,70 @@
+name: Version Gate
+
+# Blocks a PR that changes release-significant files (the shipped binary or
+# the plugin) without bumping the top-level VERSION file. Docs/CI/test-only
+# PRs pass without a bump. There is no escape hatch -- every release-
+# significant change must bump VERSION.
+#
+# Mark the "Version Gate / gate" check Required in branch protection to
+# enforce.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  GH_TOKEN: ${{ github.token }}
+  GH_REPO: ${{ github.repository }}
+  PR: ${{ github.event.pull_request.number }}
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Verify generated files are up to date
+        run: |
+          set -euo pipefail
+          go generate ./...
+          if ! git diff --exit-code -- claude_resources/neat/.claude-plugin/plugin.json; then
+            echo "::error::plugin.json is out of sync with VERSION -- run 'go generate ./...' and commit the result"
+            exit 1
+          fi
+
+      - name: Evaluate version gate
+        id: gate
+        env:
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+        run: go run ./tools/versiongate
+
+      - name: Block — significant changes without a VERSION bump
+        if: steps.gate.outputs.decision == 'fail'
+        env:
+          REASON: ${{ steps.gate.outputs.reason }}
+        run: |
+          set -euo pipefail
+          source .github/scripts/gh-sticky-comment.sh
+          upsert_comment "🚦 **Version Gate failed.** $REASON
+
+          Bump the top-level \`VERSION\` file (then run \`go generate ./...\` so \`plugin.json\` matches)."
+          echo "::error::$REASON"
+          exit 1
+
+      - name: Resolve sticky comment on pass
+        if: steps.gate.outputs.decision == 'pass'
+        env:
+          REASON: ${{ steps.gate.outputs.reason }}
+        run: |
+          set -euo pipefail
+          source .github/scripts/gh-sticky-comment.sh
+          resolve_comment "✅ **Version Gate passed.** $REASON"

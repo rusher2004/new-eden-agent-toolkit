@@ -1,5 +1,7 @@
 package main
 
+//go:generate go run ../tools/genversion
+
 import (
 	"context"
 	"fmt"

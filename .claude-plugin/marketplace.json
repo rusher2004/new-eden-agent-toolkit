@@ -1,0 +1,16 @@
+{
+  "name": "neat",
+  "owner": {
+    "name": "rusher2004"
+  },
+  "metadata": {
+    "description": "neat -- MCP server for interacting with EVE Online via CCP's ESI API and the EVE Ref Static Data Export."
+  },
+  "plugins": [
+    {
+      "name": "neat",
+      "source": "./claude_resources/neat",
+      "description": "Registers the neat MCP server (217 tools covering ESI + a local SDE cache) with Claude Code."
+    }
+  ]
+}

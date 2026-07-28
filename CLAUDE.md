@@ -105,9 +105,9 @@ treat it as part of "done," not a follow-up:
   listed here exactly as they're enforced in code; if a rule is relaxed or tightened, this file
   changes in the same commit as the code that changes it.
 - **Agent-facing surfaces that don't exist yet** — once built in a later plan, add them to this
-  list: the Claude Code plugin (`.claude-plugin/plugin.json` + `skills/`), the Claude Desktop
-  extension (`extension/manifest.json`), and any `reference/*.md` API-contract docs. Don't leave a
-  plan's own doc updates (e.g. its plan file, or a spec status line) as a "follow-up" task.
+  list: the Claude Desktop extension (`extension/manifest.json`), and any `reference/*.md`
+  API-contract docs. Don't leave a plan's own doc updates (e.g. its plan file, or a spec status
+  line) as a "follow-up" task.
 
 Before opening a PR, sanity-check that `README.md` and this file still describe what the code
 actually does.
@@ -127,6 +127,20 @@ make urlscheme-macos-bundle
 ```bash
 go build -ldflags "-X main.version=$(cat VERSION 2>/dev/null || echo dev) -X main.clientID=$(jq -r .clientId app_config.json)" -o neat ./cmd
 ```
+
+## Versioning & Release
+
+The top-level `VERSION` file is the single source of truth for the `neat` binary version, the
+Claude Code plugin manifest version, and the release git tag. `tools/genversion` (wired via
+`go:generate` in `cmd/main.go`) propagates it into `claude_resources/neat/.claude-plugin/plugin.json`
+— run `go generate ./...` after bumping `VERSION` and commit the result.
+
+`tools/versiongate` is a required PR check: any PR touching release-significant files (Go source,
+`go.mod`/`go.sum`, `.goreleaser.yaml`, anything under `claude_resources/`) must bump `VERSION`. Docs,
+tests, and CI config are exempt. There is no override — bump it.
+
+Merging to `main` triggers `.github/workflows/release.yml`, which tags `v<VERSION>` (if that tag
+doesn't already exist) and runs GoReleaser to build/publish `neat` for linux/darwin/windows.
 
 ## Test
 

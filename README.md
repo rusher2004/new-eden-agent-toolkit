@@ -14,7 +14,10 @@ real ESI-backed domain tools (`esi/`) covering all 36 ESI resource tags (Wallet 
 a local SDE cache (`sde/`, combining CCP's SDE with EVE Ref's `reference-data`/`esi-scrape`
 exports and backing 24 of the Universe tag's 30 tools via a read-through cache) are built. See
 `docs/reference/esi-coverage-roadmap.md` for the full per-tag ESI breakdown.
-Plugin/extension packaging doesn't exist yet. See the plans directory for what's next.
+The Claude Code plugin is available: `/plugin marketplace add rusher2004/new-eden-agent-toolkit`
+then `/plugin install neat@neat` registers the `neat` MCP server (requires the `neat` binary on
+`PATH` and `neat setup` run once — see `claude_resources/README.md`). The Claude Desktop extension
+doesn't exist yet.
 
 ## Architecture
 

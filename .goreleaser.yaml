@@ -1,0 +1,57 @@
+version: 2
+project_name: neat
+
+before:
+  hooks:
+    - go mod tidy
+    - make urlscheme-macos-bundle
+
+builds:
+  - id: neat
+    main: ./cmd
+    binary: neat
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.clientID={{.Env.ESI_CLIENT_ID}}
+
+archives:
+  - id: neat
+    ids:
+      - neat
+    name_template: '{{ .ProjectName }}_{{ .Version }}_{{ if eq .Os "darwin" }}mac{{ else }}{{ .Os }}{{ end }}_{{ .Arch }}'
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
+  algorithm: sha256
+
+changelog:
+  use: github
+  abbrev: 7
+  sort: asc
+  groups:
+    - title: Features
+      regexp: "(?i)^feat"
+      order: 0
+    - title: Bug fixes
+      regexp: "(?i)^fix"
+      order: 1
+    - title: Other
+      order: 999
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - Merge pull request
+      - Merge branch
