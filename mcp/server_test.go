@@ -2,6 +2,7 @@ package mcp_test
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -10,11 +11,17 @@ import (
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/mcp"
+	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 )
 
 func connectedSession(t *testing.T, store *config.Store) (*mcpsdk.ClientSession, *mcpsdk.ServerSession) {
 	t.Helper()
-	server := mcp.NewServer("test", "client-id", store)
+	sdeStore, err := sde.Open(filepath.Join(t.TempDir(), "sde.db"))
+	if err != nil {
+		t.Fatalf("sde.Open: %v", err)
+	}
+	t.Cleanup(func() { sdeStore.Close() })
+	server := mcp.NewServer("test", "client-id", store, sdeStore)
 
 	t1, t2 := mcpsdk.NewInMemoryTransports()
 	ctx := context.Background()

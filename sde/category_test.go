@@ -90,3 +90,69 @@ func TestCategory_MismatchedKey_ReturnsError(t *testing.T) {
 		t.Fatal("Category returned nil error, want an error for a mismatched _key")
 	}
 }
+
+func TestCategory_KnownID_ReturnsGroupIDs(t *testing.T) {
+	store := seedStore(t)
+	putRecord(t, store, "categories", 6,
+		`{"_key": 6, "name": {"en": "Ship"}, "published": true, "groupIds": [25, 26]}`)
+
+	got, ok, err := store.Category(context.Background(), "test-agent", 6)
+	if err != nil {
+		t.Fatalf("Category returned error: %v", err)
+	}
+	if !ok {
+		t.Fatal("Category ok = false, want true")
+	}
+	if len(got.GroupIDs) != 2 || got.GroupIDs[0] != 25 || got.GroupIDs[1] != 26 {
+		t.Errorf("GroupIDs = %v, want [25 26]", got.GroupIDs)
+	}
+}
+
+func TestCategoryIDs_ReturnsSortedIDs(t *testing.T) {
+	store := seedStore(t)
+	putRecord(t, store, "categories", 6, `{"_key": 6, "name": {"en": "Ship"}, "published": true}`)
+	putRecord(t, store, "categories", 4, `{"_key": 4, "name": {"en": "Material"}, "published": true}`)
+
+	ids, err := store.CategoryIDs(context.Background(), "test-agent")
+	if err != nil {
+		t.Fatalf("CategoryIDs returned error: %v", err)
+	}
+	if len(ids) != 2 || ids[0] != 4 || ids[1] != 6 {
+		t.Errorf("CategoryIDs = %v, want [4 6] (ascending)", ids)
+	}
+}
+
+func TestCategoryIDs_NeverSynced_ReturnsEmptySlice(t *testing.T) {
+	store := seedStore(t)
+
+	ids, err := store.CategoryIDs(context.Background(), "test-agent")
+	if err != nil {
+		t.Fatalf("CategoryIDs returned error: %v", err)
+	}
+	if len(ids) != 0 {
+		t.Errorf("CategoryIDs = %v, want empty", ids)
+	}
+}
+
+func TestPutCategory_ThenCategory_RoundTrips(t *testing.T) {
+	store := seedStore(t)
+	want := Category{ID: 999, Name: map[string]string{"en": "New Category"}, Published: true, GroupIDs: []int64{111, 222}}
+
+	if err := store.PutCategory(want); err != nil {
+		t.Fatalf("PutCategory returned error: %v", err)
+	}
+
+	got, ok, err := store.Category(context.Background(), "test-agent", 999)
+	if err != nil {
+		t.Fatalf("Category returned error: %v", err)
+	}
+	if !ok {
+		t.Fatal("Category ok = false after PutCategory, want true")
+	}
+	if got.ID != want.ID || got.Name["en"] != want.Name["en"] || got.Published != want.Published {
+		t.Errorf("got = %+v, want %+v", got, want)
+	}
+	if len(got.GroupIDs) != 2 || got.GroupIDs[0] != 111 || got.GroupIDs[1] != 222 {
+		t.Errorf("GroupIDs = %v, want [111 222]", got.GroupIDs)
+	}
+}

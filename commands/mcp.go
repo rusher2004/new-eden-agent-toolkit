@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/mcp"
+	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/urlscheme"
 )
 
@@ -26,6 +28,27 @@ func mcpCommand(version, clientID string) *cli.Command {
 				return fmt.Errorf("resolve config store: %w", err)
 			}
 
+			sdePath, err := sde.DefaultPath()
+			if err != nil {
+				return fmt.Errorf("resolve sde cache path: %w", err)
+			}
+			// A failed Open (most commonly bbolt's exclusive file lock
+			// already held by another neat process sharing this home
+			// directory) must not take down the other ~190 non-sde/ tools
+			// with it -- sdeStore stays nil, and every sde.Store method is
+			// nil-safe (see Store's doc comment), so every Universe tool's
+			// existing cache-miss path already falls through to ESI.
+			sdeStore, err := sde.Open(sdePath)
+			if err != nil {
+				slog.Default().WarnContext(ctx, "sde: failed to open cache, Universe tools will read through to ESI directly", "error", err)
+				sdeStore = nil
+			}
+			defer func() {
+				if err := sdeStore.Close(); err != nil {
+					slog.Default().WarnContext(ctx, "sde: failed to close cache", "error", err)
+				}
+			}()
+
 			launcherPath, err := ensureLauncher()
 			if err != nil {
 				return fmt.Errorf("ensure launcher binary: %w", err)
@@ -35,7 +58,7 @@ func mcpCommand(version, clientID string) *cli.Command {
 				return fmt.Errorf("register URL scheme: %w", err)
 			}
 
-			server := mcp.NewServer(version, clientID, store)
+			server := mcp.NewServer(version, clientID, store, sdeStore)
 			return server.Run(ctx, &mcpsdk.StdioTransport{})
 		},
 	}

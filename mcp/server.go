@@ -5,6 +5,7 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
+	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 )
 
 // NewServer builds neat's MCP server with add_character, list_characters,
@@ -78,7 +79,7 @@ import (
 // set_autopilot_waypoint, open_contract_window, open_information_window,
 // open_market_details_window, open_new_mail_window, list_wars, get_war, and list_war_killmails
 // registered.
-func NewServer(version, clientID string, store *config.Store) *mcpsdk.Server {
+func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Store) *mcpsdk.Server {
 	server := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "neat", Version: version}, nil)
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
@@ -979,122 +980,122 @@ func NewServer(version, clientID string, store *config.Store) *mcpsdk.Server {
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_universe_ancestries",
 		Description: "List every character ancestry (public data, no character required).",
-	}, listUniverseAncestriesHandler(version))
+	}, listUniverseAncestriesHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_universe_bloodlines",
 		Description: "List every character bloodline (public data, no character required).",
-	}, listUniverseBloodlinesHandler(version))
+	}, listUniverseBloodlinesHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_universe_races",
 		Description: "List every character race (public data, no character required).",
-	}, listUniverseRacesHandler(version))
+	}, listUniverseRacesHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_universe_factions",
 		Description: "List every NPC faction (public data, no character required).",
-	}, listUniverseFactionsHandler(version))
+	}, listUniverseFactionsHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_universe_categories",
 		Description: "List every item category ID (public data, no character required).",
-	}, listUniverseCategoriesHandler(version))
+	}, listUniverseCategoriesHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_universe_category",
 		Description: "Get an item category's name, published state, and member group IDs (public data, no character required).",
-	}, getUniverseCategoryHandler(version))
+	}, getUniverseCategoryHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_universe_groups",
 		Description: "List every item group ID, paginated (public data, no character required).",
-	}, listUniverseGroupsHandler(version))
+	}, listUniverseGroupsHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_universe_group",
 		Description: "Get an item group's name, category, published state, and member type IDs (public data, no character required).",
-	}, getUniverseGroupHandler(version))
+	}, getUniverseGroupHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_universe_types",
 		Description: "List every item type ID, paginated (public data, no character required).",
-	}, listUniverseTypesHandler(version))
+	}, listUniverseTypesHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_universe_type",
 		Description: "Get an item type's full detail: name, group, dogma attributes/effects, and physical stats (public data, no character required).",
-	}, getUniverseTypeHandler(version))
+	}, getUniverseTypeHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_universe_regions",
 		Description: "List every region ID (public data, no character required).",
-	}, listUniverseRegionsHandler(version))
+	}, listUniverseRegionsHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_universe_region",
 		Description: "Get a region's name, description, and member constellation IDs (public data, no character required).",
-	}, getUniverseRegionHandler(version))
+	}, getUniverseRegionHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_universe_constellations",
 		Description: "List every constellation ID (public data, no character required).",
-	}, listUniverseConstellationsHandler(version))
+	}, listUniverseConstellationsHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_universe_constellation",
 		Description: "Get a constellation's name, region, position, and member system IDs (public data, no character required).",
-	}, getUniverseConstellationHandler(version))
+	}, getUniverseConstellationHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_universe_systems",
 		Description: "List every solar system ID (public data, no character required).",
-	}, listUniverseSystemsHandler(version))
+	}, listUniverseSystemsHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_universe_system",
 		Description: "Get a solar system's name, constellation, position, security status/class, star, stargates, stations, and planets (public data, no character required).",
-	}, getUniverseSystemHandler(version))
+	}, getUniverseSystemHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_universe_asteroid_belt",
 		Description: "Get an asteroid belt's name, position, and solar system (public data, no character required).",
-	}, getUniverseAsteroidBeltHandler(version))
+	}, getUniverseAsteroidBeltHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_universe_moon",
 		Description: "Get a moon's name, position, and solar system (public data, no character required).",
-	}, getUniverseMoonHandler(version))
+	}, getUniverseMoonHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_universe_planet",
 		Description: "Get a planet's name, type, position, and solar system (public data, no character required).",
-	}, getUniversePlanetHandler(version))
+	}, getUniversePlanetHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_universe_stargate",
 		Description: "Get a stargate's name, type, position, solar system, and destination (public data, no character required).",
-	}, getUniverseStargateHandler(version))
+	}, getUniverseStargateHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_universe_star",
 		Description: "Get a star's age, luminosity, name, radius, solar system, spectral class, temperature, and type (public data, no character required).",
-	}, getUniverseStarHandler(version))
+	}, getUniverseStarHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_universe_station",
 		Description: "Get a station's name, type, position, solar system, owner, services, and docking/reprocessing stats (public data, no character required).",
-	}, getUniverseStationHandler(version))
+	}, getUniverseStationHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_universe_graphics",
 		Description: "List every graphic ID (public data, no character required).",
-	}, listUniverseGraphicsHandler(version))
+	}, listUniverseGraphicsHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_universe_graphic",
 		Description: "Get a graphic's collision/graphic files, icon folder, and Space Object Factory (SOF) DNA/hull/race/faction names (public data, no character required).",
-	}, getUniverseGraphicHandler(version))
+	}, getUniverseGraphicHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_universe_structures",

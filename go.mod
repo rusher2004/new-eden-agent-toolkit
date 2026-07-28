@@ -6,8 +6,10 @@ require (
 	github.com/MicahParks/jwkset v0.11.0
 	github.com/MicahParks/keyfunc/v3 v3.6.2
 	github.com/fnt-eve/goesi-openapi v0.0.37
+	github.com/goccy/go-yaml v1.19.2
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/modelcontextprotocol/go-sdk v1.6.1
+	github.com/ulikunitz/xz v0.5.16
 	github.com/urfave/cli/v3 v3.10.1
 	github.com/zalando/go-keyring v0.2.8
 	go.etcd.io/bbolt v1.5.0
