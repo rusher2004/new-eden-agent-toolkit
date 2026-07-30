@@ -8,6 +8,7 @@ import (
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
+	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -15,6 +16,7 @@ import (
 type AssetItem struct {
 	ItemID          int64  `json:"itemId"`
 	TypeID          int64  `json:"typeId"`
+	TypeName        string `json:"typeName,omitempty"`
 	LocationID      int64  `json:"locationId"`
 	LocationType    string `json:"locationType"`
 	LocationFlag    string `json:"locationFlag"`
@@ -58,7 +60,7 @@ type ListAssetsOutput struct {
 	Assets      []AssetItem `json:"assets"`
 }
 
-func listAssetsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListAssetsInput, ListAssetsOutput] {
+func listAssetsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListAssetsInput, ListAssetsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListAssetsInput) (*mcpsdk.CallToolResult, ListAssetsOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -77,6 +79,14 @@ func listAssetsHandler(version, clientID string, store *config.Store) mcpsdk.Too
 		assets, totalPages, err := listAssets(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.Page)
 		if err != nil {
 			return nil, ListAssetsOutput{}, fmt.Errorf("list assets: %w", err)
+		}
+		ids := make([]int64, len(assets))
+		for i, a := range assets {
+			ids[i] = a.TypeID
+		}
+		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		for i := range assets {
+			assets[i].TypeName = names[assets[i].TypeID]
 		}
 		page := in.Page
 		if page <= 0 {
@@ -243,7 +253,7 @@ type ListCorporationAssetsOutput struct {
 	Assets        []AssetItem `json:"assets"`
 }
 
-func listCorporationAssetsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCorporationAssetsInput, ListCorporationAssetsOutput] {
+func listCorporationAssetsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCorporationAssetsInput, ListCorporationAssetsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationAssetsInput) (*mcpsdk.CallToolResult, ListCorporationAssetsOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -262,6 +272,14 @@ func listCorporationAssetsHandler(version, clientID string, store *config.Store)
 		assets, totalPages, err := listCorporationAssets(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.Page)
 		if err != nil {
 			return nil, ListCorporationAssetsOutput{}, fmt.Errorf("list corporation assets: %w", err)
+		}
+		ids := make([]int64, len(assets))
+		for i, a := range assets {
+			ids[i] = a.TypeID
+		}
+		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		for i := range assets {
+			assets[i].TypeName = names[assets[i].TypeID]
 		}
 		page := in.Page
 		if page <= 0 {

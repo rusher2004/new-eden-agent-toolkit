@@ -17,6 +17,7 @@ import (
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
+	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -175,6 +176,7 @@ type FleetMember struct {
 	Role           string    `json:"role"`
 	RoleName       string    `json:"roleName"`
 	ShipTypeID     int64     `json:"shipTypeId"`
+	ShipTypeName   string    `json:"shipTypeName,omitempty"`
 	SolarSystemID  int64     `json:"solarSystemId"`
 	SquadID        int64     `json:"squadId"`
 	StationID      *int64    `json:"stationId,omitempty"`
@@ -212,7 +214,7 @@ type ListFleetMembersOutput struct {
 	Members     []FleetMember `json:"members"`
 }
 
-func listFleetMembersHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListFleetMembersInput, ListFleetMembersOutput] {
+func listFleetMembersHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListFleetMembersInput, ListFleetMembersOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListFleetMembersInput) (*mcpsdk.CallToolResult, ListFleetMembersOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -224,6 +226,14 @@ func listFleetMembersHandler(version, clientID string, store *config.Store) mcps
 		members, err := listFleetMembers(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.FleetID)
 		if err != nil {
 			return nil, ListFleetMembersOutput{}, fmt.Errorf("list fleet members: %w", err)
+		}
+		ids := make([]int64, len(members))
+		for i, m := range members {
+			ids[i] = m.ShipTypeID
+		}
+		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		for i := range members {
+			members[i].ShipTypeName = names[members[i].ShipTypeID]
 		}
 		return nil, ListFleetMembersOutput{CharacterID: in.CharacterID, FleetID: in.FleetID, Members: members}, nil
 	}

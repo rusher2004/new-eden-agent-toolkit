@@ -11,6 +11,7 @@ import (
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
+	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -34,6 +35,7 @@ type MarketOrder struct {
 	Range          string    `json:"range"`
 	RegionID       int64     `json:"regionId"`
 	TypeID         int64     `json:"typeId"`
+	TypeName       string    `json:"typeName,omitempty"`
 	VolumeRemain   int64     `json:"volumeRemain"`
 	VolumeTotal    int64     `json:"volumeTotal"`
 	IsCorporation  *bool     `json:"isCorporation,omitempty"`
@@ -100,6 +102,7 @@ type MarketOrderBookEntry struct {
 	Range        string    `json:"range"`
 	SystemID     int64     `json:"systemId,omitempty"`
 	TypeID       int64     `json:"typeId"`
+	TypeName     string    `json:"typeName,omitempty"`
 	VolumeRemain int64     `json:"volumeRemain"`
 	VolumeTotal  int64     `json:"volumeTotal"`
 }
@@ -138,7 +141,7 @@ type ListCharacterMarketOrdersOutput struct {
 	Orders      []MarketOrder `json:"orders"`
 }
 
-func listCharacterMarketOrdersHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCharacterMarketOrdersInput, ListCharacterMarketOrdersOutput] {
+func listCharacterMarketOrdersHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCharacterMarketOrdersInput, ListCharacterMarketOrdersOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterMarketOrdersInput) (*mcpsdk.CallToolResult, ListCharacterMarketOrdersOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -154,6 +157,14 @@ func listCharacterMarketOrdersHandler(version, clientID string, store *config.St
 		out := make([]MarketOrder, len(orders))
 		for i, o := range orders {
 			out[i] = toMarketOrderFromCharacterOrder(o)
+		}
+		ids := make([]int64, len(out))
+		for i, o := range out {
+			ids[i] = o.TypeID
+		}
+		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		for i := range out {
+			out[i].TypeName = names[out[i].TypeID]
 		}
 		return nil, ListCharacterMarketOrdersOutput{CharacterID: in.CharacterID, Orders: out}, nil
 	}
@@ -180,7 +191,7 @@ type ListCharacterMarketOrderHistoryOutput struct {
 	Orders      []MarketOrder `json:"orders"`
 }
 
-func listCharacterMarketOrderHistoryHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCharacterMarketOrderHistoryInput, ListCharacterMarketOrderHistoryOutput] {
+func listCharacterMarketOrderHistoryHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCharacterMarketOrderHistoryInput, ListCharacterMarketOrderHistoryOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterMarketOrderHistoryInput) (*mcpsdk.CallToolResult, ListCharacterMarketOrderHistoryOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -196,6 +207,14 @@ func listCharacterMarketOrderHistoryHandler(version, clientID string, store *con
 		out := make([]MarketOrder, len(history))
 		for i, o := range history {
 			out[i] = toMarketOrderFromCharacterOrderHistory(o)
+		}
+		ids := make([]int64, len(out))
+		for i, o := range out {
+			ids[i] = o.TypeID
+		}
+		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		for i := range out {
+			out[i].TypeName = names[out[i].TypeID]
 		}
 		page := in.Page
 		if page <= 0 {
@@ -228,7 +247,7 @@ type ListCorporationMarketOrdersOutput struct {
 	Orders        []MarketOrder `json:"orders"`
 }
 
-func listCorporationMarketOrdersHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCorporationMarketOrdersInput, ListCorporationMarketOrdersOutput] {
+func listCorporationMarketOrdersHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCorporationMarketOrdersInput, ListCorporationMarketOrdersOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationMarketOrdersInput) (*mcpsdk.CallToolResult, ListCorporationMarketOrdersOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -244,6 +263,14 @@ func listCorporationMarketOrdersHandler(version, clientID string, store *config.
 		out := make([]MarketOrder, len(orders))
 		for i, o := range orders {
 			out[i] = toMarketOrderFromCorporationOrder(o)
+		}
+		ids := make([]int64, len(out))
+		for i, o := range out {
+			ids[i] = o.TypeID
+		}
+		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		for i := range out {
+			out[i].TypeName = names[out[i].TypeID]
 		}
 		page := in.Page
 		if page <= 0 {
@@ -276,7 +303,7 @@ type ListCorporationMarketOrderHistoryOutput struct {
 	Orders        []MarketOrder `json:"orders"`
 }
 
-func listCorporationMarketOrderHistoryHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCorporationMarketOrderHistoryInput, ListCorporationMarketOrderHistoryOutput] {
+func listCorporationMarketOrderHistoryHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCorporationMarketOrderHistoryInput, ListCorporationMarketOrderHistoryOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationMarketOrderHistoryInput) (*mcpsdk.CallToolResult, ListCorporationMarketOrderHistoryOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -292,6 +319,14 @@ func listCorporationMarketOrderHistoryHandler(version, clientID string, store *c
 		out := make([]MarketOrder, len(history))
 		for i, o := range history {
 			out[i] = toMarketOrderFromCorporationOrderHistory(o)
+		}
+		ids := make([]int64, len(out))
+		for i, o := range out {
+			ids[i] = o.TypeID
+		}
+		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		for i := range out {
+			out[i].TypeName = names[out[i].TypeID]
 		}
 		page := in.Page
 		if page <= 0 {
@@ -363,6 +398,7 @@ func getMarketGroupHandler(version string) mcpsdk.ToolHandlerFor[GetMarketGroupI
 
 type MarketPrice struct {
 	TypeID        int64    `json:"typeId"`
+	TypeName      string   `json:"typeName,omitempty"`
 	AdjustedPrice *float64 `json:"adjustedPrice,omitempty"`
 	AveragePrice  *float64 `json:"averagePrice,omitempty"`
 }
@@ -377,7 +413,7 @@ type ListMarketPricesOutput struct {
 	Prices []MarketPrice `json:"prices"`
 }
 
-func listMarketPricesHandler(version string) mcpsdk.ToolHandlerFor[ListMarketPricesInput, ListMarketPricesOutput] {
+func listMarketPricesHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListMarketPricesInput, ListMarketPricesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListMarketPricesInput) (*mcpsdk.CallToolResult, ListMarketPricesOutput, error) {
 		prices, err := listMarketPrices(ctx, sso.UserAgent(version))
 		if err != nil {
@@ -386,6 +422,14 @@ func listMarketPricesHandler(version string) mcpsdk.ToolHandlerFor[ListMarketPri
 		out := make([]MarketPrice, len(prices))
 		for i, p := range prices {
 			out[i] = MarketPrice{TypeID: p.TypeId, AdjustedPrice: p.AdjustedPrice, AveragePrice: p.AveragePrice}
+		}
+		ids := make([]int64, len(out))
+		for i, p := range out {
+			ids[i] = p.TypeID
+		}
+		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		for i := range out {
+			out[i].TypeName = names[out[i].TypeID]
 		}
 		return nil, ListMarketPricesOutput{Prices: out}, nil
 	}
@@ -452,7 +496,7 @@ type ListMarketOrdersOutput struct {
 	Orders     []MarketOrderBookEntry `json:"orders"`
 }
 
-func listMarketOrdersHandler(version string) mcpsdk.ToolHandlerFor[ListMarketOrdersInput, ListMarketOrdersOutput] {
+func listMarketOrdersHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListMarketOrdersInput, ListMarketOrdersOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListMarketOrdersInput) (*mcpsdk.CallToolResult, ListMarketOrdersOutput, error) {
 		orders, totalPages, err := listMarketOrders(ctx, sso.UserAgent(version), in.RegionID, in.OrderType, in.TypeID, in.Page)
 		if err != nil {
@@ -461,6 +505,14 @@ func listMarketOrdersHandler(version string) mcpsdk.ToolHandlerFor[ListMarketOrd
 		out := make([]MarketOrderBookEntry, len(orders))
 		for i, o := range orders {
 			out[i] = toMarketOrderBookEntryFromRegion(o)
+		}
+		ids := make([]int64, len(out))
+		for i, o := range out {
+			ids[i] = o.TypeID
+		}
+		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		for i := range out {
+			out[i].TypeName = names[out[i].TypeID]
 		}
 		page := in.Page
 		if page <= 0 {
@@ -482,23 +534,29 @@ type ListMarketTypesInput struct {
 	Page     int32 `json:"page,omitempty" jsonschema:"page number, 1-indexed; omit for page 1"`
 }
 type ListMarketTypesOutput struct {
-	RegionID   int64   `json:"regionId"`
-	Page       int32   `json:"page"`
-	TotalPages int32   `json:"totalPages"`
-	TypeIDs    []int64 `json:"typeIds"`
+	RegionID   int64    `json:"regionId"`
+	Page       int32    `json:"page"`
+	TotalPages int32    `json:"totalPages"`
+	TypeIDs    []int64  `json:"typeIds"`
+	TypeNames  []string `json:"typeNames,omitempty"`
 }
 
-func listMarketTypesHandler(version string) mcpsdk.ToolHandlerFor[ListMarketTypesInput, ListMarketTypesOutput] {
+func listMarketTypesHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListMarketTypesInput, ListMarketTypesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListMarketTypesInput) (*mcpsdk.CallToolResult, ListMarketTypesOutput, error) {
 		types, totalPages, err := listMarketTypes(ctx, sso.UserAgent(version), in.RegionID, in.Page)
 		if err != nil {
 			return nil, ListMarketTypesOutput{}, fmt.Errorf("list market types: %w", err)
 		}
+		nameMap := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), types)
+		typeNames := make([]string, len(types))
+		for i, id := range types {
+			typeNames[i] = nameMap[id]
+		}
 		page := in.Page
 		if page <= 0 {
 			page = 1
 		}
-		return nil, ListMarketTypesOutput{RegionID: in.RegionID, Page: page, TotalPages: totalPages, TypeIDs: types}, nil
+		return nil, ListMarketTypesOutput{RegionID: in.RegionID, Page: page, TotalPages: totalPages, TypeIDs: types, TypeNames: typeNames}, nil
 	}
 }
 
@@ -532,7 +590,7 @@ type ListStructureMarketOrdersOutput struct {
 	Orders      []MarketOrderBookEntry `json:"orders"`
 }
 
-func listStructureMarketOrdersHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListStructureMarketOrdersInput, ListStructureMarketOrdersOutput] {
+func listStructureMarketOrdersHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListStructureMarketOrdersInput, ListStructureMarketOrdersOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListStructureMarketOrdersInput) (*mcpsdk.CallToolResult, ListStructureMarketOrdersOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -548,6 +606,14 @@ func listStructureMarketOrdersHandler(version, clientID string, store *config.St
 		out := make([]MarketOrderBookEntry, len(orders))
 		for i, o := range orders {
 			out[i] = toMarketOrderBookEntryFromStructure(o)
+		}
+		ids := make([]int64, len(out))
+		for i, o := range out {
+			ids[i] = o.TypeID
+		}
+		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		for i := range out {
+			out[i].TypeName = names[out[i].TypeID]
 		}
 		page := in.Page
 		if page <= 0 {

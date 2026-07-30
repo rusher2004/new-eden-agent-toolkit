@@ -26,7 +26,7 @@ func TestListCharacterFittingsHandler_MapsFields(t *testing.T) {
 		}}, nil
 	}
 
-	handler := listCharacterFittingsHandler("v1", "client-id", store)
+	handler := listCharacterFittingsHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, ListCharacterFittingsInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -55,10 +55,45 @@ func TestListCharacterFittingsHandler_UnknownCharacter(t *testing.T) {
 		return nil, nil
 	}
 
-	handler := listCharacterFittingsHandler("v1", "client-id", store)
+	handler := listCharacterFittingsHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCharacterFittingsInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
+	}
+}
+
+func TestListCharacterFittingsHandler_ResolvesTypeNames(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := listCharacterFittings
+	t.Cleanup(func() { listCharacterFittings = orig })
+	listCharacterFittings = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]Fitting, error) {
+		return []Fitting{{
+			FittingID: 1, ShipTypeID: 587,
+			Items: []FittingItem{{Flag: "HiSlot0", Quantity: 1, TypeID: 588}},
+		}}, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{587: "Rifter", 588: "150mm Railgun II"}
+	}
+
+	handler := listCharacterFittingsHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, ListCharacterFittingsInput{CharacterID: 7})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.Fittings[0].ShipTypeName != "Rifter" {
+		t.Errorf("ShipTypeName = %q, want %q", out.Fittings[0].ShipTypeName, "Rifter")
+	}
+	if out.Fittings[0].Items[0].TypeName != "150mm Railgun II" {
+		t.Errorf("Items[0].TypeName = %q, want %q", out.Fittings[0].Items[0].TypeName, "150mm Railgun II")
 	}
 }
 

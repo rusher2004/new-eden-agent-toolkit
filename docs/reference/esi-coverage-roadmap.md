@@ -57,7 +57,10 @@ place to check what's left, instead of re-deriving the order from the spec each 
 - A plan covers a cluster of adjacent tags (in the table's order above) sized so the batch isn't
   trivially small.
 - Every `esi/` method returns exactly what ESI returns, including bare IDs, with zero
-  name-resolution enrichment — that's a `sde/`-backed follow-up once that package exists.
+  name-resolution enrichment. `type_id`-like fields across the non-Universe tags are enriched
+  at the `mcp/` layer via `mcp/enrich.go`'s `resolveTypeNames` (see
+  `docs/superpowers/specs/2026-07-28-sde-type-id-enrichment-design.md`) — location IDs and the
+  rarer race/bloodline/faction/group IDs are still open follow-up batches.
 - Every new batch must verify its required OAuth scopes are already present in
   `mcp/add_character.go`'s `allScopes`, the same way this plan did, before assuming no re-auth is
   needed.

@@ -172,7 +172,7 @@ func TestListFleetMembersHandler_MapsFields(t *testing.T) {
 		}}, nil
 	}
 
-	handler := listFleetMembersHandler("v1", "client-id", store)
+	handler := listFleetMembersHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, ListFleetMembersInput{CharacterID: 7, FleetID: 1000})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -200,10 +200,39 @@ func TestListFleetMembersHandler_UnknownCharacter(t *testing.T) {
 		return nil, nil
 	}
 
-	handler := listFleetMembersHandler("v1", "client-id", store)
+	handler := listFleetMembersHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListFleetMembersInput{CharacterID: 999, FleetID: 1000})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
+	}
+}
+
+func TestListFleetMembersHandler_ResolvesShipTypeName(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 1001, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := listFleetMembers
+	t.Cleanup(func() { listFleetMembers = orig })
+	listFleetMembers = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID int64) ([]FleetMember, error) {
+		return []FleetMember{{CharacterID: 2001, ShipTypeID: 587}}, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{587: "Rifter"}
+	}
+
+	handler := listFleetMembersHandler("v1", "client", store, nil)
+	_, out, err := handler(context.Background(), nil, ListFleetMembersInput{CharacterID: 1001, FleetID: 1})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.Members[0].ShipTypeName != "Rifter" {
+		t.Errorf("ShipTypeName = %q, want %q", out.Members[0].ShipTypeName, "Rifter")
 	}
 }
 

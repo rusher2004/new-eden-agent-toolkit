@@ -11,6 +11,7 @@ import (
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
+	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -126,7 +127,9 @@ type KillmailAttacker struct {
 	FinalBlow      bool    `json:"finalBlow"`
 	SecurityStatus float64 `json:"securityStatus"`
 	ShipTypeID     *int64  `json:"shipTypeId,omitempty"`
+	ShipTypeName   string  `json:"shipTypeName,omitempty"`
 	WeaponTypeID   *int64  `json:"weaponTypeId,omitempty"`
+	WeaponTypeName string  `json:"weaponTypeName,omitempty"`
 }
 
 // KillmailInnerItem mirrors the innermost generated type (items destroyed inside a destroyed
@@ -142,6 +145,7 @@ type KillmailAttacker struct {
 type KillmailInnerItem struct {
 	Flag              int64  `json:"flag"`
 	ItemTypeID        int64  `json:"itemTypeId"`
+	ItemTypeName      string `json:"itemTypeName,omitempty"`
 	Singleton         int64  `json:"singleton"`
 	QuantityDestroyed *int64 `json:"quantityDestroyed,omitempty"`
 	QuantityDropped   *int64 `json:"quantityDropped,omitempty"`
@@ -152,6 +156,7 @@ type KillmailInnerItem struct {
 type KillmailItem struct {
 	Flag              int64               `json:"flag"`
 	ItemTypeID        int64               `json:"itemTypeId"`
+	ItemTypeName      string              `json:"itemTypeName,omitempty"`
 	Singleton         int64               `json:"singleton"`
 	QuantityDestroyed *int64              `json:"quantityDestroyed,omitempty"`
 	QuantityDropped   *int64              `json:"quantityDropped,omitempty"`
@@ -171,6 +176,7 @@ type KillmailVictim struct {
 	DamageTaken   int64             `json:"damageTaken"`
 	FactionID     *int64            `json:"factionId,omitempty"`
 	ShipTypeID    int64             `json:"shipTypeId"`
+	ShipTypeName  string            `json:"shipTypeName,omitempty"`
 	Items         []KillmailItem    `json:"items,omitempty"`
 	Position      *KillmailPosition `json:"position,omitempty"`
 }
@@ -217,7 +223,7 @@ type GetKillmailOutput struct {
 	Victim        KillmailVictim     `json:"victim"`
 }
 
-func getKillmailHandler(version string) mcpsdk.ToolHandlerFor[GetKillmailInput, GetKillmailOutput] {
+func getKillmailHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetKillmailInput, GetKillmailOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetKillmailInput) (*mcpsdk.CallToolResult, GetKillmailOutput, error) {
 		detail, err := getKillmail(ctx, sso.UserAgent(version), in.KillmailID, in.KillmailHash)
 		if err != nil {
@@ -235,15 +241,49 @@ func getKillmailHandler(version string) mcpsdk.ToolHandlerFor[GetKillmailInput, 
 		if detail.Victim.Position != nil {
 			position = &KillmailPosition{X: detail.Victim.Position.X, Y: detail.Victim.Position.Y, Z: detail.Victim.Position.Z}
 		}
+		victim := KillmailVictim{
+			AllianceID: detail.Victim.AllianceId, CharacterID: detail.Victim.CharacterId,
+			CorporationID: detail.Victim.CorporationId, DamageTaken: detail.Victim.DamageTaken,
+			FactionID: detail.Victim.FactionId, ShipTypeID: detail.Victim.ShipTypeId,
+			Items: toKillmailItems(detail.Victim.Items), Position: position,
+		}
+
+		ids := make([]int64, 0)
+		for _, a := range attackers {
+			if a.ShipTypeID != nil {
+				ids = append(ids, *a.ShipTypeID)
+			}
+			if a.WeaponTypeID != nil {
+				ids = append(ids, *a.WeaponTypeID)
+			}
+		}
+		ids = append(ids, victim.ShipTypeID)
+		for _, it := range victim.Items {
+			ids = append(ids, it.ItemTypeID)
+			for _, inner := range it.Items {
+				ids = append(ids, inner.ItemTypeID)
+			}
+		}
+		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		for i := range attackers {
+			if attackers[i].ShipTypeID != nil {
+				attackers[i].ShipTypeName = names[*attackers[i].ShipTypeID]
+			}
+			if attackers[i].WeaponTypeID != nil {
+				attackers[i].WeaponTypeName = names[*attackers[i].WeaponTypeID]
+			}
+		}
+		victim.ShipTypeName = names[victim.ShipTypeID]
+		for i := range victim.Items {
+			victim.Items[i].ItemTypeName = names[victim.Items[i].ItemTypeID]
+			for j := range victim.Items[i].Items {
+				victim.Items[i].Items[j].ItemTypeName = names[victim.Items[i].Items[j].ItemTypeID]
+			}
+		}
+
 		return nil, GetKillmailOutput{
 			KillmailID: detail.KillmailId, KillmailTime: detail.KillmailTime, SolarSystemID: detail.SolarSystemId,
-			MoonID: detail.MoonId, WarID: detail.WarId, Attackers: attackers,
-			Victim: KillmailVictim{
-				AllianceID: detail.Victim.AllianceId, CharacterID: detail.Victim.CharacterId,
-				CorporationID: detail.Victim.CorporationId, DamageTaken: detail.Victim.DamageTaken,
-				FactionID: detail.Victim.FactionId, ShipTypeID: detail.Victim.ShipTypeId,
-				Items: toKillmailItems(detail.Victim.Items), Position: position,
-			},
+			MoonID: detail.MoonId, WarID: detail.WarId, Attackers: attackers, Victim: victim,
 		}, nil
 	}
 }

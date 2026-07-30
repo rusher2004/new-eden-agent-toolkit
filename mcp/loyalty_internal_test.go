@@ -65,7 +65,7 @@ func TestListLoyaltyStoreOffersHandler_MapsFields(t *testing.T) {
 		}}, nil
 	}
 
-	handler := listLoyaltyStoreOffersHandler("v1")
+	handler := listLoyaltyStoreOffersHandler("v1", nil)
 	_, out, err := handler(context.Background(), nil, ListLoyaltyStoreOffersInput{CorporationID: 1000167})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -92,10 +92,39 @@ func TestListLoyaltyStoreOffersHandler_PropagatesError(t *testing.T) {
 		return nil, errBoom
 	}
 
-	handler := listLoyaltyStoreOffersHandler("v1")
+	handler := listLoyaltyStoreOffersHandler("v1", nil)
 	_, _, err := handler(context.Background(), nil, ListLoyaltyStoreOffersInput{CorporationID: 1000167})
 	if err == nil {
 		t.Fatal("handler returned nil error, want the propagated error")
+	}
+}
+
+func TestListLoyaltyStoreOffersHandler_ResolvesTypeNames(t *testing.T) {
+	orig := listLoyaltyStoreOffers
+	t.Cleanup(func() { listLoyaltyStoreOffers = orig })
+	listLoyaltyStoreOffers = func(ctx context.Context, userAgent string, corporationID int64) ([]LoyaltyStoreOffer, error) {
+		return []LoyaltyStoreOffer{{
+			OfferID: 1, TypeID: 587,
+			RequiredItems: []LoyaltyRequiredItem{{TypeID: 588, Quantity: 1}},
+		}}, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{587: "Rifter", 588: "Tritanium"}
+	}
+
+	handler := listLoyaltyStoreOffersHandler("v1", nil)
+	_, out, err := handler(context.Background(), nil, ListLoyaltyStoreOffersInput{CorporationID: 1})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.Offers[0].TypeName != "Rifter" {
+		t.Errorf("TypeName = %q, want %q", out.Offers[0].TypeName, "Rifter")
+	}
+	if out.Offers[0].RequiredItems[0].TypeName != "Tritanium" {
+		t.Errorf("RequiredItems[0].TypeName = %q, want %q", out.Offers[0].RequiredItems[0].TypeName, "Tritanium")
 	}
 }
 

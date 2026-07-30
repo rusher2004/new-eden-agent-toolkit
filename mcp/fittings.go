@@ -10,6 +10,7 @@ import (
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
+	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -19,14 +20,16 @@ type FittingItem struct {
 	Flag     string `json:"flag"`
 	Quantity int64  `json:"quantity"`
 	TypeID   int64  `json:"typeId"`
+	TypeName string `json:"typeName,omitempty"`
 }
 
 type Fitting struct {
-	FittingID   int64         `json:"fittingId"`
-	ShipTypeID  int64         `json:"shipTypeId"`
-	Description string        `json:"description"`
-	Name        string        `json:"name"`
-	Items       []FittingItem `json:"items"`
+	FittingID    int64         `json:"fittingId"`
+	ShipTypeID   int64         `json:"shipTypeId"`
+	ShipTypeName string        `json:"shipTypeName,omitempty"`
+	Description  string        `json:"description"`
+	Name         string        `json:"name"`
+	Items        []FittingItem `json:"items"`
 }
 
 var listCharacterFittings = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]Fitting, error) {
@@ -57,7 +60,7 @@ type ListCharacterFittingsOutput struct {
 	Fittings    []Fitting `json:"fittings"`
 }
 
-func listCharacterFittingsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCharacterFittingsInput, ListCharacterFittingsOutput] {
+func listCharacterFittingsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCharacterFittingsInput, ListCharacterFittingsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterFittingsInput) (*mcpsdk.CallToolResult, ListCharacterFittingsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -69,6 +72,22 @@ func listCharacterFittingsHandler(version, clientID string, store *config.Store)
 		fittings, err := listCharacterFittings(ctx, clientID, in.CharacterID, sso.UserAgent(version))
 		if err != nil {
 			return nil, ListCharacterFittingsOutput{}, fmt.Errorf("list character fittings: %w", err)
+		}
+		// Collect type IDs from both levels for enrichment
+		ids := make([]int64, 0, len(fittings))
+		for _, f := range fittings {
+			ids = append(ids, f.ShipTypeID)
+			for _, it := range f.Items {
+				ids = append(ids, it.TypeID)
+			}
+		}
+		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		// Enrich both outer ship type and nested item types
+		for i := range fittings {
+			fittings[i].ShipTypeName = names[fittings[i].ShipTypeID]
+			for j := range fittings[i].Items {
+				fittings[i].Items[j].TypeName = names[fittings[i].Items[j].TypeID]
+			}
 		}
 		return nil, ListCharacterFittingsOutput{CharacterID: in.CharacterID, Fittings: fittings}, nil
 	}

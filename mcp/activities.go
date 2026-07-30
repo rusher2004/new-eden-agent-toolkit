@@ -9,6 +9,7 @@ import (
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
+	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -107,15 +108,16 @@ type GetMercenaryTacticalOperationInput struct {
 
 // GetMercenaryTacticalOperationOutput is get_mercenary_tactical_operation's tool result.
 type GetMercenaryTacticalOperationOutput struct {
-	CharacterID    int32     `json:"characterId"`
-	OperationID    string    `json:"operationId"`
-	DungeonTypeID  int64     `json:"dungeonTypeId"`
-	MercenaryDenID int64     `json:"mercenaryDenId"`
-	State          string    `json:"state"`
-	Expires        time.Time `json:"expires"`
+	CharacterID     int32     `json:"characterId"`
+	OperationID     string    `json:"operationId"`
+	DungeonTypeID   int64     `json:"dungeonTypeId"`
+	DungeonTypeName string    `json:"dungeonTypeName,omitempty"`
+	MercenaryDenID  int64     `json:"mercenaryDenId"`
+	State           string    `json:"state"`
+	Expires         time.Time `json:"expires"`
 }
 
-func getMercenaryTacticalOperationHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[GetMercenaryTacticalOperationInput, GetMercenaryTacticalOperationOutput] {
+func getMercenaryTacticalOperationHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetMercenaryTacticalOperationInput, GetMercenaryTacticalOperationOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetMercenaryTacticalOperationInput) (*mcpsdk.CallToolResult, GetMercenaryTacticalOperationOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -136,13 +138,17 @@ func getMercenaryTacticalOperationHandler(version, clientID string, store *confi
 		if err != nil {
 			return nil, GetMercenaryTacticalOperationOutput{}, fmt.Errorf("get mercenary tactical operation detail: %w", err)
 		}
+
+		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), []int64{result.DungeonTypeID})
+
 		return nil, GetMercenaryTacticalOperationOutput{
-			CharacterID:    in.CharacterID,
-			OperationID:    in.OperationID,
-			DungeonTypeID:  result.DungeonTypeID,
-			MercenaryDenID: result.MercenaryDenID,
-			State:          result.State,
-			Expires:        result.Expires,
+			CharacterID:     in.CharacterID,
+			OperationID:     in.OperationID,
+			DungeonTypeID:   result.DungeonTypeID,
+			DungeonTypeName: names[result.DungeonTypeID],
+			MercenaryDenID:  result.MercenaryDenID,
+			State:           result.State,
+			Expires:         result.Expires,
 		}, nil
 	}
 }

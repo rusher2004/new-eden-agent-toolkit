@@ -23,13 +23,49 @@ func TestListAssetsHandler_ReturnsAssets(t *testing.T) {
 		return []AssetItem{{ItemID: 1, TypeID: 587, LocationID: 60003760, LocationType: "station", LocationFlag: "Hangar", Quantity: 1, IsSingleton: true}}, 3, nil
 	}
 
-	handler := listAssetsHandler("v1", "client-id", store)
+	handler := listAssetsHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, ListAssetsInput{CharacterID: 7, Page: 2})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
 	if out.CharacterID != 7 || len(out.Assets) != 1 || out.Assets[0].ItemID != 1 || out.Page != 2 || out.TotalPages != 3 {
 		t.Errorf("out = %+v, want CharacterID=7 Page=2 TotalPages=3 with one asset ItemID=1", out)
+	}
+}
+
+func TestListAssetsHandler_ResolvesTypeNames(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := listAssets
+	t.Cleanup(func() { listAssets = orig })
+	listAssets = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]AssetItem, int32, error) {
+		return []AssetItem{{ItemID: 1, TypeID: 587}, {ItemID: 2, TypeID: 587}}, 1, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	var gotIDs []int64
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		gotIDs = ids
+		return map[int64]string{587: "Rifter"}
+	}
+
+	handler := listAssetsHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, ListAssetsInput{CharacterID: 7})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(gotIDs) != 2 || gotIDs[0] != 587 || gotIDs[1] != 587 {
+		t.Errorf("resolveTypeNames got ids = %v, want [587 587]", gotIDs)
+	}
+	for _, a := range out.Assets {
+		if a.TypeName != "Rifter" {
+			t.Errorf("Assets[itemId=%d].TypeName = %q, want %q", a.ItemID, a.TypeName, "Rifter")
+		}
 	}
 }
 
@@ -47,7 +83,7 @@ func TestListAssetsHandler_PropagatesError(t *testing.T) {
 		return nil, 0, wantErr
 	}
 
-	handler := listAssetsHandler("v1", "client-id", store)
+	handler := listAssetsHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListAssetsInput{CharacterID: 7})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -65,7 +101,7 @@ func TestListAssetsHandler_UnknownCharacter_ReturnsErrCharacterNotFound(t *testi
 		return nil, 0, nil
 	}
 
-	handler := listAssetsHandler("v1", "client-id", store)
+	handler := listAssetsHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListAssetsInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -173,13 +209,47 @@ func TestListCorporationAssetsHandler_ReturnsAssets(t *testing.T) {
 		return []AssetItem{{ItemID: 2, TypeID: 34, Quantity: 10}}, 5, nil
 	}
 
-	handler := listCorporationAssetsHandler("v1", "client-id", store)
+	handler := listCorporationAssetsHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, ListCorporationAssetsInput{CharacterID: 7, CorporationID: 98000001, Page: 2})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
 	if out.CorporationID != 98000001 || len(out.Assets) != 1 || out.Page != 2 || out.TotalPages != 5 {
 		t.Errorf("out = %+v, want CorporationID=98000001 Page=2 TotalPages=5 with one asset", out)
+	}
+}
+
+func TestListCorporationAssetsHandler_ResolvesTypeNames(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := listCorporationAssets
+	t.Cleanup(func() { listCorporationAssets = orig })
+	listCorporationAssets = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]AssetItem, int32, error) {
+		return []AssetItem{{ItemID: 2, TypeID: 34}}, 1, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	var gotIDs []int64
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		gotIDs = ids
+		return map[int64]string{34: "Tritanium"}
+	}
+
+	handler := listCorporationAssetsHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, ListCorporationAssetsInput{CharacterID: 7, CorporationID: 98000001})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(gotIDs) != 1 || gotIDs[0] != 34 {
+		t.Errorf("resolveTypeNames got ids = %v, want [34]", gotIDs)
+	}
+	if out.Assets[0].TypeName != "Tritanium" {
+		t.Errorf("Assets[0].TypeName = %q, want %q", out.Assets[0].TypeName, "Tritanium")
 	}
 }
 
@@ -197,7 +267,7 @@ func TestListCorporationAssetsHandler_PropagatesError(t *testing.T) {
 		return nil, 0, wantErr
 	}
 
-	handler := listCorporationAssetsHandler("v1", "client-id", store)
+	handler := listCorporationAssetsHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationAssetsInput{CharacterID: 7, CorporationID: 98000001})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -215,7 +285,7 @@ func TestListCorporationAssetsHandler_UnknownCharacter_ReturnsErrCharacterNotFou
 		return nil, 0, nil
 	}
 
-	handler := listCorporationAssetsHandler("v1", "client-id", store)
+	handler := listCorporationAssetsHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationAssetsInput{CharacterID: 999, CorporationID: 98000001})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)

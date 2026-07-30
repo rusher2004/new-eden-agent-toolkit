@@ -9,6 +9,7 @@ import (
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
+	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -294,13 +295,14 @@ func listCorporationMemberTitlesHandler(version, clientID string, store *config.
 // --- list_corporation_member_tracking (private) ---
 
 type MemberTracking struct {
-	CharacterID int64      `json:"characterId"`
-	BaseID      *int64     `json:"baseId,omitempty"`
-	LocationID  *int64     `json:"locationId,omitempty"`
-	ShipTypeID  *int64     `json:"shipTypeId,omitempty"`
-	LogonDate   *time.Time `json:"logonDate,omitempty"`
-	LogoffDate  *time.Time `json:"logoffDate,omitempty"`
-	StartDate   *time.Time `json:"startDate,omitempty"`
+	CharacterID  int64      `json:"characterId"`
+	BaseID       *int64     `json:"baseId,omitempty"`
+	LocationID   *int64     `json:"locationId,omitempty"`
+	ShipTypeID   *int64     `json:"shipTypeId,omitempty"`
+	ShipTypeName string     `json:"shipTypeName,omitempty"`
+	LogonDate    *time.Time `json:"logonDate,omitempty"`
+	LogoffDate   *time.Time `json:"logoffDate,omitempty"`
+	StartDate    *time.Time `json:"startDate,omitempty"`
 }
 
 var listCorporationMemberTracking = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64) ([]MemberTracking, error) {
@@ -329,7 +331,7 @@ type ListCorporationMemberTrackingOutput struct {
 	Members       []MemberTracking `json:"members"`
 }
 
-func listCorporationMemberTrackingHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCorporationMemberTrackingInput, ListCorporationMemberTrackingOutput] {
+func listCorporationMemberTrackingHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCorporationMemberTrackingInput, ListCorporationMemberTrackingOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationMemberTrackingInput) (*mcpsdk.CallToolResult, ListCorporationMemberTrackingOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -341,6 +343,18 @@ func listCorporationMemberTrackingHandler(version, clientID string, store *confi
 		members, err := listCorporationMemberTracking(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID)
 		if err != nil {
 			return nil, ListCorporationMemberTrackingOutput{}, fmt.Errorf("list corporation member tracking: %w", err)
+		}
+		var ids []int64
+		for i := range members {
+			if members[i].ShipTypeID != nil {
+				ids = append(ids, *members[i].ShipTypeID)
+			}
+		}
+		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		for i := range members {
+			if members[i].ShipTypeID != nil {
+				members[i].ShipTypeName = names[*members[i].ShipTypeID]
+			}
 		}
 		return nil, ListCorporationMemberTrackingOutput{CharacterID: in.CharacterID, CorporationID: in.CorporationID, Members: members}, nil
 	}
@@ -695,6 +709,7 @@ type CorporationBlueprint struct {
 	Runs               int64  `json:"runs"`
 	TimeEfficiency     int64  `json:"timeEfficiency"`
 	TypeID             int64  `json:"typeId"`
+	TypeName           string `json:"typeName,omitempty"`
 }
 
 var listCorporationBlueprints = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]CorporationBlueprint, int32, error) {
@@ -730,7 +745,7 @@ type ListCorporationBlueprintsOutput struct {
 	Blueprints    []CorporationBlueprint `json:"blueprints"`
 }
 
-func listCorporationBlueprintsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCorporationBlueprintsInput, ListCorporationBlueprintsOutput] {
+func listCorporationBlueprintsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCorporationBlueprintsInput, ListCorporationBlueprintsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationBlueprintsInput) (*mcpsdk.CallToolResult, ListCorporationBlueprintsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -743,6 +758,14 @@ func listCorporationBlueprintsHandler(version, clientID string, store *config.St
 		if err != nil {
 			return nil, ListCorporationBlueprintsOutput{}, fmt.Errorf("list corporation blueprints: %w", err)
 		}
+		ids := make([]int64, len(bps))
+		for i := range bps {
+			ids[i] = bps[i].TypeID
+		}
+		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		for i := range bps {
+			bps[i].TypeName = names[bps[i].TypeID]
+		}
 		page := in.Page
 		if page <= 0 {
 			page = 1
@@ -754,18 +777,20 @@ func listCorporationBlueprintsHandler(version, clientID string, store *config.St
 // --- list_corporation_container_logs (private, paginated) ---
 
 type ContainerLog struct {
-	Action           string    `json:"action"`
-	CharacterID      int64     `json:"characterId"`
-	ContainerID      int64     `json:"containerId"`
-	ContainerTypeID  int64     `json:"containerTypeId"`
-	LocationFlag     string    `json:"locationFlag"`
-	LocationID       int64     `json:"locationId"`
-	LoggedAt         time.Time `json:"loggedAt"`
-	NewConfigBitmask *int64    `json:"newConfigBitmask,omitempty"`
-	OldConfigBitmask *int64    `json:"oldConfigBitmask,omitempty"`
-	PasswordType     *string   `json:"passwordType,omitempty"`
-	Quantity         *int64    `json:"quantity,omitempty"`
-	TypeID           *int64    `json:"typeId,omitempty"`
+	Action            string    `json:"action"`
+	CharacterID       int64     `json:"characterId"`
+	ContainerID       int64     `json:"containerId"`
+	ContainerTypeID   int64     `json:"containerTypeId"`
+	ContainerTypeName string    `json:"containerTypeName,omitempty"`
+	LocationFlag      string    `json:"locationFlag"`
+	LocationID        int64     `json:"locationId"`
+	LoggedAt          time.Time `json:"loggedAt"`
+	NewConfigBitmask  *int64    `json:"newConfigBitmask,omitempty"`
+	OldConfigBitmask  *int64    `json:"oldConfigBitmask,omitempty"`
+	PasswordType      *string   `json:"passwordType,omitempty"`
+	Quantity          *int64    `json:"quantity,omitempty"`
+	TypeID            *int64    `json:"typeId,omitempty"`
+	TypeName          string    `json:"typeName,omitempty"`
 }
 
 var listCorporationContainerLogs = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]ContainerLog, int32, error) {
@@ -802,7 +827,7 @@ type ListCorporationContainerLogsOutput struct {
 	Logs          []ContainerLog `json:"logs"`
 }
 
-func listCorporationContainerLogsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCorporationContainerLogsInput, ListCorporationContainerLogsOutput] {
+func listCorporationContainerLogsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCorporationContainerLogsInput, ListCorporationContainerLogsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationContainerLogsInput) (*mcpsdk.CallToolResult, ListCorporationContainerLogsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -815,6 +840,20 @@ func listCorporationContainerLogsHandler(version, clientID string, store *config
 		if err != nil {
 			return nil, ListCorporationContainerLogsOutput{}, fmt.Errorf("list corporation container logs: %w", err)
 		}
+		var ids []int64
+		for i := range logs {
+			ids = append(ids, logs[i].ContainerTypeID)
+			if logs[i].TypeID != nil {
+				ids = append(ids, *logs[i].TypeID)
+			}
+		}
+		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		for i := range logs {
+			logs[i].ContainerTypeName = names[logs[i].ContainerTypeID]
+			if logs[i].TypeID != nil {
+				logs[i].TypeName = names[*logs[i].TypeID]
+			}
+		}
 		page := in.Page
 		if page <= 0 {
 			page = 1
@@ -826,9 +865,10 @@ func listCorporationContainerLogsHandler(version, clientID string, store *config
 // --- list_corporation_facilities (private, not paginated) ---
 
 type Facility struct {
-	FacilityID int64 `json:"facilityId"`
-	SystemID   int64 `json:"systemId"`
-	TypeID     int64 `json:"typeId"`
+	FacilityID int64  `json:"facilityId"`
+	SystemID   int64  `json:"systemId"`
+	TypeID     int64  `json:"typeId"`
+	TypeName   string `json:"typeName,omitempty"`
 }
 
 var listCorporationFacilities = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64) ([]Facility, error) {
@@ -857,7 +897,7 @@ type ListCorporationFacilitiesOutput struct {
 	Facilities    []Facility `json:"facilities"`
 }
 
-func listCorporationFacilitiesHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCorporationFacilitiesInput, ListCorporationFacilitiesOutput] {
+func listCorporationFacilitiesHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCorporationFacilitiesInput, ListCorporationFacilitiesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationFacilitiesInput) (*mcpsdk.CallToolResult, ListCorporationFacilitiesOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -869,6 +909,14 @@ func listCorporationFacilitiesHandler(version, clientID string, store *config.St
 		facilities, err := listCorporationFacilities(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID)
 		if err != nil {
 			return nil, ListCorporationFacilitiesOutput{}, fmt.Errorf("list corporation facilities: %w", err)
+		}
+		ids := make([]int64, len(facilities))
+		for i := range facilities {
+			ids[i] = facilities[i].TypeID
+		}
+		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		for i := range facilities {
+			facilities[i].TypeName = names[facilities[i].TypeID]
 		}
 		return nil, ListCorporationFacilitiesOutput{CharacterID: in.CharacterID, CorporationID: in.CorporationID, Facilities: facilities}, nil
 	}
@@ -1005,6 +1053,7 @@ type Starbase struct {
 	State           *string    `json:"state,omitempty"`
 	SystemID        int64      `json:"systemId"`
 	TypeID          int64      `json:"typeId"`
+	TypeName        string     `json:"typeName,omitempty"`
 	UnanchorAt      *time.Time `json:"unanchorAt,omitempty"`
 }
 
@@ -1040,7 +1089,7 @@ type ListCorporationStarbasesOutput struct {
 	Starbases     []Starbase `json:"starbases"`
 }
 
-func listCorporationStarbasesHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCorporationStarbasesInput, ListCorporationStarbasesOutput] {
+func listCorporationStarbasesHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCorporationStarbasesInput, ListCorporationStarbasesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationStarbasesInput) (*mcpsdk.CallToolResult, ListCorporationStarbasesOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -1053,6 +1102,14 @@ func listCorporationStarbasesHandler(version, clientID string, store *config.Sto
 		if err != nil {
 			return nil, ListCorporationStarbasesOutput{}, fmt.Errorf("list corporation starbases: %w", err)
 		}
+		ids := make([]int64, len(starbases))
+		for i := range starbases {
+			ids[i] = starbases[i].TypeID
+		}
+		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		for i := range starbases {
+			starbases[i].TypeName = names[starbases[i].TypeID]
+		}
 		page := in.Page
 		if page <= 0 {
 			page = 1
@@ -1064,8 +1121,9 @@ func listCorporationStarbasesHandler(version, clientID string, store *config.Sto
 // --- get_corporation_starbase (private, not paginated; requires systemId) ---
 
 type StarbaseFuel struct {
-	Quantity int64 `json:"quantity"`
-	TypeID   int64 `json:"typeId"`
+	Quantity int64  `json:"quantity"`
+	TypeID   int64  `json:"typeId"`
+	TypeName string `json:"typeName,omitempty"`
 }
 
 type StarbaseDetail struct {
@@ -1120,7 +1178,7 @@ type GetCorporationStarbaseOutput struct {
 	Detail        StarbaseDetail `json:"detail"`
 }
 
-func getCorporationStarbaseHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[GetCorporationStarbaseInput, GetCorporationStarbaseOutput] {
+func getCorporationStarbaseHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetCorporationStarbaseInput, GetCorporationStarbaseOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCorporationStarbaseInput) (*mcpsdk.CallToolResult, GetCorporationStarbaseOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -1132,6 +1190,14 @@ func getCorporationStarbaseHandler(version, clientID string, store *config.Store
 		detail, err := getCorporationStarbase(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.StarbaseID, in.SystemID)
 		if err != nil {
 			return nil, GetCorporationStarbaseOutput{}, fmt.Errorf("get corporation starbase: %w", err)
+		}
+		ids := make([]int64, len(detail.Fuels))
+		for i := range detail.Fuels {
+			ids[i] = detail.Fuels[i].TypeID
+		}
+		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		for i := range detail.Fuels {
+			detail.Fuels[i].TypeName = names[detail.Fuels[i].TypeID]
 		}
 		return nil, GetCorporationStarbaseOutput{CharacterID: in.CharacterID, CorporationID: in.CorporationID, StarbaseID: in.StarbaseID, Detail: detail}, nil
 	}
@@ -1159,6 +1225,7 @@ type Structure struct {
 	StructureID        int64              `json:"structureId"`
 	SystemID           int64              `json:"systemId"`
 	TypeID             int64              `json:"typeId"`
+	TypeName           string             `json:"typeName,omitempty"`
 	UnanchorsAt        *time.Time         `json:"unanchorsAt,omitempty"`
 }
 
@@ -1201,7 +1268,7 @@ type ListCorporationStructuresOutput struct {
 	Structures    []Structure `json:"structures"`
 }
 
-func listCorporationStructuresHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCorporationStructuresInput, ListCorporationStructuresOutput] {
+func listCorporationStructuresHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCorporationStructuresInput, ListCorporationStructuresOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationStructuresInput) (*mcpsdk.CallToolResult, ListCorporationStructuresOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -1213,6 +1280,14 @@ func listCorporationStructuresHandler(version, clientID string, store *config.St
 		structures, totalPages, err := listCorporationStructures(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.Page)
 		if err != nil {
 			return nil, ListCorporationStructuresOutput{}, fmt.Errorf("list corporation structures: %w", err)
+		}
+		ids := make([]int64, len(structures))
+		for i := range structures {
+			ids[i] = structures[i].TypeID
+		}
+		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		for i := range structures {
+			structures[i].TypeName = names[structures[i].TypeID]
 		}
 		page := in.Page
 		if page <= 0 {

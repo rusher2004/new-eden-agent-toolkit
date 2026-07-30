@@ -21,7 +21,7 @@ func TestListInsurancePricesHandler_MapsFields(t *testing.T) {
 		}, nil
 	}
 
-	handler := listInsurancePricesHandler("v1")
+	handler := listInsurancePricesHandler("v1", nil)
 	_, out, err := handler(context.Background(), nil, ListInsurancePricesInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -64,9 +64,32 @@ func TestListInsurancePricesHandler_PropagatesError(t *testing.T) {
 		return nil, wantErr
 	}
 
-	handler := listInsurancePricesHandler("v1")
+	handler := listInsurancePricesHandler("v1", nil)
 	_, _, err := handler(context.Background(), nil, ListInsurancePricesInput{})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestListInsurancePricesHandler_ResolvesTypeName(t *testing.T) {
+	orig := listInsurancePrices
+	t.Cleanup(func() { listInsurancePrices = orig })
+	listInsurancePrices = func(ctx context.Context, userAgent string) ([]InsurancePrice, error) {
+		return []InsurancePrice{{TypeID: 587, Levels: []InsuranceLevel{{Cost: 900.0, Payout: 450.0, Name: "Standard"}}}}, nil
+	}
+
+	orig2 := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = orig2 })
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{587: "Rifter"}
+	}
+
+	handler := listInsurancePricesHandler("v1", nil)
+	_, out, err := handler(context.Background(), nil, ListInsurancePricesInput{})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.Prices[0].TypeName != "Rifter" {
+		t.Errorf("TypeName = %q, want %q", out.Prices[0].TypeName, "Rifter")
 	}
 }

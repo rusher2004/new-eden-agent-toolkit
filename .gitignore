@@ -39,3 +39,6 @@ go.work.sum
 
 # Local dev build output (built via `make build`)
 /bin/
+
+# Local git worktrees (superpowers subagent-driven-development workspaces)
+/.worktrees/

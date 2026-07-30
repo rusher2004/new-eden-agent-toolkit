@@ -8,6 +8,7 @@ import (
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
+	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -62,13 +63,15 @@ func listCharacterLoyaltyPointsHandler(version, clientID string, store *config.S
 // --- list_loyalty_store_offers (public) ---
 
 type LoyaltyRequiredItem struct {
-	TypeID   int64 `json:"typeId"`
-	Quantity int64 `json:"quantity"`
+	TypeID   int64  `json:"typeId"`
+	TypeName string `json:"typeName,omitempty"`
+	Quantity int64  `json:"quantity"`
 }
 
 type LoyaltyStoreOffer struct {
 	OfferID       int64                 `json:"offerId"`
 	TypeID        int64                 `json:"typeId"`
+	TypeName      string                `json:"typeName,omitempty"`
 	Quantity      int64                 `json:"quantity"`
 	IskCost       int64                 `json:"iskCost"`
 	LpCost        int64                 `json:"lpCost"`
@@ -104,11 +107,27 @@ type ListLoyaltyStoreOffersOutput struct {
 	Offers        []LoyaltyStoreOffer `json:"offers"`
 }
 
-func listLoyaltyStoreOffersHandler(version string) mcpsdk.ToolHandlerFor[ListLoyaltyStoreOffersInput, ListLoyaltyStoreOffersOutput] {
+func listLoyaltyStoreOffersHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListLoyaltyStoreOffersInput, ListLoyaltyStoreOffersOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListLoyaltyStoreOffersInput) (*mcpsdk.CallToolResult, ListLoyaltyStoreOffersOutput, error) {
 		offers, err := listLoyaltyStoreOffers(ctx, sso.UserAgent(version), in.CorporationID)
 		if err != nil {
 			return nil, ListLoyaltyStoreOffersOutput{}, fmt.Errorf("list loyalty store offers: %w", err)
+		}
+		// Collect type IDs from both levels for enrichment
+		ids := make([]int64, 0, len(offers))
+		for _, o := range offers {
+			ids = append(ids, o.TypeID)
+			for _, it := range o.RequiredItems {
+				ids = append(ids, it.TypeID)
+			}
+		}
+		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		// Enrich both outer offer type and nested required item types
+		for i := range offers {
+			offers[i].TypeName = names[offers[i].TypeID]
+			for j := range offers[i].RequiredItems {
+				offers[i].RequiredItems[j].TypeName = names[offers[i].RequiredItems[j].TypeID]
+			}
 		}
 		return nil, ListLoyaltyStoreOffersOutput{CorporationID: in.CorporationID, Offers: offers}, nil
 	}

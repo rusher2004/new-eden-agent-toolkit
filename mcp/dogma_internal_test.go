@@ -111,7 +111,7 @@ func TestGetDogmaDynamicItemHandler_MapsFields(t *testing.T) {
 		}, nil
 	}
 
-	handler := getDogmaDynamicItemHandler("v1")
+	handler := getDogmaDynamicItemHandler("v1", nil)
 	_, out, err := handler(context.Background(), nil, GetDogmaDynamicItemInput{TypeID: 1001, ItemID: 2002})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -374,10 +374,39 @@ func TestGetDogmaDynamicItemHandler_PropagatesError(t *testing.T) {
 		return GetDogmaDynamicItemOutput{}, wantErr
 	}
 
-	handler := getDogmaDynamicItemHandler("v1")
+	handler := getDogmaDynamicItemHandler("v1", nil)
 	_, _, err := handler(context.Background(), nil, GetDogmaDynamicItemInput{TypeID: 1001, ItemID: 2002})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestGetDogmaDynamicItemHandler_ResolvesTypeNames(t *testing.T) {
+	orig := getDogmaDynamicItem
+	t.Cleanup(func() { getDogmaDynamicItem = orig })
+	getDogmaDynamicItem = func(ctx context.Context, userAgent string, typeID, itemID int64) (GetDogmaDynamicItemOutput, error) {
+		return GetDogmaDynamicItemOutput{TypeID: 587, ItemID: 1, CreatedBy: 100, MutatorTypeID: 588, SourceTypeID: 587, DogmaAttributes: []DynamicItemAttribute{}, DogmaEffects: []DynamicItemEffect{}}, nil
+	}
+
+	origResolveTypeNames := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolveTypeNames })
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{587: "Rifter", 588: "Abyssal Mutaplasmid"}
+	}
+
+	handler := getDogmaDynamicItemHandler("v1", nil)
+	_, out, err := handler(context.Background(), nil, GetDogmaDynamicItemInput{TypeID: 587, ItemID: 1})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.TypeName != "Rifter" {
+		t.Errorf("TypeName = %q, want %q", out.TypeName, "Rifter")
+	}
+	if out.MutatorTypeName != "Abyssal Mutaplasmid" {
+		t.Errorf("MutatorTypeName = %q, want %q", out.MutatorTypeName, "Abyssal Mutaplasmid")
+	}
+	if out.SourceTypeName != "Rifter" {
+		t.Errorf("SourceTypeName = %q, want %q", out.SourceTypeName, "Rifter")
 	}
 }
 

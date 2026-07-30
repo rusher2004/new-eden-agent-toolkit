@@ -11,6 +11,8 @@ import (
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 )
 
+func ptrInt64(v int64) *int64 { return &v }
+
 func TestGetCorporationHandler_MapsFields(t *testing.T) {
 	orig := getCorporationDetail
 	t.Cleanup(func() { getCorporationDetail = orig })
@@ -218,13 +220,42 @@ func TestListCorporationMemberTrackingHandler_MapsFields(t *testing.T) {
 		return []MemberTracking{{CharacterID: 100, LocationID: &locationID}}, nil
 	}
 
-	handler := listCorporationMemberTrackingHandler("v1", "client-id", store)
+	handler := listCorporationMemberTrackingHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, ListCorporationMemberTrackingInput{CharacterID: 7, CorporationID: 98000001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
 	if out.CorporationID != 98000001 || len(out.Members) != 1 || out.Members[0].LocationID == nil || *out.Members[0].LocationID != locationID {
 		t.Errorf("out = %+v, want CorporationID=98000001 with one member LocationID=%d", out, locationID)
+	}
+}
+
+func TestListCorporationMemberTrackingHandler_ResolvesShipTypeName(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := listCorporationMemberTracking
+	t.Cleanup(func() { listCorporationMemberTracking = orig })
+	listCorporationMemberTracking = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64) ([]MemberTracking, error) {
+		return []MemberTracking{{CharacterID: 1, ShipTypeID: ptrInt64(587)}}, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{587: "Rifter"}
+	}
+
+	handler := listCorporationMemberTrackingHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, ListCorporationMemberTrackingInput{CharacterID: 7, CorporationID: 98000001})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Members) != 1 || out.Members[0].ShipTypeName != "Rifter" {
+		t.Errorf("Members[0].ShipTypeName = %q, want %q", out.Members[0].ShipTypeName, "Rifter")
 	}
 }
 
@@ -239,7 +270,7 @@ func TestListCorporationMemberTrackingHandler_UnknownCharacter(t *testing.T) {
 		return nil, nil
 	}
 
-	handler := listCorporationMemberTrackingHandler("v1", "client-id", store)
+	handler := listCorporationMemberTrackingHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationMemberTrackingInput{CharacterID: 999, CorporationID: 98000001})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -510,7 +541,7 @@ func TestListCorporationBlueprintsHandler_MapsFields(t *testing.T) {
 		}}, 2, nil
 	}
 
-	handler := listCorporationBlueprintsHandler("v1", "client-id", store)
+	handler := listCorporationBlueprintsHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, ListCorporationBlueprintsInput{CharacterID: 7, CorporationID: 98000001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -525,6 +556,35 @@ func TestListCorporationBlueprintsHandler_MapsFields(t *testing.T) {
 	}
 }
 
+func TestListCorporationBlueprintsHandler_ResolvesTypeName(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := listCorporationBlueprints
+	t.Cleanup(func() { listCorporationBlueprints = orig })
+	listCorporationBlueprints = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]CorporationBlueprint, int32, error) {
+		return []CorporationBlueprint{{ItemID: 1, TypeID: 587}}, 1, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{587: "Rifter"}
+	}
+
+	handler := listCorporationBlueprintsHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, ListCorporationBlueprintsInput{CharacterID: 7, CorporationID: 98000001})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Blueprints) != 1 || out.Blueprints[0].TypeName != "Rifter" {
+		t.Errorf("Blueprints[0].TypeName = %q, want %q", out.Blueprints[0].TypeName, "Rifter")
+	}
+}
+
 func TestListCorporationBlueprintsHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
@@ -536,7 +596,7 @@ func TestListCorporationBlueprintsHandler_UnknownCharacter(t *testing.T) {
 		return nil, 0, nil
 	}
 
-	handler := listCorporationBlueprintsHandler("v1", "client-id", store)
+	handler := listCorporationBlueprintsHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationBlueprintsInput{CharacterID: 999, CorporationID: 98000001})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -567,7 +627,7 @@ func TestListCorporationContainerLogsHandler_MapsFields(t *testing.T) {
 		}}, 3, nil
 	}
 
-	handler := listCorporationContainerLogsHandler("v1", "client-id", store)
+	handler := listCorporationContainerLogsHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, ListCorporationContainerLogsInput{CharacterID: 7, CorporationID: 98000001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -588,6 +648,36 @@ func TestListCorporationContainerLogsHandler_MapsFields(t *testing.T) {
 	}
 }
 
+func TestListCorporationContainerLogsHandler_ResolvesTypeNames(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := listCorporationContainerLogs
+	t.Cleanup(func() { listCorporationContainerLogs = orig })
+	listCorporationContainerLogs = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]ContainerLog, int32, error) {
+		return []ContainerLog{{ContainerTypeID: 588, TypeID: ptrInt64(587)}}, 1, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{587: "Rifter", 588: "Slasher"}
+	}
+
+	handler := listCorporationContainerLogsHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, ListCorporationContainerLogsInput{CharacterID: 7, CorporationID: 98000001})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Logs) != 1 || out.Logs[0].ContainerTypeName != "Slasher" || out.Logs[0].TypeName != "Rifter" {
+		t.Errorf("Logs[0].ContainerTypeName = %q, TypeName = %q, want ContainerTypeName=%q TypeName=%q",
+			out.Logs[0].ContainerTypeName, out.Logs[0].TypeName, "Slasher", "Rifter")
+	}
+}
+
 func TestListCorporationContainerLogsHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
@@ -599,7 +689,7 @@ func TestListCorporationContainerLogsHandler_UnknownCharacter(t *testing.T) {
 		return nil, 0, nil
 	}
 
-	handler := listCorporationContainerLogsHandler("v1", "client-id", store)
+	handler := listCorporationContainerLogsHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationContainerLogsInput{CharacterID: 999, CorporationID: 98000001})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -619,7 +709,7 @@ func TestListCorporationFacilitiesHandler_MapsFields(t *testing.T) {
 		return []Facility{{FacilityID: 500, SystemID: 30000142, TypeID: 2502}}, nil
 	}
 
-	handler := listCorporationFacilitiesHandler("v1", "client-id", store)
+	handler := listCorporationFacilitiesHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, ListCorporationFacilitiesInput{CharacterID: 7, CorporationID: 98000001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -630,6 +720,35 @@ func TestListCorporationFacilitiesHandler_MapsFields(t *testing.T) {
 	f := out.Facilities[0]
 	if f.FacilityID != 500 || f.SystemID != 30000142 || f.TypeID != 2502 {
 		t.Errorf("facility = %+v, want FacilityID=500 SystemID=30000142 TypeID=2502", f)
+	}
+}
+
+func TestListCorporationFacilitiesHandler_ResolvesTypeName(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := listCorporationFacilities
+	t.Cleanup(func() { listCorporationFacilities = orig })
+	listCorporationFacilities = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64) ([]Facility, error) {
+		return []Facility{{FacilityID: 1, TypeID: 587}}, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{587: "Rifter"}
+	}
+
+	handler := listCorporationFacilitiesHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, ListCorporationFacilitiesInput{CharacterID: 7, CorporationID: 98000001})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Facilities) != 1 || out.Facilities[0].TypeName != "Rifter" {
+		t.Errorf("Facilities[0].TypeName = %q, want %q", out.Facilities[0].TypeName, "Rifter")
 	}
 }
 
@@ -644,7 +763,7 @@ func TestListCorporationFacilitiesHandler_UnknownCharacter(t *testing.T) {
 		return nil, nil
 	}
 
-	handler := listCorporationFacilitiesHandler("v1", "client-id", store)
+	handler := listCorporationFacilitiesHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationFacilitiesInput{CharacterID: 999, CorporationID: 98000001})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -768,7 +887,7 @@ func TestListCorporationStarbasesHandler_MapsFields(t *testing.T) {
 		}}, 2, nil
 	}
 
-	handler := listCorporationStarbasesHandler("v1", "client-id", store)
+	handler := listCorporationStarbasesHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, ListCorporationStarbasesInput{CharacterID: 7, CorporationID: 98000001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -788,6 +907,35 @@ func TestListCorporationStarbasesHandler_MapsFields(t *testing.T) {
 	}
 }
 
+func TestListCorporationStarbasesHandler_ResolvesTypeName(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := listCorporationStarbases
+	t.Cleanup(func() { listCorporationStarbases = orig })
+	listCorporationStarbases = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]Starbase, int32, error) {
+		return []Starbase{{StarbaseID: 1, TypeID: 587}}, 1, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{587: "Rifter"}
+	}
+
+	handler := listCorporationStarbasesHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, ListCorporationStarbasesInput{CharacterID: 7, CorporationID: 98000001})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Starbases) != 1 || out.Starbases[0].TypeName != "Rifter" {
+		t.Errorf("Starbases[0].TypeName = %q, want %q", out.Starbases[0].TypeName, "Rifter")
+	}
+}
+
 func TestListCorporationStarbasesHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
@@ -799,7 +947,7 @@ func TestListCorporationStarbasesHandler_UnknownCharacter(t *testing.T) {
 		return nil, 0, nil
 	}
 
-	handler := listCorporationStarbasesHandler("v1", "client-id", store)
+	handler := listCorporationStarbasesHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationStarbasesInput{CharacterID: 999, CorporationID: 98000001})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -831,7 +979,7 @@ func TestGetCorporationStarbaseHandler_MapsFields(t *testing.T) {
 		}, nil
 	}
 
-	handler := getCorporationStarbaseHandler("v1", "client-id", store)
+	handler := getCorporationStarbaseHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, GetCorporationStarbaseInput{CharacterID: 7, CorporationID: 98000001, StarbaseID: 900, SystemID: 30000142})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -853,6 +1001,35 @@ func TestGetCorporationStarbaseHandler_MapsFields(t *testing.T) {
 	}
 }
 
+func TestGetCorporationStarbaseHandler_ResolvesFuelTypeNames(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := getCorporationStarbase
+	t.Cleanup(func() { getCorporationStarbase = orig })
+	getCorporationStarbase = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, starbaseID int64, systemID int64) (StarbaseDetail, error) {
+		return StarbaseDetail{Fuels: []StarbaseFuel{{TypeID: 587}}}, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{587: "Rifter"}
+	}
+
+	handler := getCorporationStarbaseHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, GetCorporationStarbaseInput{CharacterID: 7, CorporationID: 98000001, StarbaseID: 900, SystemID: 30000142})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Detail.Fuels) != 1 || out.Detail.Fuels[0].TypeName != "Rifter" {
+		t.Errorf("Detail.Fuels[0].TypeName = %q, want %q", out.Detail.Fuels[0].TypeName, "Rifter")
+	}
+}
+
 func TestGetCorporationStarbaseHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
@@ -864,7 +1041,7 @@ func TestGetCorporationStarbaseHandler_UnknownCharacter(t *testing.T) {
 		return StarbaseDetail{}, nil
 	}
 
-	handler := getCorporationStarbaseHandler("v1", "client-id", store)
+	handler := getCorporationStarbaseHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, GetCorporationStarbaseInput{CharacterID: 999, CorporationID: 98000001, StarbaseID: 900, SystemID: 30000142})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -898,7 +1075,7 @@ func TestListCorporationStructuresHandler_MapsFields(t *testing.T) {
 		}}, 2, nil
 	}
 
-	handler := listCorporationStructuresHandler("v1", "client-id", store)
+	handler := listCorporationStructuresHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, ListCorporationStructuresInput{CharacterID: 7, CorporationID: 98000001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -925,6 +1102,35 @@ func TestListCorporationStructuresHandler_MapsFields(t *testing.T) {
 	}
 }
 
+func TestListCorporationStructuresHandler_ResolvesTypeName(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := listCorporationStructures
+	t.Cleanup(func() { listCorporationStructures = orig })
+	listCorporationStructures = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]Structure, int32, error) {
+		return []Structure{{StructureID: 1, TypeID: 587}}, 1, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{587: "Rifter"}
+	}
+
+	handler := listCorporationStructuresHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, ListCorporationStructuresInput{CharacterID: 7, CorporationID: 98000001})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Structures) != 1 || out.Structures[0].TypeName != "Rifter" {
+		t.Errorf("Structures[0].TypeName = %q, want %q", out.Structures[0].TypeName, "Rifter")
+	}
+}
+
 func TestListCorporationStructuresHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
@@ -936,7 +1142,7 @@ func TestListCorporationStructuresHandler_UnknownCharacter(t *testing.T) {
 		return nil, 0, nil
 	}
 
-	handler := listCorporationStructuresHandler("v1", "client-id", store)
+	handler := listCorporationStructuresHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationStructuresInput{CharacterID: 999, CorporationID: 98000001})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -1080,7 +1286,7 @@ func TestListCorporationMemberTrackingHandler_PropagatesError(t *testing.T) {
 		return nil, wantErr
 	}
 
-	handler := listCorporationMemberTrackingHandler("v1", "client-id", store)
+	handler := listCorporationMemberTrackingHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationMemberTrackingInput{CharacterID: 7, CorporationID: 98000001})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -1227,7 +1433,7 @@ func TestListCorporationBlueprintsHandler_PropagatesError(t *testing.T) {
 		return nil, 0, wantErr
 	}
 
-	handler := listCorporationBlueprintsHandler("v1", "client-id", store)
+	handler := listCorporationBlueprintsHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationBlueprintsInput{CharacterID: 7, CorporationID: 98000001})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -1248,7 +1454,7 @@ func TestListCorporationContainerLogsHandler_PropagatesError(t *testing.T) {
 		return nil, 0, wantErr
 	}
 
-	handler := listCorporationContainerLogsHandler("v1", "client-id", store)
+	handler := listCorporationContainerLogsHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationContainerLogsInput{CharacterID: 7, CorporationID: 98000001})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -1269,7 +1475,7 @@ func TestListCorporationFacilitiesHandler_PropagatesError(t *testing.T) {
 		return nil, wantErr
 	}
 
-	handler := listCorporationFacilitiesHandler("v1", "client-id", store)
+	handler := listCorporationFacilitiesHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationFacilitiesInput{CharacterID: 7, CorporationID: 98000001})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -1332,7 +1538,7 @@ func TestListCorporationStarbasesHandler_PropagatesError(t *testing.T) {
 		return nil, 0, wantErr
 	}
 
-	handler := listCorporationStarbasesHandler("v1", "client-id", store)
+	handler := listCorporationStarbasesHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationStarbasesInput{CharacterID: 7, CorporationID: 98000001})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -1353,7 +1559,7 @@ func TestGetCorporationStarbaseHandler_PropagatesError(t *testing.T) {
 		return StarbaseDetail{}, wantErr
 	}
 
-	handler := getCorporationStarbaseHandler("v1", "client-id", store)
+	handler := getCorporationStarbaseHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, GetCorporationStarbaseInput{CharacterID: 7, CorporationID: 98000001, StarbaseID: 1000000000001, SystemID: 30000142})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -1374,7 +1580,7 @@ func TestListCorporationStructuresHandler_PropagatesError(t *testing.T) {
 		return nil, 0, wantErr
 	}
 
-	handler := listCorporationStructuresHandler("v1", "client-id", store)
+	handler := listCorporationStructuresHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationStructuresInput{CharacterID: 7, CorporationID: 98000001})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)

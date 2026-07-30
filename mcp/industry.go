@@ -11,6 +11,7 @@ import (
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
+	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -23,6 +24,7 @@ type IndustryJob struct {
 	BlueprintID          int64      `json:"blueprintId"`
 	BlueprintLocationID  int64      `json:"blueprintLocationId"`
 	BlueprintTypeID      int64      `json:"blueprintTypeId"`
+	BlueprintTypeName    string     `json:"blueprintTypeName,omitempty"`
 	Duration             int64      `json:"duration"`
 	EndDate              time.Time  `json:"endDate"`
 	FacilityID           int64      `json:"facilityId"`
@@ -41,6 +43,7 @@ type IndustryJob struct {
 	PauseDate            *time.Time `json:"pauseDate,omitempty"`
 	Probability          *float64   `json:"probability,omitempty"`
 	ProductTypeID        *int64     `json:"productTypeId,omitempty"`
+	ProductTypeName      string     `json:"productTypeName,omitempty"`
 	SuccessfulRuns       *int64     `json:"successfulRuns,omitempty"`
 }
 
@@ -88,7 +91,7 @@ type ListCharacterIndustryJobsOutput struct {
 	Jobs             []IndustryJob `json:"jobs"`
 }
 
-func listCharacterIndustryJobsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCharacterIndustryJobsInput, ListCharacterIndustryJobsOutput] {
+func listCharacterIndustryJobsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCharacterIndustryJobsInput, ListCharacterIndustryJobsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterIndustryJobsInput) (*mcpsdk.CallToolResult, ListCharacterIndustryJobsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -105,7 +108,27 @@ func listCharacterIndustryJobsHandler(version, clientID string, store *config.St
 		for i, j := range jobs {
 			out[i] = toIndustryJobFromCharacter(j)
 		}
+		enrichIndustryJobs(ctx, out, sdeStore, sso.UserAgent(version))
 		return nil, ListCharacterIndustryJobsOutput{CharacterID: in.CharacterID, IncludeCompleted: in.IncludeCompleted, Jobs: out}, nil
+	}
+}
+
+// enrichIndustryJobs resolves BlueprintTypeName (always populated) and ProductTypeName (only when
+// ProductTypeID is non-nil) in place, sharing one resolveTypeNames batch across both fields.
+func enrichIndustryJobs(ctx context.Context, jobs []IndustryJob, sdeStore *sde.Store, userAgent string) {
+	ids := make([]int64, 0, len(jobs)*2)
+	for _, j := range jobs {
+		ids = append(ids, j.BlueprintTypeID)
+		if j.ProductTypeID != nil {
+			ids = append(ids, *j.ProductTypeID)
+		}
+	}
+	names := resolveTypeNames(ctx, sdeStore, userAgent, ids)
+	for i := range jobs {
+		jobs[i].BlueprintTypeName = names[jobs[i].BlueprintTypeID]
+		if jobs[i].ProductTypeID != nil {
+			jobs[i].ProductTypeName = names[*jobs[i].ProductTypeID]
+		}
 	}
 }
 
@@ -116,6 +139,7 @@ type MiningLedgerEntry struct {
 	Quantity      int64  `json:"quantity"`
 	SolarSystemID int64  `json:"solarSystemId"`
 	TypeID        int64  `json:"typeId"`
+	TypeName      string `json:"typeName,omitempty"`
 }
 
 var listCharacterMining = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]esiapi.CharactersCharacterIdMiningGetInner, int32, error) {
@@ -137,7 +161,7 @@ type ListCharacterMiningOutput struct {
 	Ledger      []MiningLedgerEntry `json:"ledger"`
 }
 
-func listCharacterMiningHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCharacterMiningInput, ListCharacterMiningOutput] {
+func listCharacterMiningHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCharacterMiningInput, ListCharacterMiningOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterMiningInput) (*mcpsdk.CallToolResult, ListCharacterMiningOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -153,6 +177,14 @@ func listCharacterMiningHandler(version, clientID string, store *config.Store) m
 		out := make([]MiningLedgerEntry, len(ledger))
 		for i, e := range ledger {
 			out[i] = MiningLedgerEntry{Date: e.Date, Quantity: e.Quantity, SolarSystemID: e.SolarSystemId, TypeID: e.TypeId}
+		}
+		ids := make([]int64, len(out))
+		for i, e := range out {
+			ids[i] = e.TypeID
+		}
+		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		for i := range out {
+			out[i].TypeName = names[out[i].TypeID]
 		}
 		page := in.Page
 		if page <= 0 {
@@ -283,6 +315,7 @@ type MiningObserverEntry struct {
 	Quantity              int64  `json:"quantity"`
 	RecordedCorporationID int64  `json:"recordedCorporationId"`
 	TypeID                int64  `json:"typeId"`
+	TypeName              string `json:"typeName,omitempty"`
 }
 
 var getCorporationMiningObserverDetail = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID, observerID int64, page int32) ([]esiapi.CorporationCorporationIdMiningObserversObserverIdGetInner, int32, error) {
@@ -308,7 +341,7 @@ type GetCorporationMiningObserverDetailOutput struct {
 	Entries       []MiningObserverEntry `json:"entries"`
 }
 
-func getCorporationMiningObserverDetailHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[GetCorporationMiningObserverDetailInput, GetCorporationMiningObserverDetailOutput] {
+func getCorporationMiningObserverDetailHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetCorporationMiningObserverDetailInput, GetCorporationMiningObserverDetailOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCorporationMiningObserverDetailInput) (*mcpsdk.CallToolResult, GetCorporationMiningObserverDetailOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -327,6 +360,14 @@ func getCorporationMiningObserverDetailHandler(version, clientID string, store *
 				CharacterID: e.CharacterId, LastUpdated: e.LastUpdated, Quantity: e.Quantity,
 				RecordedCorporationID: e.RecordedCorporationId, TypeID: e.TypeId,
 			}
+		}
+		ids := make([]int64, len(out))
+		for i, e := range out {
+			ids[i] = e.TypeID
+		}
+		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		for i := range out {
+			out[i].TypeName = names[out[i].TypeID]
 		}
 		page := in.Page
 		if page <= 0 {
@@ -364,7 +405,7 @@ type ListCorporationIndustryJobsOutput struct {
 	Jobs             []IndustryJob `json:"jobs"`
 }
 
-func listCorporationIndustryJobsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCorporationIndustryJobsInput, ListCorporationIndustryJobsOutput] {
+func listCorporationIndustryJobsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCorporationIndustryJobsInput, ListCorporationIndustryJobsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationIndustryJobsInput) (*mcpsdk.CallToolResult, ListCorporationIndustryJobsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -381,6 +422,7 @@ func listCorporationIndustryJobsHandler(version, clientID string, store *config.
 		for i, j := range jobs {
 			out[i] = toIndustryJobFromCorporation(j)
 		}
+		enrichIndustryJobs(ctx, out, sdeStore, sso.UserAgent(version))
 		page := in.Page
 		if page <= 0 {
 			page = 1
@@ -400,6 +442,7 @@ type IndustryFacility struct {
 	RegionID      int64    `json:"regionId"`
 	SolarSystemID int64    `json:"solarSystemId"`
 	TypeID        int64    `json:"typeId"`
+	TypeName      string   `json:"typeName,omitempty"`
 	Tax           *float64 `json:"tax,omitempty"`
 }
 
@@ -413,7 +456,7 @@ type ListIndustryFacilitiesOutput struct {
 	Facilities []IndustryFacility `json:"facilities"`
 }
 
-func listIndustryFacilitiesHandler(version string) mcpsdk.ToolHandlerFor[ListIndustryFacilitiesInput, ListIndustryFacilitiesOutput] {
+func listIndustryFacilitiesHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListIndustryFacilitiesInput, ListIndustryFacilitiesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListIndustryFacilitiesInput) (*mcpsdk.CallToolResult, ListIndustryFacilitiesOutput, error) {
 		facilities, err := listIndustryFacilities(ctx, sso.UserAgent(version))
 		if err != nil {
@@ -425,6 +468,14 @@ func listIndustryFacilitiesHandler(version string) mcpsdk.ToolHandlerFor[ListInd
 				FacilityID: f.FacilityId, OwnerID: f.OwnerId, RegionID: f.RegionId,
 				SolarSystemID: f.SolarSystemId, TypeID: f.TypeId, Tax: f.Tax,
 			}
+		}
+		ids := make([]int64, len(out))
+		for i, f := range out {
+			ids[i] = f.TypeID
+		}
+		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		for i := range out {
+			out[i].TypeName = names[out[i].TypeID]
 		}
 		return nil, ListIndustryFacilitiesOutput{Facilities: out}, nil
 	}

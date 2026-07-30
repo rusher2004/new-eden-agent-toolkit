@@ -9,6 +9,7 @@ import (
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
+	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -56,6 +57,7 @@ type ContractBid struct {
 type ContractItem struct {
 	RecordID           int64  `json:"recordId"`
 	TypeID             int64  `json:"typeId"`
+	TypeName           string `json:"typeName,omitempty"`
 	Quantity           int64  `json:"quantity"`
 	IsIncluded         bool   `json:"isIncluded"`
 	IsSingleton        bool   `json:"isSingleton,omitempty"`
@@ -199,7 +201,7 @@ type ListCharacterContractItemsOutput struct {
 	Items       []ContractItem `json:"items"`
 }
 
-func listCharacterContractItemsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCharacterContractItemsInput, ListCharacterContractItemsOutput] {
+func listCharacterContractItemsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCharacterContractItemsInput, ListCharacterContractItemsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterContractItemsInput) (*mcpsdk.CallToolResult, ListCharacterContractItemsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -211,6 +213,14 @@ func listCharacterContractItemsHandler(version, clientID string, store *config.S
 		items, err := listCharacterContractItems(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.ContractID)
 		if err != nil {
 			return nil, ListCharacterContractItemsOutput{}, fmt.Errorf("list character contract items: %w", err)
+		}
+		ids := make([]int64, len(items))
+		for i, it := range items {
+			ids[i] = it.TypeID
+		}
+		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		for i := range items {
+			items[i].TypeName = names[items[i].TypeID]
 		}
 		return nil, ListCharacterContractItemsOutput{CharacterID: in.CharacterID, ContractID: in.ContractID, Items: items}, nil
 	}
@@ -361,7 +371,7 @@ type ListCorporationContractItemsOutput struct {
 	Items         []ContractItem `json:"items"`
 }
 
-func listCorporationContractItemsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCorporationContractItemsInput, ListCorporationContractItemsOutput] {
+func listCorporationContractItemsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCorporationContractItemsInput, ListCorporationContractItemsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationContractItemsInput) (*mcpsdk.CallToolResult, ListCorporationContractItemsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -373,6 +383,14 @@ func listCorporationContractItemsHandler(version, clientID string, store *config
 		items, err := listCorporationContractItems(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.ContractID)
 		if err != nil {
 			return nil, ListCorporationContractItemsOutput{}, fmt.Errorf("list corporation contract items: %w", err)
+		}
+		ids := make([]int64, len(items))
+		for i, it := range items {
+			ids[i] = it.TypeID
+		}
+		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		for i := range items {
+			items[i].TypeName = names[items[i].TypeID]
 		}
 		return nil, ListCorporationContractItemsOutput{CharacterID: in.CharacterID, CorporationID: in.CorporationID, ContractID: in.ContractID, Items: items}, nil
 	}
@@ -497,11 +515,19 @@ type ListPublicContractItemsOutput struct {
 	Items      []ContractItem `json:"items"`
 }
 
-func listPublicContractItemsHandler(version string) mcpsdk.ToolHandlerFor[ListPublicContractItemsInput, ListPublicContractItemsOutput] {
+func listPublicContractItemsHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListPublicContractItemsInput, ListPublicContractItemsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListPublicContractItemsInput) (*mcpsdk.CallToolResult, ListPublicContractItemsOutput, error) {
 		items, totalPages, err := listPublicContractItems(ctx, sso.UserAgent(version), in.ContractID, in.Page)
 		if err != nil {
 			return nil, ListPublicContractItemsOutput{}, fmt.Errorf("list public contract items: %w", err)
+		}
+		ids := make([]int64, len(items))
+		for i, it := range items {
+			ids[i] = it.TypeID
+		}
+		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		for i := range items {
+			items[i].TypeName = names[items[i].TypeID]
 		}
 		page := in.Page
 		if page <= 0 {

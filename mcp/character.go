@@ -9,6 +9,7 @@ import (
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
+	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -197,6 +198,7 @@ func characterExists(store *config.Store, characterID int32) (bool, error) {
 type AgentResearch struct {
 	AgentID         int64     `json:"agentId"`
 	SkillTypeID     int64     `json:"skillTypeId"`
+	SkillTypeName   string    `json:"skillTypeName,omitempty"`
 	PointsPerDay    float64   `json:"pointsPerDay"`
 	RemainderPoints float64   `json:"remainderPoints"`
 	StartedAt       time.Time `json:"startedAt"`
@@ -226,7 +228,7 @@ type ListCharacterAgentsResearchOutput struct {
 	Agents      []AgentResearch `json:"agents"`
 }
 
-func listCharacterAgentsResearchHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCharacterAgentsResearchInput, ListCharacterAgentsResearchOutput] {
+func listCharacterAgentsResearchHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCharacterAgentsResearchInput, ListCharacterAgentsResearchOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterAgentsResearchInput) (*mcpsdk.CallToolResult, ListCharacterAgentsResearchOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -239,6 +241,14 @@ func listCharacterAgentsResearchHandler(version, clientID string, store *config.
 		if err != nil {
 			return nil, ListCharacterAgentsResearchOutput{}, fmt.Errorf("list character agents research: %w", err)
 		}
+		ids := make([]int64, len(agents))
+		for i, a := range agents {
+			ids[i] = a.SkillTypeID
+		}
+		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		for i := range agents {
+			agents[i].SkillTypeName = names[agents[i].SkillTypeID]
+		}
 		return nil, ListCharacterAgentsResearchOutput{CharacterID: in.CharacterID, Agents: agents}, nil
 	}
 }
@@ -248,6 +258,7 @@ func listCharacterAgentsResearchHandler(version, clientID string, store *config.
 type Blueprint struct {
 	ItemID             int64  `json:"itemId"`
 	TypeID             int64  `json:"typeId"`
+	TypeName           string `json:"typeName,omitempty"`
 	LocationID         int64  `json:"locationId"`
 	LocationFlag       string `json:"locationFlag"`
 	Quantity           int64  `json:"quantity"`
@@ -283,7 +294,7 @@ type ListCharacterBlueprintsOutput struct {
 	Blueprints  []Blueprint `json:"blueprints"`
 }
 
-func listCharacterBlueprintsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCharacterBlueprintsInput, ListCharacterBlueprintsOutput] {
+func listCharacterBlueprintsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCharacterBlueprintsInput, ListCharacterBlueprintsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterBlueprintsInput) (*mcpsdk.CallToolResult, ListCharacterBlueprintsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -295,6 +306,14 @@ func listCharacterBlueprintsHandler(version, clientID string, store *config.Stor
 		bps, totalPages, err := listCharacterBlueprints(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.Page)
 		if err != nil {
 			return nil, ListCharacterBlueprintsOutput{}, fmt.Errorf("list character blueprints: %w", err)
+		}
+		ids := make([]int64, len(bps))
+		for i, b := range bps {
+			ids[i] = b.TypeID
+		}
+		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		for i := range bps {
+			bps[i].TypeName = names[bps[i].TypeID]
 		}
 		page := in.Page
 		if page <= 0 {

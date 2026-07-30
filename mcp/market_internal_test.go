@@ -37,7 +37,7 @@ func TestListCharacterMarketOrdersHandler_MapsFields(t *testing.T) {
 		}}, nil
 	}
 
-	handler := listCharacterMarketOrdersHandler("v1", "client-id", store)
+	handler := listCharacterMarketOrdersHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, ListCharacterMarketOrdersInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -67,7 +67,7 @@ func TestListCharacterMarketOrdersHandler_UnknownCharacter(t *testing.T) {
 		return nil, nil
 	}
 
-	handler := listCharacterMarketOrdersHandler("v1", "client-id", store)
+	handler := listCharacterMarketOrdersHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCharacterMarketOrdersInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -94,7 +94,7 @@ func TestListCharacterMarketOrderHistoryHandler_MapsFieldsAndDefaultsPageTo1(t *
 		}}, 3, nil
 	}
 
-	handler := listCharacterMarketOrderHistoryHandler("v1", "client-id", store)
+	handler := listCharacterMarketOrderHistoryHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, ListCharacterMarketOrderHistoryInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -124,7 +124,7 @@ func TestListCharacterMarketOrderHistoryHandler_UnknownCharacter(t *testing.T) {
 		return nil, 0, nil
 	}
 
-	handler := listCharacterMarketOrderHistoryHandler("v1", "client-id", store)
+	handler := listCharacterMarketOrderHistoryHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCharacterMarketOrderHistoryInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -151,7 +151,7 @@ func TestListCorporationMarketOrdersHandler_MapsFieldsAndDefaultsPageTo1(t *test
 		}}, 2, nil
 	}
 
-	handler := listCorporationMarketOrdersHandler("v1", "client-id", store)
+	handler := listCorporationMarketOrdersHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, ListCorporationMarketOrdersInput{CharacterID: 7, CorporationID: 98000001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -181,7 +181,7 @@ func TestListCorporationMarketOrdersHandler_UnknownCharacter(t *testing.T) {
 		return nil, 0, nil
 	}
 
-	handler := listCorporationMarketOrdersHandler("v1", "client-id", store)
+	handler := listCorporationMarketOrdersHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationMarketOrdersInput{CharacterID: 999, CorporationID: 98000001})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -208,7 +208,7 @@ func TestListCorporationMarketOrderHistoryHandler_MapsFieldsAndDefaultsPageTo1(t
 		}}, 1, nil
 	}
 
-	handler := listCorporationMarketOrderHistoryHandler("v1", "client-id", store)
+	handler := listCorporationMarketOrderHistoryHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, ListCorporationMarketOrderHistoryInput{CharacterID: 7, CorporationID: 98000001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -241,7 +241,7 @@ func TestListCorporationMarketOrderHistoryHandler_UnknownCharacter(t *testing.T)
 		return nil, 0, nil
 	}
 
-	handler := listCorporationMarketOrderHistoryHandler("v1", "client-id", store)
+	handler := listCorporationMarketOrderHistoryHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationMarketOrderHistoryInput{CharacterID: 999, CorporationID: 98000001})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -304,7 +304,7 @@ func TestListMarketPricesHandler_MapsFields(t *testing.T) {
 		}}, nil
 	}
 
-	handler := listMarketPricesHandler("v1")
+	handler := listMarketPricesHandler("v1", nil)
 	_, out, err := handler(context.Background(), nil, ListMarketPricesInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -362,7 +362,7 @@ func TestListMarketOrdersHandler_MapsFieldsAndDefaultsPageTo1(t *testing.T) {
 		}}, 5, nil
 	}
 
-	handler := listMarketOrdersHandler("v1")
+	handler := listMarketOrdersHandler("v1", nil)
 	_, out, err := handler(context.Background(), nil, ListMarketOrdersInput{RegionID: 10000002, OrderType: "buy", TypeID: 34})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -391,7 +391,7 @@ func TestListMarketTypesHandler_MapsFieldsAndDefaultsPageTo1(t *testing.T) {
 		return []int64{34, 35, 36}, 7, nil
 	}
 
-	handler := listMarketTypesHandler("v1")
+	handler := listMarketTypesHandler("v1", nil)
 	_, out, err := handler(context.Background(), nil, ListMarketTypesInput{RegionID: 10000002})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -422,7 +422,7 @@ func TestListStructureMarketOrdersHandler_MapsFieldsAndDefaultsPageTo1(t *testin
 		}}, 2, nil
 	}
 
-	handler := listStructureMarketOrdersHandler("v1", "client-id", store)
+	handler := listStructureMarketOrdersHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, ListStructureMarketOrdersInput{CharacterID: 7, StructureID: 1000000000001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -450,7 +450,7 @@ func TestListStructureMarketOrdersHandler_UnknownCharacter(t *testing.T) {
 		return nil, 0, nil
 	}
 
-	handler := listStructureMarketOrdersHandler("v1", "client-id", store)
+	handler := listStructureMarketOrdersHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListStructureMarketOrdersInput{CharacterID: 999, StructureID: 1000000000001})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -471,7 +471,7 @@ func TestListCharacterMarketOrdersHandler_PropagatesError(t *testing.T) {
 		return nil, wantErr
 	}
 
-	handler := listCharacterMarketOrdersHandler("v1", "client-id", store)
+	handler := listCharacterMarketOrdersHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCharacterMarketOrdersInput{CharacterID: 7})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -492,7 +492,7 @@ func TestListCharacterMarketOrderHistoryHandler_PropagatesError(t *testing.T) {
 		return nil, 0, wantErr
 	}
 
-	handler := listCharacterMarketOrderHistoryHandler("v1", "client-id", store)
+	handler := listCharacterMarketOrderHistoryHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCharacterMarketOrderHistoryInput{CharacterID: 7})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -513,7 +513,7 @@ func TestListCorporationMarketOrdersHandler_PropagatesError(t *testing.T) {
 		return nil, 0, wantErr
 	}
 
-	handler := listCorporationMarketOrdersHandler("v1", "client-id", store)
+	handler := listCorporationMarketOrdersHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationMarketOrdersInput{CharacterID: 7, CorporationID: 98000001})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -534,7 +534,7 @@ func TestListCorporationMarketOrderHistoryHandler_PropagatesError(t *testing.T) 
 		return nil, 0, wantErr
 	}
 
-	handler := listCorporationMarketOrderHistoryHandler("v1", "client-id", store)
+	handler := listCorporationMarketOrderHistoryHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationMarketOrderHistoryInput{CharacterID: 7, CorporationID: 98000001})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -579,7 +579,7 @@ func TestListMarketPricesHandler_PropagatesError(t *testing.T) {
 		return nil, wantErr
 	}
 
-	handler := listMarketPricesHandler("v1")
+	handler := listMarketPricesHandler("v1", nil)
 	_, _, err := handler(context.Background(), nil, ListMarketPricesInput{})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -609,7 +609,7 @@ func TestListMarketOrdersHandler_PropagatesError(t *testing.T) {
 		return nil, 0, wantErr
 	}
 
-	handler := listMarketOrdersHandler("v1")
+	handler := listMarketOrdersHandler("v1", nil)
 	_, _, err := handler(context.Background(), nil, ListMarketOrdersInput{RegionID: 10000002, OrderType: "buy", TypeID: 34})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -624,7 +624,7 @@ func TestListMarketTypesHandler_PropagatesError(t *testing.T) {
 		return nil, 0, wantErr
 	}
 
-	handler := listMarketTypesHandler("v1")
+	handler := listMarketTypesHandler("v1", nil)
 	_, _, err := handler(context.Background(), nil, ListMarketTypesInput{RegionID: 10000002})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -645,9 +645,256 @@ func TestListStructureMarketOrdersHandler_PropagatesError(t *testing.T) {
 		return nil, 0, wantErr
 	}
 
-	handler := listStructureMarketOrdersHandler("v1", "client-id", store)
+	handler := listStructureMarketOrdersHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListStructureMarketOrdersInput{CharacterID: 7, StructureID: 1000000000001})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+// --- type-name enrichment ---
+
+func TestListCharacterMarketOrdersHandler_ResolvesTypeName(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	origFetch := listCharacterMarketOrders
+	t.Cleanup(func() { listCharacterMarketOrders = origFetch })
+	listCharacterMarketOrders = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]esiapi.CharactersCharacterIdOrdersGetInner, error) {
+		return []esiapi.CharactersCharacterIdOrdersGetInner{{TypeId: 587}}, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{587: "Rifter"}
+	}
+
+	handler := listCharacterMarketOrdersHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, ListCharacterMarketOrdersInput{CharacterID: 7})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Orders) != 1 || out.Orders[0].TypeName != "Rifter" {
+		t.Errorf("out.Orders = %+v, want one order with TypeName=Rifter", out.Orders)
+	}
+}
+
+func TestListCharacterMarketOrderHistoryHandler_ResolvesTypeName(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	origFetch := listCharacterMarketOrderHistory
+	t.Cleanup(func() { listCharacterMarketOrderHistory = origFetch })
+	listCharacterMarketOrderHistory = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]esiapi.CharactersCharacterIdOrdersHistoryGetInner, int32, error) {
+		return []esiapi.CharactersCharacterIdOrdersHistoryGetInner{{TypeId: 587}}, 1, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{587: "Rifter"}
+	}
+
+	handler := listCharacterMarketOrderHistoryHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, ListCharacterMarketOrderHistoryInput{CharacterID: 7})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Orders) != 1 || out.Orders[0].TypeName != "Rifter" {
+		t.Errorf("out.Orders = %+v, want one order with TypeName=Rifter", out.Orders)
+	}
+}
+
+func TestListCorporationMarketOrdersHandler_ResolvesTypeName(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	origFetch := listCorporationMarketOrders
+	t.Cleanup(func() { listCorporationMarketOrders = origFetch })
+	listCorporationMarketOrders = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdOrdersGetInner, int32, error) {
+		return []esiapi.CorporationsCorporationIdOrdersGetInner{{TypeId: 587}}, 1, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{587: "Rifter"}
+	}
+
+	handler := listCorporationMarketOrdersHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, ListCorporationMarketOrdersInput{CharacterID: 7, CorporationID: 98000001})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Orders) != 1 || out.Orders[0].TypeName != "Rifter" {
+		t.Errorf("out.Orders = %+v, want one order with TypeName=Rifter", out.Orders)
+	}
+}
+
+func TestListCorporationMarketOrderHistoryHandler_ResolvesTypeName(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	origFetch := listCorporationMarketOrderHistory
+	t.Cleanup(func() { listCorporationMarketOrderHistory = origFetch })
+	listCorporationMarketOrderHistory = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdOrdersHistoryGetInner, int32, error) {
+		return []esiapi.CorporationsCorporationIdOrdersHistoryGetInner{{TypeId: 587}}, 1, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{587: "Rifter"}
+	}
+
+	handler := listCorporationMarketOrderHistoryHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, ListCorporationMarketOrderHistoryInput{CharacterID: 7, CorporationID: 98000001})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Orders) != 1 || out.Orders[0].TypeName != "Rifter" {
+		t.Errorf("out.Orders = %+v, want one order with TypeName=Rifter", out.Orders)
+	}
+}
+
+func TestListMarketPricesHandler_ResolvesTypeName(t *testing.T) {
+	origFetch := listMarketPrices
+	t.Cleanup(func() { listMarketPrices = origFetch })
+	listMarketPrices = func(ctx context.Context, userAgent string) ([]esiapi.MarketsPricesGetInner, error) {
+		return []esiapi.MarketsPricesGetInner{{TypeId: 587}}, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{587: "Rifter"}
+	}
+
+	handler := listMarketPricesHandler("v1", nil)
+	_, out, err := handler(context.Background(), nil, ListMarketPricesInput{})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Prices) != 1 || out.Prices[0].TypeName != "Rifter" {
+		t.Errorf("out.Prices = %+v, want one price with TypeName=Rifter", out.Prices)
+	}
+}
+
+func TestListMarketOrdersHandler_ResolvesTypeName(t *testing.T) {
+	origFetch := listMarketOrders
+	t.Cleanup(func() { listMarketOrders = origFetch })
+	listMarketOrders = func(ctx context.Context, userAgent string, regionID int64, orderType string, typeID int64, page int32) ([]esiapi.MarketsRegionIdOrdersGetInner, int32, error) {
+		return []esiapi.MarketsRegionIdOrdersGetInner{{TypeId: 587}}, 1, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{587: "Rifter"}
+	}
+
+	handler := listMarketOrdersHandler("v1", nil)
+	_, out, err := handler(context.Background(), nil, ListMarketOrdersInput{RegionID: 10000002, OrderType: "buy"})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Orders) != 1 || out.Orders[0].TypeName != "Rifter" {
+		t.Errorf("out.Orders = %+v, want one order with TypeName=Rifter", out.Orders)
+	}
+}
+
+func TestListMarketTypesHandler_ResolvesTypeNames(t *testing.T) {
+	origFetch := listMarketTypes
+	t.Cleanup(func() { listMarketTypes = origFetch })
+	listMarketTypes = func(ctx context.Context, userAgent string, regionID int64, page int32) ([]int64, int32, error) {
+		return []int64{587, 588}, 1, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{587: "Rifter", 588: "Slasher"}
+	}
+
+	handler := listMarketTypesHandler("v1", nil)
+	_, out, err := handler(context.Background(), nil, ListMarketTypesInput{RegionID: 10000002})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.TypeNames) != 2 || out.TypeNames[0] != "Rifter" || out.TypeNames[1] != "Slasher" {
+		t.Errorf("out.TypeNames = %v, want [Rifter Slasher]", out.TypeNames)
+	}
+}
+
+func TestListMarketTypesHandler_TypeNamesSurvivesPartialMiss(t *testing.T) {
+	origFetch := listMarketTypes
+	t.Cleanup(func() { listMarketTypes = origFetch })
+	listMarketTypes = func(ctx context.Context, userAgent string, regionID int64, page int32) ([]int64, int32, error) {
+		return []int64{587, 999, 588}, 1, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		// 999 is deliberately omitted -- a cache miss on the middle ID must
+		// not shift the surrounding names out of position.
+		return map[int64]string{587: "Rifter", 588: "Slasher"}
+	}
+
+	handler := listMarketTypesHandler("v1", nil)
+	_, out, err := handler(context.Background(), nil, ListMarketTypesInput{RegionID: 10000002})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	want := []string{"Rifter", "", "Slasher"}
+	if len(out.TypeNames) != len(want) {
+		t.Fatalf("out.TypeNames = %v, want %v", out.TypeNames, want)
+	}
+	for i, w := range want {
+		if out.TypeNames[i] != w {
+			t.Errorf("out.TypeNames[%d] = %q, want %q", i, out.TypeNames[i], w)
+		}
+	}
+}
+
+func TestListStructureMarketOrdersHandler_ResolvesTypeName(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	origFetch := listStructureMarketOrders
+	t.Cleanup(func() { listStructureMarketOrders = origFetch })
+	listStructureMarketOrders = func(ctx context.Context, clientID string, characterID int32, userAgent string, structureID int64, page int32) ([]esiapi.MarketsStructuresStructureIdGetInner, int32, error) {
+		return []esiapi.MarketsStructuresStructureIdGetInner{{TypeId: 587}}, 1, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{587: "Rifter"}
+	}
+
+	handler := listStructureMarketOrdersHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, ListStructureMarketOrdersInput{CharacterID: 7, StructureID: 1000000000001})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Orders) != 1 || out.Orders[0].TypeName != "Rifter" {
+		t.Errorf("out.Orders = %+v, want one order with TypeName=Rifter", out.Orders)
 	}
 }

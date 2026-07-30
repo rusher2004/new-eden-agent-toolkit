@@ -126,7 +126,7 @@ func TestGetCharacterShipHandler_MapsFields(t *testing.T) {
 		return 1000000016991, "Percival", 608, nil
 	}
 
-	handler := getCharacterShipHandler("v1", "client-id", store)
+	handler := getCharacterShipHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, GetCharacterShipInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -147,7 +147,7 @@ func TestGetCharacterShipHandler_UnknownCharacter(t *testing.T) {
 		return 0, "", 0, nil
 	}
 
-	handler := getCharacterShipHandler("v1", "client-id", store)
+	handler := getCharacterShipHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, GetCharacterShipInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -210,9 +210,38 @@ func TestGetCharacterShipHandler_PropagatesError(t *testing.T) {
 		return 0, "", 0, wantErr
 	}
 
-	handler := getCharacterShipHandler("v1", "client-id", store)
+	handler := getCharacterShipHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, GetCharacterShipInput{CharacterID: 7})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestGetCharacterShipHandler_ResolvesShipTypeName(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := getCharacterShip
+	t.Cleanup(func() { getCharacterShip = orig })
+	getCharacterShip = func(ctx context.Context, clientID string, characterID int32, userAgent string) (int64, string, int64, error) {
+		return 1000000016991, "My Rifter", 587, nil
+	}
+
+	origResolveTypeNames := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolveTypeNames })
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{587: "Rifter"}
+	}
+
+	handler := getCharacterShipHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, GetCharacterShipInput{CharacterID: 7})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.ShipTypeName != "Rifter" {
+		t.Errorf("ShipTypeName = %q, want %q", out.ShipTypeName, "Rifter")
 	}
 }

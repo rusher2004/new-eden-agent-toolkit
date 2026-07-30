@@ -71,7 +71,7 @@ func TestGetMercenaryTacticalOperationHandler_ReturnsDetail(t *testing.T) {
 		}, nil
 	}
 
-	handler := getMercenaryTacticalOperationHandler("v1", "client-id", store)
+	handler := getMercenaryTacticalOperationHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, GetMercenaryTacticalOperationInput{CharacterID: 7, OperationID: "op-1"})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -92,7 +92,7 @@ func TestGetMercenaryTacticalOperationHandler_UnknownCharacter_ReturnsErrCharact
 		return OperationDetailResult{}, nil
 	}
 
-	handler := getMercenaryTacticalOperationHandler("v1", "client-id", store)
+	handler := getMercenaryTacticalOperationHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, GetMercenaryTacticalOperationInput{CharacterID: 999, OperationID: "op-1"})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -175,7 +175,7 @@ func TestGetMercenaryTacticalOperationHandler_PropagatesError(t *testing.T) {
 		return OperationDetailResult{}, wantErr
 	}
 
-	handler := getMercenaryTacticalOperationHandler("v1", "client-id", store)
+	handler := getMercenaryTacticalOperationHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, GetMercenaryTacticalOperationInput{CharacterID: 7, OperationID: "op-1"})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -200,5 +200,34 @@ func TestListRaidableSkyhooksHandler_PropagatesError(t *testing.T) {
 	_, _, err := handler(context.Background(), nil, ListRaidableSkyhooksInput{CharacterID: 7})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestGetMercenaryTacticalOperationHandler_ResolvesDungeonTypeName(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := getMercenaryTacticalOperationDetail
+	t.Cleanup(func() { getMercenaryTacticalOperationDetail = orig })
+	getMercenaryTacticalOperationDetail = func(ctx context.Context, clientID string, characterID int32, userAgent string, operationID string) (OperationDetailResult, error) {
+		return OperationDetailResult{DungeonTypeID: 34143, MercenaryDenID: 1}, nil
+	}
+
+	orig2 := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = orig2 })
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{34143: "Some Dungeon"}
+	}
+
+	handler := getMercenaryTacticalOperationHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, GetMercenaryTacticalOperationInput{CharacterID: 7, OperationID: "op-1"})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.DungeonTypeName != "Some Dungeon" {
+		t.Errorf("DungeonTypeName = %q, want %q", out.DungeonTypeName, "Some Dungeon")
 	}
 }

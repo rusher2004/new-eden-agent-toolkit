@@ -11,6 +11,7 @@ import (
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
+	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -90,8 +91,9 @@ type PlanetLink struct {
 }
 
 type PlanetPinContent struct {
-	TypeID int64 `json:"typeId"`
-	Amount int64 `json:"amount"`
+	TypeID   int64  `json:"typeId"`
+	TypeName string `json:"typeName,omitempty"`
+	Amount   int64  `json:"amount"`
 }
 
 type PlanetExtractorHead struct {
@@ -101,11 +103,12 @@ type PlanetExtractorHead struct {
 }
 
 type PlanetExtractorDetails struct {
-	CycleTime     *int64                `json:"cycleTime,omitempty"`
-	HeadRadius    *float64              `json:"headRadius,omitempty"`
-	ProductTypeID *int64                `json:"productTypeId,omitempty"`
-	QtyPerCycle   *int64                `json:"qtyPerCycle,omitempty"`
-	Heads         []PlanetExtractorHead `json:"heads"`
+	CycleTime       *int64                `json:"cycleTime,omitempty"`
+	HeadRadius      *float64              `json:"headRadius,omitempty"`
+	ProductTypeID   *int64                `json:"productTypeId,omitempty"`
+	ProductTypeName string                `json:"productTypeName,omitempty"`
+	QtyPerCycle     *int64                `json:"qtyPerCycle,omitempty"`
+	Heads           []PlanetExtractorHead `json:"heads"`
 }
 
 type PlanetFactoryDetails struct {
@@ -115,6 +118,7 @@ type PlanetFactoryDetails struct {
 type PlanetPin struct {
 	PinID            int64                   `json:"pinId"`
 	TypeID           int64                   `json:"typeId"`
+	TypeName         string                  `json:"typeName,omitempty"`
 	Latitude         float64                 `json:"latitude"`
 	Longitude        float64                 `json:"longitude"`
 	SchematicID      *int64                  `json:"schematicId,omitempty"`
@@ -131,6 +135,7 @@ type PlanetRoute struct {
 	SourcePinID      int64   `json:"sourcePinId"`
 	DestinationPinID int64   `json:"destinationPinId"`
 	ContentTypeID    int64   `json:"contentTypeId"`
+	ContentTypeName  string  `json:"contentTypeName,omitempty"`
 	Quantity         float64 `json:"quantity"`
 	Waypoints        []int64 `json:"waypoints,omitempty"`
 }
@@ -208,7 +213,7 @@ type GetCharacterPlanetOutput struct {
 	Routes      []PlanetRoute `json:"routes"`
 }
 
-func getCharacterPlanetHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[GetCharacterPlanetInput, GetCharacterPlanetOutput] {
+func getCharacterPlanetHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetCharacterPlanetInput, GetCharacterPlanetOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterPlanetInput) (*mcpsdk.CallToolResult, GetCharacterPlanetOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -221,9 +226,39 @@ func getCharacterPlanetHandler(version, clientID string, store *config.Store) mc
 		if err != nil {
 			return nil, GetCharacterPlanetOutput{}, fmt.Errorf("get character planet: %w", err)
 		}
+		pins := toPlanetPins(detail.Pins)
+		routes := toPlanetRoutes(detail.Routes)
+
+		ids := make([]int64, 0, len(pins)+len(routes))
+		for _, p := range pins {
+			ids = append(ids, p.TypeID)
+			for _, c := range p.Contents {
+				ids = append(ids, c.TypeID)
+			}
+			if p.ExtractorDetails != nil && p.ExtractorDetails.ProductTypeID != nil {
+				ids = append(ids, *p.ExtractorDetails.ProductTypeID)
+			}
+		}
+		for _, r := range routes {
+			ids = append(ids, r.ContentTypeID)
+		}
+		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		for i := range pins {
+			pins[i].TypeName = names[pins[i].TypeID]
+			for j := range pins[i].Contents {
+				pins[i].Contents[j].TypeName = names[pins[i].Contents[j].TypeID]
+			}
+			if pins[i].ExtractorDetails != nil && pins[i].ExtractorDetails.ProductTypeID != nil {
+				pins[i].ExtractorDetails.ProductTypeName = names[*pins[i].ExtractorDetails.ProductTypeID]
+			}
+		}
+		for i := range routes {
+			routes[i].ContentTypeName = names[routes[i].ContentTypeID]
+		}
+
 		return nil, GetCharacterPlanetOutput{
 			CharacterID: in.CharacterID, PlanetID: in.PlanetID,
-			Links: toPlanetLinks(detail.Links), Pins: toPlanetPins(detail.Pins), Routes: toPlanetRoutes(detail.Routes),
+			Links: toPlanetLinks(detail.Links), Pins: pins, Routes: routes,
 		}, nil
 	}
 }
@@ -234,6 +269,7 @@ type CustomsOffice struct {
 	OfficeID                 int64    `json:"officeId"`
 	SystemID                 int64    `json:"systemId"`
 	TypeID                   *int64   `json:"typeId,omitempty"`
+	TypeName                 string   `json:"typeName,omitempty"`
 	ReinforceExitStart       int64    `json:"reinforceExitStart"`
 	ReinforceExitEnd         int64    `json:"reinforceExitEnd"`
 	AllowAllianceAccess      bool     `json:"allowAllianceAccess"`
@@ -269,7 +305,7 @@ type ListCorporationCustomsOfficesOutput struct {
 	Offices       []CustomsOffice `json:"offices"`
 }
 
-func listCorporationCustomsOfficesHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCorporationCustomsOfficesInput, ListCorporationCustomsOfficesOutput] {
+func listCorporationCustomsOfficesHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCorporationCustomsOfficesInput, ListCorporationCustomsOfficesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationCustomsOfficesInput) (*mcpsdk.CallToolResult, ListCorporationCustomsOfficesOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -294,6 +330,20 @@ func listCorporationCustomsOfficesHandler(version, clientID string, store *confi
 				BadStandingTaxRate: o.BadStandingTaxRate, TerribleStandingTaxRate: o.TerribleStandingTaxRate,
 			}
 		}
+
+		ids := make([]int64, 0, len(out))
+		for _, o := range out {
+			if o.TypeID != nil {
+				ids = append(ids, *o.TypeID)
+			}
+		}
+		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		for i := range out {
+			if out[i].TypeID != nil {
+				out[i].TypeName = names[*out[i].TypeID]
+			}
+		}
+
 		page := in.Page
 		if page <= 0 {
 			page = 1

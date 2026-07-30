@@ -105,7 +105,7 @@ func TestListCharacterContractItemsHandler_ReturnsItems(t *testing.T) {
 		return []ContractItem{{RecordID: 1, TypeID: 34}}, nil
 	}
 
-	handler := listCharacterContractItemsHandler("v1", "client-id", store)
+	handler := listCharacterContractItemsHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, ListCharacterContractItemsInput{CharacterID: 7, ContractID: 1})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -126,7 +126,7 @@ func TestListCharacterContractItemsHandler_UnknownCharacter_ReturnsErrCharacterN
 		return nil, nil
 	}
 
-	handler := listCharacterContractItemsHandler("v1", "client-id", store)
+	handler := listCharacterContractItemsHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCharacterContractItemsInput{CharacterID: 999, ContractID: 1})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -232,7 +232,7 @@ func TestListCorporationContractItemsHandler_ReturnsItems(t *testing.T) {
 		return []ContractItem{{RecordID: 1, TypeID: 648}}, nil
 	}
 
-	handler := listCorporationContractItemsHandler("v1", "client-id", store)
+	handler := listCorporationContractItemsHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, ListCorporationContractItemsInput{CharacterID: 7, CorporationID: 98000001, ContractID: 3})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -253,7 +253,7 @@ func TestListCorporationContractItemsHandler_UnknownCharacter_ReturnsErrCharacte
 		return nil, nil
 	}
 
-	handler := listCorporationContractItemsHandler("v1", "client-id", store)
+	handler := listCorporationContractItemsHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationContractItemsInput{CharacterID: 999, CorporationID: 98000001, ContractID: 3})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -301,7 +301,7 @@ func TestListPublicContractItemsHandler_ReturnsItems(t *testing.T) {
 		return []ContractItem{{RecordID: 1, TypeID: 34}}, 1, nil
 	}
 
-	handler := listPublicContractItemsHandler("v1")
+	handler := listPublicContractItemsHandler("v1", nil)
 	_, out, err := handler(context.Background(), nil, ListPublicContractItemsInput{ContractID: 10})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -367,7 +367,7 @@ func TestListCharacterContractItemsHandler_PropagatesError(t *testing.T) {
 		return nil, wantErr
 	}
 
-	handler := listCharacterContractItemsHandler("v1", "client-id", store)
+	handler := listCharacterContractItemsHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCharacterContractItemsInput{CharacterID: 7, ContractID: 1})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -430,7 +430,7 @@ func TestListCorporationContractItemsHandler_PropagatesError(t *testing.T) {
 		return nil, wantErr
 	}
 
-	handler := listCorporationContractItemsHandler("v1", "client-id", store)
+	handler := listCorporationContractItemsHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationContractItemsInput{CharacterID: 7, CorporationID: 98000001, ContractID: 3})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -475,9 +475,90 @@ func TestListPublicContractItemsHandler_PropagatesError(t *testing.T) {
 		return nil, 0, wantErr
 	}
 
-	handler := listPublicContractItemsHandler("v1")
+	handler := listPublicContractItemsHandler("v1", nil)
 	_, _, err := handler(context.Background(), nil, ListPublicContractItemsInput{ContractID: 10})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestListCharacterContractItemsHandler_ResolvesTypeName(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := listCharacterContractItems
+	t.Cleanup(func() { listCharacterContractItems = orig })
+	listCharacterContractItems = func(ctx context.Context, clientID string, characterID int32, userAgent string, contractID int64) ([]ContractItem, error) {
+		return []ContractItem{{RecordID: 1, TypeID: 587}}, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{587: "Rifter"}
+	}
+
+	handler := listCharacterContractItemsHandler("v1", "client", store, nil)
+	_, out, err := handler(context.Background(), nil, ListCharacterContractItemsInput{CharacterID: 7, ContractID: 1})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.Items[0].TypeName != "Rifter" {
+		t.Errorf("TypeName = %q, want %q", out.Items[0].TypeName, "Rifter")
+	}
+}
+
+func TestListCorporationContractItemsHandler_ResolvesTypeName(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := listCorporationContractItems
+	t.Cleanup(func() { listCorporationContractItems = orig })
+	listCorporationContractItems = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, contractID int64) ([]ContractItem, error) {
+		return []ContractItem{{RecordID: 1, TypeID: 648}}, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{648: "Atron"}
+	}
+
+	handler := listCorporationContractItemsHandler("v1", "client", store, nil)
+	_, out, err := handler(context.Background(), nil, ListCorporationContractItemsInput{CharacterID: 7, CorporationID: 98000001, ContractID: 3})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.Items[0].TypeName != "Atron" {
+		t.Errorf("TypeName = %q, want %q", out.Items[0].TypeName, "Atron")
+	}
+}
+
+func TestListPublicContractItemsHandler_ResolvesTypeName(t *testing.T) {
+	orig := listPublicContractItems
+	t.Cleanup(func() { listPublicContractItems = orig })
+	listPublicContractItems = func(ctx context.Context, userAgent string, contractID int64, page int32) ([]ContractItem, int32, error) {
+		return []ContractItem{{RecordID: 1, TypeID: 34}}, 1, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{34: "Tritanium"}
+	}
+
+	handler := listPublicContractItemsHandler("v1", nil)
+	_, out, err := handler(context.Background(), nil, ListPublicContractItemsInput{ContractID: 10})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.Items[0].TypeName != "Tritanium" {
+		t.Errorf("TypeName = %q, want %q", out.Items[0].TypeName, "Tritanium")
 	}
 }

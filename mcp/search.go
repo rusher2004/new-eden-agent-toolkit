@@ -10,23 +10,25 @@ import (
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
+	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
 // --- search_character (private) ---
 
 type SearchResults struct {
-	Agent         []int64 `json:"agent,omitempty"`
-	Alliance      []int64 `json:"alliance,omitempty"`
-	Character     []int64 `json:"character,omitempty"`
-	Constellation []int64 `json:"constellation,omitempty"`
-	Corporation   []int64 `json:"corporation,omitempty"`
-	Faction       []int64 `json:"faction,omitempty"`
-	InventoryType []int64 `json:"inventoryType,omitempty"`
-	Region        []int64 `json:"region,omitempty"`
-	SolarSystem   []int64 `json:"solarSystem,omitempty"`
-	Station       []int64 `json:"station,omitempty"`
-	Structure     []int64 `json:"structure,omitempty"`
+	Agent              []int64  `json:"agent,omitempty"`
+	Alliance           []int64  `json:"alliance,omitempty"`
+	Character          []int64  `json:"character,omitempty"`
+	Constellation      []int64  `json:"constellation,omitempty"`
+	Corporation        []int64  `json:"corporation,omitempty"`
+	Faction            []int64  `json:"faction,omitempty"`
+	InventoryType      []int64  `json:"inventoryType,omitempty"`
+	InventoryTypeNames []string `json:"inventoryTypeNames,omitempty"`
+	Region             []int64  `json:"region,omitempty"`
+	SolarSystem        []int64  `json:"solarSystem,omitempty"`
+	Station            []int64  `json:"station,omitempty"`
+	Structure          []int64  `json:"structure,omitempty"`
 }
 
 var searchCharacter = func(ctx context.Context, clientID string, characterID int32, userAgent string, categories []string, search string, strict bool) (*esiapi.CharactersCharacterIdSearchGet, error) {
@@ -48,7 +50,7 @@ type SearchCharacterOutput struct {
 	Results     SearchResults `json:"results"`
 }
 
-func searchCharacterHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[SearchCharacterInput, SearchCharacterOutput] {
+func searchCharacterHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[SearchCharacterInput, SearchCharacterOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in SearchCharacterInput) (*mcpsdk.CallToolResult, SearchCharacterOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -61,10 +63,15 @@ func searchCharacterHandler(version, clientID string, store *config.Store) mcpsd
 		if err != nil {
 			return nil, SearchCharacterOutput{}, fmt.Errorf("search character: %w", err)
 		}
+		nameMap := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), results.InventoryType)
+		inventoryTypeNames := make([]string, len(results.InventoryType))
+		for i, id := range results.InventoryType {
+			inventoryTypeNames[i] = nameMap[id]
+		}
 		return nil, SearchCharacterOutput{CharacterID: in.CharacterID, Results: SearchResults{
 			Agent: results.Agent, Alliance: results.Alliance, Character: results.Character,
 			Constellation: results.Constellation, Corporation: results.Corporation, Faction: results.Faction,
-			InventoryType: results.InventoryType, Region: results.Region, SolarSystem: results.SolarSystem,
+			InventoryType: results.InventoryType, InventoryTypeNames: inventoryTypeNames, Region: results.Region, SolarSystem: results.SolarSystem,
 			Station: results.Station, Structure: results.Structure,
 		}}, nil
 	}

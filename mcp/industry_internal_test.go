@@ -13,6 +13,16 @@ import (
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 )
 
+func industryTestStore(t *testing.T) *config.Store {
+	t.Helper()
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+	return store
+}
+
 func TestListCharacterIndustryJobsHandler_MapsFields(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
@@ -43,7 +53,7 @@ func TestListCharacterIndustryJobsHandler_MapsFields(t *testing.T) {
 		}}, nil
 	}
 
-	handler := listCharacterIndustryJobsHandler("v1", "client-id", store)
+	handler := listCharacterIndustryJobsHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, ListCharacterIndustryJobsInput{CharacterID: 7, IncludeCompleted: true})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -80,7 +90,7 @@ func TestListCharacterIndustryJobsHandler_UnknownCharacter(t *testing.T) {
 		return nil, nil
 	}
 
-	handler := listCharacterIndustryJobsHandler("v1", "client-id", store)
+	handler := listCharacterIndustryJobsHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCharacterIndustryJobsInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -102,7 +112,7 @@ func TestListCharacterMiningHandler_MapsFieldsAndDefaultsPageTo1(t *testing.T) {
 		}}, 5, nil
 	}
 
-	handler := listCharacterMiningHandler("v1", "client-id", store)
+	handler := listCharacterMiningHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, ListCharacterMiningInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -127,7 +137,7 @@ func TestListCharacterMiningHandler_UnknownCharacter(t *testing.T) {
 		return nil, 0, nil
 	}
 
-	handler := listCharacterMiningHandler("v1", "client-id", store)
+	handler := listCharacterMiningHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCharacterMiningInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -249,7 +259,7 @@ func TestGetCorporationMiningObserverDetailHandler_MapsFieldsAndDefaultsPageTo1(
 		}}, 4, nil
 	}
 
-	handler := getCorporationMiningObserverDetailHandler("v1", "client-id", store)
+	handler := getCorporationMiningObserverDetailHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, GetCorporationMiningObserverDetailInput{CharacterID: 7, CorporationID: 98000001, ObserverID: 900})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -274,7 +284,7 @@ func TestGetCorporationMiningObserverDetailHandler_UnknownCharacter(t *testing.T
 		return nil, 0, nil
 	}
 
-	handler := getCorporationMiningObserverDetailHandler("v1", "client-id", store)
+	handler := getCorporationMiningObserverDetailHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, GetCorporationMiningObserverDetailInput{CharacterID: 999, CorporationID: 98000001, ObserverID: 900})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -311,7 +321,7 @@ func TestListCorporationIndustryJobsHandler_MapsFieldsAndDefaultsPageTo1(t *test
 		}}, 6, nil
 	}
 
-	handler := listCorporationIndustryJobsHandler("v1", "client-id", store)
+	handler := listCorporationIndustryJobsHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, ListCorporationIndustryJobsInput{CharacterID: 7, CorporationID: 98000001, IncludeCompleted: true})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -348,7 +358,7 @@ func TestListCorporationIndustryJobsHandler_UnknownCharacter(t *testing.T) {
 		return nil, 0, nil
 	}
 
-	handler := listCorporationIndustryJobsHandler("v1", "client-id", store)
+	handler := listCorporationIndustryJobsHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationIndustryJobsInput{CharacterID: 999, CorporationID: 98000001})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -365,7 +375,7 @@ func TestListIndustryFacilitiesHandler_MapsFields(t *testing.T) {
 		}}, nil
 	}
 
-	handler := listIndustryFacilitiesHandler("v1")
+	handler := listIndustryFacilitiesHandler("v1", nil)
 	_, out, err := handler(context.Background(), nil, ListIndustryFacilitiesInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -425,7 +435,7 @@ func TestListCharacterIndustryJobsHandler_PropagatesError(t *testing.T) {
 		return nil, wantErr
 	}
 
-	handler := listCharacterIndustryJobsHandler("v1", "client-id", store)
+	handler := listCharacterIndustryJobsHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCharacterIndustryJobsInput{CharacterID: 7})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -446,7 +456,7 @@ func TestListCharacterMiningHandler_PropagatesError(t *testing.T) {
 		return nil, 0, wantErr
 	}
 
-	handler := listCharacterMiningHandler("v1", "client-id", store)
+	handler := listCharacterMiningHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCharacterMiningInput{CharacterID: 7})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -509,7 +519,7 @@ func TestGetCorporationMiningObserverDetailHandler_PropagatesError(t *testing.T)
 		return nil, 0, wantErr
 	}
 
-	handler := getCorporationMiningObserverDetailHandler("v1", "client-id", store)
+	handler := getCorporationMiningObserverDetailHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, GetCorporationMiningObserverDetailInput{CharacterID: 7, CorporationID: 98000001, ObserverID: 900})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -530,7 +540,7 @@ func TestListCorporationIndustryJobsHandler_PropagatesError(t *testing.T) {
 		return nil, 0, wantErr
 	}
 
-	handler := listCorporationIndustryJobsHandler("v1", "client-id", store)
+	handler := listCorporationIndustryJobsHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationIndustryJobsInput{CharacterID: 7, CorporationID: 98000001})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -545,7 +555,7 @@ func TestListIndustryFacilitiesHandler_PropagatesError(t *testing.T) {
 		return nil, wantErr
 	}
 
-	handler := listIndustryFacilitiesHandler("v1")
+	handler := listIndustryFacilitiesHandler("v1", nil)
 	_, _, err := handler(context.Background(), nil, ListIndustryFacilitiesInput{})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -564,5 +574,202 @@ func TestListIndustrySystemsHandler_PropagatesError(t *testing.T) {
 	_, _, err := handler(context.Background(), nil, ListIndustrySystemsInput{})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestListCharacterIndustryJobsHandler_ResolvesTypeNames(t *testing.T) {
+	store := industryTestStore(t)
+
+	orig := listCharacterIndustryJobs
+	t.Cleanup(func() { listCharacterIndustryJobs = orig })
+	productTypeID := int64(588)
+	listCharacterIndustryJobs = func(ctx context.Context, clientID string, characterID int32, userAgent string, includeCompleted bool) ([]esiapi.CharactersCharacterIdIndustryJobsGetInner, error) {
+		return []esiapi.CharactersCharacterIdIndustryJobsGetInner{{JobId: 1, BlueprintTypeId: 587, ProductTypeId: &productTypeID}}, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	var gotIDs []int64
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		gotIDs = ids
+		return map[int64]string{587: "Rifter Blueprint", 588: "Rifter"}
+	}
+
+	handler := listCharacterIndustryJobsHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, ListCharacterIndustryJobsInput{CharacterID: 7})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(gotIDs) != 2 || gotIDs[0] != 587 || gotIDs[1] != 588 {
+		t.Errorf("resolveTypeNames got ids = %v, want [587 588]", gotIDs)
+	}
+	if len(out.Jobs) != 1 {
+		t.Fatalf("out.Jobs = %+v, want one job", out.Jobs)
+	}
+	j := out.Jobs[0]
+	if j.BlueprintTypeName != "Rifter Blueprint" {
+		t.Errorf("BlueprintTypeName = %q, want %q", j.BlueprintTypeName, "Rifter Blueprint")
+	}
+	if j.ProductTypeName != "Rifter" {
+		t.Errorf("ProductTypeName = %q, want %q", j.ProductTypeName, "Rifter")
+	}
+}
+
+func TestListCharacterIndustryJobsHandler_NilProductTypeIDNotEnriched(t *testing.T) {
+	store := industryTestStore(t)
+
+	orig := listCharacterIndustryJobs
+	t.Cleanup(func() { listCharacterIndustryJobs = orig })
+	listCharacterIndustryJobs = func(ctx context.Context, clientID string, characterID int32, userAgent string, includeCompleted bool) ([]esiapi.CharactersCharacterIdIndustryJobsGetInner, error) {
+		return []esiapi.CharactersCharacterIdIndustryJobsGetInner{{JobId: 1, BlueprintTypeId: 587, ProductTypeId: nil}}, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	var gotIDs []int64
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		gotIDs = ids
+		return map[int64]string{587: "Rifter Blueprint"}
+	}
+
+	handler := listCharacterIndustryJobsHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, ListCharacterIndustryJobsInput{CharacterID: 7})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(gotIDs) != 1 || gotIDs[0] != 587 {
+		t.Errorf("resolveTypeNames got ids = %v, want [587] (no nil ProductTypeID dereferenced)", gotIDs)
+	}
+	if len(out.Jobs) != 1 {
+		t.Fatalf("out.Jobs = %+v, want one job", out.Jobs)
+	}
+	j := out.Jobs[0]
+	if j.BlueprintTypeName != "Rifter Blueprint" {
+		t.Errorf("BlueprintTypeName = %q, want %q", j.BlueprintTypeName, "Rifter Blueprint")
+	}
+	if j.ProductTypeID != nil {
+		t.Errorf("ProductTypeID = %v, want nil", j.ProductTypeID)
+	}
+	if j.ProductTypeName != "" {
+		t.Errorf("ProductTypeName = %q, want empty (no product type to resolve)", j.ProductTypeName)
+	}
+}
+
+func TestListCorporationIndustryJobsHandler_ResolvesTypeNames(t *testing.T) {
+	store := industryTestStore(t)
+
+	orig := listCorporationIndustryJobs
+	t.Cleanup(func() { listCorporationIndustryJobs = orig })
+	productTypeID := int64(588)
+	listCorporationIndustryJobs = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, includeCompleted bool, page int32) ([]esiapi.CorporationsCorporationIdIndustryJobsGetInner, int32, error) {
+		return []esiapi.CorporationsCorporationIdIndustryJobsGetInner{{JobId: 1, BlueprintTypeId: 587, ProductTypeId: &productTypeID}}, 1, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{587: "Rifter Blueprint", 588: "Rifter"}
+	}
+
+	handler := listCorporationIndustryJobsHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, ListCorporationIndustryJobsInput{CharacterID: 7, CorporationID: 98000001})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Jobs) != 1 {
+		t.Fatalf("out.Jobs = %+v, want one job", out.Jobs)
+	}
+	j := out.Jobs[0]
+	if j.BlueprintTypeName != "Rifter Blueprint" {
+		t.Errorf("BlueprintTypeName = %q, want %q", j.BlueprintTypeName, "Rifter Blueprint")
+	}
+	if j.ProductTypeName != "Rifter" {
+		t.Errorf("ProductTypeName = %q, want %q", j.ProductTypeName, "Rifter")
+	}
+}
+
+func TestListCharacterMiningHandler_ResolvesTypeName(t *testing.T) {
+	store := industryTestStore(t)
+
+	orig := listCharacterMining
+	t.Cleanup(func() { listCharacterMining = orig })
+	listCharacterMining = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]esiapi.CharactersCharacterIdMiningGetInner, int32, error) {
+		return []esiapi.CharactersCharacterIdMiningGetInner{{Date: "2023-01-01", Quantity: 100, SolarSystemId: 30000142, TypeId: 1230}}, 1, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{1230: "Veldspar"}
+	}
+
+	handler := listCharacterMiningHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, ListCharacterMiningInput{CharacterID: 7})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Ledger) != 1 {
+		t.Fatalf("out.Ledger = %+v, want one entry", out.Ledger)
+	}
+	if out.Ledger[0].TypeName != "Veldspar" {
+		t.Errorf("TypeName = %q, want %q", out.Ledger[0].TypeName, "Veldspar")
+	}
+}
+
+func TestGetCorporationMiningObserverDetailHandler_ResolvesTypeName(t *testing.T) {
+	store := industryTestStore(t)
+
+	orig := getCorporationMiningObserverDetail
+	t.Cleanup(func() { getCorporationMiningObserverDetail = orig })
+	getCorporationMiningObserverDetail = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID, observerID int64, page int32) ([]esiapi.CorporationCorporationIdMiningObserversObserverIdGetInner, int32, error) {
+		return []esiapi.CorporationCorporationIdMiningObserversObserverIdGetInner{{
+			CharacterId: 100, LastUpdated: "2023-01-01", Quantity: 500, RecordedCorporationId: 98000001, TypeId: 1230,
+		}}, 1, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{1230: "Veldspar"}
+	}
+
+	handler := getCorporationMiningObserverDetailHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, GetCorporationMiningObserverDetailInput{CharacterID: 7, CorporationID: 98000001, ObserverID: 900})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Entries) != 1 {
+		t.Fatalf("out.Entries = %+v, want one entry", out.Entries)
+	}
+	if out.Entries[0].TypeName != "Veldspar" {
+		t.Errorf("TypeName = %q, want %q", out.Entries[0].TypeName, "Veldspar")
+	}
+}
+
+func TestListIndustryFacilitiesHandler_ResolvesTypeName(t *testing.T) {
+	orig := listIndustryFacilities
+	t.Cleanup(func() { listIndustryFacilities = orig })
+	listIndustryFacilities = func(ctx context.Context, userAgent string) ([]esiapi.IndustryFacilitiesGetInner, error) {
+		return []esiapi.IndustryFacilitiesGetInner{{
+			FacilityId: 500, OwnerId: 98000001, RegionId: 10000002, SolarSystemId: 30000142, TypeId: 2502,
+		}}, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{2502: "Standup Manufacturing Plant I"}
+	}
+
+	handler := listIndustryFacilitiesHandler("v1", nil)
+	_, out, err := handler(context.Background(), nil, ListIndustryFacilitiesInput{})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Facilities) != 1 {
+		t.Fatalf("out.Facilities = %+v, want one facility", out.Facilities)
+	}
+	if out.Facilities[0].TypeName != "Standup Manufacturing Plant I" {
+		t.Errorf("TypeName = %q, want %q", out.Facilities[0].TypeName, "Standup Manufacturing Plant I")
 	}
 }

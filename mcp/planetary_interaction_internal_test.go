@@ -122,7 +122,7 @@ func TestGetCharacterPlanetHandler_MapsFields(t *testing.T) {
 		}, nil
 	}
 
-	handler := getCharacterPlanetHandler("v1", "client-id", store)
+	handler := getCharacterPlanetHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, GetCharacterPlanetInput{CharacterID: 7, PlanetID: 40000001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -214,7 +214,7 @@ func TestGetCharacterPlanetHandler_UnknownCharacter(t *testing.T) {
 		return nil, nil
 	}
 
-	handler := getCharacterPlanetHandler("v1", "client-id", store)
+	handler := getCharacterPlanetHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, GetCharacterPlanetInput{CharacterID: 999, PlanetID: 1})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -260,7 +260,7 @@ func TestListCorporationCustomsOfficesHandler_MapsFields(t *testing.T) {
 		}, 3, nil
 	}
 
-	handler := listCorporationCustomsOfficesHandler("v1", "client-id", store)
+	handler := listCorporationCustomsOfficesHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, ListCorporationCustomsOfficesInput{CharacterID: 7, CorporationID: 98000001, Page: 2})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -326,7 +326,7 @@ func TestListCorporationCustomsOfficesHandler_DefaultsPageToOne(t *testing.T) {
 		return nil, 1, nil
 	}
 
-	handler := listCorporationCustomsOfficesHandler("v1", "client-id", store)
+	handler := listCorporationCustomsOfficesHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, ListCorporationCustomsOfficesInput{CharacterID: 7, CorporationID: 98000001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -347,10 +347,137 @@ func TestListCorporationCustomsOfficesHandler_UnknownCharacter(t *testing.T) {
 		return nil, 0, nil
 	}
 
-	handler := listCorporationCustomsOfficesHandler("v1", "client-id", store)
+	handler := listCorporationCustomsOfficesHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationCustomsOfficesInput{CharacterID: 999, CorporationID: 98000001})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
+	}
+}
+
+// TestGetCharacterPlanetHandler_ResolvesTypeNames exercises all four enrichment sites in one
+// combined resolveTypeNames call: a pin's flat TypeID, a pin content's nested TypeID, an
+// extractor-details' nested *int64 ProductTypeID, and a sibling route's flat ContentTypeID.
+func TestGetCharacterPlanetHandler_ResolvesTypeNames(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := getCharacterPlanet
+	t.Cleanup(func() { getCharacterPlanet = orig })
+	productTypeID := int64(587)
+	getCharacterPlanet = func(ctx context.Context, clientID string, characterID int32, userAgent string, planetID int64) (*esiapi.CharactersCharacterIdPlanetsPlanetIdGet, error) {
+		return &esiapi.CharactersCharacterIdPlanetsPlanetIdGet{
+			Pins: []esiapi.CharactersCharacterIdPlanetsPlanetIdGetPinsInner{{
+				TypeId:           587,
+				Contents:         []esiapi.CharactersCharacterIdPlanetsPlanetIdGetPinsInnerContentsInner{{TypeId: 588, Amount: 100}},
+				ExtractorDetails: &esiapi.CharactersCharacterIdPlanetsPlanetIdGetPinsInnerExtractorDetails{ProductTypeId: &productTypeID},
+			}},
+			Routes: []esiapi.CharactersCharacterIdPlanetsPlanetIdGetRoutesInner{{ContentTypeId: 588}},
+		}, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{587: "Command Center", 588: "Water"}
+	}
+
+	handler := getCharacterPlanetHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, GetCharacterPlanetInput{CharacterID: 7, PlanetID: 1})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Pins) != 1 {
+		t.Fatalf("Pins = %+v, want one entry", out.Pins)
+	}
+	if out.Pins[0].TypeName != "Command Center" {
+		t.Errorf("Pins[0].TypeName = %q, want %q", out.Pins[0].TypeName, "Command Center")
+	}
+	if len(out.Pins[0].Contents) != 1 || out.Pins[0].Contents[0].TypeName != "Water" {
+		t.Errorf("Pins[0].Contents = %+v, want one entry with TypeName=Water", out.Pins[0].Contents)
+	}
+	if out.Pins[0].ExtractorDetails == nil || out.Pins[0].ExtractorDetails.ProductTypeName != "Command Center" {
+		t.Errorf("Pins[0].ExtractorDetails = %+v, want non-nil with ProductTypeName=Command Center", out.Pins[0].ExtractorDetails)
+	}
+	if len(out.Routes) != 1 || out.Routes[0].ContentTypeName != "Water" {
+		t.Errorf("Routes = %+v, want one entry with ContentTypeName=Water", out.Routes)
+	}
+}
+
+// TestGetCharacterPlanetHandler_ResolvesTypeNames_NoExtractorDetails proves the ExtractorDetails
+// nil-guard: a pin with no ExtractorDetails must not panic, and pins with an ExtractorDetails
+// whose ProductTypeID is nil must not panic either.
+func TestGetCharacterPlanetHandler_ResolvesTypeNames_NoExtractorDetails(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := getCharacterPlanet
+	t.Cleanup(func() { getCharacterPlanet = orig })
+	getCharacterPlanet = func(ctx context.Context, clientID string, characterID int32, userAgent string, planetID int64) (*esiapi.CharactersCharacterIdPlanetsPlanetIdGet, error) {
+		return &esiapi.CharactersCharacterIdPlanetsPlanetIdGet{
+			Pins: []esiapi.CharactersCharacterIdPlanetsPlanetIdGetPinsInner{
+				{TypeId: 587},
+				{TypeId: 588, ExtractorDetails: &esiapi.CharactersCharacterIdPlanetsPlanetIdGetPinsInnerExtractorDetails{}},
+			},
+		}, nil
+	}
+
+	handler := getCharacterPlanetHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, GetCharacterPlanetInput{CharacterID: 7, PlanetID: 1})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Pins) != 2 {
+		t.Fatalf("Pins = %+v, want two entries", out.Pins)
+	}
+	if out.Pins[1].ExtractorDetails == nil || out.Pins[1].ExtractorDetails.ProductTypeName != "" {
+		t.Errorf("Pins[1].ExtractorDetails = %+v, want non-nil with empty ProductTypeName", out.Pins[1].ExtractorDetails)
+	}
+}
+
+// TestListCorporationCustomsOfficesHandler_ResolvesTypeName proves the *int64 TypeID nil-guard:
+// one office with a TypeID gets a resolved name, one without a TypeID is left untouched.
+func TestListCorporationCustomsOfficesHandler_ResolvesTypeName(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := listCorporationCustomsOffices
+	t.Cleanup(func() { listCorporationCustomsOffices = orig })
+	typeID := int64(2233)
+	listCorporationCustomsOffices = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdCustomsOfficesGetInner, int32, error) {
+		return []esiapi.CorporationsCorporationIdCustomsOfficesGetInner{
+			{OfficeId: 1, TypeId: &typeID},
+			{OfficeId: 2},
+		}, 1, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{2233: "Customs Office"}
+	}
+
+	handler := listCorporationCustomsOfficesHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, ListCorporationCustomsOfficesInput{CharacterID: 7, CorporationID: 1})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Offices) != 2 {
+		t.Fatalf("Offices = %+v, want two entries", out.Offices)
+	}
+	if out.Offices[0].TypeName != "Customs Office" {
+		t.Errorf("Offices[0].TypeName = %q, want %q", out.Offices[0].TypeName, "Customs Office")
+	}
+	if out.Offices[1].TypeID != nil || out.Offices[1].TypeName != "" {
+		t.Errorf("Offices[1] = %+v, want nil TypeID and empty TypeName", out.Offices[1])
 	}
 }
 

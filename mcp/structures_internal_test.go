@@ -100,7 +100,7 @@ func TestGetCharacterMercenaryDenHandler_MapsFields_WithReinforcementTimer(t *te
 		}, nil
 	}
 
-	handler := getCharacterMercenaryDenHandler("v1", "client-id", store)
+	handler := getCharacterMercenaryDenHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, GetCharacterMercenaryDenInput{CharacterID: 7, MercenaryDenID: 1001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -135,13 +135,47 @@ func TestGetCharacterMercenaryDenHandler_MapsFields_NoReinforcementTimer(t *test
 		return MercenaryDenDetail{ID: 1001, TypeID: 85230, State: "offline"}, nil
 	}
 
-	handler := getCharacterMercenaryDenHandler("v1", "client-id", store)
+	handler := getCharacterMercenaryDenHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, GetCharacterMercenaryDenInput{CharacterID: 7, MercenaryDenID: 1001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
 	if out.ReinforcementEnd != nil {
 		t.Errorf("ReinforcementEnd = %v, want nil", out.ReinforcementEnd)
+	}
+}
+
+func TestGetCharacterMercenaryDenHandler_ResolvesTypeName(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := getCharacterMercenaryDen
+	t.Cleanup(func() { getCharacterMercenaryDen = orig })
+	getCharacterMercenaryDen = func(ctx context.Context, clientID string, characterID int32, userAgent string, mercenaryDenID int64) (MercenaryDenDetail, error) {
+		return MercenaryDenDetail{ID: 1001, TypeID: 56674}, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	var gotIDs []int64
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		gotIDs = ids
+		return map[int64]string{56674: "Mercenary Den"}
+	}
+
+	handler := getCharacterMercenaryDenHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, GetCharacterMercenaryDenInput{CharacterID: 7, MercenaryDenID: 1001})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(gotIDs) != 1 || gotIDs[0] != 56674 {
+		t.Errorf("resolveTypeNames got ids = %v, want [56674]", gotIDs)
+	}
+	if out.TypeName != "Mercenary Den" {
+		t.Errorf("TypeName = %q, want %q", out.TypeName, "Mercenary Den")
 	}
 }
 
@@ -156,7 +190,7 @@ func TestGetCharacterMercenaryDenHandler_UnknownCharacter(t *testing.T) {
 		return MercenaryDenDetail{}, nil
 	}
 
-	handler := getCharacterMercenaryDenHandler("v1", "client-id", store)
+	handler := getCharacterMercenaryDenHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, GetCharacterMercenaryDenInput{CharacterID: 999, MercenaryDenID: 1001})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -177,7 +211,7 @@ func TestGetCharacterMercenaryDenHandler_PropagatesError(t *testing.T) {
 		return MercenaryDenDetail{}, wantErr
 	}
 
-	handler := getCharacterMercenaryDenHandler("v1", "client-id", store)
+	handler := getCharacterMercenaryDenHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, GetCharacterMercenaryDenInput{CharacterID: 7, MercenaryDenID: 1001})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -276,7 +310,7 @@ func TestGetCorporationSkyhookHandler_MapsFields_FullFixture(t *testing.T) {
 		}, nil
 	}
 
-	handler := getCorporationSkyhookHandler("v1", "client-id", store)
+	handler := getCorporationSkyhookHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, GetCorporationSkyhookInput{CharacterID: 7, CorporationID: 98000001, SkyhookID: 2001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -314,13 +348,47 @@ func TestGetCorporationSkyhookHandler_MapsFields_SparseFixture(t *testing.T) {
 		return SkyhookDetail{ID: 2001, PlanetID: 40000001, IsActive: false, State: "unpowered"}, nil
 	}
 
-	handler := getCorporationSkyhookHandler("v1", "client-id", store)
+	handler := getCorporationSkyhookHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, GetCorporationSkyhookInput{CharacterID: 7, CorporationID: 98000001, SkyhookID: 2001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
 	if out.EffectiveWorkforce != nil || out.Reagents != nil || out.ReinforcementEnd != nil || out.TheftVulnerabilityStart != nil || out.TheftVulnerabilityEnd != nil {
 		t.Errorf("out = %+v, want all optional fields nil/empty", out)
+	}
+}
+
+func TestGetCorporationSkyhookHandler_ResolvesReagentTypeName(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := getCorporationSkyhook
+	t.Cleanup(func() { getCorporationSkyhook = orig })
+	getCorporationSkyhook = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID, skyhookID int64) (SkyhookDetail, error) {
+		return SkyhookDetail{Reagents: []SkyhookReagent{{TypeID: 16273}}}, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	var gotIDs []int64
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		gotIDs = ids
+		return map[int64]string{16273: "Oxygen"}
+	}
+
+	handler := getCorporationSkyhookHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, GetCorporationSkyhookInput{CharacterID: 7, CorporationID: 98000001, SkyhookID: 2001})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(gotIDs) != 1 || gotIDs[0] != 16273 {
+		t.Errorf("resolveTypeNames got ids = %v, want [16273]", gotIDs)
+	}
+	if out.Reagents[0].TypeName != "Oxygen" {
+		t.Errorf("Reagents[0].TypeName = %q, want %q", out.Reagents[0].TypeName, "Oxygen")
 	}
 }
 
@@ -335,7 +403,7 @@ func TestGetCorporationSkyhookHandler_UnknownCharacter(t *testing.T) {
 		return SkyhookDetail{}, nil
 	}
 
-	handler := getCorporationSkyhookHandler("v1", "client-id", store)
+	handler := getCorporationSkyhookHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, GetCorporationSkyhookInput{CharacterID: 999, CorporationID: 98000001, SkyhookID: 2001})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -356,7 +424,7 @@ func TestGetCorporationSkyhookHandler_PropagatesError(t *testing.T) {
 		return SkyhookDetail{}, wantErr
 	}
 
-	handler := getCorporationSkyhookHandler("v1", "client-id", store)
+	handler := getCorporationSkyhookHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, GetCorporationSkyhookInput{CharacterID: 7, CorporationID: 98000001, SkyhookID: 2001})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -466,7 +534,7 @@ func TestGetCorporationSovereigntyHubHandler_MapsFields_ExportVariant(t *testing
 		}, nil
 	}
 
-	handler := getCorporationSovereigntyHubHandler("v1", "client-id", store)
+	handler := getCorporationSovereigntyHubHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, GetCorporationSovereigntyHubInput{CharacterID: 7, CorporationID: 98000001, SovereigntyHubID: 3001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -529,7 +597,7 @@ func TestGetCorporationSovereigntyHubHandler_MapsFields_ImportVariant(t *testing
 		}, nil
 	}
 
-	handler := getCorporationSovereigntyHubHandler("v1", "client-id", store)
+	handler := getCorporationSovereigntyHubHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, GetCorporationSovereigntyHubInput{CharacterID: 7, CorporationID: 98000001, SovereigntyHubID: 3001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -573,7 +641,7 @@ func TestGetCorporationSovereigntyHubHandler_MapsFields_TransitVariant(t *testin
 		}, nil
 	}
 
-	handler := getCorporationSovereigntyHubHandler("v1", "client-id", store)
+	handler := getCorporationSovereigntyHubHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, GetCorporationSovereigntyHubInput{CharacterID: 7, CorporationID: 98000001, SovereigntyHubID: 3001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -596,6 +664,49 @@ func TestGetCorporationSovereigntyHubHandler_MapsFields_TransitVariant(t *testin
 	}
 }
 
+func TestGetCorporationSovereigntyHubHandler_ResolvesTypeNames(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := getCorporationSovereigntyHub
+	t.Cleanup(func() { getCorporationSovereigntyHub = orig })
+	getCorporationSovereigntyHub = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID, sovereigntyHubID int64) (StructureSovereigntyHubDetail, error) {
+		return StructureSovereigntyHubDetail{
+			ReagentBay: StructureSovereigntyHubReagentBay{Reagents: []StructureSovereigntyHubReagent{{TypeID: 16273}}},
+			Upgrades:   []StructureSovereigntyHubUpgrade{{TypeID: 587}},
+		}, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	var gotIDs []int64
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		gotIDs = ids
+		return map[int64]string{
+			16273: "Oxygen",
+			587:   "Rifter",
+		}
+	}
+
+	handler := getCorporationSovereigntyHubHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, GetCorporationSovereigntyHubInput{CharacterID: 7, CorporationID: 98000001, SovereigntyHubID: 3001})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(gotIDs) != 2 || gotIDs[0] != 16273 || gotIDs[1] != 587 {
+		t.Errorf("resolveTypeNames got ids = %v, want [16273 587]", gotIDs)
+	}
+	if out.ReagentBay.Reagents[0].TypeName != "Oxygen" {
+		t.Errorf("ReagentBay.Reagents[0].TypeName = %q, want %q", out.ReagentBay.Reagents[0].TypeName, "Oxygen")
+	}
+	if out.Upgrades[0].TypeName != "Rifter" {
+		t.Errorf("Upgrades[0].TypeName = %q, want %q", out.Upgrades[0].TypeName, "Rifter")
+	}
+}
+
 func TestGetCorporationSovereigntyHubHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
@@ -607,7 +718,7 @@ func TestGetCorporationSovereigntyHubHandler_UnknownCharacter(t *testing.T) {
 		return StructureSovereigntyHubDetail{}, nil
 	}
 
-	handler := getCorporationSovereigntyHubHandler("v1", "client-id", store)
+	handler := getCorporationSovereigntyHubHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, GetCorporationSovereigntyHubInput{CharacterID: 999, CorporationID: 98000001, SovereigntyHubID: 3001})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -628,7 +739,7 @@ func TestGetCorporationSovereigntyHubHandler_PropagatesError(t *testing.T) {
 		return StructureSovereigntyHubDetail{}, wantErr
 	}
 
-	handler := getCorporationSovereigntyHubHandler("v1", "client-id", store)
+	handler := getCorporationSovereigntyHubHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, GetCorporationSovereigntyHubInput{CharacterID: 7, CorporationID: 98000001, SovereigntyHubID: 3001})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)

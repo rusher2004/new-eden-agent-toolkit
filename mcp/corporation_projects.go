@@ -29,6 +29,7 @@ import (
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
+	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -69,8 +70,9 @@ type IdentityMatcher struct {
 // assumed. This MCP layer flattens both to the same ShipTypeMatcher shape since the distinction
 // carries no semantic meaning.
 type ShipTypeMatcher struct {
-	GroupID *int64 `json:"groupId,omitempty"`
-	TypeID  *int64 `json:"typeId,omitempty"`
+	GroupID  *int64 `json:"groupId,omitempty"`
+	TypeID   *int64 `json:"typeId,omitempty"`
+	TypeName string `json:"typeName,omitempty"`
 }
 
 // DockingLocationMatcher is a oneOf{station, structure} docking-location filter. Shared by
@@ -632,7 +634,7 @@ type GetCorporationProjectDetailOutput struct {
 	State         string                     `json:"state"`
 }
 
-func getCorporationProjectDetailHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[GetCorporationProjectDetailInput, GetCorporationProjectDetailOutput] {
+func getCorporationProjectDetailHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetCorporationProjectDetailInput, GetCorporationProjectDetailOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCorporationProjectDetailInput) (*mcpsdk.CallToolResult, GetCorporationProjectDetailOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -645,11 +647,30 @@ func getCorporationProjectDetailHandler(version, clientID string, store *config.
 		if err != nil {
 			return nil, GetCorporationProjectDetailOutput{}, fmt.Errorf("get corporation project detail: %w", err)
 		}
+		configuration := toProjectConfiguration(detail.Configuration)
+
+		var ids []int64
+		for _, group := range [][]ShipTypeMatcher{configuration.Ships, configuration.Items, configuration.Materials} {
+			for _, m := range group {
+				if m.TypeID != nil {
+					ids = append(ids, *m.TypeID)
+				}
+			}
+		}
+		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		for _, group := range [][]ShipTypeMatcher{configuration.Ships, configuration.Items, configuration.Materials} {
+			for i := range group {
+				if group[i].TypeID != nil {
+					group[i].TypeName = names[*group[i].TypeID]
+				}
+			}
+		}
+
 		return nil, GetCorporationProjectDetailOutput{
 			CharacterID:   in.CharacterID,
 			CorporationID: in.CorporationID,
 			ProjectID:     in.ProjectID,
-			Configuration: toProjectConfiguration(detail.Configuration),
+			Configuration: configuration,
 			Contribution:  toProjectContributionLimits(detail.Contribution),
 			Creator:       ProjectCreator{CreatorID: detail.Creator.Id, Name: detail.Creator.Name},
 			Details: ProjectDetails{

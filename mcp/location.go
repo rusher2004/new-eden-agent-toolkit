@@ -9,6 +9,7 @@ import (
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
+	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -109,13 +110,14 @@ type GetCharacterShipInput struct {
 	CharacterID int32 `json:"characterId" jsonschema:"the character ID to check"`
 }
 type GetCharacterShipOutput struct {
-	CharacterID int32  `json:"characterId"`
-	ShipItemID  int64  `json:"shipItemId"`
-	ShipName    string `json:"shipName"`
-	ShipTypeID  int64  `json:"shipTypeId"`
+	CharacterID  int32  `json:"characterId"`
+	ShipItemID   int64  `json:"shipItemId"`
+	ShipName     string `json:"shipName"`
+	ShipTypeID   int64  `json:"shipTypeId"`
+	ShipTypeName string `json:"shipTypeName,omitempty"`
 }
 
-func getCharacterShipHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[GetCharacterShipInput, GetCharacterShipOutput] {
+func getCharacterShipHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetCharacterShipInput, GetCharacterShipOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterShipInput) (*mcpsdk.CallToolResult, GetCharacterShipOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -128,6 +130,7 @@ func getCharacterShipHandler(version, clientID string, store *config.Store) mcps
 		if err != nil {
 			return nil, GetCharacterShipOutput{}, fmt.Errorf("get character ship: %w", err)
 		}
-		return nil, GetCharacterShipOutput{CharacterID: in.CharacterID, ShipItemID: shipItemID, ShipName: shipName, ShipTypeID: shipTypeID}, nil
+		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), []int64{shipTypeID})
+		return nil, GetCharacterShipOutput{CharacterID: in.CharacterID, ShipItemID: shipItemID, ShipName: shipName, ShipTypeID: shipTypeID, ShipTypeName: names[shipTypeID]}, nil
 	}
 }

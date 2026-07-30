@@ -9,6 +9,7 @@ import (
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
+	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -81,6 +82,7 @@ type MercenaryDenSkyhookRef struct {
 type MercenaryDenDetail struct {
 	ID               int64                  `json:"id"`
 	TypeID           int64                  `json:"typeId"`
+	TypeName         string                 `json:"typeName,omitempty"`
 	State            string                 `json:"state"`
 	Evolution        MercenaryDenEvolution  `json:"evolution"`
 	InfomorphsAmount int64                  `json:"infomorphsAmount"`
@@ -123,7 +125,7 @@ type GetCharacterMercenaryDenInput struct {
 	MercenaryDenID int64 `json:"mercenaryDenId" jsonschema:"the mercenary den ID to look up"`
 }
 
-func getCharacterMercenaryDenHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[GetCharacterMercenaryDenInput, MercenaryDenDetail] {
+func getCharacterMercenaryDenHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetCharacterMercenaryDenInput, MercenaryDenDetail] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterMercenaryDenInput) (*mcpsdk.CallToolResult, MercenaryDenDetail, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -136,6 +138,8 @@ func getCharacterMercenaryDenHandler(version, clientID string, store *config.Sto
 		if err != nil {
 			return nil, MercenaryDenDetail{}, fmt.Errorf("get character mercenary den: %w", err)
 		}
+		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), []int64{detail.TypeID})
+		detail.TypeName = names[detail.TypeID]
 		return nil, detail, nil
 	}
 }
@@ -196,6 +200,7 @@ type SkyhookReagent struct {
 	LastCycle      time.Time `json:"lastCycle"`
 	SecuredStock   int64     `json:"securedStock"`
 	TypeID         int64     `json:"typeId"`
+	TypeName       string    `json:"typeName,omitempty"`
 	UnsecuredStock int64     `json:"unsecuredStock"`
 }
 
@@ -251,7 +256,7 @@ type GetCorporationSkyhookInput struct {
 	SkyhookID     int64 `json:"skyhookId" jsonschema:"the skyhook ID to look up"`
 }
 
-func getCorporationSkyhookHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[GetCorporationSkyhookInput, SkyhookDetail] {
+func getCorporationSkyhookHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetCorporationSkyhookInput, SkyhookDetail] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCorporationSkyhookInput) (*mcpsdk.CallToolResult, SkyhookDetail, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -263,6 +268,14 @@ func getCorporationSkyhookHandler(version, clientID string, store *config.Store)
 		detail, err := getCorporationSkyhook(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.SkyhookID)
 		if err != nil {
 			return nil, SkyhookDetail{}, fmt.Errorf("get corporation skyhook: %w", err)
+		}
+		ids := make([]int64, len(detail.Reagents))
+		for i, r := range detail.Reagents {
+			ids[i] = r.TypeID
+		}
+		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		for i := range detail.Reagents {
+			detail.Reagents[i].TypeName = names[detail.Reagents[i].TypeID]
 		}
 		return nil, detail, nil
 	}
@@ -321,9 +334,10 @@ func listCorporationSovereigntyHubsHandler(version, clientID string, store *conf
 // --- get_corporation_sovereignty_hub (private, corp-scoped) ---
 
 type StructureSovereigntyHubReagent struct {
-	Amount         int64 `json:"amount"`
-	BurningPerHour int64 `json:"burningPerHour"`
-	TypeID         int64 `json:"typeId"`
+	Amount         int64  `json:"amount"`
+	BurningPerHour int64  `json:"burningPerHour"`
+	TypeID         int64  `json:"typeId"`
+	TypeName       string `json:"typeName,omitempty"`
 }
 
 type StructureSovereigntyHubReagentBay struct {
@@ -344,6 +358,7 @@ type StructureSovereigntyHubResources struct {
 type StructureSovereigntyHubUpgrade struct {
 	PowerState string `json:"powerState"`
 	TypeID     int64  `json:"typeId"`
+	TypeName   string `json:"typeName,omitempty"`
 }
 
 // StructureSovereigntyHubTransportConfig flattens ESI's 3-way oneOf (export/import/transit) for the
@@ -473,7 +488,7 @@ var getCorporationSovereigntyHub = func(ctx context.Context, clientID string, ch
 	return out, nil
 }
 
-func getCorporationSovereigntyHubHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[GetCorporationSovereigntyHubInput, StructureSovereigntyHubDetail] {
+func getCorporationSovereigntyHubHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetCorporationSovereigntyHubInput, StructureSovereigntyHubDetail] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCorporationSovereigntyHubInput) (*mcpsdk.CallToolResult, StructureSovereigntyHubDetail, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -485,6 +500,20 @@ func getCorporationSovereigntyHubHandler(version, clientID string, store *config
 		detail, err := getCorporationSovereigntyHub(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.SovereigntyHubID)
 		if err != nil {
 			return nil, StructureSovereigntyHubDetail{}, fmt.Errorf("get corporation sovereignty hub: %w", err)
+		}
+		ids := make([]int64, 0, len(detail.ReagentBay.Reagents)+len(detail.Upgrades))
+		for _, r := range detail.ReagentBay.Reagents {
+			ids = append(ids, r.TypeID)
+		}
+		for _, u := range detail.Upgrades {
+			ids = append(ids, u.TypeID)
+		}
+		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		for i := range detail.ReagentBay.Reagents {
+			detail.ReagentBay.Reagents[i].TypeName = names[detail.ReagentBay.Reagents[i].TypeID]
+		}
+		for i := range detail.Upgrades {
+			detail.Upgrades[i].TypeName = names[detail.Upgrades[i].TypeID]
 		}
 		return nil, detail, nil
 	}

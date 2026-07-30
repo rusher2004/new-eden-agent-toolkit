@@ -7,6 +7,7 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
+	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -87,10 +88,13 @@ type DynamicItemEffect struct {
 
 type GetDogmaDynamicItemOutput struct {
 	TypeID          int64                  `json:"typeId"`
+	TypeName        string                 `json:"typeName,omitempty"`
 	ItemID          int64                  `json:"itemId"`
 	CreatedBy       int64                  `json:"createdBy"`
 	MutatorTypeID   int64                  `json:"mutatorTypeId"`
+	MutatorTypeName string                 `json:"mutatorTypeName,omitempty"`
 	SourceTypeID    int64                  `json:"sourceTypeId"`
+	SourceTypeName  string                 `json:"sourceTypeName,omitempty"`
 	DogmaAttributes []DynamicItemAttribute `json:"dogmaAttributes"`
 	DogmaEffects    []DynamicItemEffect    `json:"dogmaEffects"`
 }
@@ -120,12 +124,16 @@ type GetDogmaDynamicItemInput struct {
 	ItemID int64 `json:"itemId" jsonschema:"the mutated item's item ID"`
 }
 
-func getDogmaDynamicItemHandler(version string) mcpsdk.ToolHandlerFor[GetDogmaDynamicItemInput, GetDogmaDynamicItemOutput] {
+func getDogmaDynamicItemHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetDogmaDynamicItemInput, GetDogmaDynamicItemOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetDogmaDynamicItemInput) (*mcpsdk.CallToolResult, GetDogmaDynamicItemOutput, error) {
 		out, err := getDogmaDynamicItem(ctx, sso.UserAgent(version), in.TypeID, in.ItemID)
 		if err != nil {
 			return nil, GetDogmaDynamicItemOutput{}, fmt.Errorf("get dogma dynamic item: %w", err)
 		}
+		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), []int64{out.TypeID, out.MutatorTypeID, out.SourceTypeID})
+		out.TypeName = names[out.TypeID]
+		out.MutatorTypeName = names[out.MutatorTypeID]
+		out.SourceTypeName = names[out.SourceTypeID]
 		return nil, out, nil
 	}
 }

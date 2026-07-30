@@ -120,7 +120,7 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_mercenary_tactical_operation",
 		Description: "Get detail (dungeon type, mercenary den, state, expiry) for one mercenary tactical operation.",
-	}, getMercenaryTacticalOperationHandler(version, clientID, store))
+	}, getMercenaryTacticalOperationHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_raidable_skyhooks",
@@ -150,7 +150,7 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_assets",
 		Description: "List a logged-in EVE Online character's assets.",
-	}, listAssetsHandler(version, clientID, store))
+	}, listAssetsHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_asset_locations",
@@ -165,7 +165,7 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_corporation_assets",
 		Description: "List a corporation's assets, using a logged-in character's roles to authorize.",
-	}, listCorporationAssetsHandler(version, clientID, store))
+	}, listCorporationAssetsHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_corporation_asset_locations",
@@ -220,12 +220,12 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_character_agents_research",
 		Description: "List a logged-in EVE Online character's agent research progress.",
-	}, listCharacterAgentsResearchHandler(version, clientID, store))
+	}, listCharacterAgentsResearchHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_character_blueprints",
 		Description: "List a logged-in EVE Online character's blueprints.",
-	}, listCharacterBlueprintsHandler(version, clientID, store))
+	}, listCharacterBlueprintsHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_character_fatigue",
@@ -335,7 +335,7 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_character_contract_items",
 		Description: "List the items on one of a logged-in character's contracts.",
-	}, listCharacterContractItemsHandler(version, clientID, store))
+	}, listCharacterContractItemsHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_corporation_contracts",
@@ -350,7 +350,7 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_corporation_contract_items",
 		Description: "List the items on one of a corporation's contracts, using a logged-in character's roles to authorize.",
-	}, listCorporationContractItemsHandler(version, clientID, store))
+	}, listCorporationContractItemsHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_public_contracts",
@@ -365,7 +365,7 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_public_contract_items",
 		Description: "List the items on a public contract (public data, no character required).",
-	}, listPublicContractItemsHandler(version))
+	}, listPublicContractItemsHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_corporation",
@@ -405,7 +405,7 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_corporation_member_tracking",
 		Description: "List a corporation's member login/location/ship tracking data, using a logged-in character's roles to authorize.",
-	}, listCorporationMemberTrackingHandler(version, clientID, store))
+	}, listCorporationMemberTrackingHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_corporation_roles",
@@ -440,17 +440,17 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_corporation_blueprints",
 		Description: "List a corporation's blueprints, using a logged-in character's roles to authorize.",
-	}, listCorporationBlueprintsHandler(version, clientID, store))
+	}, listCorporationBlueprintsHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_corporation_container_logs",
 		Description: "List a corporation's container access logs, using a logged-in character's roles to authorize.",
-	}, listCorporationContainerLogsHandler(version, clientID, store))
+	}, listCorporationContainerLogsHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_corporation_facilities",
 		Description: "List a corporation's facilities, using a logged-in character's roles to authorize.",
-	}, listCorporationFacilitiesHandler(version, clientID, store))
+	}, listCorporationFacilitiesHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_corporation_medals",
@@ -465,17 +465,17 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_corporation_starbases",
 		Description: "List a corporation's starbases (POSes), using a logged-in character's roles to authorize.",
-	}, listCorporationStarbasesHandler(version, clientID, store))
+	}, listCorporationStarbasesHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_corporation_starbase",
 		Description: "Get detail for one of a corporation's starbases (POSes), using a logged-in character's roles to authorize.",
-	}, getCorporationStarbaseHandler(version, clientID, store))
+	}, getCorporationStarbaseHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_corporation_structures",
 		Description: "List a corporation's structures, using a logged-in character's roles to authorize.",
-	}, listCorporationStructuresHandler(version, clientID, store))
+	}, listCorporationStructuresHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_corporation_project_contribution",
@@ -490,7 +490,7 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_corporation_project_detail",
 		Description: "Get the full details (configuration, progress, reward) of a corporation project, using a logged-in character's roles to authorize.",
-	}, getCorporationProjectDetailHandler(version, clientID, store))
+	}, getCorporationProjectDetailHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_corporation_projects",
@@ -510,7 +510,7 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_dogma_dynamic_item",
 		Description: "Get detail for one mutated (\"abyssal\") item, identified by its source type and item ID (public data, no character required).",
-	}, getDogmaDynamicItemHandler(version))
+	}, getDogmaDynamicItemHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_dogma_effects",
@@ -565,7 +565,7 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_character_fittings",
 		Description: "List a logged-in EVE Online character's saved ship fittings.",
-	}, listCharacterFittingsHandler(version, clientID, store))
+	}, listCharacterFittingsHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "create_character_fitting",
@@ -595,7 +595,7 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_fleet_members",
 		Description: "List a fleet's members, using a logged-in character's fleet membership to authorize.",
-	}, listFleetMembersHandler(version, clientID, store))
+	}, listFleetMembersHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "invite_fleet_member",
@@ -685,12 +685,12 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_character_industry_jobs",
 		Description: "List a logged-in EVE Online character's industry jobs.",
-	}, listCharacterIndustryJobsHandler(version, clientID, store))
+	}, listCharacterIndustryJobsHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_character_mining",
 		Description: "List a logged-in EVE Online character's mining ledger.",
-	}, listCharacterMiningHandler(version, clientID, store))
+	}, listCharacterMiningHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_corporation_mining_extractions",
@@ -705,17 +705,17 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_corporation_mining_observer_detail",
 		Description: "Get the mining ledger recorded by one of a corporation's mining observers, using a logged-in character's roles to authorize.",
-	}, getCorporationMiningObserverDetailHandler(version, clientID, store))
+	}, getCorporationMiningObserverDetailHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_corporation_industry_jobs",
 		Description: "List a corporation's industry jobs, using a logged-in character's roles to authorize.",
-	}, listCorporationIndustryJobsHandler(version, clientID, store))
+	}, listCorporationIndustryJobsHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_industry_facilities",
 		Description: "List every industry facility in the game (public data, no character required).",
-	}, listIndustryFacilitiesHandler(version))
+	}, listIndustryFacilitiesHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_industry_systems",
@@ -725,7 +725,7 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_insurance_prices",
 		Description: "List insurance price levels for every insurable ship type (public data, no character required).",
-	}, listInsurancePricesHandler(version))
+	}, listInsurancePricesHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_character_killmails_recent",
@@ -740,7 +740,7 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_killmail",
 		Description: "Get the full details of a killmail, given its ID and hash (public data, no character required).",
-	}, getKillmailHandler(version))
+	}, getKillmailHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_character_location",
@@ -755,7 +755,7 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_character_ship",
 		Description: "Get a logged-in EVE Online character's current ship.",
-	}, getCharacterShipHandler(version, clientID, store))
+	}, getCharacterShipHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_character_loyalty_points",
@@ -765,7 +765,7 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_loyalty_store_offers",
 		Description: "List a corporation's loyalty store offers (public data, no character required).",
-	}, listLoyaltyStoreOffersHandler(version))
+	}, listLoyaltyStoreOffersHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_character_mail",
@@ -815,22 +815,22 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_character_market_orders",
 		Description: "List a logged-in EVE Online character's open market orders.",
-	}, listCharacterMarketOrdersHandler(version, clientID, store))
+	}, listCharacterMarketOrdersHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_character_market_order_history",
 		Description: "List a logged-in EVE Online character's cancelled/expired market orders from the last 90 days.",
-	}, listCharacterMarketOrderHistoryHandler(version, clientID, store))
+	}, listCharacterMarketOrderHistoryHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_corporation_market_orders",
 		Description: "List a corporation's open market orders, using a logged-in character's roles to authorize.",
-	}, listCorporationMarketOrdersHandler(version, clientID, store))
+	}, listCorporationMarketOrdersHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_corporation_market_order_history",
 		Description: "List a corporation's cancelled/expired market orders from the last 90 days, using a logged-in character's roles to authorize.",
-	}, listCorporationMarketOrderHistoryHandler(version, clientID, store))
+	}, listCorporationMarketOrderHistoryHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_market_groups",
@@ -845,7 +845,7 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_market_prices",
 		Description: "List ESI's adjusted/average price for every priced item type in the game (public data, no character required).",
-	}, listMarketPricesHandler(version))
+	}, listMarketPricesHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_market_history",
@@ -855,17 +855,17 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_market_orders",
 		Description: "List live market orders in a region, optionally filtered to one item type (public data, no character required).",
-	}, listMarketOrdersHandler(version))
+	}, listMarketOrdersHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_market_types",
 		Description: "List the item type IDs with at least one active market order in a region (public data, no character required).",
-	}, listMarketTypesHandler(version))
+	}, listMarketTypesHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_structure_market_orders",
 		Description: "List live market orders in a player structure, using a logged-in character's docking access to authorize.",
-	}, listStructureMarketOrdersHandler(version, clientID, store))
+	}, listStructureMarketOrdersHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_esi_changelog",
@@ -895,12 +895,12 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_character_planet",
 		Description: "Get the full colony layout (links, pins, routes) of one of a character's planets.",
-	}, getCharacterPlanetHandler(version, clientID, store))
+	}, getCharacterPlanetHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_corporation_customs_offices",
 		Description: "List a corporation's customs offices (POCOs), including tax rates and reinforcement schedule.",
-	}, listCorporationCustomsOfficesHandler(version, clientID, store))
+	}, listCorporationCustomsOfficesHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_planetary_schematic",
@@ -915,7 +915,7 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "search_character",
 		Description: "Search for entities (characters, corporations, systems, etc.) matching a string, scoped to a logged-in character's search permissions.",
-	}, searchCharacterHandler(version, clientID, store))
+	}, searchCharacterHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_character_attributes",
@@ -955,7 +955,7 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_character_mercenary_den",
 		Description: "Get full detail on one of the given character's mercenary dens: evolution stats, infomorph count, reinforcement timer, and attached skyhook.",
-	}, getCharacterMercenaryDenHandler(version, clientID, store))
+	}, getCharacterMercenaryDenHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_corporation_skyhooks",
@@ -965,7 +965,7 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_corporation_skyhook",
 		Description: "Get full detail on one of the given corporation's skyhooks: workforce, reagent stock, active/reinforcement state, and theft vulnerability window.",
-	}, getCorporationSkyhookHandler(version, clientID, store))
+	}, getCorporationSkyhookHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_corporation_sovereignty_hubs",
@@ -975,7 +975,7 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_corporation_sovereignty_hub",
 		Description: "Get full detail on one of the given corporation's sovereignty hubs: reagent bay, power/workforce resources, upgrades, vulnerability window, and workforce transport configuration/state.",
-	}, getCorporationSovereigntyHubHandler(version, clientID, store))
+	}, getCorporationSovereigntyHubHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_universe_ancestries",

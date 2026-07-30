@@ -92,7 +92,7 @@ func TestListCharacterAgentsResearchHandler_ReturnsAgents(t *testing.T) {
 		return []AgentResearch{{AgentID: 1}}, nil
 	}
 
-	handler := listCharacterAgentsResearchHandler("v1", "client-id", store)
+	handler := listCharacterAgentsResearchHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, ListCharacterAgentsResearchInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -113,7 +113,7 @@ func TestListCharacterAgentsResearchHandler_UnknownCharacter_ReturnsErrCharacter
 		return nil, nil
 	}
 
-	handler := listCharacterAgentsResearchHandler("v1", "client-id", store)
+	handler := listCharacterAgentsResearchHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCharacterAgentsResearchInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -133,7 +133,7 @@ func TestListCharacterBlueprintsHandler_ReturnsBlueprints(t *testing.T) {
 		return []Blueprint{{ItemID: 1, TypeID: 950}}, 2, nil
 	}
 
-	handler := listCharacterBlueprintsHandler("v1", "client-id", store)
+	handler := listCharacterBlueprintsHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, ListCharacterBlueprintsInput{CharacterID: 7, Page: 1})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -157,7 +157,7 @@ func TestListCharacterBlueprintsHandler_PropagatesError(t *testing.T) {
 		return nil, 0, wantErr
 	}
 
-	handler := listCharacterBlueprintsHandler("v1", "client-id", store)
+	handler := listCharacterBlueprintsHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCharacterBlueprintsInput{CharacterID: 7})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -175,7 +175,7 @@ func TestListCharacterBlueprintsHandler_UnknownCharacter_ReturnsErrCharacterNotF
 		return nil, 0, nil
 	}
 
-	handler := listCharacterBlueprintsHandler("v1", "client-id", store)
+	handler := listCharacterBlueprintsHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCharacterBlueprintsInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -508,5 +508,73 @@ func TestGetCharacterCSPACostHandler_UnknownCharacter_ReturnsErrCharacterNotFoun
 	_, _, err := handler(context.Background(), nil, GetCharacterCSPACostInput{CharacterID: 999, TargetCharacterIDs: []int64{998878}})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
+	}
+}
+
+func TestListCharacterAgentsResearchHandler_ResolvesSkillTypeName(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := listCharacterAgentsResearch
+	t.Cleanup(func() { listCharacterAgentsResearch = orig })
+	listCharacterAgentsResearch = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]AgentResearch, error) {
+		return []AgentResearch{{AgentID: 1, SkillTypeID: 3403}}, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	var gotIDs []int64
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		gotIDs = ids
+		return map[int64]string{3403: "Mining"}
+	}
+
+	handler := listCharacterAgentsResearchHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, ListCharacterAgentsResearchInput{CharacterID: 7})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(gotIDs) != 1 || gotIDs[0] != 3403 {
+		t.Errorf("resolveTypeNames got ids = %v, want [3403]", gotIDs)
+	}
+	if out.Agents[0].SkillTypeName != "Mining" {
+		t.Errorf("SkillTypeName = %q, want %q", out.Agents[0].SkillTypeName, "Mining")
+	}
+}
+
+func TestListCharacterBlueprintsHandler_ResolvesTypeName(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := listCharacterBlueprints
+	t.Cleanup(func() { listCharacterBlueprints = orig })
+	listCharacterBlueprints = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]Blueprint, int32, error) {
+		return []Blueprint{{ItemID: 1, TypeID: 587}}, 1, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	var gotIDs []int64
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		gotIDs = ids
+		return map[int64]string{587: "Rifter Blueprint"}
+	}
+
+	handler := listCharacterBlueprintsHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, ListCharacterBlueprintsInput{CharacterID: 7})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(gotIDs) != 1 || gotIDs[0] != 587 {
+		t.Errorf("resolveTypeNames got ids = %v, want [587]", gotIDs)
+	}
+	if out.Blueprints[0].TypeName != "Rifter Blueprint" {
+		t.Errorf("TypeName = %q, want %q", out.Blueprints[0].TypeName, "Rifter Blueprint")
 	}
 }

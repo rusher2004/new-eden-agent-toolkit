@@ -160,7 +160,7 @@ func TestGetKillmailHandler_MapsFields(t *testing.T) {
 		}, nil
 	}
 
-	handler := getKillmailHandler("v1")
+	handler := getKillmailHandler("v1", nil)
 	_, out, err := handler(context.Background(), nil, GetKillmailInput{KillmailID: 999, KillmailHash: "somehash"})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -247,7 +247,7 @@ func TestGetKillmailHandler_HandlesNilOptionalFields(t *testing.T) {
 		}, nil
 	}
 
-	handler := getKillmailHandler("v1")
+	handler := getKillmailHandler("v1", nil)
 	_, out, err := handler(context.Background(), nil, GetKillmailInput{KillmailID: 111, KillmailHash: "nilhash"})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -337,9 +337,53 @@ func TestGetKillmailHandler_PropagatesError(t *testing.T) {
 		return nil, wantErr
 	}
 
-	handler := getKillmailHandler("v1")
+	handler := getKillmailHandler("v1", nil)
 	_, _, err := handler(context.Background(), nil, GetKillmailInput{KillmailID: 999, KillmailHash: "somehash"})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestGetKillmailHandler_ResolvesTypeNames(t *testing.T) {
+	orig := getKillmail
+	t.Cleanup(func() { getKillmail = orig })
+	getKillmail = func(ctx context.Context, userAgent string, killmailID int64, killmailHash string) (*esiapi.KillmailsKillmailIdKillmailHashGet, error) {
+		shipTypeID, weaponTypeID := int64(587), int64(2456)
+		return &esiapi.KillmailsKillmailIdKillmailHashGet{
+			Attackers: []esiapi.KillmailsKillmailIdKillmailHashGetAttackersInner{{ShipTypeId: &shipTypeID, WeaponTypeId: &weaponTypeID, FinalBlow: true}},
+			Victim: esiapi.KillmailsKillmailIdKillmailHashGetVictim{
+				ShipTypeId: 587,
+				Items: []esiapi.KillmailsKillmailIdKillmailHashGetVictimItemsInner{
+					{ItemTypeId: 34, Items: []esiapi.KillmailsKillmailIdKillmailHashGetVictimItemsInnerItemsInner{{ItemTypeId: 34}}},
+				},
+			},
+		}, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{587: "Rifter", 2456: "125mm Gatling AutoCannon II", 34: "Tritanium"}
+	}
+
+	handler := getKillmailHandler("v1", nil)
+	_, out, err := handler(context.Background(), nil, GetKillmailInput{KillmailID: 1, KillmailHash: "abc"})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.Victim.ShipTypeName != "Rifter" {
+		t.Errorf("Victim.ShipTypeName = %q, want %q", out.Victim.ShipTypeName, "Rifter")
+	}
+	if out.Attackers[0].ShipTypeName != "Rifter" {
+		t.Errorf("Attackers[0].ShipTypeName = %q, want %q", out.Attackers[0].ShipTypeName, "Rifter")
+	}
+	if out.Attackers[0].WeaponTypeName != "125mm Gatling AutoCannon II" {
+		t.Errorf("Attackers[0].WeaponTypeName = %q, want %q", out.Attackers[0].WeaponTypeName, "125mm Gatling AutoCannon II")
+	}
+	if len(out.Victim.Items) != 1 || out.Victim.Items[0].ItemTypeName != "Tritanium" {
+		t.Fatalf("Victim.Items = %+v, want one item with ItemTypeName=Tritanium", out.Victim.Items)
+	}
+	if len(out.Victim.Items[0].Items) != 1 || out.Victim.Items[0].Items[0].ItemTypeName != "Tritanium" {
+		t.Fatalf("Victim.Items[0].Items = %+v, want one item with ItemTypeName=Tritanium", out.Victim.Items[0].Items)
 	}
 }

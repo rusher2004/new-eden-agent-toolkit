@@ -169,7 +169,7 @@ func TestGetCorporationProjectDetailHandler_MapsFields(t *testing.T) {
 		}, nil
 	}
 
-	handler := getCorporationProjectDetailHandler("v1", "client-id", store)
+	handler := getCorporationProjectDetailHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, GetCorporationProjectDetailInput{
 		CharacterID: 7, CorporationID: 98000001, ProjectID: "abc-123",
 	})
@@ -255,7 +255,7 @@ func TestGetCorporationProjectDetailHandler_ConfigurationManualVariant(t *testin
 		}, nil
 	}
 
-	handler := getCorporationProjectDetailHandler("v1", "client-id", store)
+	handler := getCorporationProjectDetailHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, GetCorporationProjectDetailInput{
 		CharacterID: 7, CorporationID: 98000001, ProjectID: "abc-124",
 	})
@@ -299,7 +299,7 @@ func TestGetCorporationProjectDetailHandler_ConfigurationUnknownVariant(t *testi
 		}, nil
 	}
 
-	handler := getCorporationProjectDetailHandler("v1", "client-id", store)
+	handler := getCorporationProjectDetailHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, GetCorporationProjectDetailInput{
 		CharacterID: 7, CorporationID: 98000001, ProjectID: "abc-125",
 	})
@@ -329,12 +329,54 @@ func TestGetCorporationProjectDetailHandler_UnknownCharacter(t *testing.T) {
 		return nil, nil
 	}
 
-	handler := getCorporationProjectDetailHandler("v1", "client-id", store)
+	handler := getCorporationProjectDetailHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, GetCorporationProjectDetailInput{
 		CharacterID: 999, CorporationID: 98000001, ProjectID: "abc-123",
 	})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
+	}
+}
+
+func TestGetCorporationProjectDetailHandler_ResolvesShipTypeMatcherTypeName(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := getCorporationProjectDetail
+	t.Cleanup(func() { getCorporationProjectDetail = orig })
+	typeID := int64(587)
+	getCorporationProjectDetail = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, projectID string) (*esiapi.CorporationsProjectsDetail, error) {
+		return &esiapi.CorporationsProjectsDetail{
+			Configuration: esiapi.CorporationsProjectsDetailConfiguration{
+				DamageShip: &esiapi.DamageShip{DamageShip: &esiapi.CorporationsProjectsDetailConfigurationdamageship{
+					Ships: []esiapi.CorporationsProjectsDetailConfigurationdamageshipShipsInner{{TypeId: &esiapi.TypeId{TypeId: &typeID}}},
+				}},
+			},
+			Creator:  esiapi.CorporationsProjectsDetailCreator{Id: 998877, Name: "Creator Pilot"},
+			Details:  esiapi.CorporationsProjectsDetailDetails{Career: "Combat"},
+			Id:       "abc-123",
+			Name:     "Test Project",
+			Progress: esiapi.CorporationsProjectsDetailProgress{Current: 0, Desired: 1},
+			State:    "Active",
+		}, nil
+	}
+
+	origResolve := resolveTypeNames
+	t.Cleanup(func() { resolveTypeNames = origResolve })
+	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{587: "Rifter"}
+	}
+
+	handler := getCorporationProjectDetailHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, GetCorporationProjectDetailInput{CharacterID: 7, CorporationID: 98000001, ProjectID: "abc-123"})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Configuration.Ships) != 1 || out.Configuration.Ships[0].TypeName != "Rifter" {
+		t.Errorf("Configuration.Ships = %+v, want one entry TypeName=%q", out.Configuration.Ships, "Rifter")
 	}
 }
 
@@ -536,7 +578,7 @@ func TestGetCorporationProjectDetailHandler_PropagatesError(t *testing.T) {
 		return nil, wantErr
 	}
 
-	handler := getCorporationProjectDetailHandler("v1", "client-id", store)
+	handler := getCorporationProjectDetailHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, GetCorporationProjectDetailInput{
 		CharacterID: 7, CorporationID: 98000001, ProjectID: "abc-123",
 	})
