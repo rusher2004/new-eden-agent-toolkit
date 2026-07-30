@@ -25,7 +25,7 @@ func TestListSovereigntyCampaignsHandler_MapsFields(t *testing.T) {
 		}}, nil
 	}
 
-	handler := listSovereigntyCampaignsHandler("v1")
+	handler := listSovereigntyCampaignsHandler("v1", nil)
 	_, out, err := handler(context.Background(), nil, ListSovereigntyCampaignsInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -96,7 +96,7 @@ func TestListSovereigntySystemsHandler_MapsFieldsForAllThreeClaimKinds(t *testin
 		}, nil
 	}
 
-	handler := listSovereigntySystemsHandler("v1")
+	handler := listSovereigntySystemsHandler("v1", nil)
 	_, out, err := handler(context.Background(), nil, ListSovereigntySystemsInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -173,7 +173,7 @@ func TestListSovereigntyCampaignsHandler_PropagatesError(t *testing.T) {
 		return nil, wantErr
 	}
 
-	handler := listSovereigntyCampaignsHandler("v1")
+	handler := listSovereigntyCampaignsHandler("v1", nil)
 	_, _, err := handler(context.Background(), nil, ListSovereigntyCampaignsInput{})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -188,9 +188,65 @@ func TestListSovereigntySystemsHandler_PropagatesError(t *testing.T) {
 		return nil, wantErr
 	}
 
-	handler := listSovereigntySystemsHandler("v1")
+	handler := listSovereigntySystemsHandler("v1", nil)
 	_, _, err := handler(context.Background(), nil, ListSovereigntySystemsInput{})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestListSovereigntyCampaignsHandler_ResolvesLocationNames(t *testing.T) {
+	orig := listSovereigntyCampaigns
+	t.Cleanup(func() { listSovereigntyCampaigns = orig })
+	listSovereigntyCampaigns = func(ctx context.Context, userAgent string) ([]esiapi.SovereigntyCampaignsGetInner, error) {
+		return []esiapi.SovereigntyCampaignsGetInner{{
+			CampaignId: 1, ConstellationId: 20000020, SolarSystemId: 30000142,
+		}}, nil
+	}
+
+	origConstellation := resolveConstellationNames
+	t.Cleanup(func() { resolveConstellationNames = origConstellation })
+	resolveConstellationNames = func(ctx context.Context, sdeStore constellationNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{20000020: "Kimotoro"}
+	}
+	origSystem := resolveSystemNames
+	t.Cleanup(func() { resolveSystemNames = origSystem })
+	resolveSystemNames = func(ctx context.Context, sdeStore systemNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{30000142: "Jita"}
+	}
+
+	handler := listSovereigntyCampaignsHandler("v1", nil)
+	_, out, err := handler(context.Background(), nil, ListSovereigntyCampaignsInput{})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.Campaigns[0].ConstellationName != "Kimotoro" {
+		t.Errorf("ConstellationName = %q, want %q", out.Campaigns[0].ConstellationName, "Kimotoro")
+	}
+	if out.Campaigns[0].SolarSystemName != "Jita" {
+		t.Errorf("SolarSystemName = %q, want %q", out.Campaigns[0].SolarSystemName, "Jita")
+	}
+}
+
+func TestListSovereigntySystemsHandler_ResolvesSystemName(t *testing.T) {
+	orig := listSovereigntySystems
+	t.Cleanup(func() { listSovereigntySystems = orig })
+	listSovereigntySystems = func(ctx context.Context, userAgent string) ([]esiapi.SovereigntySystemsSolarsystem, error) {
+		return []esiapi.SovereigntySystemsSolarsystem{{SolarSystemId: 30000142}}, nil
+	}
+
+	origSystem := resolveSystemNames
+	t.Cleanup(func() { resolveSystemNames = origSystem })
+	resolveSystemNames = func(ctx context.Context, sdeStore systemNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{30000142: "Jita"}
+	}
+
+	handler := listSovereigntySystemsHandler("v1", nil)
+	_, out, err := handler(context.Background(), nil, ListSovereigntySystemsInput{})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.Systems[0].SolarSystemName != "Jita" {
+		t.Errorf("SolarSystemName = %q, want %q", out.Systems[0].SolarSystemName, "Jita")
 	}
 }

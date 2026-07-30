@@ -9,6 +9,7 @@ import (
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
+	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -37,17 +38,40 @@ type GetRouteInput struct {
 	SecurityPenalty     *int64                 `json:"securityPenalty,omitempty" jsonschema:"strictness of the security preference; omit for ESI's default"`
 }
 type GetRouteOutput struct {
-	OriginSystemID      int64   `json:"originSystemId"`
-	DestinationSystemID int64   `json:"destinationSystemId"`
-	Route               []int64 `json:"route"`
+	OriginSystemID        int64    `json:"originSystemId"`
+	OriginSystemName      string   `json:"originSystemName,omitempty"`
+	DestinationSystemID   int64    `json:"destinationSystemId"`
+	DestinationSystemName string   `json:"destinationSystemName,omitempty"`
+	Route                 []int64  `json:"route"`
+	RouteNames            []string `json:"routeNames,omitempty"`
 }
 
-func getRouteHandler(version string) mcpsdk.ToolHandlerFor[GetRouteInput, GetRouteOutput] {
+func getRouteHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetRouteInput, GetRouteOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetRouteInput) (*mcpsdk.CallToolResult, GetRouteOutput, error) {
 		route, err := getRoute(ctx, sso.UserAgent(version), in.OriginSystemID, in.DestinationSystemID, in.AvoidSystems, in.Connections, in.Preference, in.SecurityPenalty)
 		if err != nil {
 			return nil, GetRouteOutput{}, fmt.Errorf("get route: %w", err)
 		}
-		return nil, GetRouteOutput{OriginSystemID: in.OriginSystemID, DestinationSystemID: in.DestinationSystemID, Route: route}, nil
+
+		// ESI's route response always includes origin/destination as its first/last elements, so
+		// names already covers both -- no second lookup needed.
+		names := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), route)
+		routeNames := make([]string, len(route))
+		var resolved bool
+		for i, id := range route {
+			if name, ok := names[id]; ok {
+				routeNames[i] = name
+				resolved = true
+			}
+		}
+		if !resolved {
+			routeNames = nil
+		}
+
+		return nil, GetRouteOutput{
+			OriginSystemID: in.OriginSystemID, OriginSystemName: names[in.OriginSystemID],
+			DestinationSystemID: in.DestinationSystemID, DestinationSystemName: names[in.DestinationSystemID],
+			Route: route, RouteNames: routeNames,
+		}, nil
 	}
 }

@@ -236,6 +236,50 @@ func TestListFleetMembersHandler_ResolvesShipTypeName(t *testing.T) {
 	}
 }
 
+func TestListFleetMembersHandler_ResolvesLocationNames(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := listFleetMembers
+	t.Cleanup(func() { listFleetMembers = orig })
+	stationID := int64(60003760)
+	listFleetMembers = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID int64) ([]FleetMember, error) {
+		return []FleetMember{
+			{CharacterID: 2001, SolarSystemID: 30000142, StationID: &stationID},
+			{CharacterID: 2002, SolarSystemID: 30000142, StationID: nil},
+		}, nil
+	}
+
+	origSystem := resolveSystemNames
+	t.Cleanup(func() { resolveSystemNames = origSystem })
+	resolveSystemNames = func(ctx context.Context, sdeStore systemNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{30000142: "Jita"}
+	}
+	origStation := resolveStationNames
+	t.Cleanup(func() { resolveStationNames = origStation })
+	resolveStationNames = func(ctx context.Context, sdeStore stationNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{60003760: "Jita IV - Moon 4 - Caldari Navy Assembly Plant"}
+	}
+
+	handler := listFleetMembersHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, ListFleetMembersInput{CharacterID: 7, FleetID: 1})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.Members[0].SolarSystemName != "Jita" {
+		t.Errorf("SolarSystemName = %q, want %q", out.Members[0].SolarSystemName, "Jita")
+	}
+	if out.Members[0].StationName != "Jita IV - Moon 4 - Caldari Navy Assembly Plant" {
+		t.Errorf("StationName = %q, want %q", out.Members[0].StationName, "Jita IV - Moon 4 - Caldari Navy Assembly Plant")
+	}
+	if out.Members[1].StationName != "" {
+		t.Errorf("StationName (nil StationID) = %q, want empty", out.Members[1].StationName)
+	}
+}
+
 func TestInviteFleetMemberHandler_MapsFields(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")

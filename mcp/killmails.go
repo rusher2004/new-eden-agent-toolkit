@@ -214,13 +214,15 @@ type GetKillmailInput struct {
 	KillmailHash string `json:"killmailHash" jsonschema:"the killmail hash, from a killmail listing"`
 }
 type GetKillmailOutput struct {
-	KillmailID    int64              `json:"killmailId"`
-	KillmailTime  time.Time          `json:"killmailTime"`
-	SolarSystemID int64              `json:"solarSystemId"`
-	MoonID        *int64             `json:"moonId,omitempty"`
-	WarID         *int64             `json:"warId,omitempty"`
-	Attackers     []KillmailAttacker `json:"attackers"`
-	Victim        KillmailVictim     `json:"victim"`
+	KillmailID      int64              `json:"killmailId"`
+	KillmailTime    time.Time          `json:"killmailTime"`
+	SolarSystemID   int64              `json:"solarSystemId"`
+	SolarSystemName string             `json:"solarSystemName,omitempty"`
+	MoonID          *int64             `json:"moonId,omitempty"`
+	MoonName        string             `json:"moonName,omitempty"`
+	WarID           *int64             `json:"warId,omitempty"`
+	Attackers       []KillmailAttacker `json:"attackers"`
+	Victim          KillmailVictim     `json:"victim"`
 }
 
 func getKillmailHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetKillmailInput, GetKillmailOutput] {
@@ -281,9 +283,20 @@ func getKillmailHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerF
 			}
 		}
 
+		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), []int64{detail.SolarSystemId})
+		var moonNames map[int64]string
+		if detail.MoonId != nil {
+			moonNames = resolveMoonNames(ctx, sdeStore, sso.UserAgent(version), []int64{*detail.MoonId})
+		}
+		var moonName string
+		if detail.MoonId != nil {
+			moonName = moonNames[*detail.MoonId]
+		}
+
 		return nil, GetKillmailOutput{
 			KillmailID: detail.KillmailId, KillmailTime: detail.KillmailTime, SolarSystemID: detail.SolarSystemId,
-			MoonID: detail.MoonId, WarID: detail.WarId, Attackers: attackers, Victim: victim,
+			SolarSystemName: systemNames[detail.SolarSystemId],
+			MoonID:          detail.MoonId, MoonName: moonName, WarID: detail.WarId, Attackers: attackers, Victim: victim,
 		}, nil
 	}
 }

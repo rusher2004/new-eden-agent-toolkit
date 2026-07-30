@@ -125,7 +125,7 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_raidable_skyhooks",
 		Description: "List upcoming raidable skyhooks (public data, no character scope required).",
-	}, listRaidableSkyhooksHandler(version, clientID, store))
+	}, listRaidableSkyhooksHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_alliances",
@@ -370,7 +370,7 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_corporation",
 		Description: "Get a corporation's public info (public data, no character required).",
-	}, getCorporationHandler(version))
+	}, getCorporationHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_corporation_alliance_history",
@@ -555,7 +555,7 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_fw_systems",
 		Description: "List every solar system's faction warfare occupation/contest state (public data, no character required).",
-	}, listFwSystemsHandler(version))
+	}, listFwSystemsHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_fw_wars",
@@ -680,7 +680,7 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_incursions",
 		Description: "List every currently active incursion (public data, no character required).",
-	}, listIncursionsHandler(version))
+	}, listIncursionsHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_character_industry_jobs",
@@ -695,7 +695,7 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_corporation_mining_extractions",
 		Description: "List a corporation's moon mining extractions, using a logged-in character's roles to authorize.",
-	}, listCorporationMiningExtractionsHandler(version, clientID, store))
+	}, listCorporationMiningExtractionsHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_corporation_mining_observers",
@@ -720,7 +720,7 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_industry_systems",
 		Description: "List industry cost indices for every solar system (public data, no character required).",
-	}, listIndustrySystemsHandler(version))
+	}, listIndustrySystemsHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_insurance_prices",
@@ -745,7 +745,7 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_character_location",
 		Description: "Get a logged-in EVE Online character's current solar system, and station or structure ID if docked/boarded.",
-	}, getCharacterLocationHandler(version, clientID, store))
+	}, getCharacterLocationHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_character_online",
@@ -890,7 +890,7 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_character_planets",
 		Description: "List a logged-in EVE Online character's colonized planets (Planetary Interaction).",
-	}, listCharacterPlanetsHandler(version, clientID, store))
+	}, listCharacterPlanetsHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_character_planet",
@@ -910,7 +910,7 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_route",
 		Description: "Compute a route between two solar systems, optionally avoiding systems or adding extra connections (public data, no character required).",
-	}, getRouteHandler(version))
+	}, getRouteHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "search_character",
@@ -935,12 +935,12 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_sovereignty_campaigns",
 		Description: "List every active sovereignty campaign in the game (public data, no character required).",
-	}, listSovereigntyCampaignsHandler(version))
+	}, listSovereigntyCampaignsHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_sovereignty_systems",
 		Description: "List every solar system and its current sovereignty claim, if any (public data, no character required).",
-	}, listSovereigntySystemsHandler(version))
+	}, listSovereigntySystemsHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_status",
@@ -949,8 +949,8 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_character_mercenary_dens",
-		Description: "List the given character's mercenary dens (bare ID + planet ID per den).",
-	}, listCharacterMercenaryDensHandler(version, clientID, store))
+		Description: "List the given character's mercenary dens (includes resolved planet name).",
+	}, listCharacterMercenaryDensHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_character_mercenary_den",
@@ -959,8 +959,8 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_corporation_skyhooks",
-		Description: "List the given corporation's skyhooks (bare ID + planet ID per skyhook).",
-	}, listCorporationSkyhooksHandler(version, clientID, store))
+		Description: "List the given corporation's skyhooks (includes resolved planet name).",
+	}, listCorporationSkyhooksHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_corporation_skyhook",
@@ -969,8 +969,8 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_corporation_sovereignty_hubs",
-		Description: "List the given corporation's sovereignty hubs (bare ID + solar system ID per hub).",
-	}, listCorporationSovereigntyHubsHandler(version, clientID, store))
+		Description: "List the given corporation's sovereignty hubs (includes resolved solar system name).",
+	}, listCorporationSovereigntyHubsHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_corporation_sovereignty_hub",

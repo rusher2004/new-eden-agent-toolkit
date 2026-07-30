@@ -31,7 +31,7 @@ func TestListCharacterPlanetsHandler_MapsFields(t *testing.T) {
 		}}, nil
 	}
 
-	handler := listCharacterPlanetsHandler("v1", "client-id", store)
+	handler := listCharacterPlanetsHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, ListCharacterPlanetsInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -57,10 +57,80 @@ func TestListCharacterPlanetsHandler_UnknownCharacter(t *testing.T) {
 		return nil, nil
 	}
 
-	handler := listCharacterPlanetsHandler("v1", "client-id", store)
+	handler := listCharacterPlanetsHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCharacterPlanetsInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
+	}
+}
+
+// TestListCharacterPlanetsHandler_ResolvesLocationNames proves the new sdeStore-backed
+// SolarSystemName/PlanetName enrichment via resolveSystemNames/resolvePlanetNames.
+func TestListCharacterPlanetsHandler_ResolvesLocationNames(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := listCharacterPlanets
+	t.Cleanup(func() { listCharacterPlanets = orig })
+	listCharacterPlanets = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]Planet, error) {
+		return []Planet{{PlanetID: 40009086, SolarSystemID: 30000142}}, nil
+	}
+
+	origSystem := resolveSystemNames
+	t.Cleanup(func() { resolveSystemNames = origSystem })
+	resolveSystemNames = func(ctx context.Context, sdeStore systemNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{30000142: "Jita"}
+	}
+	origPlanet := resolvePlanetNames
+	t.Cleanup(func() { resolvePlanetNames = origPlanet })
+	resolvePlanetNames = func(ctx context.Context, sdeStore planetNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{40009086: "Jita IV"}
+	}
+
+	handler := listCharacterPlanetsHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, ListCharacterPlanetsInput{CharacterID: 7})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.Planets[0].SolarSystemName != "Jita" {
+		t.Errorf("SolarSystemName = %q, want %q", out.Planets[0].SolarSystemName, "Jita")
+	}
+	if out.Planets[0].PlanetName != "Jita IV" {
+		t.Errorf("PlanetName = %q, want %q", out.Planets[0].PlanetName, "Jita IV")
+	}
+}
+
+// TestListCorporationCustomsOfficesHandler_ResolvesSystemName proves the new SystemName
+// enrichment pass added alongside the existing TypeName enrichment.
+func TestListCorporationCustomsOfficesHandler_ResolvesSystemName(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := listCorporationCustomsOffices
+	t.Cleanup(func() { listCorporationCustomsOffices = orig })
+	listCorporationCustomsOffices = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdCustomsOfficesGetInner, int32, error) {
+		return []esiapi.CorporationsCorporationIdCustomsOfficesGetInner{{OfficeId: 1, SystemId: 30000142}}, 1, nil
+	}
+
+	origSystem := resolveSystemNames
+	t.Cleanup(func() { resolveSystemNames = origSystem })
+	resolveSystemNames = func(ctx context.Context, sdeStore systemNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{30000142: "Jita"}
+	}
+
+	handler := listCorporationCustomsOfficesHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, ListCorporationCustomsOfficesInput{CharacterID: 7, CorporationID: 98000001})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.Offices[0].SystemName != "Jita" {
+		t.Errorf("SystemName = %q, want %q", out.Offices[0].SystemName, "Jita")
 	}
 }
 

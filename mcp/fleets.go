@@ -171,17 +171,19 @@ func updateFleetHandler(version, clientID string, store *config.Store) mcpsdk.To
 
 // FleetMember is one fleet member's role, ship, and location.
 type FleetMember struct {
-	CharacterID    int64     `json:"characterId"`
-	JoinTime       time.Time `json:"joinTime"`
-	Role           string    `json:"role"`
-	RoleName       string    `json:"roleName"`
-	ShipTypeID     int64     `json:"shipTypeId"`
-	ShipTypeName   string    `json:"shipTypeName,omitempty"`
-	SolarSystemID  int64     `json:"solarSystemId"`
-	SquadID        int64     `json:"squadId"`
-	StationID      *int64    `json:"stationId,omitempty"`
-	TakesFleetWarp bool      `json:"takesFleetWarp"`
-	WingID         int64     `json:"wingId"`
+	CharacterID     int64     `json:"characterId"`
+	JoinTime        time.Time `json:"joinTime"`
+	Role            string    `json:"role"`
+	RoleName        string    `json:"roleName"`
+	ShipTypeID      int64     `json:"shipTypeId"`
+	ShipTypeName    string    `json:"shipTypeName,omitempty"`
+	SolarSystemID   int64     `json:"solarSystemId"`
+	SolarSystemName string    `json:"solarSystemName,omitempty"`
+	SquadID         int64     `json:"squadId"`
+	StationID       *int64    `json:"stationId,omitempty"`
+	StationName     string    `json:"stationName,omitempty"`
+	TakesFleetWarp  bool      `json:"takesFleetWarp"`
+	WingID          int64     `json:"wingId"`
 }
 
 var listFleetMembers = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID int64) ([]FleetMember, error) {
@@ -234,6 +236,22 @@ func listFleetMembersHandler(version, clientID string, store *config.Store, sdeS
 		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
 		for i := range members {
 			members[i].ShipTypeName = names[members[i].ShipTypeID]
+		}
+		systemIDs := make([]int64, len(members))
+		var stationIDs []int64
+		for i, m := range members {
+			systemIDs[i] = m.SolarSystemID
+			if m.StationID != nil {
+				stationIDs = append(stationIDs, *m.StationID)
+			}
+		}
+		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), systemIDs)
+		stationNames := resolveStationNames(ctx, sdeStore, sso.UserAgent(version), stationIDs)
+		for i := range members {
+			members[i].SolarSystemName = systemNames[members[i].SolarSystemID]
+			if members[i].StationID != nil {
+				members[i].StationName = stationNames[*members[i].StationID]
+			}
 		}
 		return nil, ListFleetMembersOutput{CharacterID: in.CharacterID, FleetID: in.FleetID, Members: members}, nil
 	}

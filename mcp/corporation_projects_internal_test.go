@@ -380,6 +380,139 @@ func TestGetCorporationProjectDetailHandler_ResolvesShipTypeMatcherTypeName(t *t
 	}
 }
 
+// TestGetCorporationProjectDetailHandler_ResolvesLocationMatcherNames exercises the oneOf
+// variants that carry LocationMatcher/DockingLocationMatcher entries via three separate handler
+// calls, not a single Configuration with both CaptureFwComplex and DeliverItem set -- ESI's oneOf
+// contract guarantees only one variant is ever populated at a time, and toProjectConfiguration's
+// switch returns on the first matching case, so setting both on one Configuration would silently
+// drop the second (verified: doing so left DockingLocations empty and panicked the assertion).
+func TestGetCorporationProjectDetailHandler_ResolvesLocationMatcherNames(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	origSystem := resolveSystemNames
+	t.Cleanup(func() { resolveSystemNames = origSystem })
+	resolveSystemNames = func(ctx context.Context, sdeStore systemNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{30000142: "Jita"}
+	}
+	origStation := resolveStationNames
+	t.Cleanup(func() { resolveStationNames = origStation })
+	resolveStationNames = func(ctx context.Context, sdeStore stationNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{60003760: "Jita IV - Moon 4 - Caldari Navy Assembly Plant"}
+	}
+	origRegion := resolveRegionNames
+	t.Cleanup(func() { resolveRegionNames = origRegion })
+	resolveRegionNames = func(ctx context.Context, sdeStore regionNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{10000002: "The Forge"}
+	}
+	origConstellation := resolveConstellationNames
+	t.Cleanup(func() { resolveConstellationNames = origConstellation })
+	resolveConstellationNames = func(ctx context.Context, sdeStore constellationNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{20000020: "Kimotoro"}
+	}
+
+	orig := getCorporationProjectDetail
+	t.Cleanup(func() { getCorporationProjectDetail = orig })
+	handler := getCorporationProjectDetailHandler("v1", "client-id", store, nil)
+
+	solarSystemID := int64(30000142)
+	getCorporationProjectDetail = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, projectID string) (*esiapi.CorporationsProjectsDetail, error) {
+		return &esiapi.CorporationsProjectsDetail{
+			Configuration: esiapi.CorporationsProjectsDetailConfiguration{
+				CaptureFwComplex: &esiapi.CaptureFwComplex{CaptureFwComplex: &esiapi.CorporationsProjectsDetailConfigurationcapturefwcomplex{
+					Locations: []esiapi.CorporationsProjectsDetailConfigurationcapturefwcomplexLocationsInner{
+						{SolarSystemId: &esiapi.SolarSystemId{SolarSystemId: &solarSystemID}},
+					},
+				}},
+			},
+			Creator:  esiapi.CorporationsProjectsDetailCreator{Id: 998877, Name: "Creator Pilot"},
+			Details:  esiapi.CorporationsProjectsDetailDetails{Career: "Exploration"},
+			Id:       "abc-123",
+			Name:     "Test Project",
+			Progress: esiapi.CorporationsProjectsDetailProgress{Current: 0, Desired: 1},
+			State:    "Active",
+		}, nil
+	}
+	_, out, err := handler(context.Background(), nil, GetCorporationProjectDetailInput{CharacterID: 7, CorporationID: 98000001, ProjectID: "abc-123"})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Configuration.Locations) != 1 || out.Configuration.Locations[0].SolarSystemName != "Jita" {
+		t.Errorf("Configuration.Locations = %+v, want one entry SolarSystemName=%q", out.Configuration.Locations, "Jita")
+	}
+
+	stationID := int64(60003760)
+	structureID := int64(1000000012345)
+	getCorporationProjectDetail = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, projectID string) (*esiapi.CorporationsProjectsDetail, error) {
+		return &esiapi.CorporationsProjectsDetail{
+			Configuration: esiapi.CorporationsProjectsDetailConfiguration{
+				DeliverItem: &esiapi.DeliverItem{DeliverItem: &esiapi.CorporationsProjectsDetailConfigurationdeliveritem{
+					DockingLocations: []esiapi.CorporationsProjectsDetailConfigurationdeliveritemDockingLocationsInner{
+						{StationId: &esiapi.StationId{StationId: &stationID}},
+						{StructureId: &esiapi.StructureId{StructureId: &structureID}},
+					},
+				}},
+			},
+			Creator:  esiapi.CorporationsProjectsDetailCreator{Id: 998877, Name: "Creator Pilot"},
+			Details:  esiapi.CorporationsProjectsDetailDetails{Career: "Exploration"},
+			Id:       "abc-124",
+			Name:     "Test Project 2",
+			Progress: esiapi.CorporationsProjectsDetailProgress{Current: 0, Desired: 1},
+			State:    "Active",
+		}, nil
+	}
+	_, out2, err := handler(context.Background(), nil, GetCorporationProjectDetailInput{CharacterID: 7, CorporationID: 98000001, ProjectID: "abc-124"})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out2.Configuration.DockingLocations) != 2 || out2.Configuration.DockingLocations[0].StationName != "Jita IV - Moon 4 - Caldari Navy Assembly Plant" {
+		t.Errorf("Configuration.DockingLocations = %+v, want first entry StationName=%q", out2.Configuration.DockingLocations, "Jita IV - Moon 4 - Caldari Navy Assembly Plant")
+	}
+	// The structure-only leg: StationID is nil (a player-owned structure, not an NPC
+	// station), so StationName must stay empty and no lookup must be attempted for it.
+	structureLeg := out2.Configuration.DockingLocations[1]
+	if structureLeg.StationID != nil || structureLeg.StationName != "" {
+		t.Errorf("DockingLocations[1] = %+v, want StationID=nil and StationName=%q (structure leg, no SDE data)", structureLeg, "")
+	}
+	if structureLeg.StructureID == nil || *structureLeg.StructureID != structureID {
+		t.Errorf("DockingLocations[1].StructureID = %v, want %d", structureLeg.StructureID, structureID)
+	}
+
+	regionID := int64(10000002)
+	constellationID := int64(20000020)
+	getCorporationProjectDetail = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, projectID string) (*esiapi.CorporationsProjectsDetail, error) {
+		return &esiapi.CorporationsProjectsDetail{
+			Configuration: esiapi.CorporationsProjectsDetailConfiguration{
+				CaptureFwComplex: &esiapi.CaptureFwComplex{CaptureFwComplex: &esiapi.CorporationsProjectsDetailConfigurationcapturefwcomplex{
+					Locations: []esiapi.CorporationsProjectsDetailConfigurationcapturefwcomplexLocationsInner{
+						{RegionId: &esiapi.RegionId{RegionId: &regionID}},
+						{ConstellationId: &esiapi.ConstellationId{ConstellationId: &constellationID}},
+					},
+				}},
+			},
+			Creator:  esiapi.CorporationsProjectsDetailCreator{Id: 998877, Name: "Creator Pilot"},
+			Details:  esiapi.CorporationsProjectsDetailDetails{Career: "Exploration"},
+			Id:       "abc-125",
+			Name:     "Test Project 3",
+			Progress: esiapi.CorporationsProjectsDetailProgress{Current: 0, Desired: 1},
+			State:    "Active",
+		}, nil
+	}
+	_, out3, err := handler(context.Background(), nil, GetCorporationProjectDetailInput{CharacterID: 7, CorporationID: 98000001, ProjectID: "abc-125"})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out3.Configuration.Locations) != 2 || out3.Configuration.Locations[0].RegionName != "The Forge" {
+		t.Errorf("Configuration.Locations[0] = %+v, want RegionName=%q", out3.Configuration.Locations[0], "The Forge")
+	}
+	if len(out3.Configuration.Locations) != 2 || out3.Configuration.Locations[1].ConstellationName != "Kimotoro" {
+		t.Errorf("Configuration.Locations[1] = %+v, want ConstellationName=%q", out3.Configuration.Locations[1], "Kimotoro")
+	}
+}
+
 func TestListCorporationProjectsHandler_MapsFieldsAndCursor(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")

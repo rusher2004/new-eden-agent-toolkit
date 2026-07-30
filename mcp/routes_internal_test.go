@@ -28,7 +28,7 @@ func TestGetRouteHandler_MapsFields(t *testing.T) {
 		Connections:  []RouteConnectionInput{{From: 30000142, To: 30000144}},
 		Preference:   &preference, SecurityPenalty: &securityPenalty,
 	}
-	handler := getRouteHandler("v1")
+	handler := getRouteHandler("v1", nil)
 	_, out, err := handler(context.Background(), nil, input)
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -65,9 +65,100 @@ func TestGetRouteHandler_PropagatesError(t *testing.T) {
 		return nil, errors.New("boom")
 	}
 
-	handler := getRouteHandler("v1")
+	handler := getRouteHandler("v1", nil)
 	_, _, err := handler(context.Background(), nil, GetRouteInput{OriginSystemID: 30000142, DestinationSystemID: 30000145})
 	if err == nil {
 		t.Fatal("handler returned nil error, want propagated error")
+	}
+}
+
+func TestGetRouteHandler_ResolvesLocationNames(t *testing.T) {
+	orig := getRoute
+	t.Cleanup(func() { getRoute = orig })
+	getRoute = func(ctx context.Context, userAgent string, originSystemID, destinationSystemID int64, avoidSystems []int64, connections []RouteConnectionInput, preference *string, securityPenalty *int64) ([]int64, error) {
+		return []int64{30000142, 30000144, 30002187}, nil
+	}
+
+	origSystem := resolveSystemNames
+	t.Cleanup(func() { resolveSystemNames = origSystem })
+	resolveSystemNames = func(ctx context.Context, sdeStore systemNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{30000142: "Jita", 30000144: "Perimeter", 30002187: "Amarr"}
+	}
+
+	handler := getRouteHandler("v1", nil)
+	_, out, err := handler(context.Background(), nil, GetRouteInput{OriginSystemID: 30000142, DestinationSystemID: 30002187})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.OriginSystemName != "Jita" {
+		t.Errorf("OriginSystemName = %q, want %q", out.OriginSystemName, "Jita")
+	}
+	if out.DestinationSystemName != "Amarr" {
+		t.Errorf("DestinationSystemName = %q, want %q", out.DestinationSystemName, "Amarr")
+	}
+	want := []string{"Jita", "Perimeter", "Amarr"}
+	if len(out.RouteNames) != len(want) {
+		t.Fatalf("RouteNames = %v, want %v", out.RouteNames, want)
+	}
+	for i, w := range want {
+		if out.RouteNames[i] != w {
+			t.Errorf("RouteNames[%d] = %q, want %q", i, out.RouteNames[i], w)
+		}
+	}
+}
+
+func TestGetRouteHandler_RouteNamesSurvivesPartialMiss(t *testing.T) {
+	orig := getRoute
+	t.Cleanup(func() { getRoute = orig })
+	getRoute = func(ctx context.Context, userAgent string, originSystemID, destinationSystemID int64, avoidSystems []int64, connections []RouteConnectionInput, preference *string, securityPenalty *int64) ([]int64, error) {
+		return []int64{30000142, 999999999, 30002187}, nil
+	}
+
+	origSystem := resolveSystemNames
+	t.Cleanup(func() { resolveSystemNames = origSystem })
+	resolveSystemNames = func(ctx context.Context, sdeStore systemNameCache, userAgent string, ids []int64) map[int64]string {
+		// 999999999 is deliberately omitted -- a miss must not shift neighbors.
+		return map[int64]string{30000142: "Jita", 30002187: "Amarr"}
+	}
+
+	handler := getRouteHandler("v1", nil)
+	_, out, err := handler(context.Background(), nil, GetRouteInput{OriginSystemID: 30000142, DestinationSystemID: 30002187})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	want := []string{"Jita", "", "Amarr"}
+	if len(out.RouteNames) != len(want) {
+		t.Fatalf("RouteNames = %v, want %v", out.RouteNames, want)
+	}
+	for i, w := range want {
+		if out.RouteNames[i] != w {
+			t.Errorf("RouteNames[%d] = %q, want %q", i, out.RouteNames[i], w)
+		}
+	}
+}
+
+func TestGetRouteHandler_RouteNamesNilOnTotalMiss(t *testing.T) {
+	orig := getRoute
+	t.Cleanup(func() { getRoute = orig })
+	getRoute = func(ctx context.Context, userAgent string, originSystemID, destinationSystemID int64, avoidSystems []int64, connections []RouteConnectionInput, preference *string, securityPenalty *int64) ([]int64, error) {
+		return []int64{999999997, 999999998, 999999999}, nil
+	}
+
+	origSystem := resolveSystemNames
+	t.Cleanup(func() { resolveSystemNames = origSystem })
+	resolveSystemNames = func(ctx context.Context, sdeStore systemNameCache, userAgent string, ids []int64) map[int64]string {
+		// Total sync failure: nothing resolves. RouteNames must stay nil so
+		// omitempty drops it, rather than serializing an all-empty-string slice
+		// that an LLM consumer could misread as "confirmed unnamed."
+		return map[int64]string{}
+	}
+
+	handler := getRouteHandler("v1", nil)
+	_, out, err := handler(context.Background(), nil, GetRouteInput{OriginSystemID: 999999997, DestinationSystemID: 999999999})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.RouteNames != nil {
+		t.Errorf("RouteNames = %v, want nil on a total miss", out.RouteNames)
 	}
 }

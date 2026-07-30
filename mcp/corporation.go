@@ -26,6 +26,7 @@ type GetCorporationOutput struct {
 	DateFounded         *time.Time `json:"dateFounded,omitempty"`
 	FactionID           *int64     `json:"factionId,omitempty"`
 	HomeStationID       int64      `json:"homeStationId"`
+	HomeStationName     string     `json:"homeStationName,omitempty"`
 	MemberCount         int64      `json:"memberCount"`
 	Shares              int64      `json:"shares"`
 	TaxRateIsk          float64    `json:"taxRateIsk"`
@@ -64,12 +65,14 @@ type GetCorporationInput struct {
 	CorporationID int64 `json:"corporationId" jsonschema:"the corporation ID to look up"`
 }
 
-func getCorporationHandler(version string) mcpsdk.ToolHandlerFor[GetCorporationInput, GetCorporationOutput] {
+func getCorporationHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetCorporationInput, GetCorporationOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCorporationInput) (*mcpsdk.CallToolResult, GetCorporationOutput, error) {
 		out, err := getCorporationDetail(ctx, sso.UserAgent(version), in.CorporationID)
 		if err != nil {
 			return nil, GetCorporationOutput{}, fmt.Errorf("get corporation: %w", err)
 		}
+		names := resolveStationNames(ctx, sdeStore, sso.UserAgent(version), []int64{out.HomeStationID})
+		out.HomeStationName = names[out.HomeStationID]
 		return nil, out, nil
 	}
 }
@@ -867,6 +870,7 @@ func listCorporationContainerLogsHandler(version, clientID string, store *config
 type Facility struct {
 	FacilityID int64  `json:"facilityId"`
 	SystemID   int64  `json:"systemId"`
+	SystemName string `json:"systemName,omitempty"`
 	TypeID     int64  `json:"typeId"`
 	TypeName   string `json:"typeName,omitempty"`
 }
@@ -917,6 +921,14 @@ func listCorporationFacilitiesHandler(version, clientID string, store *config.St
 		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
 		for i := range facilities {
 			facilities[i].TypeName = names[facilities[i].TypeID]
+		}
+		systemIDs := make([]int64, len(facilities))
+		for i := range facilities {
+			systemIDs[i] = facilities[i].SystemID
+		}
+		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), systemIDs)
+		for i := range facilities {
+			facilities[i].SystemName = systemNames[facilities[i].SystemID]
 		}
 		return nil, ListCorporationFacilitiesOutput{CharacterID: in.CharacterID, CorporationID: in.CorporationID, Facilities: facilities}, nil
 	}
@@ -1047,11 +1059,13 @@ func listCorporationMedalsIssuedHandler(version, clientID string, store *config.
 
 type Starbase struct {
 	MoonID          *int64     `json:"moonId,omitempty"`
+	MoonName        string     `json:"moonName,omitempty"`
 	OnlinedSince    *time.Time `json:"onlinedSince,omitempty"`
 	ReinforcedUntil *time.Time `json:"reinforcedUntil,omitempty"`
 	StarbaseID      int64      `json:"starbaseId"`
 	State           *string    `json:"state,omitempty"`
 	SystemID        int64      `json:"systemId"`
+	SystemName      string     `json:"systemName,omitempty"`
 	TypeID          int64      `json:"typeId"`
 	TypeName        string     `json:"typeName,omitempty"`
 	UnanchorAt      *time.Time `json:"unanchorAt,omitempty"`
@@ -1109,6 +1123,22 @@ func listCorporationStarbasesHandler(version, clientID string, store *config.Sto
 		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
 		for i := range starbases {
 			starbases[i].TypeName = names[starbases[i].TypeID]
+		}
+		systemIDs := make([]int64, len(starbases))
+		var moonIDs []int64
+		for i, s := range starbases {
+			systemIDs[i] = s.SystemID
+			if s.MoonID != nil {
+				moonIDs = append(moonIDs, *s.MoonID)
+			}
+		}
+		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), systemIDs)
+		moonNames := resolveMoonNames(ctx, sdeStore, sso.UserAgent(version), moonIDs)
+		for i := range starbases {
+			starbases[i].SystemName = systemNames[starbases[i].SystemID]
+			if starbases[i].MoonID != nil {
+				starbases[i].MoonName = moonNames[*starbases[i].MoonID]
+			}
 		}
 		page := in.Page
 		if page <= 0 {
@@ -1224,6 +1254,7 @@ type Structure struct {
 	StateTimerStart    *time.Time         `json:"stateTimerStart,omitempty"`
 	StructureID        int64              `json:"structureId"`
 	SystemID           int64              `json:"systemId"`
+	SystemName         string             `json:"systemName,omitempty"`
 	TypeID             int64              `json:"typeId"`
 	TypeName           string             `json:"typeName,omitempty"`
 	UnanchorsAt        *time.Time         `json:"unanchorsAt,omitempty"`
@@ -1288,6 +1319,14 @@ func listCorporationStructuresHandler(version, clientID string, store *config.St
 		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
 		for i := range structures {
 			structures[i].TypeName = names[structures[i].TypeID]
+		}
+		systemIDs := make([]int64, len(structures))
+		for i := range structures {
+			systemIDs[i] = structures[i].SystemID
+		}
+		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), systemIDs)
+		for i := range structures {
+			structures[i].SystemName = systemNames[structures[i].SystemID]
 		}
 		page := in.Page
 		if page <= 0 {

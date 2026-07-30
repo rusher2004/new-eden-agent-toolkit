@@ -156,7 +156,9 @@ func getMercenaryTacticalOperationHandler(version, clientID string, store *confi
 // SkyhookSummary is one upcoming raidable skyhook.
 type SkyhookSummary struct {
 	PlanetID                int64     `json:"planetId"`
+	PlanetName              string    `json:"planetName,omitempty"`
 	SolarSystemID           int64     `json:"solarSystemId"`
+	SolarSystemName         string    `json:"solarSystemName,omitempty"`
 	TheftVulnerabilityStart time.Time `json:"theftVulnerabilityStart"`
 	TheftVulnerabilityEnd   time.Time `json:"theftVulnerabilityEnd"`
 }
@@ -195,7 +197,7 @@ type ListRaidableSkyhooksOutput struct {
 	Skyhooks []SkyhookSummary `json:"skyhooks"`
 }
 
-func listRaidableSkyhooksHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListRaidableSkyhooksInput, ListRaidableSkyhooksOutput] {
+func listRaidableSkyhooksHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListRaidableSkyhooksInput, ListRaidableSkyhooksOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListRaidableSkyhooksInput) (*mcpsdk.CallToolResult, ListRaidableSkyhooksOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -216,6 +218,20 @@ func listRaidableSkyhooksHandler(version, clientID string, store *config.Store) 
 		if err != nil {
 			return nil, ListRaidableSkyhooksOutput{}, fmt.Errorf("list raidable skyhooks: %w", err)
 		}
+
+		systemIDs := make([]int64, len(skyhooks))
+		planetIDs := make([]int64, len(skyhooks))
+		for i, s := range skyhooks {
+			systemIDs[i] = s.SolarSystemID
+			planetIDs[i] = s.PlanetID
+		}
+		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), systemIDs)
+		planetNames := resolvePlanetNames(ctx, sdeStore, sso.UserAgent(version), planetIDs)
+		for i := range skyhooks {
+			skyhooks[i].SolarSystemName = systemNames[skyhooks[i].SolarSystemID]
+			skyhooks[i].PlanetName = planetNames[skyhooks[i].PlanetID]
+		}
+
 		return nil, ListRaidableSkyhooksOutput{Skyhooks: skyhooks}, nil
 	}
 }

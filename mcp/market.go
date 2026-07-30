@@ -34,6 +34,7 @@ type MarketOrder struct {
 	Price          float64   `json:"price"`
 	Range          string    `json:"range"`
 	RegionID       int64     `json:"regionId"`
+	RegionName     string    `json:"regionName,omitempty"`
 	TypeID         int64     `json:"typeId"`
 	TypeName       string    `json:"typeName,omitempty"`
 	VolumeRemain   int64     `json:"volumeRemain"`
@@ -101,6 +102,7 @@ type MarketOrderBookEntry struct {
 	Price        float64   `json:"price"`
 	Range        string    `json:"range"`
 	SystemID     int64     `json:"systemId,omitempty"`
+	SystemName   string    `json:"systemName,omitempty"`
 	TypeID       int64     `json:"typeId"`
 	TypeName     string    `json:"typeName,omitempty"`
 	VolumeRemain int64     `json:"volumeRemain"`
@@ -166,6 +168,14 @@ func listCharacterMarketOrdersHandler(version, clientID string, store *config.St
 		for i := range out {
 			out[i].TypeName = names[out[i].TypeID]
 		}
+		regionIDs := make([]int64, len(out))
+		for i, o := range out {
+			regionIDs[i] = o.RegionID
+		}
+		regionNames := resolveRegionNames(ctx, sdeStore, sso.UserAgent(version), regionIDs)
+		for i := range out {
+			out[i].RegionName = regionNames[out[i].RegionID]
+		}
 		return nil, ListCharacterMarketOrdersOutput{CharacterID: in.CharacterID, Orders: out}, nil
 	}
 }
@@ -215,6 +225,14 @@ func listCharacterMarketOrderHistoryHandler(version, clientID string, store *con
 		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
 		for i := range out {
 			out[i].TypeName = names[out[i].TypeID]
+		}
+		regionIDs := make([]int64, len(out))
+		for i, o := range out {
+			regionIDs[i] = o.RegionID
+		}
+		regionNames := resolveRegionNames(ctx, sdeStore, sso.UserAgent(version), regionIDs)
+		for i := range out {
+			out[i].RegionName = regionNames[out[i].RegionID]
 		}
 		page := in.Page
 		if page <= 0 {
@@ -272,6 +290,14 @@ func listCorporationMarketOrdersHandler(version, clientID string, store *config.
 		for i := range out {
 			out[i].TypeName = names[out[i].TypeID]
 		}
+		regionIDs := make([]int64, len(out))
+		for i, o := range out {
+			regionIDs[i] = o.RegionID
+		}
+		regionNames := resolveRegionNames(ctx, sdeStore, sso.UserAgent(version), regionIDs)
+		for i := range out {
+			out[i].RegionName = regionNames[out[i].RegionID]
+		}
 		page := in.Page
 		if page <= 0 {
 			page = 1
@@ -327,6 +353,14 @@ func listCorporationMarketOrderHistoryHandler(version, clientID string, store *c
 		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
 		for i := range out {
 			out[i].TypeName = names[out[i].TypeID]
+		}
+		regionIDs := make([]int64, len(out))
+		for i, o := range out {
+			regionIDs[i] = o.RegionID
+		}
+		regionNames := resolveRegionNames(ctx, sdeStore, sso.UserAgent(version), regionIDs)
+		for i := range out {
+			out[i].RegionName = regionNames[out[i].RegionID]
 		}
 		page := in.Page
 		if page <= 0 {
@@ -514,6 +548,14 @@ func listMarketOrdersHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHan
 		for i := range out {
 			out[i].TypeName = names[out[i].TypeID]
 		}
+		systemIDs := make([]int64, len(out))
+		for i, o := range out {
+			systemIDs[i] = o.SystemID
+		}
+		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), systemIDs)
+		for i := range out {
+			out[i].SystemName = systemNames[out[i].SystemID]
+		}
 		page := in.Page
 		if page <= 0 {
 			page = 1
@@ -614,6 +656,14 @@ func listStructureMarketOrdersHandler(version, clientID string, store *config.St
 		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
 		for i := range out {
 			out[i].TypeName = names[out[i].TypeID]
+		}
+		systemIDs := make([]int64, len(out))
+		for i, o := range out {
+			systemIDs[i] = o.SystemID
+		}
+		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), systemIDs)
+		for i := range out {
+			out[i].SystemName = systemNames[out[i].SystemID]
 		}
 		page := in.Page
 		if page <= 0 {

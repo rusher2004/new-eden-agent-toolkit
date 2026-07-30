@@ -35,6 +35,7 @@ type IndustryJob struct {
 	StartDate            time.Time  `json:"startDate"`
 	Status               string     `json:"status"`
 	StationID            int64      `json:"stationId,omitempty"`
+	StationName          string     `json:"stationName,omitempty"`
 	LocationID           int64      `json:"locationId,omitempty"`
 	CompletedCharacterID *int64     `json:"completedCharacterId,omitempty"`
 	CompletedDate        *time.Time `json:"completedDate,omitempty"`
@@ -109,6 +110,18 @@ func listCharacterIndustryJobsHandler(version, clientID string, store *config.St
 			out[i] = toIndustryJobFromCharacter(j)
 		}
 		enrichIndustryJobs(ctx, out, sdeStore, sso.UserAgent(version))
+		stationIDs := make([]int64, 0, len(out))
+		for _, j := range out {
+			if j.StationID != 0 {
+				stationIDs = append(stationIDs, j.StationID)
+			}
+		}
+		stationNames := resolveStationNames(ctx, sdeStore, sso.UserAgent(version), stationIDs)
+		for i := range out {
+			if out[i].StationID != 0 {
+				out[i].StationName = stationNames[out[i].StationID]
+			}
+		}
 		return nil, ListCharacterIndustryJobsOutput{CharacterID: in.CharacterID, IncludeCompleted: in.IncludeCompleted, Jobs: out}, nil
 	}
 }
@@ -135,11 +148,12 @@ func enrichIndustryJobs(ctx context.Context, jobs []IndustryJob, sdeStore *sde.S
 // --- list_character_mining (private, paginated) ---
 
 type MiningLedgerEntry struct {
-	Date          string `json:"date"`
-	Quantity      int64  `json:"quantity"`
-	SolarSystemID int64  `json:"solarSystemId"`
-	TypeID        int64  `json:"typeId"`
-	TypeName      string `json:"typeName,omitempty"`
+	Date            string `json:"date"`
+	Quantity        int64  `json:"quantity"`
+	SolarSystemID   int64  `json:"solarSystemId"`
+	SolarSystemName string `json:"solarSystemName,omitempty"`
+	TypeID          int64  `json:"typeId"`
+	TypeName        string `json:"typeName,omitempty"`
 }
 
 var listCharacterMining = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]esiapi.CharactersCharacterIdMiningGetInner, int32, error) {
@@ -186,6 +200,14 @@ func listCharacterMiningHandler(version, clientID string, store *config.Store, s
 		for i := range out {
 			out[i].TypeName = names[out[i].TypeID]
 		}
+		systemIDs := make([]int64, len(out))
+		for i, e := range out {
+			systemIDs[i] = e.SolarSystemID
+		}
+		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), systemIDs)
+		for i := range out {
+			out[i].SolarSystemName = systemNames[out[i].SolarSystemID]
+		}
 		page := in.Page
 		if page <= 0 {
 			page = 1
@@ -198,6 +220,7 @@ func listCharacterMiningHandler(version, clientID string, store *config.Store, s
 
 type MiningExtraction struct {
 	MoonID              int64     `json:"moonId"`
+	MoonName            string    `json:"moonName,omitempty"`
 	StructureID         int64     `json:"structureId"`
 	ChunkArrivalTime    time.Time `json:"chunkArrivalTime"`
 	ExtractionStartTime time.Time `json:"extractionStartTime"`
@@ -225,7 +248,7 @@ type ListCorporationMiningExtractionsOutput struct {
 	Extractions   []MiningExtraction `json:"extractions"`
 }
 
-func listCorporationMiningExtractionsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCorporationMiningExtractionsInput, ListCorporationMiningExtractionsOutput] {
+func listCorporationMiningExtractionsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCorporationMiningExtractionsInput, ListCorporationMiningExtractionsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationMiningExtractionsInput) (*mcpsdk.CallToolResult, ListCorporationMiningExtractionsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -244,6 +267,14 @@ func listCorporationMiningExtractionsHandler(version, clientID string, store *co
 				MoonID: e.MoonId, StructureID: e.StructureId, ChunkArrivalTime: e.ChunkArrivalTime,
 				ExtractionStartTime: e.ExtractionStartTime, NaturalDecayTime: e.NaturalDecayTime,
 			}
+		}
+		moonIDs := make([]int64, len(out))
+		for i, e := range out {
+			moonIDs[i] = e.MoonID
+		}
+		moonNames := resolveMoonNames(ctx, sdeStore, sso.UserAgent(version), moonIDs)
+		for i := range out {
+			out[i].MoonName = moonNames[out[i].MoonID]
 		}
 		page := in.Page
 		if page <= 0 {
@@ -437,13 +468,15 @@ func listCorporationIndustryJobsHandler(version, clientID string, store *config.
 // --- list_industry_facilities (public, no input) ---
 
 type IndustryFacility struct {
-	FacilityID    int64    `json:"facilityId"`
-	OwnerID       int64    `json:"ownerId"`
-	RegionID      int64    `json:"regionId"`
-	SolarSystemID int64    `json:"solarSystemId"`
-	TypeID        int64    `json:"typeId"`
-	TypeName      string   `json:"typeName,omitempty"`
-	Tax           *float64 `json:"tax,omitempty"`
+	FacilityID      int64    `json:"facilityId"`
+	OwnerID         int64    `json:"ownerId"`
+	RegionID        int64    `json:"regionId"`
+	RegionName      string   `json:"regionName,omitempty"`
+	SolarSystemID   int64    `json:"solarSystemId"`
+	SolarSystemName string   `json:"solarSystemName,omitempty"`
+	TypeID          int64    `json:"typeId"`
+	TypeName        string   `json:"typeName,omitempty"`
+	Tax             *float64 `json:"tax,omitempty"`
 }
 
 var listIndustryFacilities = func(ctx context.Context, userAgent string) ([]esiapi.IndustryFacilitiesGetInner, error) {
@@ -477,6 +510,18 @@ func listIndustryFacilitiesHandler(version string, sdeStore *sde.Store) mcpsdk.T
 		for i := range out {
 			out[i].TypeName = names[out[i].TypeID]
 		}
+		regionIDs := make([]int64, len(out))
+		systemIDs := make([]int64, len(out))
+		for i, f := range out {
+			regionIDs[i] = f.RegionID
+			systemIDs[i] = f.SolarSystemID
+		}
+		regionNames := resolveRegionNames(ctx, sdeStore, sso.UserAgent(version), regionIDs)
+		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), systemIDs)
+		for i := range out {
+			out[i].RegionName = regionNames[out[i].RegionID]
+			out[i].SolarSystemName = systemNames[out[i].SolarSystemID]
+		}
 		return nil, ListIndustryFacilitiesOutput{Facilities: out}, nil
 	}
 }
@@ -489,8 +534,9 @@ type CostIndex struct {
 }
 
 type IndustrySystem struct {
-	SolarSystemID int64       `json:"solarSystemId"`
-	CostIndices   []CostIndex `json:"costIndices"`
+	SolarSystemID   int64       `json:"solarSystemId"`
+	SolarSystemName string      `json:"solarSystemName,omitempty"`
+	CostIndices     []CostIndex `json:"costIndices"`
 }
 
 var listIndustrySystems = func(ctx context.Context, userAgent string) ([]esiapi.IndustrySystemsGetInner, error) {
@@ -503,7 +549,7 @@ type ListIndustrySystemsOutput struct {
 	Systems []IndustrySystem `json:"systems"`
 }
 
-func listIndustrySystemsHandler(version string) mcpsdk.ToolHandlerFor[ListIndustrySystemsInput, ListIndustrySystemsOutput] {
+func listIndustrySystemsHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListIndustrySystemsInput, ListIndustrySystemsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListIndustrySystemsInput) (*mcpsdk.CallToolResult, ListIndustrySystemsOutput, error) {
 		systems, err := listIndustrySystems(ctx, sso.UserAgent(version))
 		if err != nil {
@@ -516,6 +562,14 @@ func listIndustrySystemsHandler(version string) mcpsdk.ToolHandlerFor[ListIndust
 				costIndices[j] = CostIndex{Activity: ci.Activity, CostIndex: ci.CostIndex}
 			}
 			out[i] = IndustrySystem{SolarSystemID: s.SolarSystemId, CostIndices: costIndices}
+		}
+		systemIDs := make([]int64, len(out))
+		for i, s := range out {
+			systemIDs[i] = s.SolarSystemID
+		}
+		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), systemIDs)
+		for i := range out {
+			out[i].SolarSystemName = systemNames[out[i].SolarSystemID]
 		}
 		return nil, ListIndustrySystemsOutput{Systems: out}, nil
 	}

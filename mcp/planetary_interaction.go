@@ -18,13 +18,15 @@ import (
 // --- list_character_planets (private) ---
 
 type Planet struct {
-	PlanetID      int64     `json:"planetId"`
-	SolarSystemID int64     `json:"solarSystemId"`
-	PlanetType    string    `json:"planetType"`
-	OwnerID       int64     `json:"ownerId"`
-	UpgradeLevel  int64     `json:"upgradeLevel"`
-	NumPins       int64     `json:"numPins"`
-	LastUpdate    time.Time `json:"lastUpdate"`
+	PlanetID        int64     `json:"planetId"`
+	PlanetName      string    `json:"planetName,omitempty"`
+	SolarSystemID   int64     `json:"solarSystemId"`
+	SolarSystemName string    `json:"solarSystemName,omitempty"`
+	PlanetType      string    `json:"planetType"`
+	OwnerID         int64     `json:"ownerId"`
+	UpgradeLevel    int64     `json:"upgradeLevel"`
+	NumPins         int64     `json:"numPins"`
+	LastUpdate      time.Time `json:"lastUpdate"`
 }
 
 var listCharacterPlanets = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]Planet, error) {
@@ -54,7 +56,7 @@ type ListCharacterPlanetsOutput struct {
 	Planets     []Planet `json:"planets"`
 }
 
-func listCharacterPlanetsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCharacterPlanetsInput, ListCharacterPlanetsOutput] {
+func listCharacterPlanetsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCharacterPlanetsInput, ListCharacterPlanetsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterPlanetsInput) (*mcpsdk.CallToolResult, ListCharacterPlanetsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -67,6 +69,20 @@ func listCharacterPlanetsHandler(version, clientID string, store *config.Store) 
 		if err != nil {
 			return nil, ListCharacterPlanetsOutput{}, fmt.Errorf("list character planets: %w", err)
 		}
+
+		systemIDs := make([]int64, len(planets))
+		planetIDs := make([]int64, len(planets))
+		for i, p := range planets {
+			systemIDs[i] = p.SolarSystemID
+			planetIDs[i] = p.PlanetID
+		}
+		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), systemIDs)
+		planetNames := resolvePlanetNames(ctx, sdeStore, sso.UserAgent(version), planetIDs)
+		for i := range planets {
+			planets[i].SolarSystemName = systemNames[planets[i].SolarSystemID]
+			planets[i].PlanetName = planetNames[planets[i].PlanetID]
+		}
+
 		return nil, ListCharacterPlanetsOutput{CharacterID: in.CharacterID, Planets: planets}, nil
 	}
 }
@@ -268,6 +284,7 @@ func getCharacterPlanetHandler(version, clientID string, store *config.Store, sd
 type CustomsOffice struct {
 	OfficeID                 int64    `json:"officeId"`
 	SystemID                 int64    `json:"systemId"`
+	SystemName               string   `json:"systemName,omitempty"`
 	TypeID                   *int64   `json:"typeId,omitempty"`
 	TypeName                 string   `json:"typeName,omitempty"`
 	ReinforceExitStart       int64    `json:"reinforceExitStart"`
@@ -342,6 +359,15 @@ func listCorporationCustomsOfficesHandler(version, clientID string, store *confi
 			if out[i].TypeID != nil {
 				out[i].TypeName = names[*out[i].TypeID]
 			}
+		}
+
+		systemIDs := make([]int64, len(out))
+		for i, o := range out {
+			systemIDs[i] = o.SystemID
+		}
+		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), systemIDs)
+		for i := range out {
+			out[i].SystemName = systemNames[out[i].SystemID]
 		}
 
 		page := in.Page

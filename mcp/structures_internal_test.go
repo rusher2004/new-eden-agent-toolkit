@@ -26,13 +26,42 @@ func TestListCharacterMercenaryDensHandler_MapsFields(t *testing.T) {
 		return []MercenaryDen{{ID: 1001, PlanetID: 40000001}}, nil
 	}
 
-	handler := listCharacterMercenaryDensHandler("v1", "client-id", store)
+	handler := listCharacterMercenaryDensHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, ListCharacterMercenaryDensInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
 	if out.CharacterID != 7 || len(out.Dens) != 1 || out.Dens[0].ID != 1001 || out.Dens[0].PlanetID != 40000001 {
 		t.Errorf("out = %+v, want CharacterID=7 Dens=[{ID:1001 PlanetID:40000001}]", out)
+	}
+}
+
+func TestListCharacterMercenaryDensHandler_ResolvesPlanetName(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := listCharacterMercenaryDens
+	t.Cleanup(func() { listCharacterMercenaryDens = orig })
+	listCharacterMercenaryDens = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]MercenaryDen, error) {
+		return []MercenaryDen{{ID: 1, PlanetID: 40009086}}, nil
+	}
+
+	origPlanet := resolvePlanetNames
+	t.Cleanup(func() { resolvePlanetNames = origPlanet })
+	resolvePlanetNames = func(ctx context.Context, sdeStore planetNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{40009086: "Jita IV"}
+	}
+
+	handler := listCharacterMercenaryDensHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, ListCharacterMercenaryDensInput{CharacterID: 7})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.Dens[0].PlanetName != "Jita IV" {
+		t.Errorf("PlanetName = %q, want %q", out.Dens[0].PlanetName, "Jita IV")
 	}
 }
 
@@ -47,7 +76,7 @@ func TestListCharacterMercenaryDensHandler_UnknownCharacter(t *testing.T) {
 		return nil, nil
 	}
 
-	handler := listCharacterMercenaryDensHandler("v1", "client-id", store)
+	handler := listCharacterMercenaryDensHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCharacterMercenaryDensInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -68,7 +97,7 @@ func TestListCharacterMercenaryDensHandler_PropagatesError(t *testing.T) {
 		return nil, wantErr
 	}
 
-	handler := listCharacterMercenaryDensHandler("v1", "client-id", store)
+	handler := listCharacterMercenaryDensHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCharacterMercenaryDensInput{CharacterID: 7})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -179,6 +208,35 @@ func TestGetCharacterMercenaryDenHandler_ResolvesTypeName(t *testing.T) {
 	}
 }
 
+func TestGetCharacterMercenaryDenHandler_ResolvesSkyhookPlanetName(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := getCharacterMercenaryDen
+	t.Cleanup(func() { getCharacterMercenaryDen = orig })
+	getCharacterMercenaryDen = func(ctx context.Context, clientID string, characterID int32, userAgent string, mercenaryDenID int64) (MercenaryDenDetail, error) {
+		return MercenaryDenDetail{ID: 1, Skyhook: MercenaryDenSkyhookRef{ID: 2, PlanetID: 40009086}}, nil
+	}
+
+	origPlanet := resolvePlanetNames
+	t.Cleanup(func() { resolvePlanetNames = origPlanet })
+	resolvePlanetNames = func(ctx context.Context, sdeStore planetNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{40009086: "Jita IV"}
+	}
+
+	handler := getCharacterMercenaryDenHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, GetCharacterMercenaryDenInput{CharacterID: 7, MercenaryDenID: 1})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.Skyhook.PlanetName != "Jita IV" {
+		t.Errorf("Skyhook.PlanetName = %q, want %q", out.Skyhook.PlanetName, "Jita IV")
+	}
+}
+
 func TestGetCharacterMercenaryDenHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
@@ -233,13 +291,42 @@ func TestListCorporationSkyhooksHandler_MapsFields(t *testing.T) {
 		return []Skyhook{{ID: 2001, PlanetID: 40000001}}, nil
 	}
 
-	handler := listCorporationSkyhooksHandler("v1", "client-id", store)
+	handler := listCorporationSkyhooksHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, ListCorporationSkyhooksInput{CharacterID: 7, CorporationID: 98000001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
 	if out.CharacterID != 7 || out.CorporationID != 98000001 || len(out.Skyhooks) != 1 || out.Skyhooks[0].ID != 2001 {
 		t.Errorf("out = %+v, want CharacterID=7 CorporationID=98000001 Skyhooks=[{ID:2001}]", out)
+	}
+}
+
+func TestListCorporationSkyhooksHandler_ResolvesPlanetName(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := listCorporationSkyhooks
+	t.Cleanup(func() { listCorporationSkyhooks = orig })
+	listCorporationSkyhooks = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64) ([]Skyhook, error) {
+		return []Skyhook{{ID: 1, PlanetID: 40009086}}, nil
+	}
+
+	origPlanet := resolvePlanetNames
+	t.Cleanup(func() { resolvePlanetNames = origPlanet })
+	resolvePlanetNames = func(ctx context.Context, sdeStore planetNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{40009086: "Jita IV"}
+	}
+
+	handler := listCorporationSkyhooksHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, ListCorporationSkyhooksInput{CharacterID: 7, CorporationID: 98000001})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.Skyhooks[0].PlanetName != "Jita IV" {
+		t.Errorf("PlanetName = %q, want %q", out.Skyhooks[0].PlanetName, "Jita IV")
 	}
 }
 
@@ -254,7 +341,7 @@ func TestListCorporationSkyhooksHandler_UnknownCharacter(t *testing.T) {
 		return nil, nil
 	}
 
-	handler := listCorporationSkyhooksHandler("v1", "client-id", store)
+	handler := listCorporationSkyhooksHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationSkyhooksInput{CharacterID: 999, CorporationID: 98000001})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -275,7 +362,7 @@ func TestListCorporationSkyhooksHandler_PropagatesError(t *testing.T) {
 		return nil, wantErr
 	}
 
-	handler := listCorporationSkyhooksHandler("v1", "client-id", store)
+	handler := listCorporationSkyhooksHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationSkyhooksInput{CharacterID: 7, CorporationID: 98000001})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -392,6 +479,35 @@ func TestGetCorporationSkyhookHandler_ResolvesReagentTypeName(t *testing.T) {
 	}
 }
 
+func TestGetCorporationSkyhookHandler_ResolvesPlanetName(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := getCorporationSkyhook
+	t.Cleanup(func() { getCorporationSkyhook = orig })
+	getCorporationSkyhook = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID, skyhookID int64) (SkyhookDetail, error) {
+		return SkyhookDetail{ID: 1, PlanetID: 40009086}, nil
+	}
+
+	origPlanet := resolvePlanetNames
+	t.Cleanup(func() { resolvePlanetNames = origPlanet })
+	resolvePlanetNames = func(ctx context.Context, sdeStore planetNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{40009086: "Jita IV"}
+	}
+
+	handler := getCorporationSkyhookHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, GetCorporationSkyhookInput{CharacterID: 7, CorporationID: 98000001, SkyhookID: 1})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.PlanetName != "Jita IV" {
+		t.Errorf("PlanetName = %q, want %q", out.PlanetName, "Jita IV")
+	}
+}
+
 func TestGetCorporationSkyhookHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
@@ -446,13 +562,42 @@ func TestListCorporationSovereigntyHubsHandler_MapsFields(t *testing.T) {
 		return []StructureSovereigntyHub{{ID: 3001, SolarSystemID: 30000142}}, nil
 	}
 
-	handler := listCorporationSovereigntyHubsHandler("v1", "client-id", store)
+	handler := listCorporationSovereigntyHubsHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, ListCorporationSovereigntyHubsInput{CharacterID: 7, CorporationID: 98000001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
 	if out.CharacterID != 7 || out.CorporationID != 98000001 || len(out.Hubs) != 1 || out.Hubs[0].ID != 3001 || out.Hubs[0].SolarSystemID != 30000142 {
 		t.Errorf("out = %+v, want CharacterID=7 CorporationID=98000001 Hubs=[{ID:3001 SolarSystemID:30000142}]", out)
+	}
+}
+
+func TestListCorporationSovereigntyHubsHandler_ResolvesSystemName(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := listCorporationSovereigntyHubs
+	t.Cleanup(func() { listCorporationSovereigntyHubs = orig })
+	listCorporationSovereigntyHubs = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64) ([]StructureSovereigntyHub, error) {
+		return []StructureSovereigntyHub{{ID: 1, SolarSystemID: 30000142}}, nil
+	}
+
+	origSystem := resolveSystemNames
+	t.Cleanup(func() { resolveSystemNames = origSystem })
+	resolveSystemNames = func(ctx context.Context, sdeStore systemNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{30000142: "Jita"}
+	}
+
+	handler := listCorporationSovereigntyHubsHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, ListCorporationSovereigntyHubsInput{CharacterID: 7, CorporationID: 98000001})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.Hubs[0].SolarSystemName != "Jita" {
+		t.Errorf("SolarSystemName = %q, want %q", out.Hubs[0].SolarSystemName, "Jita")
 	}
 }
 
@@ -467,7 +612,7 @@ func TestListCorporationSovereigntyHubsHandler_UnknownCharacter(t *testing.T) {
 		return nil, nil
 	}
 
-	handler := listCorporationSovereigntyHubsHandler("v1", "client-id", store)
+	handler := listCorporationSovereigntyHubsHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationSovereigntyHubsInput{CharacterID: 999, CorporationID: 98000001})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -488,7 +633,7 @@ func TestListCorporationSovereigntyHubsHandler_PropagatesError(t *testing.T) {
 		return nil, wantErr
 	}
 
-	handler := listCorporationSovereigntyHubsHandler("v1", "client-id", store)
+	handler := listCorporationSovereigntyHubsHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationSovereigntyHubsInput{CharacterID: 7, CorporationID: 98000001})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -704,6 +849,174 @@ func TestGetCorporationSovereigntyHubHandler_ResolvesTypeNames(t *testing.T) {
 	}
 	if out.Upgrades[0].TypeName != "Rifter" {
 		t.Errorf("Upgrades[0].TypeName = %q, want %q", out.Upgrades[0].TypeName, "Rifter")
+	}
+}
+
+func TestGetCorporationSovereigntyHubHandler_ResolvesTransportSystemNames(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := getCorporationSovereigntyHub
+	t.Cleanup(func() { getCorporationSovereigntyHub = orig })
+	exportID := int64(30000144)
+	getCorporationSovereigntyHub = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID, sovereigntyHubID int64) (StructureSovereigntyHubDetail, error) {
+		return StructureSovereigntyHubDetail{
+			ID: 1, SolarSystemID: 30000142,
+			WorkforceTransport: StructureSovereigntyHubTransport{
+				Configuration: StructureSovereigntyHubTransportConfig{Kind: "export", ExportSolarSystemID: &exportID},
+				State: StructureSovereigntyHubTransportState{
+					Kind:          "import",
+					ImportSources: []StructureSovereigntyHubTransportImportSource{{Amount: 100, SolarSystemID: 30002187}},
+				},
+			},
+		}, nil
+	}
+
+	origSystem := resolveSystemNames
+	t.Cleanup(func() { resolveSystemNames = origSystem })
+	resolveSystemNames = func(ctx context.Context, sdeStore systemNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{30000142: "Jita", 30000144: "Perimeter", 30002187: "Amarr"}
+	}
+
+	handler := getCorporationSovereigntyHubHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, GetCorporationSovereigntyHubInput{CharacterID: 7, CorporationID: 98000001, SovereigntyHubID: 1})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.SolarSystemName != "Jita" {
+		t.Errorf("SolarSystemName = %q, want %q", out.SolarSystemName, "Jita")
+	}
+	if out.WorkforceTransport.Configuration.ExportSolarSystemName != "Perimeter" {
+		t.Errorf("WorkforceTransport.Configuration.ExportSolarSystemName = %q, want %q", out.WorkforceTransport.Configuration.ExportSolarSystemName, "Perimeter")
+	}
+	if out.WorkforceTransport.State.ImportSources[0].SolarSystemName != "Amarr" {
+		t.Errorf("WorkforceTransport.State.ImportSources[0].SolarSystemName = %q, want %q", out.WorkforceTransport.State.ImportSources[0].SolarSystemName, "Amarr")
+	}
+}
+
+func TestGetCorporationSovereigntyHubHandler_ImportSolarSystemNamesSurvivesPartialMiss(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := getCorporationSovereigntyHub
+	t.Cleanup(func() { getCorporationSovereigntyHub = orig })
+	getCorporationSovereigntyHub = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID, sovereigntyHubID int64) (StructureSovereigntyHubDetail, error) {
+		return StructureSovereigntyHubDetail{
+			ID: 3001, SolarSystemID: 30000142,
+			WorkforceTransport: StructureSovereigntyHubTransport{
+				Configuration: StructureSovereigntyHubTransportConfig{
+					Kind:                 "import",
+					ImportSolarSystemIDs: []int64{30000142, 999999999, 30000144},
+				},
+			},
+		}, nil
+	}
+
+	origSystem := resolveSystemNames
+	t.Cleanup(func() { resolveSystemNames = origSystem })
+	resolveSystemNames = func(ctx context.Context, sdeStore systemNameCache, userAgent string, ids []int64) map[int64]string {
+		// 999999999 is deliberately omitted -- a miss must not shift neighbors.
+		return map[int64]string{30000142: "Jita", 30000144: "Perimeter"}
+	}
+
+	handler := getCorporationSovereigntyHubHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, GetCorporationSovereigntyHubInput{CharacterID: 7, CorporationID: 98000001, SovereigntyHubID: 3001})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	want := []string{"Jita", "", "Perimeter"}
+	got := out.WorkforceTransport.Configuration.ImportSolarSystemNames
+	if len(got) != len(want) {
+		t.Fatalf("ImportSolarSystemNames = %v, want %v", got, want)
+	}
+	for i, w := range want {
+		if got[i] != w {
+			t.Errorf("ImportSolarSystemNames[%d] = %q, want %q", i, got[i], w)
+		}
+	}
+}
+
+func TestGetCorporationSovereigntyHubHandler_ImportSolarSystemNamesNilOnTotalMiss(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := getCorporationSovereigntyHub
+	t.Cleanup(func() { getCorporationSovereigntyHub = orig })
+	getCorporationSovereigntyHub = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID, sovereigntyHubID int64) (StructureSovereigntyHubDetail, error) {
+		return StructureSovereigntyHubDetail{
+			ID: 3001, SolarSystemID: 999999996,
+			WorkforceTransport: StructureSovereigntyHubTransport{
+				Configuration: StructureSovereigntyHubTransportConfig{
+					Kind:                 "import",
+					ImportSolarSystemIDs: []int64{999999997, 999999998, 999999999},
+				},
+			},
+		}, nil
+	}
+
+	origSystem := resolveSystemNames
+	t.Cleanup(func() { resolveSystemNames = origSystem })
+	resolveSystemNames = func(ctx context.Context, sdeStore systemNameCache, userAgent string, ids []int64) map[int64]string {
+		// Total sync failure: nothing resolves. ImportSolarSystemNames must stay
+		// nil so omitempty drops it, rather than serializing an all-empty-string
+		// slice that an LLM consumer could misread as "confirmed unnamed."
+		return map[int64]string{}
+	}
+
+	handler := getCorporationSovereigntyHubHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, GetCorporationSovereigntyHubInput{CharacterID: 7, CorporationID: 98000001, SovereigntyHubID: 3001})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.WorkforceTransport.Configuration.ImportSolarSystemNames != nil {
+		t.Errorf("ImportSolarSystemNames = %v, want nil on a total miss", out.WorkforceTransport.Configuration.ImportSolarSystemNames)
+	}
+}
+
+func TestGetCorporationSovereigntyHubHandler_ResolvesStateExportSolarSystemName(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := getCorporationSovereigntyHub
+	t.Cleanup(func() { getCorporationSovereigntyHub = orig })
+	exportID := int64(30002187)
+	getCorporationSovereigntyHub = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID, sovereigntyHubID int64) (StructureSovereigntyHubDetail, error) {
+		return StructureSovereigntyHubDetail{
+			ID: 1, SolarSystemID: 30000142,
+			WorkforceTransport: StructureSovereigntyHubTransport{
+				State: StructureSovereigntyHubTransportState{Kind: "export", ExportSolarSystemID: &exportID},
+			},
+		}, nil
+	}
+
+	origSystem := resolveSystemNames
+	t.Cleanup(func() { resolveSystemNames = origSystem })
+	resolveSystemNames = func(ctx context.Context, sdeStore systemNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{30000142: "Jita", 30002187: "Amarr"}
+	}
+
+	handler := getCorporationSovereigntyHubHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, GetCorporationSovereigntyHubInput{CharacterID: 7, CorporationID: 98000001, SovereigntyHubID: 1})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	// This is the last remaining untested transport leg: State's own export case,
+	// distinct from Configuration.ExportSolarSystemID (already covered elsewhere) --
+	// confirms the two same-named fields on different structs resolve independently.
+	if out.WorkforceTransport.State.ExportSolarSystemName != "Amarr" {
+		t.Errorf("WorkforceTransport.State.ExportSolarSystemName = %q, want %q", out.WorkforceTransport.State.ExportSolarSystemName, "Amarr")
 	}
 }
 

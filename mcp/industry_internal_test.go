@@ -163,7 +163,7 @@ func TestListCorporationMiningExtractionsHandler_MapsFieldsAndDefaultsPageTo1(t 
 		}}, 3, nil
 	}
 
-	handler := listCorporationMiningExtractionsHandler("v1", "client-id", store)
+	handler := listCorporationMiningExtractionsHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, ListCorporationMiningExtractionsInput{CharacterID: 7, CorporationID: 98000001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -190,7 +190,7 @@ func TestListCorporationMiningExtractionsHandler_UnknownCharacter(t *testing.T) 
 		return nil, 0, nil
 	}
 
-	handler := listCorporationMiningExtractionsHandler("v1", "client-id", store)
+	handler := listCorporationMiningExtractionsHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationMiningExtractionsInput{CharacterID: 999, CorporationID: 98000001})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -403,7 +403,7 @@ func TestListIndustrySystemsHandler_MapsFields(t *testing.T) {
 		}}, nil
 	}
 
-	handler := listIndustrySystemsHandler("v1")
+	handler := listIndustrySystemsHandler("v1", nil)
 	_, out, err := handler(context.Background(), nil, ListIndustrySystemsInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -477,7 +477,7 @@ func TestListCorporationMiningExtractionsHandler_PropagatesError(t *testing.T) {
 		return nil, 0, wantErr
 	}
 
-	handler := listCorporationMiningExtractionsHandler("v1", "client-id", store)
+	handler := listCorporationMiningExtractionsHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationMiningExtractionsInput{CharacterID: 7, CorporationID: 98000001})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -570,7 +570,7 @@ func TestListIndustrySystemsHandler_PropagatesError(t *testing.T) {
 		return nil, wantErr
 	}
 
-	handler := listIndustrySystemsHandler("v1")
+	handler := listIndustrySystemsHandler("v1", nil)
 	_, _, err := handler(context.Background(), nil, ListIndustrySystemsInput{})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -771,5 +771,180 @@ func TestListIndustryFacilitiesHandler_ResolvesTypeName(t *testing.T) {
 	}
 	if out.Facilities[0].TypeName != "Standup Manufacturing Plant I" {
 		t.Errorf("TypeName = %q, want %q", out.Facilities[0].TypeName, "Standup Manufacturing Plant I")
+	}
+}
+
+func TestListIndustryFacilitiesHandler_ResolvesLocationNames(t *testing.T) {
+	orig := listIndustryFacilities
+	t.Cleanup(func() { listIndustryFacilities = orig })
+	listIndustryFacilities = func(ctx context.Context, userAgent string) ([]esiapi.IndustryFacilitiesGetInner, error) {
+		return []esiapi.IndustryFacilitiesGetInner{{
+			FacilityId: 500, OwnerId: 98000001, RegionId: 10000002, SolarSystemId: 30000142, TypeId: 2502,
+		}}, nil
+	}
+
+	origRegion := resolveRegionNames
+	t.Cleanup(func() { resolveRegionNames = origRegion })
+	resolveRegionNames = func(ctx context.Context, sdeStore regionNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{10000002: "The Forge"}
+	}
+	origSystem := resolveSystemNames
+	t.Cleanup(func() { resolveSystemNames = origSystem })
+	resolveSystemNames = func(ctx context.Context, sdeStore systemNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{30000142: "Jita"}
+	}
+
+	handler := listIndustryFacilitiesHandler("v1", nil)
+	_, out, err := handler(context.Background(), nil, ListIndustryFacilitiesInput{})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Facilities) != 1 {
+		t.Fatalf("out.Facilities = %+v, want one facility", out.Facilities)
+	}
+	if out.Facilities[0].RegionName != "The Forge" {
+		t.Errorf("RegionName = %q, want %q", out.Facilities[0].RegionName, "The Forge")
+	}
+	if out.Facilities[0].SolarSystemName != "Jita" {
+		t.Errorf("SolarSystemName = %q, want %q", out.Facilities[0].SolarSystemName, "Jita")
+	}
+}
+
+func TestListIndustrySystemsHandler_ResolvesSystemName(t *testing.T) {
+	orig := listIndustrySystems
+	t.Cleanup(func() { listIndustrySystems = orig })
+	listIndustrySystems = func(ctx context.Context, userAgent string) ([]esiapi.IndustrySystemsGetInner, error) {
+		return []esiapi.IndustrySystemsGetInner{{SolarSystemId: 30000142}}, nil
+	}
+
+	origSystem := resolveSystemNames
+	t.Cleanup(func() { resolveSystemNames = origSystem })
+	resolveSystemNames = func(ctx context.Context, sdeStore systemNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{30000142: "Jita"}
+	}
+
+	handler := listIndustrySystemsHandler("v1", nil)
+	_, out, err := handler(context.Background(), nil, ListIndustrySystemsInput{})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Systems) != 1 {
+		t.Fatalf("out.Systems = %+v, want one system", out.Systems)
+	}
+	if out.Systems[0].SolarSystemName != "Jita" {
+		t.Errorf("SolarSystemName = %q, want %q", out.Systems[0].SolarSystemName, "Jita")
+	}
+}
+
+func TestListCharacterMiningHandler_ResolvesSystemName(t *testing.T) {
+	store := industryTestStore(t)
+
+	orig := listCharacterMining
+	t.Cleanup(func() { listCharacterMining = orig })
+	listCharacterMining = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]esiapi.CharactersCharacterIdMiningGetInner, int32, error) {
+		return []esiapi.CharactersCharacterIdMiningGetInner{{Date: "2026-07-30", Quantity: 100, SolarSystemId: 30000142, TypeId: 34}}, 1, nil
+	}
+
+	origSystem := resolveSystemNames
+	t.Cleanup(func() { resolveSystemNames = origSystem })
+	resolveSystemNames = func(ctx context.Context, sdeStore systemNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{30000142: "Jita"}
+	}
+
+	handler := listCharacterMiningHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, ListCharacterMiningInput{CharacterID: 7})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Ledger) != 1 {
+		t.Fatalf("out.Ledger = %+v, want one entry", out.Ledger)
+	}
+	if out.Ledger[0].SolarSystemName != "Jita" {
+		t.Errorf("SolarSystemName = %q, want %q", out.Ledger[0].SolarSystemName, "Jita")
+	}
+}
+
+func TestListCorporationMiningExtractionsHandler_ResolvesMoonName(t *testing.T) {
+	store := industryTestStore(t)
+
+	orig := listCorporationMiningExtractions
+	t.Cleanup(func() { listCorporationMiningExtractions = orig })
+	listCorporationMiningExtractions = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]esiapi.CorporationCorporationIdMiningExtractionsGetInner, int32, error) {
+		return []esiapi.CorporationCorporationIdMiningExtractionsGetInner{{MoonId: 40009087, StructureId: 1}}, 1, nil
+	}
+
+	origMoon := resolveMoonNames
+	t.Cleanup(func() { resolveMoonNames = origMoon })
+	resolveMoonNames = func(ctx context.Context, sdeStore moonNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{40009087: "Jita IV - Moon 4"}
+	}
+
+	handler := listCorporationMiningExtractionsHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, ListCorporationMiningExtractionsInput{CharacterID: 7, CorporationID: 98000001})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Extractions) != 1 {
+		t.Fatalf("out.Extractions = %+v, want one extraction", out.Extractions)
+	}
+	if out.Extractions[0].MoonName != "Jita IV - Moon 4" {
+		t.Errorf("MoonName = %q, want %q", out.Extractions[0].MoonName, "Jita IV - Moon 4")
+	}
+}
+
+func TestListCharacterIndustryJobsHandler_ResolvesStationName(t *testing.T) {
+	store := industryTestStore(t)
+
+	orig := listCharacterIndustryJobs
+	t.Cleanup(func() { listCharacterIndustryJobs = orig })
+	listCharacterIndustryJobs = func(ctx context.Context, clientID string, characterID int32, userAgent string, includeCompleted bool) ([]esiapi.CharactersCharacterIdIndustryJobsGetInner, error) {
+		return []esiapi.CharactersCharacterIdIndustryJobsGetInner{{JobId: 1, BlueprintTypeId: 587, StationId: 60003760}}, nil
+	}
+
+	origStation := resolveStationNames
+	t.Cleanup(func() { resolveStationNames = origStation })
+	resolveStationNames = func(ctx context.Context, sdeStore stationNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{60003760: "Jita IV - Moon 4 - Caldari Navy Assembly Plant"}
+	}
+
+	handler := listCharacterIndustryJobsHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, ListCharacterIndustryJobsInput{CharacterID: 7})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Jobs) != 1 {
+		t.Fatalf("out.Jobs = %+v, want one job", out.Jobs)
+	}
+	if out.Jobs[0].StationName != "Jita IV - Moon 4 - Caldari Navy Assembly Plant" {
+		t.Errorf("StationName = %q, want %q", out.Jobs[0].StationName, "Jita IV - Moon 4 - Caldari Navy Assembly Plant")
+	}
+}
+
+func TestListCorporationIndustryJobsHandler_StationNameEmptyWhenStationIDZero(t *testing.T) {
+	store := industryTestStore(t)
+
+	orig := listCorporationIndustryJobs
+	t.Cleanup(func() { listCorporationIndustryJobs = orig })
+	listCorporationIndustryJobs = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, includeCompleted bool, page int32) ([]esiapi.CorporationsCorporationIdIndustryJobsGetInner, int32, error) {
+		// StationID is never populated on the corp mapper (LocationID is used instead), so it's left zero here to match reality.
+		return []esiapi.CorporationsCorporationIdIndustryJobsGetInner{{JobId: 1, BlueprintTypeId: 587}}, 1, nil
+	}
+
+	origStation := resolveStationNames
+	t.Cleanup(func() { resolveStationNames = origStation })
+	resolveStationNames = func(ctx context.Context, sdeStore stationNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{0: "should never be assigned"}
+	}
+
+	handler := listCorporationIndustryJobsHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, ListCorporationIndustryJobsInput{CharacterID: 7, CorporationID: 98000001})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Jobs) != 1 {
+		t.Fatalf("out.Jobs = %+v, want one job", out.Jobs)
+	}
+	if out.Jobs[0].StationName != "" {
+		t.Errorf("StationName = %q, want empty (StationID is 0 for corp-scoped jobs)", out.Jobs[0].StationName)
 	}
 }

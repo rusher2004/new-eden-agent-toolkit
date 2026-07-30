@@ -26,7 +26,7 @@ func TestGetCharacterLocationHandler_MapsFields(t *testing.T) {
 		return 30000142, &station, nil, nil
 	}
 
-	handler := getCharacterLocationHandler("v1", "client-id", store)
+	handler := getCharacterLocationHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, GetCharacterLocationInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -53,10 +53,48 @@ func TestGetCharacterLocationHandler_UnknownCharacter(t *testing.T) {
 		return 0, nil, nil, nil
 	}
 
-	handler := getCharacterLocationHandler("v1", "client-id", store)
+	handler := getCharacterLocationHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, GetCharacterLocationInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
+	}
+}
+
+func TestGetCharacterLocationHandler_ResolvesLocationNames(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := getCharacterLocation
+	t.Cleanup(func() { getCharacterLocation = orig })
+	stationID := int64(60003760)
+	getCharacterLocation = func(ctx context.Context, clientID string, characterID int32, userAgent string) (int64, *int64, *int64, error) {
+		return 30000142, &stationID, nil, nil
+	}
+
+	origSystem := resolveSystemNames
+	t.Cleanup(func() { resolveSystemNames = origSystem })
+	resolveSystemNames = func(ctx context.Context, sdeStore systemNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{30000142: "Jita"}
+	}
+	origStation := resolveStationNames
+	t.Cleanup(func() { resolveStationNames = origStation })
+	resolveStationNames = func(ctx context.Context, sdeStore stationNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{60003760: "Jita IV - Moon 4 - Caldari Navy Assembly Plant"}
+	}
+
+	handler := getCharacterLocationHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, GetCharacterLocationInput{CharacterID: 7})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.SolarSystemName != "Jita" {
+		t.Errorf("SolarSystemName = %q, want %q", out.SolarSystemName, "Jita")
+	}
+	if out.StationName != "Jita IV - Moon 4 - Caldari Navy Assembly Plant" {
+		t.Errorf("StationName = %q, want %q", out.StationName, "Jita IV - Moon 4 - Caldari Navy Assembly Plant")
 	}
 }
 
@@ -168,7 +206,7 @@ func TestGetCharacterLocationHandler_PropagatesError(t *testing.T) {
 		return 0, nil, nil, wantErr
 	}
 
-	handler := getCharacterLocationHandler("v1", "client-id", store)
+	handler := getCharacterLocationHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, GetCharacterLocationInput{CharacterID: 7})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)

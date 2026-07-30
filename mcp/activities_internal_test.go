@@ -112,7 +112,7 @@ func TestListRaidableSkyhooksHandler_ReturnsSkyhooks(t *testing.T) {
 		return []SkyhookSummary{{PlanetID: 40000001, SolarSystemID: 30000142}}, nil
 	}
 
-	handler := listRaidableSkyhooksHandler("v1", "client-id", store)
+	handler := listRaidableSkyhooksHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, ListRaidableSkyhooksInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -133,7 +133,7 @@ func TestListRaidableSkyhooksHandler_UnknownCharacter_ReturnsErrCharacterNotFoun
 		return nil, nil
 	}
 
-	handler := listRaidableSkyhooksHandler("v1", "client-id", store)
+	handler := listRaidableSkyhooksHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListRaidableSkyhooksInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -196,7 +196,7 @@ func TestListRaidableSkyhooksHandler_PropagatesError(t *testing.T) {
 		return nil, wantErr
 	}
 
-	handler := listRaidableSkyhooksHandler("v1", "client-id", store)
+	handler := listRaidableSkyhooksHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, ListRaidableSkyhooksInput{CharacterID: 7})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -229,5 +229,42 @@ func TestGetMercenaryTacticalOperationHandler_ResolvesDungeonTypeName(t *testing
 	}
 	if out.DungeonTypeName != "Some Dungeon" {
 		t.Errorf("DungeonTypeName = %q, want %q", out.DungeonTypeName, "Some Dungeon")
+	}
+}
+
+func TestListRaidableSkyhooksHandler_ResolvesLocationNames(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := listRaidableSkyhooks
+	t.Cleanup(func() { listRaidableSkyhooks = orig })
+	listRaidableSkyhooks = func(ctx context.Context, userAgent string) ([]SkyhookSummary, error) {
+		return []SkyhookSummary{{PlanetID: 40009086, SolarSystemID: 30000142}}, nil
+	}
+
+	origSystem := resolveSystemNames
+	t.Cleanup(func() { resolveSystemNames = origSystem })
+	resolveSystemNames = func(ctx context.Context, sdeStore systemNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{30000142: "Jita"}
+	}
+	origPlanet := resolvePlanetNames
+	t.Cleanup(func() { resolvePlanetNames = origPlanet })
+	resolvePlanetNames = func(ctx context.Context, sdeStore planetNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{40009086: "Jita IV"}
+	}
+
+	handler := listRaidableSkyhooksHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, ListRaidableSkyhooksInput{CharacterID: 7})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.Skyhooks[0].SolarSystemName != "Jita" {
+		t.Errorf("SolarSystemName = %q, want %q", out.Skyhooks[0].SolarSystemName, "Jita")
+	}
+	if out.Skyhooks[0].PlanetName != "Jita IV" {
+		t.Errorf("PlanetName = %q, want %q", out.Skyhooks[0].PlanetName, "Jita IV")
 	}
 }

@@ -387,3 +387,39 @@ func TestGetKillmailHandler_ResolvesTypeNames(t *testing.T) {
 		t.Fatalf("Victim.Items[0].Items = %+v, want one item with ItemTypeName=Tritanium", out.Victim.Items[0].Items)
 	}
 }
+
+func TestGetKillmailHandler_ResolvesLocationNames(t *testing.T) {
+	orig := getKillmail
+	t.Cleanup(func() { getKillmail = orig })
+	moonID := int64(40009087)
+	getKillmail = func(ctx context.Context, userAgent string, killmailID int64, killmailHash string) (*esiapi.KillmailsKillmailIdKillmailHashGet, error) {
+		return &esiapi.KillmailsKillmailIdKillmailHashGet{
+			SolarSystemId: 30000142,
+			MoonId:        &moonID,
+			Victim:        esiapi.KillmailsKillmailIdKillmailHashGetVictim{ShipTypeId: 587},
+		}, nil
+	}
+
+	origSystem := resolveSystemNames
+	t.Cleanup(func() { resolveSystemNames = origSystem })
+	resolveSystemNames = func(ctx context.Context, sdeStore systemNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{30000142: "Jita"}
+	}
+	origMoon := resolveMoonNames
+	t.Cleanup(func() { resolveMoonNames = origMoon })
+	resolveMoonNames = func(ctx context.Context, sdeStore moonNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{40009087: "Jita IV - Moon 4"}
+	}
+
+	handler := getKillmailHandler("v1", nil)
+	_, out, err := handler(context.Background(), nil, GetKillmailInput{KillmailID: 1, KillmailHash: "abc"})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.SolarSystemName != "Jita" {
+		t.Errorf("SolarSystemName = %q, want %q", out.SolarSystemName, "Jita")
+	}
+	if out.MoonName != "Jita IV - Moon 4" {
+		t.Errorf("MoonName = %q, want %q", out.MoonName, "Jita IV - Moon 4")
+	}
+}

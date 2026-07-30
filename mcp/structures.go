@@ -16,8 +16,9 @@ import (
 // --- list_character_mercenary_dens (private, "my own character") ---
 
 type MercenaryDen struct {
-	ID       int64 `json:"id"`
-	PlanetID int64 `json:"planetId"`
+	ID         int64  `json:"id"`
+	PlanetID   int64  `json:"planetId"`
+	PlanetName string `json:"planetName,omitempty"`
 }
 
 var listCharacterMercenaryDens = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]MercenaryDen, error) {
@@ -44,7 +45,7 @@ type ListCharacterMercenaryDensOutput struct {
 	Dens        []MercenaryDen `json:"dens"`
 }
 
-func listCharacterMercenaryDensHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCharacterMercenaryDensInput, ListCharacterMercenaryDensOutput] {
+func listCharacterMercenaryDensHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCharacterMercenaryDensInput, ListCharacterMercenaryDensOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterMercenaryDensInput) (*mcpsdk.CallToolResult, ListCharacterMercenaryDensOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -56,6 +57,14 @@ func listCharacterMercenaryDensHandler(version, clientID string, store *config.S
 		dens, err := listCharacterMercenaryDens(ctx, clientID, in.CharacterID, sso.UserAgent(version))
 		if err != nil {
 			return nil, ListCharacterMercenaryDensOutput{}, fmt.Errorf("list character mercenary dens: %w", err)
+		}
+		ids := make([]int64, len(dens))
+		for i, d := range dens {
+			ids[i] = d.PlanetID
+		}
+		names := resolvePlanetNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		for i := range dens {
+			dens[i].PlanetName = names[dens[i].PlanetID]
 		}
 		return nil, ListCharacterMercenaryDensOutput{CharacterID: in.CharacterID, Dens: dens}, nil
 	}
@@ -74,9 +83,10 @@ type MercenaryDenEvolution struct {
 }
 
 type MercenaryDenSkyhookRef struct {
-	CorporationID int64 `json:"corporationId"`
-	ID            int64 `json:"id"`
-	PlanetID      int64 `json:"planetId"`
+	CorporationID int64  `json:"corporationId"`
+	ID            int64  `json:"id"`
+	PlanetID      int64  `json:"planetId"`
+	PlanetName    string `json:"planetName,omitempty"`
 }
 
 type MercenaryDenDetail struct {
@@ -140,6 +150,8 @@ func getCharacterMercenaryDenHandler(version, clientID string, store *config.Sto
 		}
 		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), []int64{detail.TypeID})
 		detail.TypeName = names[detail.TypeID]
+		planetNames := resolvePlanetNames(ctx, sdeStore, sso.UserAgent(version), []int64{detail.Skyhook.PlanetID})
+		detail.Skyhook.PlanetName = planetNames[detail.Skyhook.PlanetID]
 		return nil, detail, nil
 	}
 }
@@ -147,8 +159,9 @@ func getCharacterMercenaryDenHandler(version, clientID string, store *config.Sto
 // --- list_corporation_skyhooks (private, corp-scoped) ---
 
 type Skyhook struct {
-	ID       int64 `json:"id"`
-	PlanetID int64 `json:"planetId"`
+	ID         int64  `json:"id"`
+	PlanetID   int64  `json:"planetId"`
+	PlanetName string `json:"planetName,omitempty"`
 }
 
 var listCorporationSkyhooks = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64) ([]Skyhook, error) {
@@ -177,7 +190,7 @@ type ListCorporationSkyhooksOutput struct {
 	Skyhooks      []Skyhook `json:"skyhooks"`
 }
 
-func listCorporationSkyhooksHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCorporationSkyhooksInput, ListCorporationSkyhooksOutput] {
+func listCorporationSkyhooksHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCorporationSkyhooksInput, ListCorporationSkyhooksOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationSkyhooksInput) (*mcpsdk.CallToolResult, ListCorporationSkyhooksOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -189,6 +202,14 @@ func listCorporationSkyhooksHandler(version, clientID string, store *config.Stor
 		hooks, err := listCorporationSkyhooks(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID)
 		if err != nil {
 			return nil, ListCorporationSkyhooksOutput{}, fmt.Errorf("list corporation skyhooks: %w", err)
+		}
+		ids := make([]int64, len(hooks))
+		for i, h := range hooks {
+			ids[i] = h.PlanetID
+		}
+		names := resolvePlanetNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		for i := range hooks {
+			hooks[i].PlanetName = names[hooks[i].PlanetID]
 		}
 		return nil, ListCorporationSkyhooksOutput{CharacterID: in.CharacterID, CorporationID: in.CorporationID, Skyhooks: hooks}, nil
 	}
@@ -208,6 +229,7 @@ type SkyhookDetail struct {
 	EffectiveWorkforce      *int64           `json:"effectiveWorkforce,omitempty"`
 	ID                      int64            `json:"id"`
 	PlanetID                int64            `json:"planetId"`
+	PlanetName              string           `json:"planetName,omitempty"`
 	IsActive                bool             `json:"isActive"`
 	Reagents                []SkyhookReagent `json:"reagents,omitempty"`
 	ReinforcementEnd        *time.Time       `json:"reinforcementEnd,omitempty"`
@@ -277,6 +299,8 @@ func getCorporationSkyhookHandler(version, clientID string, store *config.Store,
 		for i := range detail.Reagents {
 			detail.Reagents[i].TypeName = names[detail.Reagents[i].TypeID]
 		}
+		planetNames := resolvePlanetNames(ctx, sdeStore, sso.UserAgent(version), []int64{detail.PlanetID})
+		detail.PlanetName = planetNames[detail.PlanetID]
 		return nil, detail, nil
 	}
 }
@@ -284,8 +308,9 @@ func getCorporationSkyhookHandler(version, clientID string, store *config.Store,
 // --- list_corporation_sovereignty_hubs (private, corp-scoped) ---
 
 type StructureSovereigntyHub struct {
-	ID            int64 `json:"id"`
-	SolarSystemID int64 `json:"solarSystemId"`
+	ID              int64  `json:"id"`
+	SolarSystemID   int64  `json:"solarSystemId"`
+	SolarSystemName string `json:"solarSystemName,omitempty"`
 }
 
 var listCorporationSovereigntyHubs = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64) ([]StructureSovereigntyHub, error) {
@@ -314,7 +339,7 @@ type ListCorporationSovereigntyHubsOutput struct {
 	Hubs          []StructureSovereigntyHub `json:"hubs"`
 }
 
-func listCorporationSovereigntyHubsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCorporationSovereigntyHubsInput, ListCorporationSovereigntyHubsOutput] {
+func listCorporationSovereigntyHubsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCorporationSovereigntyHubsInput, ListCorporationSovereigntyHubsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationSovereigntyHubsInput) (*mcpsdk.CallToolResult, ListCorporationSovereigntyHubsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -326,6 +351,14 @@ func listCorporationSovereigntyHubsHandler(version, clientID string, store *conf
 		hubs, err := listCorporationSovereigntyHubs(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID)
 		if err != nil {
 			return nil, ListCorporationSovereigntyHubsOutput{}, fmt.Errorf("list corporation sovereignty hubs: %w", err)
+		}
+		ids := make([]int64, len(hubs))
+		for i, h := range hubs {
+			ids[i] = h.SolarSystemID
+		}
+		names := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		for i := range hubs {
+			hubs[i].SolarSystemName = names[hubs[i].SolarSystemID]
 		}
 		return nil, ListCorporationSovereigntyHubsOutput{CharacterID: in.CharacterID, CorporationID: in.CorporationID, Hubs: hubs}, nil
 	}
@@ -364,16 +397,19 @@ type StructureSovereigntyHubUpgrade struct {
 // StructureSovereigntyHubTransportConfig flattens ESI's 3-way oneOf (export/import/transit) for the
 // requested workforce transport configuration. Kind is one of "export", "import", "transit".
 type StructureSovereigntyHubTransportConfig struct {
-	Kind                 string  `json:"kind"`
-	ExportAmount         *int64  `json:"exportAmount,omitempty"`
-	ExportSolarSystemID  *int64  `json:"exportSolarSystemId,omitempty"`
-	ImportSolarSystemIDs []int64 `json:"importSolarSystemIds,omitempty"`
-	Transit              *bool   `json:"transit,omitempty"`
+	Kind                   string   `json:"kind"`
+	ExportAmount           *int64   `json:"exportAmount,omitempty"`
+	ExportSolarSystemID    *int64   `json:"exportSolarSystemId,omitempty"`
+	ExportSolarSystemName  string   `json:"exportSolarSystemName,omitempty"`
+	ImportSolarSystemIDs   []int64  `json:"importSolarSystemIds,omitempty"`
+	ImportSolarSystemNames []string `json:"importSolarSystemNames,omitempty"`
+	Transit                *bool    `json:"transit,omitempty"`
 }
 
 type StructureSovereigntyHubTransportImportSource struct {
-	Amount        int64 `json:"amount"`
-	SolarSystemID int64 `json:"solarSystemId"`
+	Amount          int64  `json:"amount"`
+	SolarSystemID   int64  `json:"solarSystemId"`
+	SolarSystemName string `json:"solarSystemName,omitempty"`
 }
 
 // StructureSovereigntyHubTransportState flattens ESI's 3-way oneOf (export/import/transit) for the actual
@@ -381,11 +417,12 @@ type StructureSovereigntyHubTransportImportSource struct {
 // is NOT the same shape as StructureSovereigntyHubTransportConfig's import case: state's import sources
 // carry an amount, configuration's do not (verified from the generated model source).
 type StructureSovereigntyHubTransportState struct {
-	Kind                string                                         `json:"kind"`
-	ExportAmount        *int64                                         `json:"exportAmount,omitempty"`
-	ExportSolarSystemID *int64                                         `json:"exportSolarSystemId,omitempty"`
-	ImportSources       []StructureSovereigntyHubTransportImportSource `json:"importSources,omitempty"`
-	Transit             *bool                                          `json:"transit,omitempty"`
+	Kind                  string                                         `json:"kind"`
+	ExportAmount          *int64                                         `json:"exportAmount,omitempty"`
+	ExportSolarSystemID   *int64                                         `json:"exportSolarSystemId,omitempty"`
+	ExportSolarSystemName string                                         `json:"exportSolarSystemName,omitempty"`
+	ImportSources         []StructureSovereigntyHubTransportImportSource `json:"importSources,omitempty"`
+	Transit               *bool                                          `json:"transit,omitempty"`
 }
 
 type StructureSovereigntyHubTransport struct {
@@ -397,6 +434,7 @@ type StructureSovereigntyHubDetail struct {
 	FuelAccessListID         *int64                            `json:"fuelAccessListId,omitempty"`
 	ID                       int64                             `json:"id"`
 	SolarSystemID            int64                             `json:"solarSystemId"`
+	SolarSystemName          string                            `json:"solarSystemName,omitempty"`
 	ReagentBay               StructureSovereigntyHubReagentBay `json:"reagentBay"`
 	Resources                StructureSovereigntyHubResources  `json:"resources"`
 	Upgrades                 []StructureSovereigntyHubUpgrade  `json:"upgrades"`
@@ -515,6 +553,43 @@ func getCorporationSovereigntyHubHandler(version, clientID string, store *config
 		for i := range detail.Upgrades {
 			detail.Upgrades[i].TypeName = names[detail.Upgrades[i].TypeID]
 		}
+
+		systemIDs := []int64{detail.SolarSystemID}
+		if detail.WorkforceTransport.Configuration.ExportSolarSystemID != nil {
+			systemIDs = append(systemIDs, *detail.WorkforceTransport.Configuration.ExportSolarSystemID)
+		}
+		systemIDs = append(systemIDs, detail.WorkforceTransport.Configuration.ImportSolarSystemIDs...)
+		if detail.WorkforceTransport.State.ExportSolarSystemID != nil {
+			systemIDs = append(systemIDs, *detail.WorkforceTransport.State.ExportSolarSystemID)
+		}
+		for _, src := range detail.WorkforceTransport.State.ImportSources {
+			systemIDs = append(systemIDs, src.SolarSystemID)
+		}
+		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), systemIDs)
+		detail.SolarSystemName = systemNames[detail.SolarSystemID]
+		if detail.WorkforceTransport.Configuration.ExportSolarSystemID != nil {
+			detail.WorkforceTransport.Configuration.ExportSolarSystemName = systemNames[*detail.WorkforceTransport.Configuration.ExportSolarSystemID]
+		}
+		if len(detail.WorkforceTransport.Configuration.ImportSolarSystemIDs) > 0 {
+			importNames := make([]string, len(detail.WorkforceTransport.Configuration.ImportSolarSystemIDs))
+			var resolved bool
+			for i, id := range detail.WorkforceTransport.Configuration.ImportSolarSystemIDs {
+				if name, ok := systemNames[id]; ok {
+					importNames[i] = name
+					resolved = true
+				}
+			}
+			if resolved {
+				detail.WorkforceTransport.Configuration.ImportSolarSystemNames = importNames
+			}
+		}
+		if detail.WorkforceTransport.State.ExportSolarSystemID != nil {
+			detail.WorkforceTransport.State.ExportSolarSystemName = systemNames[*detail.WorkforceTransport.State.ExportSolarSystemID]
+		}
+		for i := range detail.WorkforceTransport.State.ImportSources {
+			detail.WorkforceTransport.State.ImportSources[i].SolarSystemName = systemNames[detail.WorkforceTransport.State.ImportSources[i].SolarSystemID]
+		}
+
 		return nil, detail, nil
 	}
 }

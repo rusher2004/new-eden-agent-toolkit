@@ -11,6 +11,7 @@ import (
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
+	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -339,6 +340,7 @@ type FwSystem struct {
 	OccupierFactionID      int64  `json:"occupierFactionId"`
 	OwnerFactionID         int64  `json:"ownerFactionId"`
 	SolarSystemID          int64  `json:"solarSystemId"`
+	SolarSystemName        string `json:"solarSystemName,omitempty"`
 	VictoryPoints          int64  `json:"victoryPoints"`
 	VictoryPointsThreshold int64  `json:"victoryPointsThreshold"`
 }
@@ -353,7 +355,7 @@ type ListFwSystemsOutput struct {
 	Systems []FwSystem `json:"systems"`
 }
 
-func listFwSystemsHandler(version string) mcpsdk.ToolHandlerFor[ListFwSystemsInput, ListFwSystemsOutput] {
+func listFwSystemsHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListFwSystemsInput, ListFwSystemsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListFwSystemsInput) (*mcpsdk.CallToolResult, ListFwSystemsOutput, error) {
 		systems, err := listFwSystems(ctx, sso.UserAgent(version))
 		if err != nil {
@@ -365,6 +367,14 @@ func listFwSystemsHandler(version string) mcpsdk.ToolHandlerFor[ListFwSystemsInp
 				Contested: s.Contested, OccupierFactionID: s.OccupierFactionId, OwnerFactionID: s.OwnerFactionId,
 				SolarSystemID: s.SolarSystemId, VictoryPoints: s.VictoryPoints, VictoryPointsThreshold: s.VictoryPointsThreshold,
 			}
+		}
+		systemIDs := make([]int64, len(out))
+		for i, s := range out {
+			systemIDs[i] = s.SolarSystemID
+		}
+		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), systemIDs)
+		for i := range out {
+			out[i].SolarSystemName = systemNames[out[i].SolarSystemID]
 		}
 		return nil, ListFwSystemsOutput{Systems: out}, nil
 	}

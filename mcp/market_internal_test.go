@@ -898,3 +898,182 @@ func TestListStructureMarketOrdersHandler_ResolvesTypeName(t *testing.T) {
 		t.Errorf("out.Orders = %+v, want one order with TypeName=Rifter", out.Orders)
 	}
 }
+
+// --- region-name / system-name enrichment ---
+
+func TestListCharacterMarketOrdersHandler_ResolvesRegionName(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	origFetch := listCharacterMarketOrders
+	t.Cleanup(func() { listCharacterMarketOrders = origFetch })
+	listCharacterMarketOrders = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]esiapi.CharactersCharacterIdOrdersGetInner, error) {
+		return []esiapi.CharactersCharacterIdOrdersGetInner{{RegionId: 10000002}}, nil
+	}
+
+	origResolve := resolveRegionNames
+	t.Cleanup(func() { resolveRegionNames = origResolve })
+	resolveRegionNames = func(ctx context.Context, sdeStore regionNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{10000002: "The Forge"}
+	}
+
+	handler := listCharacterMarketOrdersHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, ListCharacterMarketOrdersInput{CharacterID: 7})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Orders) != 1 || out.Orders[0].RegionName != "The Forge" {
+		t.Errorf("out.Orders = %+v, want one order with RegionName=The Forge", out.Orders)
+	}
+}
+
+func TestListCharacterMarketOrderHistoryHandler_ResolvesRegionName(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	origFetch := listCharacterMarketOrderHistory
+	t.Cleanup(func() { listCharacterMarketOrderHistory = origFetch })
+	listCharacterMarketOrderHistory = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]esiapi.CharactersCharacterIdOrdersHistoryGetInner, int32, error) {
+		return []esiapi.CharactersCharacterIdOrdersHistoryGetInner{{RegionId: 10000002}}, 1, nil
+	}
+
+	origResolve := resolveRegionNames
+	t.Cleanup(func() { resolveRegionNames = origResolve })
+	resolveRegionNames = func(ctx context.Context, sdeStore regionNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{10000002: "The Forge"}
+	}
+
+	handler := listCharacterMarketOrderHistoryHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, ListCharacterMarketOrderHistoryInput{CharacterID: 7})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Orders) != 1 || out.Orders[0].RegionName != "The Forge" {
+		t.Errorf("out.Orders = %+v, want one order with RegionName=The Forge", out.Orders)
+	}
+}
+
+func TestListCorporationMarketOrdersHandler_ResolvesRegionName(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	origFetch := listCorporationMarketOrders
+	t.Cleanup(func() { listCorporationMarketOrders = origFetch })
+	listCorporationMarketOrders = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdOrdersGetInner, int32, error) {
+		return []esiapi.CorporationsCorporationIdOrdersGetInner{{RegionId: 10000002}}, 1, nil
+	}
+
+	origResolve := resolveRegionNames
+	t.Cleanup(func() { resolveRegionNames = origResolve })
+	resolveRegionNames = func(ctx context.Context, sdeStore regionNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{10000002: "The Forge"}
+	}
+
+	handler := listCorporationMarketOrdersHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, ListCorporationMarketOrdersInput{CharacterID: 7, CorporationID: 98000001})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Orders) != 1 || out.Orders[0].RegionName != "The Forge" {
+		t.Errorf("out.Orders = %+v, want one order with RegionName=The Forge", out.Orders)
+	}
+}
+
+func TestListCorporationMarketOrderHistoryHandler_ResolvesRegionName(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	origFetch := listCorporationMarketOrderHistory
+	t.Cleanup(func() { listCorporationMarketOrderHistory = origFetch })
+	listCorporationMarketOrderHistory = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdOrdersHistoryGetInner, int32, error) {
+		return []esiapi.CorporationsCorporationIdOrdersHistoryGetInner{{RegionId: 10000002}}, 1, nil
+	}
+
+	origResolve := resolveRegionNames
+	t.Cleanup(func() { resolveRegionNames = origResolve })
+	resolveRegionNames = func(ctx context.Context, sdeStore regionNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{10000002: "The Forge"}
+	}
+
+	handler := listCorporationMarketOrderHistoryHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, ListCorporationMarketOrderHistoryInput{CharacterID: 7, CorporationID: 98000001})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Orders) != 1 || out.Orders[0].RegionName != "The Forge" {
+		t.Errorf("out.Orders = %+v, want one order with RegionName=The Forge", out.Orders)
+	}
+}
+
+func TestListMarketOrdersHandler_ResolvesSystemName(t *testing.T) {
+	origFetch := listMarketOrders
+	t.Cleanup(func() { listMarketOrders = origFetch })
+	listMarketOrders = func(ctx context.Context, userAgent string, regionID int64, orderType string, typeID int64, page int32) ([]esiapi.MarketsRegionIdOrdersGetInner, int32, error) {
+		return []esiapi.MarketsRegionIdOrdersGetInner{{SystemId: 30000142}}, 1, nil
+	}
+
+	origResolve := resolveSystemNames
+	t.Cleanup(func() { resolveSystemNames = origResolve })
+	resolveSystemNames = func(ctx context.Context, sdeStore systemNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{30000142: "Jita"}
+	}
+
+	handler := listMarketOrdersHandler("v1", nil)
+	_, out, err := handler(context.Background(), nil, ListMarketOrdersInput{RegionID: 10000002, OrderType: "buy"})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Orders) != 1 || out.Orders[0].SystemName != "Jita" {
+		t.Errorf("out.Orders = %+v, want one order with SystemName=Jita", out.Orders)
+	}
+}
+
+func TestListStructureMarketOrdersHandler_SystemNameEmptyWhenSystemIDZero(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	origFetch := listStructureMarketOrders
+	t.Cleanup(func() { listStructureMarketOrders = origFetch })
+	listStructureMarketOrders = func(ctx context.Context, clientID string, characterID int32, userAgent string, structureID int64, page int32) ([]esiapi.MarketsStructuresStructureIdGetInner, int32, error) {
+		return []esiapi.MarketsStructuresStructureIdGetInner{{OrderId: 1}}, 1, nil // SystemID left zero, matching the real mapper
+	}
+
+	origResolve := resolveSystemNames
+	t.Cleanup(func() { resolveSystemNames = origResolve })
+	calls := 0
+	resolveSystemNames = func(ctx context.Context, sdeStore systemNameCache, userAgent string, ids []int64) map[int64]string {
+		calls++
+		// Deliberately omits key 0 -- 0 is never a real EVE system ID, so the
+		// real resolver would never have a match for it either. This proves
+		// SystemName stays empty because the lookup naturally misses, not
+		// because of a special-cased guard in the handler.
+		return map[int64]string{}
+	}
+
+	handler := listStructureMarketOrdersHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, ListStructureMarketOrdersInput{CharacterID: 7, StructureID: 1})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Orders) != 1 || out.Orders[0].SystemName != "" {
+		t.Errorf("out.Orders = %+v, want one order with SystemName empty (SystemID is 0 for structure orders)", out.Orders)
+	}
+	if calls != 1 {
+		t.Errorf("resolveSystemNames calls = %d, want 1", calls)
+	}
+}

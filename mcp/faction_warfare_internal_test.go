@@ -298,7 +298,7 @@ func TestListFwSystemsHandler_MapsFields(t *testing.T) {
 		}}, nil
 	}
 
-	handler := listFwSystemsHandler("v1")
+	handler := listFwSystemsHandler("v1", nil)
 	_, out, err := handler(context.Background(), nil, ListFwSystemsInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -444,7 +444,7 @@ func TestListFwSystemsHandler_PropagatesError(t *testing.T) {
 		return nil, wantErr
 	}
 
-	handler := listFwSystemsHandler("v1")
+	handler := listFwSystemsHandler("v1", nil)
 	_, _, err := handler(context.Background(), nil, ListFwSystemsInput{})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -463,5 +463,28 @@ func TestListFwWarsHandler_PropagatesError(t *testing.T) {
 	_, _, err := handler(context.Background(), nil, ListFwWarsInput{})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestListFwSystemsHandler_ResolvesSystemName(t *testing.T) {
+	orig := listFwSystems
+	t.Cleanup(func() { listFwSystems = orig })
+	listFwSystems = func(ctx context.Context, userAgent string) ([]esiapi.FwSystemsGetInner, error) {
+		return []esiapi.FwSystemsGetInner{{SolarSystemId: 30000142}}, nil
+	}
+
+	origSystem := resolveSystemNames
+	t.Cleanup(func() { resolveSystemNames = origSystem })
+	resolveSystemNames = func(ctx context.Context, sdeStore systemNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{30000142: "Jita"}
+	}
+
+	handler := listFwSystemsHandler("v1", nil)
+	_, out, err := handler(context.Background(), nil, ListFwSystemsInput{})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.Systems[0].SolarSystemName != "Jita" {
+		t.Errorf("SolarSystemName = %q, want %q", out.Systems[0].SolarSystemName, "Jita")
 	}
 }

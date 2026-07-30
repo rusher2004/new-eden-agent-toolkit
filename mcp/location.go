@@ -31,13 +31,15 @@ type GetCharacterLocationInput struct {
 	CharacterID int32 `json:"characterId" jsonschema:"the character ID to check"`
 }
 type GetCharacterLocationOutput struct {
-	CharacterID   int32  `json:"characterId"`
-	SolarSystemID int64  `json:"solarSystemId"`
-	StationID     *int64 `json:"stationId,omitempty"`
-	StructureID   *int64 `json:"structureId,omitempty"`
+	CharacterID     int32  `json:"characterId"`
+	SolarSystemID   int64  `json:"solarSystemId"`
+	SolarSystemName string `json:"solarSystemName,omitempty"`
+	StationID       *int64 `json:"stationId,omitempty"`
+	StationName     string `json:"stationName,omitempty"`
+	StructureID     *int64 `json:"structureId,omitempty"`
 }
 
-func getCharacterLocationHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[GetCharacterLocationInput, GetCharacterLocationOutput] {
+func getCharacterLocationHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetCharacterLocationInput, GetCharacterLocationOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterLocationInput) (*mcpsdk.CallToolResult, GetCharacterLocationOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -50,7 +52,13 @@ func getCharacterLocationHandler(version, clientID string, store *config.Store) 
 		if err != nil {
 			return nil, GetCharacterLocationOutput{}, fmt.Errorf("get character location: %w", err)
 		}
-		return nil, GetCharacterLocationOutput{CharacterID: in.CharacterID, SolarSystemID: solarSystemID, StationID: stationID, StructureID: structureID}, nil
+		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), []int64{solarSystemID})
+		var stationName string
+		if stationID != nil {
+			stationNames := resolveStationNames(ctx, sdeStore, sso.UserAgent(version), []int64{*stationID})
+			stationName = stationNames[*stationID]
+		}
+		return nil, GetCharacterLocationOutput{CharacterID: in.CharacterID, SolarSystemID: solarSystemID, SolarSystemName: systemNames[solarSystemID], StationID: stationID, StationName: stationName, StructureID: structureID}, nil
 	}
 }
 

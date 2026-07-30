@@ -10,6 +10,7 @@ import (
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
+	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -21,16 +22,18 @@ type SovereigntyParticipant struct {
 }
 
 type SovereigntyCampaign struct {
-	CampaignID      int64                    `json:"campaignId"`
-	ConstellationID int64                    `json:"constellationId"`
-	SolarSystemID   int64                    `json:"solarSystemId"`
-	StructureID     int64                    `json:"structureId"`
-	EventType       string                   `json:"eventType"`
-	StartTime       time.Time                `json:"startTime"`
-	AttackersScore  *float64                 `json:"attackersScore,omitempty"`
-	DefenderID      *int64                   `json:"defenderId,omitempty"`
-	DefenderScore   *float64                 `json:"defenderScore,omitempty"`
-	Participants    []SovereigntyParticipant `json:"participants,omitempty"`
+	CampaignID        int64                    `json:"campaignId"`
+	ConstellationID   int64                    `json:"constellationId"`
+	ConstellationName string                   `json:"constellationName,omitempty"`
+	SolarSystemID     int64                    `json:"solarSystemId"`
+	SolarSystemName   string                   `json:"solarSystemName,omitempty"`
+	StructureID       int64                    `json:"structureId"`
+	EventType         string                   `json:"eventType"`
+	StartTime         time.Time                `json:"startTime"`
+	AttackersScore    *float64                 `json:"attackersScore,omitempty"`
+	DefenderID        *int64                   `json:"defenderId,omitempty"`
+	DefenderScore     *float64                 `json:"defenderScore,omitempty"`
+	Participants      []SovereigntyParticipant `json:"participants,omitempty"`
 }
 
 var listSovereigntyCampaigns = func(ctx context.Context, userAgent string) ([]esiapi.SovereigntyCampaignsGetInner, error) {
@@ -43,7 +46,7 @@ type ListSovereigntyCampaignsOutput struct {
 	Campaigns []SovereigntyCampaign `json:"campaigns"`
 }
 
-func listSovereigntyCampaignsHandler(version string) mcpsdk.ToolHandlerFor[ListSovereigntyCampaignsInput, ListSovereigntyCampaignsOutput] {
+func listSovereigntyCampaignsHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListSovereigntyCampaignsInput, ListSovereigntyCampaignsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListSovereigntyCampaignsInput) (*mcpsdk.CallToolResult, ListSovereigntyCampaignsOutput, error) {
 		campaigns, err := listSovereigntyCampaigns(ctx, sso.UserAgent(version))
 		if err != nil {
@@ -62,6 +65,20 @@ func listSovereigntyCampaignsHandler(version string) mcpsdk.ToolHandlerFor[ListS
 				Participants: participants,
 			}
 		}
+
+		constellationIDs := make([]int64, len(out))
+		systemIDs := make([]int64, len(out))
+		for i, c := range out {
+			constellationIDs[i] = c.ConstellationID
+			systemIDs[i] = c.SolarSystemID
+		}
+		constellationNames := resolveConstellationNames(ctx, sdeStore, sso.UserAgent(version), constellationIDs)
+		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), systemIDs)
+		for i := range out {
+			out[i].ConstellationName = constellationNames[out[i].ConstellationID]
+			out[i].SolarSystemName = systemNames[out[i].SolarSystemID]
+		}
+
 		return nil, ListSovereigntyCampaignsOutput{Campaigns: out}, nil
 	}
 }
@@ -138,8 +155,9 @@ func toSovereigntyClaim(claim esiapi.SovereigntySystemsSolarsystemClaim) Soverei
 }
 
 type SovereigntySystem struct {
-	SolarSystemID int64            `json:"solarSystemId"`
-	Claim         SovereigntyClaim `json:"claim"`
+	SolarSystemID   int64            `json:"solarSystemId"`
+	SolarSystemName string           `json:"solarSystemName,omitempty"`
+	Claim           SovereigntyClaim `json:"claim"`
 }
 
 var listSovereigntySystems = func(ctx context.Context, userAgent string) ([]esiapi.SovereigntySystemsSolarsystem, error) {
@@ -152,7 +170,7 @@ type ListSovereigntySystemsOutput struct {
 	Systems []SovereigntySystem `json:"systems"`
 }
 
-func listSovereigntySystemsHandler(version string) mcpsdk.ToolHandlerFor[ListSovereigntySystemsInput, ListSovereigntySystemsOutput] {
+func listSovereigntySystemsHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListSovereigntySystemsInput, ListSovereigntySystemsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListSovereigntySystemsInput) (*mcpsdk.CallToolResult, ListSovereigntySystemsOutput, error) {
 		systems, err := listSovereigntySystems(ctx, sso.UserAgent(version))
 		if err != nil {
@@ -162,6 +180,16 @@ func listSovereigntySystemsHandler(version string) mcpsdk.ToolHandlerFor[ListSov
 		for i, s := range systems {
 			out[i] = SovereigntySystem{SolarSystemID: s.SolarSystemId, Claim: toSovereigntyClaim(s.Claim)}
 		}
+
+		systemIDs := make([]int64, len(out))
+		for i, s := range out {
+			systemIDs[i] = s.SolarSystemID
+		}
+		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), systemIDs)
+		for i := range out {
+			out[i].SolarSystemName = systemNames[out[i].SolarSystemID]
+		}
+
 		return nil, ListSovereigntySystemsOutput{Systems: out}, nil
 	}
 }

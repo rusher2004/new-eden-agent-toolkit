@@ -1,5 +1,13 @@
 # neat plugin — changelog
 
+## 0.3.0
+- Adds SDE-resolved location `*Name` fields (`SystemName`, `RegionName`, `ConstellationName`,
+  `StationName`, `PlanetName`, `MoonName`, plus the index-aligned `*Names` list variants) alongside
+  the existing bare `*ID` fields across 14 non-Universe MCP files (corporation, industry,
+  killmails, market, planetary interaction, structures, sovereignty, fleets, and more). Names
+  resolve from the local SDE cache only, same as batch 1's `type_id` enrichment — no ESI calls are
+  made on this path. Purely additive.
+
 ## 0.2.0
 - Adds SDE-resolved `*Name` fields (`TypeName`, `ShipTypeName`, etc.) alongside the existing bare
   `*ID` fields across 42 non-Universe MCP tools (assets, contracts, killmails, market, industry,

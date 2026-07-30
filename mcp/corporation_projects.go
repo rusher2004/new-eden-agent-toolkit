@@ -47,9 +47,12 @@ import (
 // LocationMatcher is a oneOf{constellation, region, solar system} location filter -- at most one
 // field is set, mirroring ESI's own oneOf. Shared by 12 of the 17 Configuration variants.
 type LocationMatcher struct {
-	ConstellationID *int64 `json:"constellationId,omitempty"`
-	RegionID        *int64 `json:"regionId,omitempty"`
-	SolarSystemID   *int64 `json:"solarSystemId,omitempty"`
+	ConstellationID   *int64 `json:"constellationId,omitempty"`
+	ConstellationName string `json:"constellationName,omitempty"`
+	RegionID          *int64 `json:"regionId,omitempty"`
+	RegionName        string `json:"regionName,omitempty"`
+	SolarSystemID     *int64 `json:"solarSystemId,omitempty"`
+	SolarSystemName   string `json:"solarSystemName,omitempty"`
 }
 
 // IdentityMatcher is a oneOf{alliance, character, corporation, faction} identity filter. Shared by
@@ -76,9 +79,11 @@ type ShipTypeMatcher struct {
 }
 
 // DockingLocationMatcher is a oneOf{station, structure} docking-location filter. Shared by
-// DeliverItem and ManufactureItem.
+// DeliverItem and ManufactureItem. StructureID gets no *Name sibling -- player structures aren't
+// SDE data, out of scope per the design's explicit exclusion.
 type DockingLocationMatcher struct {
 	StationID   *int64 `json:"stationId,omitempty"`
+	StationName string `json:"stationName,omitempty"`
 	StructureID *int64 `json:"structureId,omitempty"`
 }
 
@@ -663,6 +668,44 @@ func getCorporationProjectDetailHandler(version, clientID string, store *config.
 				if group[i].TypeID != nil {
 					group[i].TypeName = names[*group[i].TypeID]
 				}
+			}
+		}
+
+		var systemIDs, regionIDs, constellationIDs, stationIDs []int64
+		for _, l := range configuration.Locations {
+			if l.SolarSystemID != nil {
+				systemIDs = append(systemIDs, *l.SolarSystemID)
+			}
+			if l.RegionID != nil {
+				regionIDs = append(regionIDs, *l.RegionID)
+			}
+			if l.ConstellationID != nil {
+				constellationIDs = append(constellationIDs, *l.ConstellationID)
+			}
+		}
+		for _, d := range configuration.DockingLocations {
+			if d.StationID != nil {
+				stationIDs = append(stationIDs, *d.StationID)
+			}
+		}
+		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), systemIDs)
+		regionNames := resolveRegionNames(ctx, sdeStore, sso.UserAgent(version), regionIDs)
+		constellationNames := resolveConstellationNames(ctx, sdeStore, sso.UserAgent(version), constellationIDs)
+		stationNames := resolveStationNames(ctx, sdeStore, sso.UserAgent(version), stationIDs)
+		for i := range configuration.Locations {
+			if configuration.Locations[i].SolarSystemID != nil {
+				configuration.Locations[i].SolarSystemName = systemNames[*configuration.Locations[i].SolarSystemID]
+			}
+			if configuration.Locations[i].RegionID != nil {
+				configuration.Locations[i].RegionName = regionNames[*configuration.Locations[i].RegionID]
+			}
+			if configuration.Locations[i].ConstellationID != nil {
+				configuration.Locations[i].ConstellationName = constellationNames[*configuration.Locations[i].ConstellationID]
+			}
+		}
+		for i := range configuration.DockingLocations {
+			if configuration.DockingLocations[i].StationID != nil {
+				configuration.DockingLocations[i].StationName = stationNames[*configuration.DockingLocations[i].StationID]
 			}
 		}
 
