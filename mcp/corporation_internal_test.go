@@ -30,6 +30,52 @@ func TestGetCorporationHandler_MapsFields(t *testing.T) {
 	}
 }
 
+func TestGetCorporationHandler_ResolvesFactionName(t *testing.T) {
+	orig := getCorporationDetail
+	t.Cleanup(func() { getCorporationDetail = orig })
+	factionID := int64(500001)
+	getCorporationDetail = func(ctx context.Context, userAgent string, corporationID int64) (GetCorporationOutput, error) {
+		return GetCorporationOutput{CorporationID: 98000001, FactionID: &factionID, HomeStationID: 60003760}, nil
+	}
+
+	origFaction := resolveFactionNames
+	t.Cleanup(func() { resolveFactionNames = origFaction })
+	resolveFactionNames = func(ctx context.Context, sdeStore factionNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{500001: "Caldari State"}
+	}
+	origStation := resolveStationNames
+	t.Cleanup(func() { resolveStationNames = origStation })
+	resolveStationNames = func(ctx context.Context, sdeStore stationNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{}
+	}
+
+	handler := getCorporationHandler("v1", nil)
+	_, out, err := handler(context.Background(), nil, GetCorporationInput{CorporationID: 98000001})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.FactionName != "Caldari State" {
+		t.Errorf("FactionName = %q, want %q", out.FactionName, "Caldari State")
+	}
+}
+
+func TestGetCorporationHandler_FactionNameEmptyWhenFactionIDNil(t *testing.T) {
+	orig := getCorporationDetail
+	t.Cleanup(func() { getCorporationDetail = orig })
+	getCorporationDetail = func(ctx context.Context, userAgent string, corporationID int64) (GetCorporationOutput, error) {
+		return GetCorporationOutput{CorporationID: 98000001, HomeStationID: 60003760}, nil
+	}
+
+	handler := getCorporationHandler("v1", nil)
+	_, out, err := handler(context.Background(), nil, GetCorporationInput{CorporationID: 98000001})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.FactionName != "" {
+		t.Errorf("FactionName = %q, want empty when FactionID is nil", out.FactionName)
+	}
+}
+
 func TestListCorporationAllianceHistoryHandler_MapsFields(t *testing.T) {
 	orig := listCorporationAllianceHistory
 	t.Cleanup(func() { listCorporationAllianceHistory = orig })

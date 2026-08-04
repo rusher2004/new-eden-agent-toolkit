@@ -210,3 +210,109 @@ var resolveMoonNames = func(ctx context.Context, sdeStore moonNameCache, userAge
 	}
 	return names
 }
+
+// raceNameCache is the minimal read-only view of sde.Store.Race() that
+// resolveRaceNames needs.
+type raceNameCache interface {
+	Race(ctx context.Context, userAgent string, id int64) (sde.Race, bool, error)
+}
+
+var resolveRaceNames = func(ctx context.Context, sdeStore raceNameCache, userAgent string, ids []int64) map[int64]string {
+	if len(ids) == 0 {
+		return nil
+	}
+	seen := make(map[int64]struct{}, len(ids))
+	names := make(map[int64]string, len(ids))
+	for _, id := range ids {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		r, ok, err := sdeStore.Race(ctx, userAgent, id)
+		if err != nil || !ok {
+			continue
+		}
+		names[id] = r.Name["en"]
+	}
+	return names
+}
+
+// bloodlineNameCache is the minimal read-only view of sde.Store.Bloodline()
+// that resolveBloodlineNames needs.
+type bloodlineNameCache interface {
+	Bloodline(ctx context.Context, userAgent string, id int64) (sde.Bloodline, bool, error)
+}
+
+var resolveBloodlineNames = func(ctx context.Context, sdeStore bloodlineNameCache, userAgent string, ids []int64) map[int64]string {
+	if len(ids) == 0 {
+		return nil
+	}
+	seen := make(map[int64]struct{}, len(ids))
+	names := make(map[int64]string, len(ids))
+	for _, id := range ids {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		b, ok, err := sdeStore.Bloodline(ctx, userAgent, id)
+		if err != nil || !ok {
+			continue
+		}
+		names[id] = b.Name["en"]
+	}
+	return names
+}
+
+// factionNameCache is the minimal read-only view of sde.Store.Faction() that
+// resolveFactionNames needs.
+type factionNameCache interface {
+	Faction(ctx context.Context, userAgent string, id int64) (sde.Faction, bool, error)
+}
+
+var resolveFactionNames = func(ctx context.Context, sdeStore factionNameCache, userAgent string, ids []int64) map[int64]string {
+	if len(ids) == 0 {
+		return nil
+	}
+	seen := make(map[int64]struct{}, len(ids))
+	names := make(map[int64]string, len(ids))
+	for _, id := range ids {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		f, ok, err := sdeStore.Faction(ctx, userAgent, id)
+		if err != nil || !ok {
+			continue
+		}
+		names[id] = f.Name["en"]
+	}
+	return names
+}
+
+// groupNameCache is the minimal read-only view of sde.Store.Group() that
+// resolveGroupNames needs -- narrower than universe.go's groupCache, which
+// also exposes PutGroup/GroupIDs for the Universe tag's own write-back and
+// bulk-listing needs that this batch's tools don't use.
+type groupNameCache interface {
+	Group(ctx context.Context, userAgent string, id int64) (sde.Group, bool, error)
+}
+
+var resolveGroupNames = func(ctx context.Context, sdeStore groupNameCache, userAgent string, ids []int64) map[int64]string {
+	if len(ids) == 0 {
+		return nil
+	}
+	seen := make(map[int64]struct{}, len(ids))
+	names := make(map[int64]string, len(ids))
+	for _, id := range ids {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		g, ok, err := sdeStore.Group(ctx, userAgent, id)
+		if err != nil || !ok {
+			continue
+		}
+		names[id] = g.Name["en"]
+	}
+	return names
+}

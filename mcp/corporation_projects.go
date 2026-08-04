@@ -63,6 +63,7 @@ type IdentityMatcher struct {
 	CharacterID   *int64 `json:"characterId,omitempty"`
 	CorporationID *int64 `json:"corporationId,omitempty"`
 	FactionID     *int64 `json:"factionId,omitempty"`
+	FactionName   string `json:"factionName,omitempty"`
 }
 
 // ShipTypeMatcher is a oneOf{ship-tree group, type} filter. ESI's generated package produces two
@@ -73,9 +74,10 @@ type IdentityMatcher struct {
 // assumed. This MCP layer flattens both to the same ShipTypeMatcher shape since the distinction
 // carries no semantic meaning.
 type ShipTypeMatcher struct {
-	GroupID  *int64 `json:"groupId,omitempty"`
-	TypeID   *int64 `json:"typeId,omitempty"`
-	TypeName string `json:"typeName,omitempty"`
+	GroupID   *int64 `json:"groupId,omitempty"`
+	GroupName string `json:"groupName,omitempty"`
+	TypeID    *int64 `json:"typeId,omitempty"`
+	TypeName  string `json:"typeName,omitempty"`
 }
 
 // DockingLocationMatcher is a oneOf{station, structure} docking-location filter. Shared by
@@ -93,7 +95,8 @@ type ArchetypeMatcher struct {
 	ArchetypeID *int64 `json:"archetypeId,omitempty"`
 }
 type FactionMatcher struct {
-	FactionID *int64 `json:"factionId,omitempty"`
+	FactionID   *int64 `json:"factionId,omitempty"`
+	FactionName string `json:"factionName,omitempty"`
 }
 type CorporationMatcher struct {
 	CorporationID *int64 `json:"corporationId,omitempty"`
@@ -706,6 +709,44 @@ func getCorporationProjectDetailHandler(version, clientID string, store *config.
 		for i := range configuration.DockingLocations {
 			if configuration.DockingLocations[i].StationID != nil {
 				configuration.DockingLocations[i].StationName = stationNames[*configuration.DockingLocations[i].StationID]
+			}
+		}
+
+		var groupIDs, factionIDs []int64
+		for _, group := range [][]ShipTypeMatcher{configuration.Ships, configuration.Items, configuration.Materials} {
+			for _, m := range group {
+				if m.GroupID != nil {
+					groupIDs = append(groupIDs, *m.GroupID)
+				}
+			}
+		}
+		for _, ident := range configuration.Identities {
+			if ident.FactionID != nil {
+				factionIDs = append(factionIDs, *ident.FactionID)
+			}
+		}
+		for _, fm := range configuration.Factions {
+			if fm.FactionID != nil {
+				factionIDs = append(factionIDs, *fm.FactionID)
+			}
+		}
+		groupNames := resolveGroupNames(ctx, sdeStore, sso.UserAgent(version), groupIDs)
+		factionNames := resolveFactionNames(ctx, sdeStore, sso.UserAgent(version), factionIDs)
+		for _, group := range [][]ShipTypeMatcher{configuration.Ships, configuration.Items, configuration.Materials} {
+			for i := range group {
+				if group[i].GroupID != nil {
+					group[i].GroupName = groupNames[*group[i].GroupID]
+				}
+			}
+		}
+		for i := range configuration.Identities {
+			if configuration.Identities[i].FactionID != nil {
+				configuration.Identities[i].FactionName = factionNames[*configuration.Identities[i].FactionID]
+			}
+		}
+		for i := range configuration.Factions {
+			if configuration.Factions[i].FactionID != nil {
+				configuration.Factions[i].FactionName = factionNames[*configuration.Factions[i].FactionID]
 			}
 		}
 

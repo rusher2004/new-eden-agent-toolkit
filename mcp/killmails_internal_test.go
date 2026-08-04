@@ -423,3 +423,36 @@ func TestGetKillmailHandler_ResolvesLocationNames(t *testing.T) {
 		t.Errorf("MoonName = %q, want %q", out.MoonName, "Jita IV - Moon 4")
 	}
 }
+
+func TestGetKillmailHandler_ResolvesFactionNames(t *testing.T) {
+	orig := getKillmail
+	t.Cleanup(func() { getKillmail = orig })
+	attackerFactionID := int64(500001)
+	victimFactionID := int64(500002)
+	getKillmail = func(ctx context.Context, userAgent string, killmailID int64, killmailHash string) (*esiapi.KillmailsKillmailIdKillmailHashGet, error) {
+		return &esiapi.KillmailsKillmailIdKillmailHashGet{
+			Attackers: []esiapi.KillmailsKillmailIdKillmailHashGetAttackersInner{
+				{FactionId: &attackerFactionID, FinalBlow: true},
+			},
+			Victim: esiapi.KillmailsKillmailIdKillmailHashGetVictim{FactionId: &victimFactionID, ShipTypeId: 587},
+		}, nil
+	}
+
+	origFaction := resolveFactionNames
+	t.Cleanup(func() { resolveFactionNames = origFaction })
+	resolveFactionNames = func(ctx context.Context, sdeStore factionNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{500001: "Caldari State", 500002: "Gallente Federation"}
+	}
+
+	handler := getKillmailHandler("v1", nil)
+	_, out, err := handler(context.Background(), nil, GetKillmailInput{KillmailID: 1, KillmailHash: "abc"})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Attackers) != 1 || out.Attackers[0].FactionName != "Caldari State" {
+		t.Errorf("Attackers = %+v, want one entry FactionName=%q", out.Attackers, "Caldari State")
+	}
+	if out.Victim.FactionName != "Gallente Federation" {
+		t.Errorf("Victim.FactionName = %q, want %q", out.Victim.FactionName, "Gallente Federation")
+	}
+}

@@ -70,3 +70,40 @@ func (s *Store) Factions(ctx context.Context, userAgent string) ([]Faction, erro
 	})
 	return out, err
 }
+
+// Faction looks up a faction by ID. ok is false if the ID isn't in the cache.
+func (s *Store) Faction(ctx context.Context, userAgent string, id int64) (Faction, bool, error) {
+	if s == nil {
+		return Faction{}, false, nil
+	}
+	_ = s.ensureSynced(ctx, userAgent)
+
+	var (
+		out Faction
+		ok  bool
+	)
+	err := s.db.View(func(tx *bbolt.Tx) error {
+		b := tx.Bucket([]byte("factions"))
+		if b == nil {
+			return nil
+		}
+		v := b.Get(int64Key(id))
+		if v == nil {
+			return nil
+		}
+		var raw factionRecord
+		if err := json.Unmarshal(v, &raw); err != nil {
+			return fmt.Errorf("parse cached faction %d: %w", id, err)
+		}
+		if raw.Key != id {
+			return fmt.Errorf("cached faction %d has mismatched key %d", id, raw.Key)
+		}
+		out, ok = Faction{
+			ID: raw.Key, Name: raw.Name, Description: raw.Description, IsUnique: raw.IsUnique,
+			SizeFactor: raw.SizeFactor, CorporationID: raw.CorporationID, MilitiaCorporationID: raw.MilitiaCorporationID,
+			SolarSystemID: raw.SolarSystemID, StationCount: raw.StationCount, StationSystemCount: raw.StationSystemCount,
+		}, true
+		return nil
+	})
+	return out, ok, err
+}

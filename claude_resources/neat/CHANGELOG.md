@@ -1,5 +1,13 @@
 # neat plugin — changelog
 
+## 0.4.0
+- Adds SDE-resolved `*Name` fields (`RaceName`, `BloodlineName`, `FactionName`, `GroupName`)
+  alongside the existing bare `*ID` fields across 8 non-Universe MCP files (alliance, character,
+  corporation, corporation projects, faction warfare, incursions, killmails, sovereignty). Closes
+  out the last of the ID kinds flagged in batch 1's own follow-up list. Names resolve from the
+  local SDE cache only, same as batches 1-2's enrichment — no ESI calls are made on this path.
+  Purely additive.
+
 ## 0.3.0
 - Adds SDE-resolved location `*Name` fields (`SystemName`, `RegionName`, `ConstellationName`,
   `StationName`, `PlanetName`, `MoonName`, plus the index-aligned `*Names` list variants) alongside

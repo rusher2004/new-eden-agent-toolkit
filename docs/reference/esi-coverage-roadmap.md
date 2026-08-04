@@ -57,13 +57,13 @@ place to check what's left, instead of re-deriving the order from the spec each 
 - A plan covers a cluster of adjacent tags (in the table's order above) sized so the batch isn't
   trivially small.
 - Every `esi/` method returns exactly what ESI returns, including bare IDs, with zero
-  name-resolution enrichment. `type_id`-like fields and the six location-entity ID kinds
-  (system/region/constellation/station/planet/moon) across the non-Universe tags are enriched
-  at the `mcp/` layer via `mcp/enrich.go`'s resolver functions (see
-  `docs/superpowers/specs/2026-07-28-sde-type-id-enrichment-design.md` and
-  `docs/superpowers/specs/2026-07-30-sde-location-id-enrichment-design.md`) — the generic
-  ambiguous `location_id` fields and the rarer race/bloodline/faction/group IDs are still open
-  follow-up batches.
+  name-resolution enrichment. `type_id`-like fields, the six location-entity ID kinds
+  (system/region/constellation/station/planet/moon), and now race/bloodline/faction/group IDs
+  across the non-Universe tags are all enriched at the `mcp/` layer via `mcp/enrich.go`'s resolver
+  functions (see `docs/superpowers/specs/2026-07-28-sde-type-id-enrichment-design.md`,
+  `docs/superpowers/specs/2026-07-30-sde-location-id-enrichment-design.md`, and
+  `docs/superpowers/specs/2026-07-30-sde-race-bloodline-faction-group-enrichment-design.md`) — the
+  generic ambiguous `location_id` fields remain the one open follow-up.
 - Every new batch must verify its required OAuth scopes are already present in
   `mcp/add_character.go`'s `allScopes`, the same way this plan did, before assuming no re-auth is
   needed.

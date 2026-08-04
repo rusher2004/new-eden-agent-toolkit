@@ -25,6 +25,7 @@ type GetCorporationOutput struct {
 	CreatorID           *int64     `json:"creatorId,omitempty"`
 	DateFounded         *time.Time `json:"dateFounded,omitempty"`
 	FactionID           *int64     `json:"factionId,omitempty"`
+	FactionName         string     `json:"factionName,omitempty"`
 	HomeStationID       int64      `json:"homeStationId"`
 	HomeStationName     string     `json:"homeStationName,omitempty"`
 	MemberCount         int64      `json:"memberCount"`
@@ -73,6 +74,10 @@ func getCorporationHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandl
 		}
 		names := resolveStationNames(ctx, sdeStore, sso.UserAgent(version), []int64{out.HomeStationID})
 		out.HomeStationName = names[out.HomeStationID]
+		if out.FactionID != nil {
+			factionNames := resolveFactionNames(ctx, sdeStore, sso.UserAgent(version), []int64{*out.FactionID})
+			out.FactionName = factionNames[*out.FactionID]
+		}
 		return nil, out, nil
 	}
 }

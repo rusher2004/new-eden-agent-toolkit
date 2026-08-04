@@ -496,3 +496,283 @@ func TestResolveMoonNames_EmptyIDs(t *testing.T) {
 		t.Errorf("calls = %v, want no lookups for an empty ID list", cache.calls)
 	}
 }
+
+type fakeRaceNameCache struct {
+	races map[int64]sde.Race
+	errs  map[int64]error
+	calls map[int64]int
+}
+
+func (f *fakeRaceNameCache) Race(ctx context.Context, userAgent string, id int64) (sde.Race, bool, error) {
+	if f.calls == nil {
+		f.calls = map[int64]int{}
+	}
+	f.calls[id]++
+	if err, ok := f.errs[id]; ok {
+		return sde.Race{}, false, err
+	}
+	r, ok := f.races[id]
+	return r, ok, nil
+}
+
+func TestResolveRaceNames_Dedup(t *testing.T) {
+	cache := &fakeRaceNameCache{races: map[int64]sde.Race{
+		1: {ID: 1, Name: map[string]string{"en": "Caldari"}},
+		2: {ID: 2, Name: map[string]string{"en": "Minmatar"}},
+	}}
+
+	got := resolveRaceNames(context.Background(), cache, "test-agent", []int64{1, 1, 2})
+
+	if got[1] != "Caldari" {
+		t.Errorf("got[1] = %q, want %q", got[1], "Caldari")
+	}
+	if got[2] != "Minmatar" {
+		t.Errorf("got[2] = %q, want %q", got[2], "Minmatar")
+	}
+	if cache.calls[1] != 1 {
+		t.Errorf("calls[1] = %d, want 1 (dedup should collapse the repeated ID)", cache.calls[1])
+	}
+}
+
+func TestResolveRaceNames_MissOmitted(t *testing.T) {
+	cache := &fakeRaceNameCache{races: map[int64]sde.Race{}}
+
+	got := resolveRaceNames(context.Background(), cache, "test-agent", []int64{999})
+
+	if _, ok := got[999]; ok {
+		t.Errorf("got[999] present = %v, want omitted on a cache miss", got[999])
+	}
+}
+
+func TestResolveRaceNames_ErrorOmitted(t *testing.T) {
+	cache := &fakeRaceNameCache{errs: map[int64]error{1: context.DeadlineExceeded}}
+
+	got := resolveRaceNames(context.Background(), cache, "test-agent", []int64{1})
+
+	if _, ok := got[1]; ok {
+		t.Errorf("got[1] present = %v, want omitted when the lookup errors", got[1])
+	}
+}
+
+func TestResolveRaceNames_EmptyIDs(t *testing.T) {
+	cache := &fakeRaceNameCache{}
+
+	got := resolveRaceNames(context.Background(), cache, "test-agent", nil)
+
+	if got != nil {
+		t.Errorf("got = %v, want nil for an empty ID list", got)
+	}
+	if len(cache.calls) != 0 {
+		t.Errorf("calls = %v, want no lookups for an empty ID list", cache.calls)
+	}
+}
+
+type fakeBloodlineNameCache struct {
+	bloodlines map[int64]sde.Bloodline
+	errs       map[int64]error
+	calls      map[int64]int
+}
+
+func (f *fakeBloodlineNameCache) Bloodline(ctx context.Context, userAgent string, id int64) (sde.Bloodline, bool, error) {
+	if f.calls == nil {
+		f.calls = map[int64]int{}
+	}
+	f.calls[id]++
+	if err, ok := f.errs[id]; ok {
+		return sde.Bloodline{}, false, err
+	}
+	b, ok := f.bloodlines[id]
+	return b, ok, nil
+}
+
+func TestResolveBloodlineNames_Dedup(t *testing.T) {
+	cache := &fakeBloodlineNameCache{bloodlines: map[int64]sde.Bloodline{
+		1: {ID: 1, Name: map[string]string{"en": "Deteis"}},
+		2: {ID: 2, Name: map[string]string{"en": "Civire"}},
+	}}
+
+	got := resolveBloodlineNames(context.Background(), cache, "test-agent", []int64{1, 1, 2})
+
+	if got[1] != "Deteis" {
+		t.Errorf("got[1] = %q, want %q", got[1], "Deteis")
+	}
+	if got[2] != "Civire" {
+		t.Errorf("got[2] = %q, want %q", got[2], "Civire")
+	}
+	if cache.calls[1] != 1 {
+		t.Errorf("calls[1] = %d, want 1 (dedup should collapse the repeated ID)", cache.calls[1])
+	}
+}
+
+func TestResolveBloodlineNames_MissOmitted(t *testing.T) {
+	cache := &fakeBloodlineNameCache{bloodlines: map[int64]sde.Bloodline{}}
+
+	got := resolveBloodlineNames(context.Background(), cache, "test-agent", []int64{999})
+
+	if _, ok := got[999]; ok {
+		t.Errorf("got[999] present = %v, want omitted on a cache miss", got[999])
+	}
+}
+
+func TestResolveBloodlineNames_ErrorOmitted(t *testing.T) {
+	cache := &fakeBloodlineNameCache{errs: map[int64]error{1: context.DeadlineExceeded}}
+
+	got := resolveBloodlineNames(context.Background(), cache, "test-agent", []int64{1})
+
+	if _, ok := got[1]; ok {
+		t.Errorf("got[1] present = %v, want omitted when the lookup errors", got[1])
+	}
+}
+
+func TestResolveBloodlineNames_EmptyIDs(t *testing.T) {
+	cache := &fakeBloodlineNameCache{}
+
+	got := resolveBloodlineNames(context.Background(), cache, "test-agent", nil)
+
+	if got != nil {
+		t.Errorf("got = %v, want nil for an empty ID list", got)
+	}
+	if len(cache.calls) != 0 {
+		t.Errorf("calls = %v, want no lookups for an empty ID list", cache.calls)
+	}
+}
+
+type fakeFactionNameCache struct {
+	factions map[int64]sde.Faction
+	errs     map[int64]error
+	calls    map[int64]int
+}
+
+func (f *fakeFactionNameCache) Faction(ctx context.Context, userAgent string, id int64) (sde.Faction, bool, error) {
+	if f.calls == nil {
+		f.calls = map[int64]int{}
+	}
+	f.calls[id]++
+	if err, ok := f.errs[id]; ok {
+		return sde.Faction{}, false, err
+	}
+	fac, ok := f.factions[id]
+	return fac, ok, nil
+}
+
+func TestResolveFactionNames_Dedup(t *testing.T) {
+	cache := &fakeFactionNameCache{factions: map[int64]sde.Faction{
+		500001: {ID: 500001, Name: map[string]string{"en": "Caldari State"}},
+		500002: {ID: 500002, Name: map[string]string{"en": "Minmatar Republic"}},
+	}}
+
+	got := resolveFactionNames(context.Background(), cache, "test-agent", []int64{500001, 500001, 500002})
+
+	if got[500001] != "Caldari State" {
+		t.Errorf("got[500001] = %q, want %q", got[500001], "Caldari State")
+	}
+	if got[500002] != "Minmatar Republic" {
+		t.Errorf("got[500002] = %q, want %q", got[500002], "Minmatar Republic")
+	}
+	if cache.calls[500001] != 1 {
+		t.Errorf("calls[500001] = %d, want 1 (dedup should collapse the repeated ID)", cache.calls[500001])
+	}
+}
+
+func TestResolveFactionNames_MissOmitted(t *testing.T) {
+	cache := &fakeFactionNameCache{factions: map[int64]sde.Faction{}}
+
+	got := resolveFactionNames(context.Background(), cache, "test-agent", []int64{999})
+
+	if _, ok := got[999]; ok {
+		t.Errorf("got[999] present = %v, want omitted on a cache miss", got[999])
+	}
+}
+
+func TestResolveFactionNames_ErrorOmitted(t *testing.T) {
+	cache := &fakeFactionNameCache{errs: map[int64]error{500001: context.DeadlineExceeded}}
+
+	got := resolveFactionNames(context.Background(), cache, "test-agent", []int64{500001})
+
+	if _, ok := got[500001]; ok {
+		t.Errorf("got[500001] present = %v, want omitted when the lookup errors", got[500001])
+	}
+}
+
+func TestResolveFactionNames_EmptyIDs(t *testing.T) {
+	cache := &fakeFactionNameCache{}
+
+	got := resolveFactionNames(context.Background(), cache, "test-agent", nil)
+
+	if got != nil {
+		t.Errorf("got = %v, want nil for an empty ID list", got)
+	}
+	if len(cache.calls) != 0 {
+		t.Errorf("calls = %v, want no lookups for an empty ID list", cache.calls)
+	}
+}
+
+type fakeGroupNameCache struct {
+	groups map[int64]sde.Group
+	errs   map[int64]error
+	calls  map[int64]int
+}
+
+func (f *fakeGroupNameCache) Group(ctx context.Context, userAgent string, id int64) (sde.Group, bool, error) {
+	if f.calls == nil {
+		f.calls = map[int64]int{}
+	}
+	f.calls[id]++
+	if err, ok := f.errs[id]; ok {
+		return sde.Group{}, false, err
+	}
+	g, ok := f.groups[id]
+	return g, ok, nil
+}
+
+func TestResolveGroupNames_Dedup(t *testing.T) {
+	cache := &fakeGroupNameCache{groups: map[int64]sde.Group{
+		25: {ID: 25, Name: map[string]string{"en": "Frigate"}},
+		26: {ID: 26, Name: map[string]string{"en": "Destroyer"}},
+	}}
+
+	got := resolveGroupNames(context.Background(), cache, "test-agent", []int64{25, 25, 26})
+
+	if got[25] != "Frigate" {
+		t.Errorf("got[25] = %q, want %q", got[25], "Frigate")
+	}
+	if got[26] != "Destroyer" {
+		t.Errorf("got[26] = %q, want %q", got[26], "Destroyer")
+	}
+	if cache.calls[25] != 1 {
+		t.Errorf("calls[25] = %d, want 1 (dedup should collapse the repeated ID)", cache.calls[25])
+	}
+}
+
+func TestResolveGroupNames_MissOmitted(t *testing.T) {
+	cache := &fakeGroupNameCache{groups: map[int64]sde.Group{}}
+
+	got := resolveGroupNames(context.Background(), cache, "test-agent", []int64{999})
+
+	if _, ok := got[999]; ok {
+		t.Errorf("got[999] present = %v, want omitted on a cache miss", got[999])
+	}
+}
+
+func TestResolveGroupNames_ErrorOmitted(t *testing.T) {
+	cache := &fakeGroupNameCache{errs: map[int64]error{25: context.DeadlineExceeded}}
+
+	got := resolveGroupNames(context.Background(), cache, "test-agent", []int64{25})
+
+	if _, ok := got[25]; ok {
+		t.Errorf("got[25] present = %v, want omitted when the lookup errors", got[25])
+	}
+}
+
+func TestResolveGroupNames_EmptyIDs(t *testing.T) {
+	cache := &fakeGroupNameCache{}
+
+	got := resolveGroupNames(context.Background(), cache, "test-agent", nil)
+
+	if got != nil {
+		t.Errorf("got = %v, want nil for an empty ID list", got)
+	}
+	if len(cache.calls) != 0 {
+		t.Errorf("calls = %v, want no lookups for an empty ID list", cache.calls)
+	}
+}

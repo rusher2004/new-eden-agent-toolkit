@@ -49,3 +49,57 @@ func TestFactions_EmptyBucket_ReturnsEmptySlice(t *testing.T) {
 		t.Errorf("Factions = %+v, want empty", got)
 	}
 }
+
+func TestFaction_KnownID_ReturnsAllLocales(t *testing.T) {
+	store := seedStore(t)
+	putRecord(t, store, "factions", 500001, `{"_key": 500001, "corporationID": 1000035, "description": {"en": "..."}, "militiaCorporationID": 1000180, "name": {"en": "Caldari State"}, "sizeFactor": 5.0, "solarSystemID": 30000145, "uniqueName": true, "stationCount": 120, "stationSystemCount": 45}`)
+
+	got, ok, err := store.Faction(context.Background(), "test-agent", 500001)
+	if err != nil {
+		t.Fatalf("Faction returned error: %v", err)
+	}
+	if !ok {
+		t.Fatal("Faction ok = false, want true")
+	}
+	if got.ID != 500001 {
+		t.Errorf("got.ID = %d, want 500001", got.ID)
+	}
+	if got.Name["en"] != "Caldari State" {
+		t.Errorf("Name[en] = %q, want Caldari State", got.Name["en"])
+	}
+	if got.IsUnique != true {
+		t.Errorf("IsUnique = %v, want true", got.IsUnique)
+	}
+}
+
+func TestFaction_UnknownID_ReturnsNotOK(t *testing.T) {
+	store := seedStore(t)
+
+	_, ok, err := store.Faction(context.Background(), "test-agent", 999)
+	if err != nil {
+		t.Fatalf("Faction returned error: %v", err)
+	}
+	if ok {
+		t.Error("Faction ok = true, want false for an unknown ID")
+	}
+}
+
+func TestFaction_MalformedCachedRecord_ReturnsError(t *testing.T) {
+	store := seedStore(t)
+	putRecord(t, store, "factions", 500001, `not valid json`)
+
+	_, _, err := store.Faction(context.Background(), "test-agent", 500001)
+	if err == nil {
+		t.Fatal("Faction returned nil error, want a parse error for a corrupted cache entry")
+	}
+}
+
+func TestFaction_MismatchedKey_ReturnsError(t *testing.T) {
+	store := seedStore(t)
+	putRecord(t, store, "factions", 500001, `{"_key": 999, "corporationID": 1000035, "description": {"en": "..."}, "militiaCorporationID": 1000180, "name": {"en": "Caldari State"}, "sizeFactor": 5.0, "solarSystemID": 30000145, "uniqueName": true, "stationCount": 120, "stationSystemCount": 45}`)
+
+	_, _, err := store.Faction(context.Background(), "test-agent", 500001)
+	if err == nil {
+		t.Fatal("Faction returned nil error, want an error for a mismatched _key")
+	}
+}

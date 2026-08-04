@@ -65,3 +65,54 @@ func TestRaces_NoAllianceID_ReturnsNil(t *testing.T) {
 		t.Errorf("AllianceID = %v, want nil", got[0].AllianceID)
 	}
 }
+
+func TestRace_KnownID_ReturnsAllLocales(t *testing.T) {
+	store := seedStore(t)
+	putRecord(t, store, "races", 1, `{"_key": 1, "description": {"en": "..."}, "name": {"en": "Caldari", "de": "Kaldari"}}`)
+
+	got, ok, err := store.Race(context.Background(), "test-agent", 1)
+	if err != nil {
+		t.Fatalf("Race returned error: %v", err)
+	}
+	if !ok {
+		t.Fatal("Race ok = false, want true")
+	}
+	if got.ID != 1 {
+		t.Errorf("got.ID = %d, want 1", got.ID)
+	}
+	if got.Name["en"] != "Caldari" || got.Name["de"] != "Kaldari" {
+		t.Errorf("Name = %+v, want en=Caldari de=Kaldari", got.Name)
+	}
+}
+
+func TestRace_UnknownID_ReturnsNotOK(t *testing.T) {
+	store := seedStore(t)
+
+	_, ok, err := store.Race(context.Background(), "test-agent", 999)
+	if err != nil {
+		t.Fatalf("Race returned error: %v", err)
+	}
+	if ok {
+		t.Error("Race ok = true, want false for an unknown ID")
+	}
+}
+
+func TestRace_MalformedCachedRecord_ReturnsError(t *testing.T) {
+	store := seedStore(t)
+	putRecord(t, store, "races", 1, `not valid json`)
+
+	_, _, err := store.Race(context.Background(), "test-agent", 1)
+	if err == nil {
+		t.Fatal("Race returned nil error, want a parse error for a corrupted cache entry")
+	}
+}
+
+func TestRace_MismatchedKey_ReturnsError(t *testing.T) {
+	store := seedStore(t)
+	putRecord(t, store, "races", 1, `{"_key": 999, "description": {"en": "..."}, "name": {"en": "Caldari"}}`)
+
+	_, _, err := store.Race(context.Background(), "test-agent", 1)
+	if err == nil {
+		t.Fatal("Race returned nil error, want an error for a mismatched _key")
+	}
+}

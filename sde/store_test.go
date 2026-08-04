@@ -204,6 +204,16 @@ func TestNilStore_EveryMethodIsSafe(t *testing.T) {
 		t.Errorf("Factions on nil store = %v, %v, want nil/nil", got, err)
 	}
 
+	if got, ok, err := store.Bloodline(ctx, userAgent, 1); ok || err != nil || got.ID != 0 {
+		t.Errorf("Bloodline on nil store = %+v, %v, %v, want zero value/false/nil", got, ok, err)
+	}
+	if got, ok, err := store.Race(ctx, userAgent, 1); ok || err != nil || got.ID != 0 {
+		t.Errorf("Race on nil store = %+v, %v, %v, want zero value/false/nil", got, ok, err)
+	}
+	if got, ok, err := store.Faction(ctx, userAgent, 1); ok || err != nil || got.ID != 0 {
+		t.Errorf("Faction on nil store = %+v, %v, %v, want zero value/false/nil", got, ok, err)
+	}
+
 	if err := store.Close(); err != nil {
 		t.Errorf("Close on nil store returned error: %v, want nil", err)
 	}

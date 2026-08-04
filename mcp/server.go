@@ -135,7 +135,7 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_alliance",
 		Description: "Get an alliance's name, ticker, founding info, and executor corporation (public data, no character required).",
-	}, getAllianceHandler(version))
+	}, getAllianceHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_alliance_corporations",
@@ -200,12 +200,12 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_character",
 		Description: "Get public info (name, corporation, bloodline, security status) about an arbitrary character (public data, no character required).",
-	}, getCharacterHandler(version))
+	}, getCharacterHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_character_affiliations",
 		Description: "Resolve a set of character IDs to their current corporation/alliance/faction (public data, no character required).",
-	}, getCharacterAffiliationsHandler(version))
+	}, getCharacterAffiliationsHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_character_corporation_history",
@@ -525,17 +525,17 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_character_fw_stats",
 		Description: "Get a logged-in EVE Online character's faction warfare stats.",
-	}, getCharacterFwStatsHandler(version, clientID, store))
+	}, getCharacterFwStatsHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_corporation_fw_stats",
 		Description: "Get a corporation's faction warfare stats, using a logged-in character's roles to authorize.",
-	}, getCorporationFwStatsHandler(version, clientID, store))
+	}, getCorporationFwStatsHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_fw_leaderboards",
 		Description: "Get the top faction rankings by kills and victory points (public data, no character required).",
-	}, getFwLeaderboardsHandler(version))
+	}, getFwLeaderboardsHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_fw_character_leaderboards",
@@ -550,7 +550,7 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_fw_stats",
 		Description: "List every faction's faction warfare stats (public data, no character required).",
-	}, listFwStatsHandler(version))
+	}, listFwStatsHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_fw_systems",
@@ -560,7 +560,7 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_fw_wars",
 		Description: "List every faction warfare declaration (public data, no character required).",
-	}, listFwWarsHandler(version))
+	}, listFwWarsHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_character_fittings",

@@ -8,6 +8,7 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
+	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -46,6 +47,7 @@ type AllianceDetailResult struct {
 	DateFounded           time.Time
 	ExecutorCorporationID *int64
 	FactionID             *int64
+	FactionName           string
 }
 
 // getAllianceDetail is overridable in tests.
@@ -81,13 +83,18 @@ type GetAllianceOutput struct {
 	DateFounded           time.Time `json:"dateFounded"`
 	ExecutorCorporationID *int64    `json:"executorCorporationId,omitempty"`
 	FactionID             *int64    `json:"factionId,omitempty"`
+	FactionName           string    `json:"factionName,omitempty"`
 }
 
-func getAllianceHandler(version string) mcpsdk.ToolHandlerFor[GetAllianceInput, GetAllianceOutput] {
+func getAllianceHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetAllianceInput, GetAllianceOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetAllianceInput) (*mcpsdk.CallToolResult, GetAllianceOutput, error) {
 		result, err := getAllianceDetail(ctx, sso.UserAgent(version), in.AllianceID)
 		if err != nil {
 			return nil, GetAllianceOutput{}, fmt.Errorf("get alliance detail: %w", err)
+		}
+		if result.FactionID != nil {
+			names := resolveFactionNames(ctx, sdeStore, sso.UserAgent(version), []int64{*result.FactionID})
+			result.FactionName = names[*result.FactionID]
 		}
 		return nil, GetAllianceOutput{
 			AllianceID:            in.AllianceID,
@@ -98,6 +105,7 @@ func getAllianceHandler(version string) mcpsdk.ToolHandlerFor[GetAllianceInput, 
 			DateFounded:           result.DateFounded,
 			ExecutorCorporationID: result.ExecutorCorporationID,
 			FactionID:             result.FactionID,
+			FactionName:           result.FactionName,
 		}, nil
 	}
 }

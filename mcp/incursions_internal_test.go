@@ -176,3 +176,26 @@ func TestListIncursionsHandler_InfestedSolarSystemNamesNilOnTotalMiss(t *testing
 		t.Errorf("InfestedSolarSystemNames = %v, want nil on a total miss", out.Incursions[0].InfestedSolarSystemNames)
 	}
 }
+
+func TestListIncursionsHandler_ResolvesFactionName(t *testing.T) {
+	orig := listIncursions
+	t.Cleanup(func() { listIncursions = orig })
+	listIncursions = func(ctx context.Context, userAgent string) ([]Incursion, error) {
+		return []Incursion{{FactionID: 500001}}, nil
+	}
+
+	origFaction := resolveFactionNames
+	t.Cleanup(func() { resolveFactionNames = origFaction })
+	resolveFactionNames = func(ctx context.Context, sdeStore factionNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{500001: "Sansha's Nation"}
+	}
+
+	handler := listIncursionsHandler("v1", nil)
+	_, out, err := handler(context.Background(), nil, ListIncursionsInput{})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Incursions) != 1 || out.Incursions[0].FactionName != "Sansha's Nation" {
+		t.Errorf("Incursions = %+v, want one entry FactionName=%q", out.Incursions, "Sansha's Nation")
+	}
+}

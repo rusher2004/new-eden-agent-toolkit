@@ -51,3 +51,36 @@ func (s *Store) Races(ctx context.Context, userAgent string) ([]Race, error) {
 	})
 	return out, err
 }
+
+// Race looks up a race by ID. ok is false if the ID isn't in the cache.
+func (s *Store) Race(ctx context.Context, userAgent string, id int64) (Race, bool, error) {
+	if s == nil {
+		return Race{}, false, nil
+	}
+	_ = s.ensureSynced(ctx, userAgent)
+
+	var (
+		out Race
+		ok  bool
+	)
+	err := s.db.View(func(tx *bbolt.Tx) error {
+		b := tx.Bucket([]byte("races"))
+		if b == nil {
+			return nil
+		}
+		v := b.Get(int64Key(id))
+		if v == nil {
+			return nil
+		}
+		var raw raceRecord
+		if err := json.Unmarshal(v, &raw); err != nil {
+			return fmt.Errorf("parse cached race %d: %w", id, err)
+		}
+		if raw.Key != id {
+			return fmt.Errorf("cached race %d has mismatched key %d", id, raw.Key)
+		}
+		out, ok = Race{ID: raw.Key, AllianceID: raw.AllianceID, Description: raw.Description, Name: raw.Name}, true
+		return nil
+	})
+	return out, ok, err
+}

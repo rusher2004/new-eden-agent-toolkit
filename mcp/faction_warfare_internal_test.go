@@ -34,7 +34,7 @@ func TestGetCharacterFwStatsHandler_MapsFields(t *testing.T) {
 		}, nil
 	}
 
-	handler := getCharacterFwStatsHandler("v1", "client-id", store)
+	handler := getCharacterFwStatsHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, GetCharacterFwStatsInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -62,7 +62,7 @@ func TestGetCharacterFwStatsHandler_UnknownCharacter(t *testing.T) {
 		return nil, nil
 	}
 
-	handler := getCharacterFwStatsHandler("v1", "client-id", store)
+	handler := getCharacterFwStatsHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, GetCharacterFwStatsInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -89,7 +89,7 @@ func TestGetCorporationFwStatsHandler_MapsFields(t *testing.T) {
 		}, nil
 	}
 
-	handler := getCorporationFwStatsHandler("v1", "client-id", store)
+	handler := getCorporationFwStatsHandler("v1", "client-id", store, nil)
 	_, out, err := handler(context.Background(), nil, GetCorporationFwStatsInput{CharacterID: 7, CorporationID: 98000001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -116,7 +116,7 @@ func TestGetCorporationFwStatsHandler_UnknownCharacter(t *testing.T) {
 		return nil, nil
 	}
 
-	handler := getCorporationFwStatsHandler("v1", "client-id", store)
+	handler := getCorporationFwStatsHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, GetCorporationFwStatsInput{CharacterID: 999, CorporationID: 98000001})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -149,7 +149,7 @@ func TestGetFwLeaderboardsHandler_MapsFields(t *testing.T) {
 		}, nil
 	}
 
-	handler := getFwLeaderboardsHandler("v1")
+	handler := getFwLeaderboardsHandler("v1", nil)
 	_, out, err := handler(context.Background(), nil, GetFwLeaderboardsInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -272,7 +272,7 @@ func TestListFwStatsHandler_MapsFields(t *testing.T) {
 		}}, nil
 	}
 
-	handler := listFwStatsHandler("v1")
+	handler := listFwStatsHandler("v1", nil)
 	_, out, err := handler(context.Background(), nil, ListFwStatsInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -320,7 +320,7 @@ func TestListFwWarsHandler_MapsFields(t *testing.T) {
 		return []esiapi.FwWarsGetInner{{AgainstId: 500001, FactionId: 500002}}, nil
 	}
 
-	handler := listFwWarsHandler("v1")
+	handler := listFwWarsHandler("v1", nil)
 	_, out, err := handler(context.Background(), nil, ListFwWarsInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -348,7 +348,7 @@ func TestGetCharacterFwStatsHandler_PropagatesError(t *testing.T) {
 		return nil, wantErr
 	}
 
-	handler := getCharacterFwStatsHandler("v1", "client-id", store)
+	handler := getCharacterFwStatsHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, GetCharacterFwStatsInput{CharacterID: 7})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -369,7 +369,7 @@ func TestGetCorporationFwStatsHandler_PropagatesError(t *testing.T) {
 		return nil, wantErr
 	}
 
-	handler := getCorporationFwStatsHandler("v1", "client-id", store)
+	handler := getCorporationFwStatsHandler("v1", "client-id", store, nil)
 	_, _, err := handler(context.Background(), nil, GetCorporationFwStatsInput{CharacterID: 7, CorporationID: 98000001})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -384,7 +384,7 @@ func TestGetFwLeaderboardsHandler_PropagatesError(t *testing.T) {
 		return nil, wantErr
 	}
 
-	handler := getFwLeaderboardsHandler("v1")
+	handler := getFwLeaderboardsHandler("v1", nil)
 	_, _, err := handler(context.Background(), nil, GetFwLeaderboardsInput{})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -429,7 +429,7 @@ func TestListFwStatsHandler_PropagatesError(t *testing.T) {
 		return nil, wantErr
 	}
 
-	handler := listFwStatsHandler("v1")
+	handler := listFwStatsHandler("v1", nil)
 	_, _, err := handler(context.Background(), nil, ListFwStatsInput{})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -459,7 +459,7 @@ func TestListFwWarsHandler_PropagatesError(t *testing.T) {
 		return nil, wantErr
 	}
 
-	handler := listFwWarsHandler("v1")
+	handler := listFwWarsHandler("v1", nil)
 	_, _, err := handler(context.Background(), nil, ListFwWarsInput{})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -486,5 +486,181 @@ func TestListFwSystemsHandler_ResolvesSystemName(t *testing.T) {
 	}
 	if out.Systems[0].SolarSystemName != "Jita" {
 		t.Errorf("SolarSystemName = %q, want %q", out.Systems[0].SolarSystemName, "Jita")
+	}
+}
+
+func TestGetCharacterFwStatsHandler_ResolvesFactionName(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := getCharacterFwStats
+	t.Cleanup(func() { getCharacterFwStats = orig })
+	factionID := int64(500001)
+	getCharacterFwStats = func(ctx context.Context, clientID string, characterID int32, userAgent string) (*esiapi.CharactersCharacterIdFwStatsGet, error) {
+		return &esiapi.CharactersCharacterIdFwStatsGet{FactionId: &factionID}, nil
+	}
+
+	origFaction := resolveFactionNames
+	t.Cleanup(func() { resolveFactionNames = origFaction })
+	resolveFactionNames = func(ctx context.Context, sdeStore factionNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{500001: "Caldari State"}
+	}
+
+	handler := getCharacterFwStatsHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, GetCharacterFwStatsInput{CharacterID: 7})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.FactionName != "Caldari State" {
+		t.Errorf("FactionName = %q, want %q", out.FactionName, "Caldari State")
+	}
+}
+
+func TestGetCorporationFwStatsHandler_ResolvesFactionName(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := getCorporationFwStats
+	t.Cleanup(func() { getCorporationFwStats = orig })
+	factionID := int64(500001)
+	getCorporationFwStats = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64) (*esiapi.CorporationsCorporationIdFwStatsGet, error) {
+		return &esiapi.CorporationsCorporationIdFwStatsGet{FactionId: &factionID}, nil
+	}
+
+	origFaction := resolveFactionNames
+	t.Cleanup(func() { resolveFactionNames = origFaction })
+	resolveFactionNames = func(ctx context.Context, sdeStore factionNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{500001: "Caldari State"}
+	}
+
+	handler := getCorporationFwStatsHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, GetCorporationFwStatsInput{CharacterID: 7, CorporationID: 98000001})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.FactionName != "Caldari State" {
+		t.Errorf("FactionName = %q, want %q", out.FactionName, "Caldari State")
+	}
+}
+
+func TestGetFwLeaderboardsHandler_ResolvesFactionNames(t *testing.T) {
+	orig := getFwLeaderboards
+	t.Cleanup(func() { getFwLeaderboards = orig })
+	killsFactionID := int64(500001)
+	killsAmount := int64(42)
+	vpFactionID := int64(500002)
+	vpAmount := int64(7)
+	getFwLeaderboards = func(ctx context.Context, userAgent string) (*esiapi.FwLeaderboardsGet, error) {
+		return &esiapi.FwLeaderboardsGet{
+			Kills: esiapi.FwLeaderboardsGetKills{
+				ActiveTotal: []esiapi.FwLeaderboardsGetKillsActiveTotalInner{{FactionId: &killsFactionID, Amount: &killsAmount}},
+			},
+			VictoryPoints: esiapi.FwLeaderboardsGetVictoryPoints{
+				Yesterday: []esiapi.FwLeaderboardsGetVictoryPointsYesterdayInner{{FactionId: &vpFactionID, Amount: &vpAmount}},
+			},
+		}, nil
+	}
+
+	callCount := 0
+	origFaction := resolveFactionNames
+	t.Cleanup(func() { resolveFactionNames = origFaction })
+	resolveFactionNames = func(ctx context.Context, sdeStore factionNameCache, userAgent string, ids []int64) map[int64]string {
+		callCount++
+		return map[int64]string{500001: "Caldari State", 500002: "Gallente Federation"}
+	}
+
+	handler := getFwLeaderboardsHandler("v1", nil)
+	_, out, err := handler(context.Background(), nil, GetFwLeaderboardsInput{})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Kills.ActiveTotal) != 1 || out.Kills.ActiveTotal[0].FactionName != "Caldari State" {
+		t.Errorf("Kills.ActiveTotal = %+v, want one entry FactionName=%q", out.Kills.ActiveTotal, "Caldari State")
+	}
+	if len(out.VictoryPoints.Yesterday) != 1 || out.VictoryPoints.Yesterday[0].FactionName != "Gallente Federation" {
+		t.Errorf("VictoryPoints.Yesterday = %+v, want one entry FactionName=%q", out.VictoryPoints.Yesterday, "Gallente Federation")
+	}
+	if callCount != 1 {
+		t.Errorf("resolveFactionNames called %d times, want 1 (all six leaderboard slices should share one combined call)", callCount)
+	}
+}
+
+func TestListFwStatsHandler_ResolvesFactionName(t *testing.T) {
+	orig := listFwStats
+	t.Cleanup(func() { listFwStats = orig })
+	listFwStats = func(ctx context.Context, userAgent string) ([]esiapi.FwStatsGetInner, error) {
+		return []esiapi.FwStatsGetInner{{FactionId: 500001}}, nil
+	}
+
+	origFaction := resolveFactionNames
+	t.Cleanup(func() { resolveFactionNames = origFaction })
+	resolveFactionNames = func(ctx context.Context, sdeStore factionNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{500001: "Caldari State"}
+	}
+
+	handler := listFwStatsHandler("v1", nil)
+	_, out, err := handler(context.Background(), nil, ListFwStatsInput{})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Stats) != 1 || out.Stats[0].FactionName != "Caldari State" {
+		t.Errorf("Stats = %+v, want one entry FactionName=%q", out.Stats, "Caldari State")
+	}
+}
+
+func TestListFwSystemsHandler_ResolvesOccupierAndOwnerFactionNames(t *testing.T) {
+	orig := listFwSystems
+	t.Cleanup(func() { listFwSystems = orig })
+	listFwSystems = func(ctx context.Context, userAgent string) ([]esiapi.FwSystemsGetInner, error) {
+		return []esiapi.FwSystemsGetInner{{OccupierFactionId: 500001, OwnerFactionId: 500002, SolarSystemId: 30000142}}, nil
+	}
+
+	origFaction := resolveFactionNames
+	t.Cleanup(func() { resolveFactionNames = origFaction })
+	resolveFactionNames = func(ctx context.Context, sdeStore factionNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{500001: "Caldari State", 500002: "Gallente Federation"}
+	}
+	origSystem := resolveSystemNames
+	t.Cleanup(func() { resolveSystemNames = origSystem })
+	resolveSystemNames = func(ctx context.Context, sdeStore systemNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{30000142: "Jita"}
+	}
+
+	handler := listFwSystemsHandler("v1", nil)
+	_, out, err := handler(context.Background(), nil, ListFwSystemsInput{})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Systems) != 1 || out.Systems[0].OccupierFactionName != "Caldari State" || out.Systems[0].OwnerFactionName != "Gallente Federation" {
+		t.Errorf("Systems = %+v, want one entry OccupierFactionName=%q OwnerFactionName=%q", out.Systems, "Caldari State", "Gallente Federation")
+	}
+}
+
+func TestListFwWarsHandler_ResolvesFactionName(t *testing.T) {
+	orig := listFwWars
+	t.Cleanup(func() { listFwWars = orig })
+	listFwWars = func(ctx context.Context, userAgent string) ([]esiapi.FwWarsGetInner, error) {
+		return []esiapi.FwWarsGetInner{{AgainstId: 500002, FactionId: 500001}}, nil
+	}
+
+	origFaction := resolveFactionNames
+	t.Cleanup(func() { resolveFactionNames = origFaction })
+	resolveFactionNames = func(ctx context.Context, sdeStore factionNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{500001: "Caldari State", 500002: "Minmatar Republic"}
+	}
+
+	handler := listFwWarsHandler("v1", nil)
+	_, out, err := handler(context.Background(), nil, ListFwWarsInput{})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Wars) != 1 || out.Wars[0].FactionName != "Caldari State" || out.Wars[0].AgainstFactionName != "Minmatar Republic" {
+		t.Errorf("Wars = %+v, want one entry FactionName=%q AgainstFactionName=%q", out.Wars, "Caldari State", "Minmatar Republic")
 	}
 }

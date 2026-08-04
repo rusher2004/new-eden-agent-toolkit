@@ -513,6 +513,155 @@ func TestGetCorporationProjectDetailHandler_ResolvesLocationMatcherNames(t *test
 	}
 }
 
+func TestGetCorporationProjectDetailHandler_ResolvesGroupAndFactionNames(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := getCorporationProjectDetail
+	t.Cleanup(func() { getCorporationProjectDetail = orig })
+	groupID := int64(25)
+	factionID := int64(500001)
+	getCorporationProjectDetail = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, projectID string) (*esiapi.CorporationsProjectsDetail, error) {
+		return &esiapi.CorporationsProjectsDetail{
+			Configuration: esiapi.CorporationsProjectsDetailConfiguration{
+				DamageShip: &esiapi.DamageShip{DamageShip: &esiapi.CorporationsProjectsDetailConfigurationdamageship{
+					Identities: []esiapi.CorporationsProjectsDetailConfigurationdamageshipIdentitiesInner{
+						{FactionId: &esiapi.FactionId{FactionId: &factionID}},
+					},
+					Ships: []esiapi.CorporationsProjectsDetailConfigurationdamageshipShipsInner{
+						{GroupId: &esiapi.GroupId{GroupId: &groupID}},
+					},
+				}},
+			},
+			Creator:  esiapi.CorporationsProjectsDetailCreator{Id: 998877, Name: "Creator Pilot"},
+			Details:  esiapi.CorporationsProjectsDetailDetails{Career: "Exploration"},
+			Id:       "abc-200",
+			Name:     "Test Project",
+			Progress: esiapi.CorporationsProjectsDetailProgress{Current: 0, Desired: 1},
+			State:    "Active",
+		}, nil
+	}
+
+	origGroup := resolveGroupNames
+	t.Cleanup(func() { resolveGroupNames = origGroup })
+	resolveGroupNames = func(ctx context.Context, sdeStore groupNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{25: "Frigate"}
+	}
+	origFaction := resolveFactionNames
+	t.Cleanup(func() { resolveFactionNames = origFaction })
+	resolveFactionNames = func(ctx context.Context, sdeStore factionNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{500001: "Caldari State"}
+	}
+
+	handler := getCorporationProjectDetailHandler("v1", "client-id", store, nil)
+	_, out, err := handler(context.Background(), nil, GetCorporationProjectDetailInput{CharacterID: 7, CorporationID: 98000001, ProjectID: "abc-200"})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Configuration.Ships) != 1 || out.Configuration.Ships[0].GroupName != "Frigate" {
+		t.Errorf("Configuration.Ships = %+v, want one entry GroupName=%q", out.Configuration.Ships, "Frigate")
+	}
+	if len(out.Configuration.Identities) != 1 || out.Configuration.Identities[0].FactionName != "Caldari State" {
+		t.Errorf("Configuration.Identities = %+v, want one entry FactionName=%q", out.Configuration.Identities, "Caldari State")
+	}
+}
+
+// TestGetCorporationProjectDetailHandler_ResolvesMaterialsAndFactionsNames covers the two
+// GroupID/FactionID enrichment branches the sibling test above can't reach in the same call:
+// ESI's Configuration is a oneOf, so a single response can only be one variant. MineMaterial
+// exercises Configuration.Materials (a ShipTypeMatcher, same GroupID/GroupName shape as Ships but
+// built via toShipTypeMatchersItems's GroupId1 field); CaptureFwComplex exercises
+// Configuration.Factions (a []FactionMatcher, a distinct type from IdentityMatcher).
+func TestGetCorporationProjectDetailHandler_ResolvesMaterialsAndFactionsNames(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	orig := getCorporationProjectDetail
+	t.Cleanup(func() { getCorporationProjectDetail = orig })
+	origGroup := resolveGroupNames
+	t.Cleanup(func() { resolveGroupNames = origGroup })
+	origFaction := resolveFactionNames
+	t.Cleanup(func() { resolveFactionNames = origFaction })
+
+	t.Run("materials", func(t *testing.T) {
+		materialGroupID := int64(18)
+		getCorporationProjectDetail = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, projectID string) (*esiapi.CorporationsProjectsDetail, error) {
+			return &esiapi.CorporationsProjectsDetail{
+				Configuration: esiapi.CorporationsProjectsDetailConfiguration{
+					MineMaterial: &esiapi.MineMaterial{MineMaterial: &esiapi.CorporationsProjectsDetailConfigurationminematerial{
+						Materials: []esiapi.CorporationsProjectsDetailConfigurationdeliveritemItemsInner{
+							{GroupId1: &esiapi.GroupId1{GroupId: &materialGroupID}},
+						},
+					}},
+				},
+				Creator:  esiapi.CorporationsProjectsDetailCreator{Id: 998877, Name: "Creator Pilot"},
+				Details:  esiapi.CorporationsProjectsDetailDetails{Career: "Industry"},
+				Id:       "abc-201",
+				Name:     "Test Mining Project",
+				Progress: esiapi.CorporationsProjectsDetailProgress{Current: 0, Desired: 1},
+				State:    "Active",
+			}, nil
+		}
+		resolveGroupNames = func(ctx context.Context, sdeStore groupNameCache, userAgent string, ids []int64) map[int64]string {
+			return map[int64]string{18: "Mineral"}
+		}
+		resolveFactionNames = func(ctx context.Context, sdeStore factionNameCache, userAgent string, ids []int64) map[int64]string {
+			return nil
+		}
+
+		handler := getCorporationProjectDetailHandler("v1", "client-id", store, nil)
+		_, out, err := handler(context.Background(), nil, GetCorporationProjectDetailInput{CharacterID: 7, CorporationID: 98000001, ProjectID: "abc-201"})
+		if err != nil {
+			t.Fatalf("handler returned error: %v", err)
+		}
+		if len(out.Configuration.Materials) != 1 || out.Configuration.Materials[0].GroupName != "Mineral" {
+			t.Errorf("Configuration.Materials = %+v, want one entry GroupName=%q", out.Configuration.Materials, "Mineral")
+		}
+	})
+
+	t.Run("factions", func(t *testing.T) {
+		fwFactionID := int64(500002)
+		getCorporationProjectDetail = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, projectID string) (*esiapi.CorporationsProjectsDetail, error) {
+			return &esiapi.CorporationsProjectsDetail{
+				Configuration: esiapi.CorporationsProjectsDetailConfiguration{
+					CaptureFwComplex: &esiapi.CaptureFwComplex{CaptureFwComplex: &esiapi.CorporationsProjectsDetailConfigurationcapturefwcomplex{
+						Factions: []esiapi.CorporationsProjectsDetailConfigurationmatcherfaction{
+							{FactionId: &fwFactionID},
+						},
+					}},
+				},
+				Creator:  esiapi.CorporationsProjectsDetailCreator{Id: 998877, Name: "Creator Pilot"},
+				Details:  esiapi.CorporationsProjectsDetailDetails{Career: "Faction Warfare"},
+				Id:       "abc-202",
+				Name:     "Test FW Project",
+				Progress: esiapi.CorporationsProjectsDetailProgress{Current: 0, Desired: 1},
+				State:    "Active",
+			}, nil
+		}
+		resolveGroupNames = func(ctx context.Context, sdeStore groupNameCache, userAgent string, ids []int64) map[int64]string {
+			return nil
+		}
+		resolveFactionNames = func(ctx context.Context, sdeStore factionNameCache, userAgent string, ids []int64) map[int64]string {
+			return map[int64]string{500002: "Minmatar Republic"}
+		}
+
+		handler := getCorporationProjectDetailHandler("v1", "client-id", store, nil)
+		_, out, err := handler(context.Background(), nil, GetCorporationProjectDetailInput{CharacterID: 7, CorporationID: 98000001, ProjectID: "abc-202"})
+		if err != nil {
+			t.Fatalf("handler returned error: %v", err)
+		}
+		if len(out.Configuration.Factions) != 1 || out.Configuration.Factions[0].FactionName != "Minmatar Republic" {
+			t.Errorf("Configuration.Factions = %+v, want one entry FactionName=%q", out.Configuration.Factions, "Minmatar Republic")
+		}
+	})
+}
+
 func TestListCorporationProjectsHandler_MapsFieldsAndCursor(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")

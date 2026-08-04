@@ -50,7 +50,7 @@ func TestGetAllianceHandler_ReturnsDetail(t *testing.T) {
 		}, nil
 	}
 
-	handler := getAllianceHandler("v1")
+	handler := getAllianceHandler("v1", nil)
 	_, out, err := handler(context.Background(), nil, GetAllianceInput{AllianceID: 99000001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -98,5 +98,46 @@ func TestGetAllianceIconsHandler_ReturnsIcons(t *testing.T) {
 	}
 	if out.Px64x64 != nil {
 		t.Errorf("out.Px64x64 = %v, want nil", out.Px64x64)
+	}
+}
+
+func TestGetAllianceHandler_ResolvesFactionName(t *testing.T) {
+	orig := getAllianceDetail
+	t.Cleanup(func() { getAllianceDetail = orig })
+	factionID := int64(500001)
+	getAllianceDetail = func(ctx context.Context, userAgent string, allianceID int64) (AllianceDetailResult, error) {
+		return AllianceDetailResult{Name: "Test Alliance", FactionID: &factionID}, nil
+	}
+
+	origFaction := resolveFactionNames
+	t.Cleanup(func() { resolveFactionNames = origFaction })
+	resolveFactionNames = func(ctx context.Context, sdeStore factionNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{500001: "Caldari State"}
+	}
+
+	handler := getAllianceHandler("v1", nil)
+	_, out, err := handler(context.Background(), nil, GetAllianceInput{AllianceID: 99000001})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.FactionName != "Caldari State" {
+		t.Errorf("FactionName = %q, want %q", out.FactionName, "Caldari State")
+	}
+}
+
+func TestGetAllianceHandler_FactionNameEmptyWhenFactionIDNil(t *testing.T) {
+	orig := getAllianceDetail
+	t.Cleanup(func() { getAllianceDetail = orig })
+	getAllianceDetail = func(ctx context.Context, userAgent string, allianceID int64) (AllianceDetailResult, error) {
+		return AllianceDetailResult{Name: "Test Alliance"}, nil
+	}
+
+	handler := getAllianceHandler("v1", nil)
+	_, out, err := handler(context.Background(), nil, GetAllianceInput{AllianceID: 99000001})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.FactionName != "" {
+		t.Errorf("FactionName = %q, want empty when FactionID is nil", out.FactionName)
 	}
 }

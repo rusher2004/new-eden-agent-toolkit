@@ -21,9 +21,12 @@ type GetCharacterOutput struct {
 	CorporationID    int64     `json:"corporationId"`
 	AllianceID       *int64    `json:"allianceId,omitempty"`
 	FactionID        *int64    `json:"factionId,omitempty"`
+	FactionName      string    `json:"factionName,omitempty"`
 	Birthday         time.Time `json:"birthday"`
 	BloodlineID      int64     `json:"bloodlineId"`
+	BloodlineName    string    `json:"bloodlineName,omitempty"`
 	RaceID           int64     `json:"raceId"`
+	RaceName         string    `json:"raceName,omitempty"`
 	Gender           string    `json:"gender"`
 	SecurityStatus   *float64  `json:"securityStatus,omitempty"`
 	Description      *string   `json:"description,omitempty"`
@@ -50,11 +53,19 @@ type GetCharacterInput struct {
 	CharacterID int64 `json:"characterId" jsonschema:"the character ID to look up"`
 }
 
-func getCharacterHandler(version string) mcpsdk.ToolHandlerFor[GetCharacterInput, GetCharacterOutput] {
+func getCharacterHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetCharacterInput, GetCharacterOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterInput) (*mcpsdk.CallToolResult, GetCharacterOutput, error) {
 		out, err := getCharacterDetail(ctx, sso.UserAgent(version), in.CharacterID)
 		if err != nil {
 			return nil, GetCharacterOutput{}, fmt.Errorf("get character: %w", err)
+		}
+		raceNames := resolveRaceNames(ctx, sdeStore, sso.UserAgent(version), []int64{out.RaceID})
+		out.RaceName = raceNames[out.RaceID]
+		bloodlineNames := resolveBloodlineNames(ctx, sdeStore, sso.UserAgent(version), []int64{out.BloodlineID})
+		out.BloodlineName = bloodlineNames[out.BloodlineID]
+		if out.FactionID != nil {
+			factionNames := resolveFactionNames(ctx, sdeStore, sso.UserAgent(version), []int64{*out.FactionID})
+			out.FactionName = factionNames[*out.FactionID]
 		}
 		return nil, out, nil
 	}
@@ -67,6 +78,7 @@ type CharacterAffiliation struct {
 	CorporationID int64  `json:"corporationId"`
 	AllianceID    *int64 `json:"allianceId,omitempty"`
 	FactionID     *int64 `json:"factionId,omitempty"`
+	FactionName   string `json:"factionName,omitempty"`
 }
 
 var getCharacterAffiliations = func(ctx context.Context, userAgent string, characterIDs []int64) ([]CharacterAffiliation, error) {
@@ -89,11 +101,23 @@ type GetCharacterAffiliationsOutput struct {
 	Affiliations []CharacterAffiliation `json:"affiliations"`
 }
 
-func getCharacterAffiliationsHandler(version string) mcpsdk.ToolHandlerFor[GetCharacterAffiliationsInput, GetCharacterAffiliationsOutput] {
+func getCharacterAffiliationsHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetCharacterAffiliationsInput, GetCharacterAffiliationsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterAffiliationsInput) (*mcpsdk.CallToolResult, GetCharacterAffiliationsOutput, error) {
 		affs, err := getCharacterAffiliations(ctx, sso.UserAgent(version), in.CharacterIDs)
 		if err != nil {
 			return nil, GetCharacterAffiliationsOutput{}, fmt.Errorf("get character affiliations: %w", err)
+		}
+		var factionIDs []int64
+		for _, a := range affs {
+			if a.FactionID != nil {
+				factionIDs = append(factionIDs, *a.FactionID)
+			}
+		}
+		factionNames := resolveFactionNames(ctx, sdeStore, sso.UserAgent(version), factionIDs)
+		for i := range affs {
+			if affs[i].FactionID != nil {
+				affs[i].FactionName = factionNames[*affs[i].FactionID]
+			}
 		}
 		return nil, GetCharacterAffiliationsOutput{Affiliations: affs}, nil
 	}

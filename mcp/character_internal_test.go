@@ -17,7 +17,7 @@ func TestGetCharacterHandler_ReturnsDetail(t *testing.T) {
 		return GetCharacterOutput{CharacterID: characterID, Name: "Test Character", CorporationID: 98000001}, nil
 	}
 
-	handler := getCharacterHandler("v1")
+	handler := getCharacterHandler("v1", nil)
 	_, out, err := handler(context.Background(), nil, GetCharacterInput{CharacterID: 998877})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -34,7 +34,7 @@ func TestGetCharacterAffiliationsHandler_ReturnsAffiliations(t *testing.T) {
 		return []CharacterAffiliation{{CharacterID: 998877, CorporationID: 98000001}}, nil
 	}
 
-	handler := getCharacterAffiliationsHandler("v1")
+	handler := getCharacterAffiliationsHandler("v1", nil)
 	_, out, err := handler(context.Background(), nil, GetCharacterAffiliationsInput{CharacterIDs: []int64{998877}})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -576,5 +576,86 @@ func TestListCharacterBlueprintsHandler_ResolvesTypeName(t *testing.T) {
 	}
 	if out.Blueprints[0].TypeName != "Rifter Blueprint" {
 		t.Errorf("TypeName = %q, want %q", out.Blueprints[0].TypeName, "Rifter Blueprint")
+	}
+}
+
+func TestGetCharacterHandler_ResolvesFactionRaceBloodlineNames(t *testing.T) {
+	orig := getCharacterDetail
+	t.Cleanup(func() { getCharacterDetail = orig })
+	factionID := int64(500001)
+	getCharacterDetail = func(ctx context.Context, userAgent string, characterID int64) (GetCharacterOutput, error) {
+		return GetCharacterOutput{CharacterID: characterID, FactionID: &factionID, BloodlineID: 1, RaceID: 1}, nil
+	}
+
+	origFaction := resolveFactionNames
+	t.Cleanup(func() { resolveFactionNames = origFaction })
+	resolveFactionNames = func(ctx context.Context, sdeStore factionNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{500001: "Caldari State"}
+	}
+	origRace := resolveRaceNames
+	t.Cleanup(func() { resolveRaceNames = origRace })
+	resolveRaceNames = func(ctx context.Context, sdeStore raceNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{1: "Caldari"}
+	}
+	origBloodline := resolveBloodlineNames
+	t.Cleanup(func() { resolveBloodlineNames = origBloodline })
+	resolveBloodlineNames = func(ctx context.Context, sdeStore bloodlineNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{1: "Deteis"}
+	}
+
+	handler := getCharacterHandler("v1", nil)
+	_, out, err := handler(context.Background(), nil, GetCharacterInput{CharacterID: 998877})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.FactionName != "Caldari State" {
+		t.Errorf("FactionName = %q, want %q", out.FactionName, "Caldari State")
+	}
+	if out.RaceName != "Caldari" {
+		t.Errorf("RaceName = %q, want %q", out.RaceName, "Caldari")
+	}
+	if out.BloodlineName != "Deteis" {
+		t.Errorf("BloodlineName = %q, want %q", out.BloodlineName, "Deteis")
+	}
+}
+
+func TestGetCharacterHandler_FactionNameEmptyWhenFactionIDNil(t *testing.T) {
+	orig := getCharacterDetail
+	t.Cleanup(func() { getCharacterDetail = orig })
+	getCharacterDetail = func(ctx context.Context, userAgent string, characterID int64) (GetCharacterOutput, error) {
+		return GetCharacterOutput{CharacterID: characterID, BloodlineID: 1, RaceID: 1}, nil
+	}
+
+	handler := getCharacterHandler("v1", nil)
+	_, out, err := handler(context.Background(), nil, GetCharacterInput{CharacterID: 998877})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.FactionName != "" {
+		t.Errorf("FactionName = %q, want empty when FactionID is nil", out.FactionName)
+	}
+}
+
+func TestGetCharacterAffiliationsHandler_ResolvesFactionName(t *testing.T) {
+	orig := getCharacterAffiliations
+	t.Cleanup(func() { getCharacterAffiliations = orig })
+	factionID := int64(500001)
+	getCharacterAffiliations = func(ctx context.Context, userAgent string, characterIDs []int64) ([]CharacterAffiliation, error) {
+		return []CharacterAffiliation{{CharacterID: 998877, CorporationID: 98000001, FactionID: &factionID}}, nil
+	}
+
+	origFaction := resolveFactionNames
+	t.Cleanup(func() { resolveFactionNames = origFaction })
+	resolveFactionNames = func(ctx context.Context, sdeStore factionNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{500001: "Caldari State"}
+	}
+
+	handler := getCharacterAffiliationsHandler("v1", nil)
+	_, out, err := handler(context.Background(), nil, GetCharacterAffiliationsInput{CharacterIDs: []int64{998877}})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Affiliations) != 1 || out.Affiliations[0].FactionName != "Caldari State" {
+		t.Errorf("Affiliations = %+v, want one entry FactionName=%q", out.Affiliations, "Caldari State")
 	}
 }

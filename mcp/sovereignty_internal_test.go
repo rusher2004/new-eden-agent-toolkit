@@ -250,3 +250,36 @@ func TestListSovereigntySystemsHandler_ResolvesSystemName(t *testing.T) {
 		t.Errorf("SolarSystemName = %q, want %q", out.Systems[0].SolarSystemName, "Jita")
 	}
 }
+
+func TestListSovereigntySystemsHandler_ResolvesClaimFactionName(t *testing.T) {
+	orig := listSovereigntySystems
+	t.Cleanup(func() { listSovereigntySystems = orig })
+	factionID := int64(500001)
+	listSovereigntySystems = func(ctx context.Context, userAgent string) ([]esiapi.SovereigntySystemsSolarsystem, error) {
+		return []esiapi.SovereigntySystemsSolarsystem{
+			{SolarSystemId: 30000142, Claim: esiapi.SovereigntySystemsSolarsystemClaim{
+				Faction: &esiapi.Faction{Faction: &esiapi.SovereigntySystemsFaction{FactionId: factionID}},
+			}},
+		}, nil
+	}
+
+	origFaction := resolveFactionNames
+	t.Cleanup(func() { resolveFactionNames = origFaction })
+	resolveFactionNames = func(ctx context.Context, sdeStore factionNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{500001: "Sansha's Nation"}
+	}
+	origSystem := resolveSystemNames
+	t.Cleanup(func() { resolveSystemNames = origSystem })
+	resolveSystemNames = func(ctx context.Context, sdeStore systemNameCache, userAgent string, ids []int64) map[int64]string {
+		return map[int64]string{30000142: "Jita"}
+	}
+
+	handler := listSovereigntySystemsHandler("v1", nil)
+	_, out, err := handler(context.Background(), nil, ListSovereigntySystemsInput{})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Systems) != 1 || out.Systems[0].Claim.FactionName != "Sansha's Nation" {
+		t.Errorf("Systems = %+v, want one entry Claim.FactionName=%q", out.Systems, "Sansha's Nation")
+	}
+}

@@ -124,6 +124,7 @@ type KillmailAttacker struct {
 	CorporationID  *int64  `json:"corporationId,omitempty"`
 	DamageDone     int64   `json:"damageDone"`
 	FactionID      *int64  `json:"factionId,omitempty"`
+	FactionName    string  `json:"factionName,omitempty"`
 	FinalBlow      bool    `json:"finalBlow"`
 	SecurityStatus float64 `json:"securityStatus"`
 	ShipTypeID     *int64  `json:"shipTypeId,omitempty"`
@@ -175,6 +176,7 @@ type KillmailVictim struct {
 	CorporationID *int64            `json:"corporationId,omitempty"`
 	DamageTaken   int64             `json:"damageTaken"`
 	FactionID     *int64            `json:"factionId,omitempty"`
+	FactionName   string            `json:"factionName,omitempty"`
 	ShipTypeID    int64             `json:"shipTypeId"`
 	ShipTypeName  string            `json:"shipTypeName,omitempty"`
 	Items         []KillmailItem    `json:"items,omitempty"`
@@ -291,6 +293,25 @@ func getKillmailHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerF
 		var moonName string
 		if detail.MoonId != nil {
 			moonName = moonNames[*detail.MoonId]
+		}
+
+		var factionIDs []int64
+		for _, a := range attackers {
+			if a.FactionID != nil {
+				factionIDs = append(factionIDs, *a.FactionID)
+			}
+		}
+		if victim.FactionID != nil {
+			factionIDs = append(factionIDs, *victim.FactionID)
+		}
+		factionNames := resolveFactionNames(ctx, sdeStore, sso.UserAgent(version), factionIDs)
+		for i := range attackers {
+			if attackers[i].FactionID != nil {
+				attackers[i].FactionName = factionNames[*attackers[i].FactionID]
+			}
+		}
+		if victim.FactionID != nil {
+			victim.FactionName = factionNames[*victim.FactionID]
 		}
 
 		return nil, GetKillmailOutput{

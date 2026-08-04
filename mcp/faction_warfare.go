@@ -42,12 +42,13 @@ type GetCharacterFwStatsOutput struct {
 	CurrentRank   *int64             `json:"currentRank,omitempty"`
 	HighestRank   *int64             `json:"highestRank,omitempty"`
 	FactionID     *int64             `json:"factionId,omitempty"`
+	FactionName   string             `json:"factionName,omitempty"`
 	EnlistedOn    *time.Time         `json:"enlistedOn,omitempty"`
 	Kills         KillsOrPointsStats `json:"kills"`
 	VictoryPoints KillsOrPointsStats `json:"victoryPoints"`
 }
 
-func getCharacterFwStatsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[GetCharacterFwStatsInput, GetCharacterFwStatsOutput] {
+func getCharacterFwStatsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetCharacterFwStatsInput, GetCharacterFwStatsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterFwStatsInput) (*mcpsdk.CallToolResult, GetCharacterFwStatsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -60,9 +61,14 @@ func getCharacterFwStatsHandler(version, clientID string, store *config.Store) m
 		if err != nil {
 			return nil, GetCharacterFwStatsOutput{}, fmt.Errorf("get character fw stats: %w", err)
 		}
+		var factionName string
+		if stats.FactionId != nil {
+			names := resolveFactionNames(ctx, sdeStore, sso.UserAgent(version), []int64{*stats.FactionId})
+			factionName = names[*stats.FactionId]
+		}
 		return nil, GetCharacterFwStatsOutput{
 			CharacterID: in.CharacterID, CurrentRank: stats.CurrentRank, HighestRank: stats.HighestRank,
-			FactionID: stats.FactionId, EnlistedOn: stats.EnlistedOn,
+			FactionID: stats.FactionId, FactionName: factionName, EnlistedOn: stats.EnlistedOn,
 			Kills:         KillsOrPointsStats{LastWeek: stats.Kills.LastWeek, Total: stats.Kills.Total, Yesterday: stats.Kills.Yesterday},
 			VictoryPoints: KillsOrPointsStats{LastWeek: stats.VictoryPoints.LastWeek, Total: stats.VictoryPoints.Total, Yesterday: stats.VictoryPoints.Yesterday},
 		}, nil
@@ -87,13 +93,14 @@ type GetCorporationFwStatsOutput struct {
 	CharacterID   int32              `json:"characterId"`
 	CorporationID int64              `json:"corporationId"`
 	FactionID     *int64             `json:"factionId,omitempty"`
+	FactionName   string             `json:"factionName,omitempty"`
 	Pilots        *int64             `json:"pilots,omitempty"`
 	EnlistedOn    *time.Time         `json:"enlistedOn,omitempty"`
 	Kills         KillsOrPointsStats `json:"kills"`
 	VictoryPoints KillsOrPointsStats `json:"victoryPoints"`
 }
 
-func getCorporationFwStatsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[GetCorporationFwStatsInput, GetCorporationFwStatsOutput] {
+func getCorporationFwStatsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetCorporationFwStatsInput, GetCorporationFwStatsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCorporationFwStatsInput) (*mcpsdk.CallToolResult, GetCorporationFwStatsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -106,8 +113,13 @@ func getCorporationFwStatsHandler(version, clientID string, store *config.Store)
 		if err != nil {
 			return nil, GetCorporationFwStatsOutput{}, fmt.Errorf("get corporation fw stats: %w", err)
 		}
+		var factionName string
+		if stats.FactionId != nil {
+			names := resolveFactionNames(ctx, sdeStore, sso.UserAgent(version), []int64{*stats.FactionId})
+			factionName = names[*stats.FactionId]
+		}
 		return nil, GetCorporationFwStatsOutput{
-			CharacterID: in.CharacterID, CorporationID: in.CorporationID, FactionID: stats.FactionId,
+			CharacterID: in.CharacterID, CorporationID: in.CorporationID, FactionID: stats.FactionId, FactionName: factionName,
 			Pilots: stats.Pilots, EnlistedOn: stats.EnlistedOn,
 			Kills:         KillsOrPointsStats{LastWeek: stats.Kills.LastWeek, Total: stats.Kills.Total, Yesterday: stats.Kills.Yesterday},
 			VictoryPoints: KillsOrPointsStats{LastWeek: stats.VictoryPoints.LastWeek, Total: stats.VictoryPoints.Total, Yesterday: stats.VictoryPoints.Yesterday},
@@ -118,8 +130,9 @@ func getCorporationFwStatsHandler(version, clientID string, store *config.Store)
 // --- get_fw_leaderboards (public, no input) ---
 
 type LeaderboardFactionEntry struct {
-	FactionID *int64 `json:"factionId,omitempty"`
-	Amount    *int64 `json:"amount,omitempty"`
+	FactionID   *int64 `json:"factionId,omitempty"`
+	FactionName string `json:"factionName,omitempty"`
+	Amount      *int64 `json:"amount,omitempty"`
 }
 type FactionLeaderboardMetric struct {
 	ActiveTotal []LeaderboardFactionEntry `json:"activeTotal"`
@@ -138,7 +151,7 @@ type GetFwLeaderboardsOutput struct {
 	VictoryPoints FactionLeaderboardMetric `json:"victoryPoints"`
 }
 
-func getFwLeaderboardsHandler(version string) mcpsdk.ToolHandlerFor[GetFwLeaderboardsInput, GetFwLeaderboardsOutput] {
+func getFwLeaderboardsHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetFwLeaderboardsInput, GetFwLeaderboardsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetFwLeaderboardsInput) (*mcpsdk.CallToolResult, GetFwLeaderboardsOutput, error) {
 		lb, err := getFwLeaderboards(ctx, sso.UserAgent(version))
 		if err != nil {
@@ -167,6 +180,22 @@ func getFwLeaderboardsHandler(version string) mcpsdk.ToolHandlerFor[GetFwLeaderb
 		vpYesterday := make([]LeaderboardFactionEntry, len(lb.VictoryPoints.Yesterday))
 		for i, v := range lb.VictoryPoints.Yesterday {
 			vpYesterday[i] = LeaderboardFactionEntry{FactionID: v.FactionId, Amount: v.Amount}
+		}
+		var factionIDs []int64
+		for _, group := range [][]LeaderboardFactionEntry{killsActiveTotal, killsLastWeek, killsYesterday, vpActiveTotal, vpLastWeek, vpYesterday} {
+			for _, e := range group {
+				if e.FactionID != nil {
+					factionIDs = append(factionIDs, *e.FactionID)
+				}
+			}
+		}
+		factionNames := resolveFactionNames(ctx, sdeStore, sso.UserAgent(version), factionIDs)
+		for _, group := range [][]LeaderboardFactionEntry{killsActiveTotal, killsLastWeek, killsYesterday, vpActiveTotal, vpLastWeek, vpYesterday} {
+			for i := range group {
+				if group[i].FactionID != nil {
+					group[i].FactionName = factionNames[*group[i].FactionID]
+				}
+			}
 		}
 		return nil, GetFwLeaderboardsOutput{
 			Kills:         FactionLeaderboardMetric{ActiveTotal: killsActiveTotal, LastWeek: killsLastWeek, Yesterday: killsYesterday},
@@ -299,6 +328,7 @@ func getFwCorporationLeaderboardsHandler(version string) mcpsdk.ToolHandlerFor[G
 
 type FwFactionStats struct {
 	FactionID         int64              `json:"factionId"`
+	FactionName       string             `json:"factionName,omitempty"`
 	Pilots            int64              `json:"pilots"`
 	SystemsControlled int64              `json:"systemsControlled"`
 	Kills             KillsOrPointsStats `json:"kills"`
@@ -315,7 +345,7 @@ type ListFwStatsOutput struct {
 	Stats []FwFactionStats `json:"stats"`
 }
 
-func listFwStatsHandler(version string) mcpsdk.ToolHandlerFor[ListFwStatsInput, ListFwStatsOutput] {
+func listFwStatsHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListFwStatsInput, ListFwStatsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListFwStatsInput) (*mcpsdk.CallToolResult, ListFwStatsOutput, error) {
 		stats, err := listFwStats(ctx, sso.UserAgent(version))
 		if err != nil {
@@ -329,6 +359,14 @@ func listFwStatsHandler(version string) mcpsdk.ToolHandlerFor[ListFwStatsInput, 
 				VictoryPoints: KillsOrPointsStats{LastWeek: s.VictoryPoints.LastWeek, Total: s.VictoryPoints.Total, Yesterday: s.VictoryPoints.Yesterday},
 			}
 		}
+		factionIDs := make([]int64, len(out))
+		for i, s := range out {
+			factionIDs[i] = s.FactionID
+		}
+		factionNames := resolveFactionNames(ctx, sdeStore, sso.UserAgent(version), factionIDs)
+		for i := range out {
+			out[i].FactionName = factionNames[out[i].FactionID]
+		}
 		return nil, ListFwStatsOutput{Stats: out}, nil
 	}
 }
@@ -338,7 +376,9 @@ func listFwStatsHandler(version string) mcpsdk.ToolHandlerFor[ListFwStatsInput, 
 type FwSystem struct {
 	Contested              string `json:"contested"`
 	OccupierFactionID      int64  `json:"occupierFactionId"`
+	OccupierFactionName    string `json:"occupierFactionName,omitempty"`
 	OwnerFactionID         int64  `json:"ownerFactionId"`
+	OwnerFactionName       string `json:"ownerFactionName,omitempty"`
 	SolarSystemID          int64  `json:"solarSystemId"`
 	SolarSystemName        string `json:"solarSystemName,omitempty"`
 	VictoryPoints          int64  `json:"victoryPoints"`
@@ -376,6 +416,15 @@ func listFwSystemsHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandle
 		for i := range out {
 			out[i].SolarSystemName = systemNames[out[i].SolarSystemID]
 		}
+		var factionIDs []int64
+		for _, s := range out {
+			factionIDs = append(factionIDs, s.OccupierFactionID, s.OwnerFactionID)
+		}
+		factionNames := resolveFactionNames(ctx, sdeStore, sso.UserAgent(version), factionIDs)
+		for i := range out {
+			out[i].OccupierFactionName = factionNames[out[i].OccupierFactionID]
+			out[i].OwnerFactionName = factionNames[out[i].OwnerFactionID]
+		}
 		return nil, ListFwSystemsOutput{Systems: out}, nil
 	}
 }
@@ -383,8 +432,10 @@ func listFwSystemsHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandle
 // --- list_fw_wars (public, no input) ---
 
 type FwWar struct {
-	AgainstID int64 `json:"againstId"`
-	FactionID int64 `json:"factionId"`
+	AgainstID          int64  `json:"againstId"`
+	AgainstFactionName string `json:"againstFactionName,omitempty"`
+	FactionID          int64  `json:"factionId"`
+	FactionName        string `json:"factionName,omitempty"`
 }
 
 var listFwWars = func(ctx context.Context, userAgent string) ([]esiapi.FwWarsGetInner, error) {
@@ -397,7 +448,7 @@ type ListFwWarsOutput struct {
 	Wars []FwWar `json:"wars"`
 }
 
-func listFwWarsHandler(version string) mcpsdk.ToolHandlerFor[ListFwWarsInput, ListFwWarsOutput] {
+func listFwWarsHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListFwWarsInput, ListFwWarsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListFwWarsInput) (*mcpsdk.CallToolResult, ListFwWarsOutput, error) {
 		wars, err := listFwWars(ctx, sso.UserAgent(version))
 		if err != nil {
@@ -406,6 +457,15 @@ func listFwWarsHandler(version string) mcpsdk.ToolHandlerFor[ListFwWarsInput, Li
 		out := make([]FwWar, len(wars))
 		for i, w := range wars {
 			out[i] = FwWar{AgainstID: w.AgainstId, FactionID: w.FactionId}
+		}
+		var factionIDs []int64
+		for _, w := range out {
+			factionIDs = append(factionIDs, w.AgainstID, w.FactionID)
+		}
+		factionNames := resolveFactionNames(ctx, sdeStore, sso.UserAgent(version), factionIDs)
+		for i := range out {
+			out[i].AgainstFactionName = factionNames[out[i].AgainstID]
+			out[i].FactionName = factionNames[out[i].FactionID]
 		}
 		return nil, ListFwWarsOutput{Wars: out}, nil
 	}

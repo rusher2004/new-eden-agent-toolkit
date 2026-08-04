@@ -119,6 +119,7 @@ type SovereigntyClaim struct {
 	Development     *SovereigntyDevelopment `json:"development,omitempty"`
 	SovereigntyHub  *SovereigntyHub         `json:"sovereigntyHub,omitempty"`
 	FactionID       *int64                  `json:"factionId,omitempty"`
+	FactionName     string                  `json:"factionName,omitempty"`
 }
 
 func toSovereigntyClaim(claim esiapi.SovereigntySystemsSolarsystemClaim) SovereigntyClaim {
@@ -188,6 +189,19 @@ func listSovereigntySystemsHandler(version string, sdeStore *sde.Store) mcpsdk.T
 		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), systemIDs)
 		for i := range out {
 			out[i].SolarSystemName = systemNames[out[i].SolarSystemID]
+		}
+
+		var factionIDs []int64
+		for _, s := range out {
+			if s.Claim.FactionID != nil {
+				factionIDs = append(factionIDs, *s.Claim.FactionID)
+			}
+		}
+		factionNames := resolveFactionNames(ctx, sdeStore, sso.UserAgent(version), factionIDs)
+		for i := range out {
+			if out[i].Claim.FactionID != nil {
+				out[i].Claim.FactionName = factionNames[*out[i].Claim.FactionID]
+			}
 		}
 
 		return nil, ListSovereigntySystemsOutput{Systems: out}, nil

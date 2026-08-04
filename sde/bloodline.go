@@ -66,3 +66,40 @@ func (s *Store) Bloodlines(ctx context.Context, userAgent string) ([]Bloodline, 
 	})
 	return out, err
 }
+
+// Bloodline looks up a bloodline by ID. ok is false if the ID isn't in the cache.
+func (s *Store) Bloodline(ctx context.Context, userAgent string, id int64) (Bloodline, bool, error) {
+	if s == nil {
+		return Bloodline{}, false, nil
+	}
+	_ = s.ensureSynced(ctx, userAgent)
+
+	var (
+		out Bloodline
+		ok  bool
+	)
+	err := s.db.View(func(tx *bbolt.Tx) error {
+		b := tx.Bucket([]byte("bloodlines"))
+		if b == nil {
+			return nil
+		}
+		v := b.Get(int64Key(id))
+		if v == nil {
+			return nil
+		}
+		var raw bloodlineRecord
+		if err := json.Unmarshal(v, &raw); err != nil {
+			return fmt.Errorf("parse cached bloodline %d: %w", id, err)
+		}
+		if raw.Key != id {
+			return fmt.Errorf("cached bloodline %d has mismatched key %d", id, raw.Key)
+		}
+		out, ok = Bloodline{
+			ID: raw.Key, Charisma: raw.Charisma, CorporationID: raw.CorporationID, Description: raw.Description,
+			Intelligence: raw.Intelligence, Memory: raw.Memory, Name: raw.Name, Perception: raw.Perception,
+			RaceID: raw.RaceID, ShipTypeID: raw.ShipTypeID, Willpower: raw.Willpower,
+		}, true
+		return nil
+	})
+	return out, ok, err
+}

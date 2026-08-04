@@ -17,6 +17,7 @@ type Incursion struct {
 	ConstellationID          int64    `json:"constellationId"`
 	ConstellationName        string   `json:"constellationName,omitempty"`
 	FactionID                int64    `json:"factionId"`
+	FactionName              string   `json:"factionName,omitempty"`
 	HasBoss                  bool     `json:"hasBoss"`
 	InfestedSolarSystemIDs   []int64  `json:"infestedSolarSystemIds"`
 	InfestedSolarSystemNames []string `json:"infestedSolarSystemNames,omitempty"`
@@ -56,16 +57,19 @@ func listIncursionsHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandl
 			return nil, ListIncursionsOutput{}, fmt.Errorf("list incursions: %w", err)
 		}
 
-		var constellationIDs, systemIDs []int64
+		var constellationIDs, systemIDs, factionIDs []int64
 		for _, inc := range incursions {
 			constellationIDs = append(constellationIDs, inc.ConstellationID)
+			factionIDs = append(factionIDs, inc.FactionID)
 			systemIDs = append(systemIDs, inc.StagingSolarSystemID)
 			systemIDs = append(systemIDs, inc.InfestedSolarSystemIDs...)
 		}
 		constellationNames := resolveConstellationNames(ctx, sdeStore, sso.UserAgent(version), constellationIDs)
+		factionNames := resolveFactionNames(ctx, sdeStore, sso.UserAgent(version), factionIDs)
 		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), systemIDs)
 		for i := range incursions {
 			incursions[i].ConstellationName = constellationNames[incursions[i].ConstellationID]
+			incursions[i].FactionName = factionNames[incursions[i].FactionID]
 			incursions[i].StagingSolarSystemName = systemNames[incursions[i].StagingSolarSystemID]
 			infestedNames := make([]string, len(incursions[i].InfestedSolarSystemIDs))
 			var resolved bool
