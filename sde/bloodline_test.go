@@ -5,95 +5,72 @@ import (
 	"testing"
 )
 
-func TestBloodlines_ReturnsAll(t *testing.T) {
+func TestBloodlines_ReturnsEveryCachedBloodline(t *testing.T) {
 	store := seedStore(t)
-	putRecord(t, store, "bloodlines", 1,
-		`{"_key": 1, "charisma": 6, "corporationID": 1000006, "description": {"en": "The Deteis are..."}, "iconID": 1633, "intelligence": 7, "memory": 7, "name": {"en": "Deteis"}, "perception": 5, "raceID": 1, "shipTypeID": 601, "willpower": 5}`)
+	seedExec(t, store, `INSERT INTO chrBloodlines (bloodlineID, bloodlineName, raceID, description, shipTypeID, corporationID, perception, willpower, charisma, memory, intelligence)
+		VALUES (1, 'Deteis', 1, 'The Deteis.', 601, 1000035, 5, 6, 7, 8, 9)`)
 
-	got, err := store.Bloodlines(context.Background(), "test-agent")
+	got, err := store.Bloodlines(context.Background(), testUserAgent)
 	if err != nil {
 		t.Fatalf("Bloodlines returned error: %v", err)
 	}
 	if len(got) != 1 {
-		t.Fatalf("Bloodlines = %+v, want one entry", got)
+		t.Fatalf("len(Bloodlines) = %d, want 1", len(got))
 	}
 	b := got[0]
-	if b.ID != 1 || b.Charisma != 6 || b.CorporationID != 1000006 {
-		t.Errorf("got = %+v, want ID=1 Charisma=6 CorporationID=1000006", b)
-	}
-	if b.Name["en"] != "Deteis" {
-		t.Errorf("Name[en] = %q, want Deteis", b.Name["en"])
-	}
-	if b.Intelligence != 7 || b.Memory != 7 || b.Perception != 5 || b.Willpower != 5 || b.RaceID != 1 {
-		t.Errorf("got = %+v, want Intelligence=7 Memory=7 Perception=5 Willpower=5 RaceID=1", b)
+	if b.ID != 1 || b.Name != "Deteis" || b.RaceID != 1 || b.CorporationID != 1000035 {
+		t.Errorf("got = %+v, want ID=1 Name=Deteis RaceID=1 CorporationID=1000035", b)
 	}
 	if b.ShipTypeID == nil || *b.ShipTypeID != 601 {
 		t.Errorf("ShipTypeID = %v, want 601", b.ShipTypeID)
 	}
-}
-
-func TestBloodlines_EmptyBucket_ReturnsEmptySlice(t *testing.T) {
-	store := seedStore(t)
-
-	got, err := store.Bloodlines(context.Background(), "test-agent")
-	if err != nil {
-		t.Fatalf("Bloodlines returned error: %v", err)
-	}
-	if len(got) != 0 {
-		t.Errorf("Bloodlines = %+v, want empty", got)
+	if b.Perception != 5 || b.Willpower != 6 || b.Charisma != 7 || b.Memory != 8 || b.Intelligence != 9 {
+		t.Errorf("attribute fields = %+v, want Perception=5 Willpower=6 Charisma=7 Memory=8 Intelligence=9", b)
 	}
 }
 
-func TestBloodline_KnownID_ReturnsAllLocales(t *testing.T) {
+func TestBloodline_KnownID_ReturnsRow(t *testing.T) {
 	store := seedStore(t)
-	putRecord(t, store, "bloodlines", 1, `{"_key": 1, "charisma": 6, "corporationID": 1000006, "description": {"en": "..."}, "intelligence": 7, "memory": 7, "name": {"en": "Deteis"}, "perception": 5, "raceID": 1, "shipTypeID": 601, "willpower": 5}`)
+	seedExec(t, store, `INSERT INTO chrBloodlines (bloodlineID, bloodlineName, raceID) VALUES (1, 'Deteis', 1)`)
 
-	got, ok, err := store.Bloodline(context.Background(), "test-agent", 1)
+	got, ok, err := store.Bloodline(context.Background(), testUserAgent, 1)
 	if err != nil {
 		t.Fatalf("Bloodline returned error: %v", err)
 	}
 	if !ok {
 		t.Fatal("Bloodline ok = false, want true")
 	}
-	if got.ID != 1 {
-		t.Errorf("got.ID = %d, want 1", got.ID)
+	if got.Name != "Deteis" {
+		t.Errorf("Name = %q, want Deteis", got.Name)
 	}
-	if got.Name["en"] != "Deteis" {
-		t.Errorf("Name[en] = %q, want Deteis", got.Name["en"])
+}
+
+func TestBloodline_NullRaceIDAndName_DegradeToZeroValueInsteadOfErroring(t *testing.T) {
+	// raceID and bloodlineName are both nullable in the fuzzwork schema.
+	// See PR #14 review finding #2 -- corporationID/the five attribute
+	// columns were already guarded, raceID/name weren't.
+	store := seedStore(t)
+	seedExec(t, store, `INSERT INTO chrBloodlines (bloodlineID, bloodlineName, raceID) VALUES (1, NULL, NULL)`)
+
+	got, ok, err := store.Bloodline(context.Background(), testUserAgent, 1)
+	if err != nil {
+		t.Fatalf("Bloodline returned error: %v, want nil (NULL raceID/name should degrade gracefully)", err)
 	}
-	if got.RaceID != 1 {
-		t.Errorf("RaceID = %d, want 1", got.RaceID)
+	if !ok {
+		t.Fatal("Bloodline ok = false, want true")
+	}
+	if got.Name != "" || got.RaceID != 0 {
+		t.Errorf("Name/RaceID = %q/%d, want empty string/0", got.Name, got.RaceID)
 	}
 }
 
 func TestBloodline_UnknownID_ReturnsNotOK(t *testing.T) {
 	store := seedStore(t)
-
-	_, ok, err := store.Bloodline(context.Background(), "test-agent", 999)
+	_, ok, err := store.Bloodline(context.Background(), testUserAgent, 999)
 	if err != nil {
 		t.Fatalf("Bloodline returned error: %v", err)
 	}
 	if ok {
 		t.Error("Bloodline ok = true, want false for an unknown ID")
-	}
-}
-
-func TestBloodline_MalformedCachedRecord_ReturnsError(t *testing.T) {
-	store := seedStore(t)
-	putRecord(t, store, "bloodlines", 1, `not valid json`)
-
-	_, _, err := store.Bloodline(context.Background(), "test-agent", 1)
-	if err == nil {
-		t.Fatal("Bloodline returned nil error, want a parse error for a corrupted cache entry")
-	}
-}
-
-func TestBloodline_MismatchedKey_ReturnsError(t *testing.T) {
-	store := seedStore(t)
-	putRecord(t, store, "bloodlines", 1, `{"_key": 999, "charisma": 6, "corporationID": 1000006, "description": {"en": "..."}, "intelligence": 7, "memory": 7, "name": {"en": "Deteis"}, "perception": 5, "raceID": 1, "shipTypeID": 601, "willpower": 5}`)
-
-	_, _, err := store.Bloodline(context.Background(), "test-agent", 1)
-	if err == nil {
-		t.Fatal("Bloodline returned nil error, want an error for a mismatched _key")
 	}
 }

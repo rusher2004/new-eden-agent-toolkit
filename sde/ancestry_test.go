@@ -5,42 +5,37 @@ import (
 	"testing"
 )
 
-func TestAncestries_ReturnsAll(t *testing.T) {
+func TestAncestries_ReturnsEveryCachedAncestry(t *testing.T) {
 	store := seedStore(t)
-	shortDesc := "Progressive members of the upper class."
-	putRecord(t, store, "ancestries", 1,
-		`{"_key": 1, "bloodlineID": 5, "description": {"en": "Holders are..."}, "iconID": 1641, "name": {"en": "Liberal Holders"}, "shortDescription": "Progressive members of the upper class."}`)
+	seedExec(t, store, `INSERT INTO chrAncestries (ancestryID, ancestryName, bloodlineID, description, iconID, shortDescription)
+		VALUES (1, 'Immigrant', 1, 'An immigrant.', 100, 'Short.')`)
 
-	got, err := store.Ancestries(context.Background(), "test-agent")
+	got, err := store.Ancestries(context.Background(), testUserAgent)
 	if err != nil {
 		t.Fatalf("Ancestries returned error: %v", err)
 	}
 	if len(got) != 1 {
-		t.Fatalf("Ancestries = %+v, want one entry", got)
+		t.Fatalf("len(Ancestries) = %d, want 1", len(got))
 	}
 	a := got[0]
-	if a.ID != 1 || a.BloodlineID != 5 {
-		t.Errorf("got = %+v, want ID=1 BloodlineID=5", a)
+	if a.ID != 1 || a.Name != "Immigrant" || a.BloodlineID != 1 || a.Description != "An immigrant." {
+		t.Errorf("got = %+v, want ID=1 Name=Immigrant BloodlineID=1 Description=%q", a, "An immigrant.")
 	}
-	if a.Name["en"] != "Liberal Holders" {
-		t.Errorf("Name[en] = %q, want \"Liberal Holders\"", a.Name["en"])
+	if a.IconID == nil || *a.IconID != 100 {
+		t.Errorf("IconID = %v, want 100", a.IconID)
 	}
-	if a.IconID == nil || *a.IconID != 1641 {
-		t.Errorf("IconID = %v, want 1641", a.IconID)
-	}
-	if a.ShortDescription == nil || *a.ShortDescription != shortDesc {
-		t.Errorf("ShortDescription = %v, want %q", a.ShortDescription, shortDesc)
+	if a.ShortDescription == nil || *a.ShortDescription != "Short." {
+		t.Errorf("ShortDescription = %v, want Short.", a.ShortDescription)
 	}
 }
 
-func TestAncestries_EmptyBucket_ReturnsEmptySlice(t *testing.T) {
-	store := seedStore(t)
-
-	got, err := store.Ancestries(context.Background(), "test-agent")
+func TestAncestries_NeverSynced_ReturnsEmptySlice(t *testing.T) {
+	store := &Store{}
+	got, err := store.Ancestries(context.Background(), testUserAgent)
 	if err != nil {
 		t.Fatalf("Ancestries returned error: %v", err)
 	}
 	if len(got) != 0 {
-		t.Errorf("Ancestries = %+v, want empty", got)
+		t.Errorf("Ancestries = %v, want empty", got)
 	}
 }

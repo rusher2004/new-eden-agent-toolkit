@@ -2,29 +2,18 @@ package sde
 
 import (
 	"context"
-	"encoding/json"
+	"database/sql"
 	"fmt"
-
-	"go.etcd.io/bbolt"
 )
 
-// Ancestry is a minimal decode of an SDE ancestry record.
+// Ancestry is a minimal decode of a fuzzwork chrAncestries row.
 type Ancestry struct {
 	ID               int64
 	BloodlineID      int64
-	Description      map[string]string
-	Name             map[string]string
+	Description      string
+	Name             string
 	IconID           *int64
 	ShortDescription *string
-}
-
-type ancestryRecord struct {
-	Key              int64             `json:"_key"`
-	BloodlineID      int64             `json:"bloodlineID"`
-	Description      map[string]string `json:"description"`
-	Name             map[string]string `json:"name"`
-	IconID           *int64            `json:"iconID,omitempty"`
-	ShortDescription *string           `json:"shortDescription,omitempty"`
 }
 
 // Ancestries returns every cached ancestry. Returns an empty slice, not an
@@ -34,24 +23,34 @@ func (s *Store) Ancestries(ctx context.Context, userAgent string) ([]Ancestry, e
 		return nil, nil
 	}
 	_ = s.ensureSynced(ctx, userAgent)
+	if s.db == nil {
+		return nil, nil
+	}
+
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT ancestryID, ancestryName, bloodlineID, description, iconID, shortDescription FROM chrAncestries ORDER BY ancestryID`)
+	if err != nil {
+		return nil, fmt.Errorf("query ancestries: %w", err)
+	}
+	defer rows.Close()
 
 	var out []Ancestry
-	err := s.db.View(func(tx *bbolt.Tx) error {
-		b := tx.Bucket([]byte("ancestries"))
-		if b == nil {
-			return nil
+	for rows.Next() {
+		var (
+			id, bloodlineID  int64
+			name             sql.NullString
+			description      sql.NullString
+			iconID           sql.NullInt64
+			shortDescription sql.NullString
+		)
+		if err := rows.Scan(&id, &name, &bloodlineID, &description, &iconID, &shortDescription); err != nil {
+			return nil, fmt.Errorf("scan ancestry: %w", err)
 		}
-		return b.ForEach(func(_, v []byte) error {
-			var raw ancestryRecord
-			if err := json.Unmarshal(v, &raw); err != nil {
-				return fmt.Errorf("parse cached ancestry: %w", err)
-			}
-			out = append(out, Ancestry{
-				ID: raw.Key, BloodlineID: raw.BloodlineID, Description: raw.Description,
-				Name: raw.Name, IconID: raw.IconID, ShortDescription: raw.ShortDescription,
-			})
-			return nil
-		})
-	})
-	return out, err
+		a := Ancestry{ID: id, Name: name.String, BloodlineID: bloodlineID, Description: description.String, IconID: nullInt(iconID)}
+		if shortDescription.Valid {
+			a.ShortDescription = &shortDescription.String
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
 }

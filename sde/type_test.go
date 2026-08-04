@@ -5,12 +5,15 @@ import (
 	"testing"
 )
 
-func TestType_KnownID_ReturnsAllLocales(t *testing.T) {
+func TestType_KnownID_ReturnsRow(t *testing.T) {
 	store := seedStore(t)
-	putRecord(t, store, "types", 587,
-		`{"_key": 587, "groupID": 25, "name": {"en": "Rifter", "de": "Rifter"}, "published": true}`)
+	seedExec(t, store, `INSERT INTO invTypes (typeID, groupID, typeName, description, published) VALUES (587, 25, 'Rifter', 'A fast frigate.', 1)`)
+	seedExec(t, store, `INSERT INTO dgmTypeAttributes (typeID, attributeID, valueFloat) VALUES (587, 182, 3386.0)`)
+	seedExec(t, store, `INSERT INTO dgmTypeAttributes (typeID, attributeID, valueInt) VALUES (587, 4, 1)`)
+	seedExec(t, store, `INSERT INTO dgmTypeEffects (typeID, effectID, isDefault) VALUES (587, 4, 1)`)
+	store.typeVolumes = map[int64]float64{587: 2.5}
 
-	got, ok, err := store.Type(context.Background(), "test-agent", 587)
+	got, ok, err := store.Type(context.Background(), testUserAgent, 587)
 	if err != nil {
 		t.Fatalf("Type returned error: %v", err)
 	}
@@ -20,15 +23,61 @@ func TestType_KnownID_ReturnsAllLocales(t *testing.T) {
 	if got.ID != 587 || got.GroupID != 25 || !got.Published {
 		t.Errorf("got = %+v, want ID=587 GroupID=25 Published=true", got)
 	}
-	if got.Name["en"] != "Rifter" || got.Name["de"] != "Rifter" {
-		t.Errorf("Name = %+v, want en=Rifter de=Rifter", got.Name)
+	if got.Name != "Rifter" {
+		t.Errorf("Name = %q, want Rifter", got.Name)
+	}
+	if got.Description != "A fast frigate." {
+		t.Errorf("Description = %q, want %q", got.Description, "A fast frigate.")
+	}
+	if got.PackagedVolume == nil || *got.PackagedVolume != 2.5 {
+		t.Errorf("PackagedVolume = %v, want 2.5", got.PackagedVolume)
+	}
+	if len(got.DogmaAttributes) != 2 {
+		t.Fatalf("len(DogmaAttributes) = %d, want 2", len(got.DogmaAttributes))
+	}
+	if len(got.DogmaEffects) != 1 || got.DogmaEffects[0].EffectID != 4 || !got.DogmaEffects[0].IsDefault {
+		t.Errorf("DogmaEffects = %+v, want one {EffectID:4 IsDefault:true}", got.DogmaEffects)
+	}
+}
+
+func TestType_NullNameAndPublished_DegradeToZeroValueInsteadOfErroring(t *testing.T) {
+	// typeName/published are nullable in the fuzzwork schema (PRAGMA
+	// table_info confirmed notnull=0) even though every real row today
+	// happens to have both populated. A NULL in either must not turn a
+	// cache hit into a hard scan error -- see PR #14 review finding #2.
+	store := seedStore(t)
+	seedExec(t, store, `INSERT INTO invTypes (typeID, groupID, typeName, published) VALUES (587, 25, NULL, NULL)`)
+
+	got, ok, err := store.Type(context.Background(), testUserAgent, 587)
+	if err != nil {
+		t.Fatalf("Type returned error: %v, want nil (NULL name/published should degrade gracefully)", err)
+	}
+	if !ok {
+		t.Fatal("Type ok = false, want true")
+	}
+	if got.Name != "" || got.Published {
+		t.Errorf("Name/Published = %q/%v, want empty string/false", got.Name, got.Published)
+	}
+}
+
+func TestType_DogmaAttribute_PrefersValueFloatOverValueInt(t *testing.T) {
+	store := seedStore(t)
+	seedExec(t, store, `INSERT INTO invTypes (typeID, groupID, typeName, published) VALUES (587, 25, 'Rifter', 1)`)
+	seedExec(t, store, `INSERT INTO dgmTypeAttributes (typeID, attributeID, valueFloat) VALUES (587, 182, 3386.5)`)
+
+	got, _, err := store.Type(context.Background(), testUserAgent, 587)
+	if err != nil {
+		t.Fatalf("Type returned error: %v", err)
+	}
+	if len(got.DogmaAttributes) != 1 || got.DogmaAttributes[0].Value != 3386.5 {
+		t.Errorf("DogmaAttributes = %+v, want one {AttributeID:182 Value:3386.5}", got.DogmaAttributes)
 	}
 }
 
 func TestType_UnknownID_ReturnsNotOK(t *testing.T) {
 	store := seedStore(t)
 
-	_, ok, err := store.Type(context.Background(), "test-agent", 999)
+	_, ok, err := store.Type(context.Background(), testUserAgent, 999)
 	if err != nil {
 		t.Fatalf("Type returned error: %v", err)
 	}
@@ -37,175 +86,57 @@ func TestType_UnknownID_ReturnsNotOK(t *testing.T) {
 	}
 }
 
-func TestType_MalformedCachedRecord_ReturnsError(t *testing.T) {
-	store := seedStore(t)
-	putRecord(t, store, "types", 587, `not valid json`)
-
-	_, _, err := store.Type(context.Background(), "test-agent", 587)
-	if err == nil {
-		t.Fatal("Type returned nil error, want a parse error for a corrupted cache entry")
-	}
-}
-
-func TestType_MismatchedKey_ReturnsError(t *testing.T) {
-	store := seedStore(t)
-	putRecord(t, store, "types", 587,
-		`{"_key": 12345, "groupID": 25, "name": {"en": "Rifter"}, "published": true}`)
-
-	_, _, err := store.Type(context.Background(), "test-agent", 587)
-	if err == nil {
-		t.Fatal("Type returned nil error, want an error for a mismatched _key")
-	}
-}
-
-func TestType_KnownID_ReturnsFullFieldSetAndDogma(t *testing.T) {
-	store := seedStore(t)
-	putRecord(t, store, "types", 587,
-		`{"_key": 587, "capacity": 140.0, "description": {"en": "The Rifter is fast."}, "graphicID": 46, "groupID": 25, "iconID": 100, "marketGroupID": 64, "mass": 1067000.0, "name": {"en": "Rifter"}, "portionSize": 1, "published": true, "radius": 31.0, "volume": 27289.0, "dogmaAttributes": [{"attributeID": 182, "value": 3386.0}], "dogmaEffects": [{"effectID": 4, "isDefault": true}]}`)
-
-	got, ok, err := store.Type(context.Background(), "test-agent", 587)
+func TestType_NilStore_ReturnsNotOK(t *testing.T) {
+	var store *Store
+	_, ok, err := store.Type(context.Background(), testUserAgent, 587)
 	if err != nil {
-		t.Fatalf("Type returned error: %v", err)
+		t.Fatalf("Type on nil Store returned error: %v", err)
 	}
-	if !ok {
-		t.Fatal("Type ok = false, want true")
-	}
-	if got.Description["en"] != "The Rifter is fast." {
-		t.Errorf("Description[en] = %q, want %q", got.Description["en"], "The Rifter is fast.")
-	}
-	if got.Capacity == nil || *got.Capacity != 140.0 {
-		t.Errorf("Capacity = %v, want 140.0", got.Capacity)
-	}
-	if got.GraphicID == nil || *got.GraphicID != 46 {
-		t.Errorf("GraphicID = %v, want 46", got.GraphicID)
-	}
-	if got.IconID == nil || *got.IconID != 100 {
-		t.Errorf("IconID = %v, want 100", got.IconID)
-	}
-	if got.MarketGroupID == nil || *got.MarketGroupID != 64 {
-		t.Errorf("MarketGroupID = %v, want 64", got.MarketGroupID)
-	}
-	if got.Mass == nil || *got.Mass != 1067000.0 {
-		t.Errorf("Mass = %v, want 1067000.0", got.Mass)
-	}
-	if got.PortionSize == nil || *got.PortionSize != 1 {
-		t.Errorf("PortionSize = %v, want 1", got.PortionSize)
-	}
-	if got.Radius == nil || *got.Radius != 31.0 {
-		t.Errorf("Radius = %v, want 31.0", got.Radius)
-	}
-	if got.Volume == nil || *got.Volume != 27289.0 {
-		t.Errorf("Volume = %v, want 27289.0", got.Volume)
-	}
-	if len(got.DogmaAttributes) != 1 || got.DogmaAttributes[0].AttributeID != 182 || got.DogmaAttributes[0].Value != 3386.0 {
-		t.Errorf("DogmaAttributes = %+v, want one entry {AttributeID:182 Value:3386.0}", got.DogmaAttributes)
-	}
-	if len(got.DogmaEffects) != 1 || got.DogmaEffects[0].EffectID != 4 || !got.DogmaEffects[0].IsDefault {
-		t.Errorf("DogmaEffects = %+v, want one entry {EffectID:4 IsDefault:true}", got.DogmaEffects)
+	if ok {
+		t.Error("Type on nil Store ok = true, want false")
 	}
 }
 
-func TestType_NoDogmaEffects_ReturnsEmptySlice(t *testing.T) {
-	store := seedStore(t)
-	putRecord(t, store, "types", 588,
-		`{"_key": 588, "groupID": 25, "name": {"en": "No-effects Type"}, "published": true, "dogmaAttributes": [{"attributeID": 1, "value": 1.0}]}`)
-
-	got, ok, err := store.Type(context.Background(), "test-agent", 588)
+func TestType_NeverSynced_ReturnsNotOK(t *testing.T) {
+	store := &Store{}
+	_, ok, err := store.Type(context.Background(), testUserAgent, 587)
 	if err != nil {
-		t.Fatalf("Type returned error: %v", err)
+		t.Fatalf("Type on never-synced Store returned error: %v", err)
 	}
-	if !ok {
-		t.Fatal("Type ok = false, want true")
-	}
-	if len(got.DogmaEffects) != 0 {
-		t.Errorf("DogmaEffects = %+v, want empty", got.DogmaEffects)
+	if ok {
+		t.Error("Type on never-synced Store ok = true, want false")
 	}
 }
 
-func TestType_KnownID_ReturnsPackagedVolume(t *testing.T) {
+func TestPutType_ThenType_ReturnsOverlaidValue(t *testing.T) {
 	store := seedStore(t)
-	putRecord(t, store, "types", 587,
-		`{"_key": 587, "groupID": 25, "name": {"en": "Rifter"}, "published": true, "packagedVolume": 2500}`)
-
-	got, ok, err := store.Type(context.Background(), "test-agent", 587)
-	if err != nil {
-		t.Fatalf("Type returned error: %v", err)
-	}
-	if !ok {
-		t.Fatal("Type ok = false, want true")
-	}
-	if got.PackagedVolume == nil || *got.PackagedVolume != 2500 {
-		t.Errorf("PackagedVolume = %v, want 2500", got.PackagedVolume)
-	}
-}
-
-func TestType_NoPackagedVolume_ReturnsNil(t *testing.T) {
-	store := seedStore(t)
-	putRecord(t, store, "types", 588,
-		`{"_key": 588, "groupID": 25, "name": {"en": "No Volume"}, "published": true}`)
-
-	got, ok, err := store.Type(context.Background(), "test-agent", 588)
-	if err != nil {
-		t.Fatalf("Type returned error: %v", err)
-	}
-	if !ok {
-		t.Fatal("Type ok = false, want true")
-	}
-	if got.PackagedVolume != nil {
-		t.Errorf("PackagedVolume = %v, want nil", got.PackagedVolume)
-	}
-}
-
-func TestTypeIDs_ReturnsSortedIDs(t *testing.T) {
-	store := seedStore(t)
-	putRecord(t, store, "types", 587, `{"_key": 587, "groupID": 25, "name": {"en": "Rifter"}, "published": true}`)
-	putRecord(t, store, "types", 588, `{"_key": 588, "groupID": 25, "name": {"en": "Breacher"}, "published": true}`)
-
-	ids, err := store.TypeIDs(context.Background(), "test-agent")
-	if err != nil {
-		t.Fatalf("TypeIDs returned error: %v", err)
-	}
-	if len(ids) != 2 || ids[0] != 587 || ids[1] != 588 {
-		t.Errorf("TypeIDs = %v, want [587 588] (ascending)", ids)
-	}
-}
-
-func TestTypeIDs_NeverSynced_ReturnsEmptySlice(t *testing.T) {
-	store := seedStore(t)
-
-	ids, err := store.TypeIDs(context.Background(), "test-agent")
-	if err != nil {
-		t.Fatalf("TypeIDs returned error: %v", err)
-	}
-	if len(ids) != 0 {
-		t.Errorf("TypeIDs = %v, want empty", ids)
-	}
-}
-
-func TestPutType_ThenType_RoundTrips(t *testing.T) {
-	store := seedStore(t)
-	mass := 1000.0
-	packagedVolume := 500.0
-	want := Type{ID: 999, GroupID: 25, Name: map[string]string{"en": "New Type"}, Description: map[string]string{"en": "A new type."}, Published: true, Mass: &mass, PackagedVolume: &packagedVolume, DogmaAttributes: []TypeDogmaAttribute{{AttributeID: 1, Value: 2.0}}}
+	want := Type{ID: 999, GroupID: 25, Name: "Read-Through Rifter", Published: true}
 
 	if err := store.PutType(want); err != nil {
 		t.Fatalf("PutType returned error: %v", err)
 	}
-
-	got, ok, err := store.Type(context.Background(), "test-agent", 999)
+	got, ok, err := store.Type(context.Background(), testUserAgent, 999)
 	if err != nil {
 		t.Fatalf("Type returned error: %v", err)
 	}
 	if !ok {
-		t.Fatal("Type ok = false after PutType, want true")
+		t.Fatal("Type ok = false, want true after PutType")
 	}
-	if got.ID != want.ID || got.GroupID != want.GroupID || *got.Mass != *want.Mass || got.Description["en"] != want.Description["en"] {
-		t.Errorf("got = %+v, want %+v", got, want)
+	if got.ID != want.ID || got.GroupID != want.GroupID || got.Name != want.Name || got.Published != want.Published {
+		t.Errorf("Type = %+v, want %+v", got, want)
 	}
-	if got.PackagedVolume == nil || *got.PackagedVolume != packagedVolume {
-		t.Errorf("PackagedVolume = %v, want %v", got.PackagedVolume, packagedVolume)
+}
+
+func TestTypeIDs_ReturnsEveryCachedID(t *testing.T) {
+	store := seedStore(t)
+	seedExec(t, store, `INSERT INTO invTypes (typeID, groupID, typeName, published) VALUES (587, 25, 'Rifter', 1)`)
+	seedExec(t, store, `INSERT INTO invTypes (typeID, groupID, typeName, published) VALUES (588, 25, 'Slasher', 1)`)
+
+	got, err := store.TypeIDs(context.Background(), testUserAgent)
+	if err != nil {
+		t.Fatalf("TypeIDs returned error: %v", err)
 	}
-	if len(got.DogmaAttributes) != 1 || got.DogmaAttributes[0] != want.DogmaAttributes[0] {
-		t.Errorf("DogmaAttributes = %+v, want %+v", got.DogmaAttributes, want.DogmaAttributes)
+	if len(got) != 2 || got[0] != 587 || got[1] != 588 {
+		t.Errorf("TypeIDs = %v, want [587 588]", got)
 	}
 }

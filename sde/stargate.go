@@ -2,15 +2,17 @@ package sde
 
 import (
 	"context"
-	"encoding/json"
+	"database/sql"
+	"errors"
 	"fmt"
-
-	"go.etcd.io/bbolt"
 )
 
-// Stargate is a minimal decode of an EVE Ref esi-scrape stargate record.
-// Sourced entirely from esi-scrape, same as AsteroidBelt -- see its doc
-// comment.
+// Stargate is a minimal decode of a fuzzwork mapDenormalize row (groupID 10)
+// joined with mapJumps for its destination stargate ID, plus a second query
+// against the destination gate's own mapDenormalize row for
+// DestinationSystemID (mapJumps only carries the destination *gate* ID, not
+// its system) -- both tables official-SDE-derived, replacing the old
+// esi-scrape-only source.
 type Stargate struct {
 	ID                    int64
 	Name                  string
@@ -21,71 +23,66 @@ type Stargate struct {
 	DestinationSystemID   int64
 }
 
-type stargateRecord struct {
-	Key                   int64    `json:"_key"`
-	Name                  string   `json:"name"`
-	TypeID                int64    `json:"typeId"`
-	Position              Position `json:"position"`
-	SystemID              int64    `json:"systemId"`
-	DestinationStargateID int64    `json:"destinationStargateId"`
-	DestinationSystemID   int64    `json:"destinationSystemId"`
-}
-
 // Stargate looks up a stargate by ID. ok is false if the ID isn't in the
 // cache.
 func (s *Store) Stargate(ctx context.Context, userAgent string, id int64) (Stargate, bool, error) {
 	if s == nil {
 		return Stargate{}, false, nil
 	}
+	if v, ok := getOverlay[Stargate](s, "stargate", id); ok {
+		return v, true, nil
+	}
 	_ = s.ensureSynced(ctx, userAgent)
+	if s.db == nil {
+		return Stargate{}, false, nil
+	}
 
 	var (
-		out Stargate
-		ok  bool
+		name     sql.NullString
+		typeID   int64
+		systemID int64
+		x, y, z  sql.NullFloat64
 	)
-	err := s.db.View(func(tx *bbolt.Tx) error {
-		b := tx.Bucket([]byte("stargates"))
-		if b == nil {
-			return nil
+	row := s.db.QueryRowContext(ctx,
+		`SELECT itemName, typeID, solarSystemID, x, y, z FROM mapDenormalize WHERE itemID = ? AND groupID = 10`, id)
+	if err := row.Scan(&name, &typeID, &systemID, &x, &y, &z); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Stargate{}, false, nil
 		}
-		v := b.Get(int64Key(id))
-		if v == nil {
-			return nil
+		return Stargate{}, false, fmt.Errorf("query stargate %d: %w", id, err)
+	}
+
+	out := Stargate{
+		ID: id, Name: name.String, TypeID: typeID, SystemID: systemID,
+		Position: Position{X: x.Float64, Y: y.Float64, Z: z.Float64},
+	}
+
+	var destinationStargateID sql.NullInt64
+	destRow := s.db.QueryRowContext(ctx, `SELECT destinationID FROM mapJumps WHERE stargateID = ?`, id)
+	err := destRow.Scan(&destinationStargateID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return Stargate{}, false, fmt.Errorf("query stargate %d destination: %w", id, err)
+	}
+	if err == nil && destinationStargateID.Valid {
+		out.DestinationStargateID = destinationStargateID.Int64
+
+		var destinationSystemID sql.NullInt64
+		destSystemRow := s.db.QueryRowContext(ctx, `SELECT solarSystemID FROM mapDenormalize WHERE itemID = ?`, destinationStargateID.Int64)
+		if err := destSystemRow.Scan(&destinationSystemID); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return Stargate{}, false, fmt.Errorf("query stargate %d destination system: %w", id, err)
 		}
-		var raw stargateRecord
-		if err := json.Unmarshal(v, &raw); err != nil {
-			return fmt.Errorf("parse cached stargate %d: %w", id, err)
-		}
-		if raw.Key != id {
-			return fmt.Errorf("cached stargate %d has mismatched key %d", id, raw.Key)
-		}
-		out, ok = Stargate{
-			ID: raw.Key, Name: raw.Name, TypeID: raw.TypeID, Position: raw.Position, SystemID: raw.SystemID,
-			DestinationStargateID: raw.DestinationStargateID, DestinationSystemID: raw.DestinationSystemID,
-		}, true
-		return nil
-	})
-	return out, ok, err
+		out.DestinationSystemID = destinationSystemID.Int64
+	}
+
+	return out, true, nil
 }
 
-// PutStargate writes g into the cache, keyed by g.ID -- used by mcp/'s
+// PutStargate stores g in the overlay, keyed by g.ID -- used by mcp/'s
 // read-through fallback.
 func (s *Store) PutStargate(g Stargate) error {
 	if s == nil {
 		return nil
 	}
-	raw, err := json.Marshal(stargateRecord{
-		Key: g.ID, Name: g.Name, TypeID: g.TypeID, Position: g.Position, SystemID: g.SystemID,
-		DestinationStargateID: g.DestinationStargateID, DestinationSystemID: g.DestinationSystemID,
-	})
-	if err != nil {
-		return fmt.Errorf("marshal stargate %d: %w", g.ID, err)
-	}
-	return s.db.Update(func(tx *bbolt.Tx) error {
-		b, err := tx.CreateBucketIfNotExists([]byte("stargates"))
-		if err != nil {
-			return fmt.Errorf("create stargates bucket: %w", err)
-		}
-		return b.Put(int64Key(g.ID), raw)
-	})
+	putOverlay(s, "stargate", g.ID, g)
+	return nil
 }

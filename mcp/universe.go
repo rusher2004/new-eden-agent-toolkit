@@ -54,7 +54,7 @@ var listUniverseAncestries = func(ctx context.Context, sdeStore ancestryCache, u
 	}
 	out := make([]UniverseAncestry, len(ancestries))
 	for i, a := range ancestries {
-		out[i] = UniverseAncestry{ID: a.ID, BloodlineID: a.BloodlineID, Description: a.Description["en"], Name: a.Name["en"], IconID: a.IconID, ShortDescription: a.ShortDescription}
+		out[i] = UniverseAncestry{ID: a.ID, BloodlineID: a.BloodlineID, Description: a.Description, Name: a.Name, IconID: a.IconID, ShortDescription: a.ShortDescription}
 	}
 	return out, nil
 }
@@ -122,8 +122,8 @@ var listUniverseBloodlines = func(ctx context.Context, sdeStore bloodlineCache, 
 			shipTypeID = *b.ShipTypeID
 		}
 		out[i] = UniverseBloodline{
-			ID: b.ID, Charisma: b.Charisma, CorporationID: b.CorporationID, Description: b.Description["en"],
-			Intelligence: b.Intelligence, Memory: b.Memory, Name: b.Name["en"], Perception: b.Perception,
+			ID: b.ID, Charisma: b.Charisma, CorporationID: b.CorporationID, Description: b.Description,
+			Intelligence: b.Intelligence, Memory: b.Memory, Name: b.Name, Perception: b.Perception,
 			RaceID: b.RaceID, ShipTypeID: shipTypeID, Willpower: b.Willpower,
 		}
 	}
@@ -181,7 +181,7 @@ var listUniverseRaces = func(ctx context.Context, sdeStore raceCache, userAgent 
 	}
 	out := make([]UniverseRace, len(races))
 	for i, r := range races {
-		out[i] = UniverseRace{RaceID: r.ID, AllianceID: r.AllianceID, Description: r.Description["en"], Name: r.Name["en"]}
+		out[i] = UniverseRace{RaceID: r.ID, AllianceID: r.AllianceID, Description: r.Description, Name: r.Name}
 	}
 	return out, nil
 }
@@ -207,7 +207,7 @@ type UniverseFaction struct {
 	FactionID            int64   `json:"factionId"`
 	Description          string  `json:"description"`
 	Name                 string  `json:"name"`
-	IsUnique             bool    `json:"isUnique"`
+	IsUnique             *bool   `json:"isUnique,omitempty"`
 	SizeFactor           float64 `json:"sizeFactor"`
 	StationCount         int64   `json:"stationCount"`
 	StationSystemCount   int64   `json:"stationSystemCount"`
@@ -233,8 +233,12 @@ var listUniverseFactions = func(ctx context.Context, sdeStore factionCache, user
 		}
 		out := make([]UniverseFaction, len(fetched))
 		for i, f := range fetched {
+			// ESI's UniverseFactions response always carries a real
+			// isUnique value (goesi-openapi's generated model has it as a
+			// plain, always-present bool) -- unlike a sqlite-served
+			// Faction, this branch genuinely knows it.
 			out[i] = UniverseFaction{
-				FactionID: f.FactionId, Description: f.Description, Name: f.Name, IsUnique: f.IsUnique,
+				FactionID: f.FactionId, Description: f.Description, Name: f.Name, IsUnique: &fetched[i].IsUnique,
 				SizeFactor: f.SizeFactor, StationCount: f.StationCount, StationSystemCount: f.StationSystemCount,
 				CorporationID: f.CorporationId, MilitiaCorporationID: f.MilitiaCorporationId, SolarSystemID: f.SolarSystemId,
 			}
@@ -244,7 +248,7 @@ var listUniverseFactions = func(ctx context.Context, sdeStore factionCache, user
 	out := make([]UniverseFaction, len(factions))
 	for i, f := range factions {
 		out[i] = UniverseFaction{
-			FactionID: f.ID, Description: f.Description["en"], Name: f.Name["en"], IsUnique: f.IsUnique,
+			FactionID: f.ID, Description: f.Description, Name: f.Name, IsUnique: f.IsUnique,
 			SizeFactor: f.SizeFactor, StationCount: f.StationCount, StationSystemCount: f.StationSystemCount,
 			CorporationID: f.CorporationID, MilitiaCorporationID: f.MilitiaCorporationID, SolarSystemID: f.SolarSystemID,
 		}
@@ -359,12 +363,12 @@ var getUniverseCategory = func(ctx context.Context, sdeStore categoryCache, user
 		if err != nil {
 			return UniverseCategory{}, err
 		}
-		c = sde.Category{ID: detail.CategoryId, Name: map[string]string{"en": detail.Name}, Published: detail.Published, GroupIDs: detail.Groups}
+		c = sde.Category{ID: detail.CategoryId, Name: detail.Name, Published: detail.Published, GroupIDs: detail.Groups}
 		if err := sdeStore.PutCategory(c); err != nil {
 			slog.Default().WarnContext(ctx, "sde: failed to write read-through category into cache", "categoryId", c.ID, "error", err)
 		}
 	}
-	return UniverseCategory{CategoryID: c.ID, Name: c.Name["en"], Published: c.Published, GroupIDs: c.GroupIDs}, nil
+	return UniverseCategory{CategoryID: c.ID, Name: c.Name, Published: c.Published, GroupIDs: c.GroupIDs}, nil
 }
 
 type GetUniverseCategoryInput struct {
@@ -446,12 +450,12 @@ var getUniverseGroup = func(ctx context.Context, sdeStore groupCache, userAgent 
 		if err != nil {
 			return UniverseGroup{}, err
 		}
-		g = sde.Group{ID: detail.GroupId, CategoryID: detail.CategoryId, Name: map[string]string{"en": detail.Name}, Published: detail.Published, TypeIDs: detail.Types}
+		g = sde.Group{ID: detail.GroupId, CategoryID: detail.CategoryId, Name: detail.Name, Published: detail.Published, TypeIDs: detail.Types}
 		if err := sdeStore.PutGroup(g); err != nil {
 			slog.Default().WarnContext(ctx, "sde: failed to write read-through group into cache", "groupId", g.ID, "error", err)
 		}
 	}
-	return UniverseGroup{GroupID: g.ID, CategoryID: g.CategoryID, Name: g.Name["en"], Published: g.Published, TypeIDs: g.TypeIDs}, nil
+	return UniverseGroup{GroupID: g.ID, CategoryID: g.CategoryID, Name: g.Name, Published: g.Published, TypeIDs: g.TypeIDs}, nil
 }
 
 type GetUniverseGroupInput struct {
@@ -546,8 +550,8 @@ var getUniverseType = func(ctx context.Context, sdeStore typeCache, userAgent st
 			return UniverseType{}, err
 		}
 		t = sde.Type{
-			ID: detail.TypeId, GroupID: detail.GroupId, Name: map[string]string{"en": detail.Name},
-			Description: map[string]string{"en": detail.Description}, Published: detail.Published,
+			ID: detail.TypeId, GroupID: detail.GroupId, Name: detail.Name,
+			Description: detail.Description, Published: detail.Published,
 			Capacity: detail.Capacity, GraphicID: detail.GraphicId, IconID: detail.IconId, MarketGroupID: detail.MarketGroupId,
 			Mass: detail.Mass, PackagedVolume: detail.PackagedVolume, PortionSize: detail.PortionSize, Radius: detail.Radius, Volume: detail.Volume,
 		}
@@ -569,7 +573,7 @@ var getUniverseType = func(ctx context.Context, sdeStore typeCache, userAgent st
 	}
 
 	out := UniverseType{
-		TypeID: t.ID, Name: t.Name["en"], Description: t.Description["en"], GroupID: t.GroupID, Published: t.Published,
+		TypeID: t.ID, Name: t.Name, Description: t.Description, GroupID: t.GroupID, Published: t.Published,
 		Capacity: t.Capacity, GraphicID: t.GraphicID, IconID: t.IconID, MarketGroupID: t.MarketGroupID,
 		Mass: t.Mass, PackagedVolume: t.PackagedVolume, PortionSize: t.PortionSize, Radius: t.Radius, Volume: t.Volume,
 	}
@@ -664,19 +668,12 @@ var getUniverseRegion = func(ctx context.Context, sdeStore regionCache, userAgen
 		if err != nil {
 			return UniverseRegion{}, err
 		}
-		r = sde.Region{ID: detail.RegionId, Name: map[string]string{"en": detail.Name}, ConstellationIDs: detail.Constellations}
-		if detail.Description != nil {
-			r.Description = map[string]string{"en": *detail.Description}
-		}
+		r = sde.Region{ID: detail.RegionId, Name: detail.Name, Description: detail.Description, ConstellationIDs: detail.Constellations}
 		if err := sdeStore.PutRegion(r); err != nil {
 			slog.Default().WarnContext(ctx, "sde: failed to write read-through region into cache", "regionId", r.ID, "error", err)
 		}
 	}
-	var description *string
-	if v, ok := r.Description["en"]; ok {
-		description = &v
-	}
-	return UniverseRegion{RegionID: r.ID, Name: r.Name["en"], Description: description, ConstellationIDs: r.ConstellationIDs}, nil
+	return UniverseRegion{RegionID: r.ID, Name: r.Name, Description: r.Description, ConstellationIDs: r.ConstellationIDs}, nil
 }
 
 type GetUniverseRegionInput struct {
@@ -750,7 +747,7 @@ var getUniverseConstellation = func(ctx context.Context, sdeStore constellationC
 			return UniverseConstellation{}, err
 		}
 		c = sde.Constellation{
-			ID: detail.ConstellationId, RegionID: detail.RegionId, Name: map[string]string{"en": detail.Name},
+			ID: detail.ConstellationId, RegionID: detail.RegionId, Name: detail.Name,
 			Position:  sde.Position{X: detail.Position.X, Y: detail.Position.Y, Z: detail.Position.Z},
 			SystemIDs: detail.Systems,
 		}
@@ -759,7 +756,7 @@ var getUniverseConstellation = func(ctx context.Context, sdeStore constellationC
 		}
 	}
 	return UniverseConstellation{
-		ConstellationID: c.ID, RegionID: c.RegionID, Name: c.Name["en"],
+		ConstellationID: c.ID, RegionID: c.RegionID, Name: c.Name,
 		Position:  Position{X: c.Position.X, Y: c.Position.Y, Z: c.Position.Z},
 		SystemIDs: c.SystemIDs,
 	}, nil
@@ -848,7 +845,7 @@ var getUniverseSystem = func(ctx context.Context, sdeStore systemCache, userAgen
 			return UniverseSystem{}, err
 		}
 		sys = sde.System{
-			ID: detail.SystemId, ConstellationID: detail.ConstellationId, Name: map[string]string{"en": detail.Name},
+			ID: detail.SystemId, ConstellationID: detail.ConstellationId, Name: detail.Name,
 			Position:       sde.Position{X: detail.Position.X, Y: detail.Position.Y, Z: detail.Position.Z},
 			SecurityStatus: detail.SecurityStatus, SecurityClass: detail.SecurityClass, StarID: detail.StarId,
 			StargateIDs: detail.Stargates, StationIDs: detail.Stations,
@@ -872,7 +869,7 @@ var getUniverseSystem = func(ctx context.Context, sdeStore systemCache, userAgen
 		}
 	}
 	return UniverseSystem{
-		SystemID: sys.ID, ConstellationID: sys.ConstellationID, Name: sys.Name["en"],
+		SystemID: sys.ID, ConstellationID: sys.ConstellationID, Name: sys.Name,
 		Position:       Position{X: sys.Position.X, Y: sys.Position.Y, Z: sys.Position.Z},
 		SecurityStatus: sys.SecurityStatus, SecurityClass: sys.SecurityClass, StarID: sys.StarID,
 		StargateIDs: sys.StargateIDs, StationIDs: sys.StationIDs, Planets: planets,
@@ -1165,18 +1162,18 @@ func getUniverseStarHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHand
 // --- get_universe_station (public) ---
 
 type UniverseStation struct {
-	StationID                int64    `json:"stationId"`
-	SystemID                 int64    `json:"systemId"`
-	TypeID                   int64    `json:"typeId"`
-	Name                     string   `json:"name"`
-	Position                 Position `json:"position"`
-	MaxDockableShipVolume    float64  `json:"maxDockableShipVolume"`
-	OfficeRentalCost         float64  `json:"officeRentalCost"`
-	Owner                    *int64   `json:"owner,omitempty"`
-	RaceID                   *int64   `json:"raceId,omitempty"`
-	ReprocessingEfficiency   float64  `json:"reprocessingEfficiency"`
-	ReprocessingStationsTake float64  `json:"reprocessingStationsTake"`
-	Services                 []string `json:"services"`
+	StationID                int64     `json:"stationId"`
+	SystemID                 int64     `json:"systemId"`
+	TypeID                   int64     `json:"typeId"`
+	Name                     string    `json:"name"`
+	Position                 Position  `json:"position"`
+	MaxDockableShipVolume    float64   `json:"maxDockableShipVolume"`
+	OfficeRentalCost         float64   `json:"officeRentalCost"`
+	Owner                    *int64    `json:"owner,omitempty"`
+	RaceID                   *int64    `json:"raceId,omitempty"`
+	ReprocessingEfficiency   float64   `json:"reprocessingEfficiency"`
+	ReprocessingStationsTake float64   `json:"reprocessingStationsTake"`
+	Services                 *[]string `json:"services,omitempty"`
 }
 
 type stationCache interface {
@@ -1200,7 +1197,7 @@ var getUniverseStation = func(ctx context.Context, sdeStore stationCache, userAg
 			Position:              sde.Position{X: detail.Position.X, Y: detail.Position.Y, Z: detail.Position.Z},
 			MaxDockableShipVolume: detail.MaxDockableShipVolume, OfficeRentalCost: detail.OfficeRentalCost,
 			Owner: detail.Owner, RaceID: detail.RaceId, ReprocessingEfficiency: detail.ReprocessingEfficiency,
-			ReprocessingStationsTake: detail.ReprocessingStationsTake, Services: detail.Services,
+			ReprocessingStationsTake: detail.ReprocessingStationsTake, Services: &detail.Services,
 		}
 		if err := sdeStore.PutStation(s); err != nil {
 			slog.Default().WarnContext(ctx, "sde: failed to write read-through station into cache", "stationId", s.ID, "error", err)

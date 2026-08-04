@@ -27,8 +27,8 @@ func (f *fakeTypeNameCache) Type(ctx context.Context, userAgent string, id int64
 
 func TestResolveTypeNames_Dedup(t *testing.T) {
 	cache := &fakeTypeNameCache{types: map[int64]sde.Type{
-		587: {ID: 587, Name: map[string]string{"en": "Rifter"}},
-		588: {ID: 588, Name: map[string]string{"en": "Slasher"}},
+		587: {ID: 587, Name: "Rifter"},
+		588: {ID: 588, Name: "Slasher"},
 	}}
 
 	got := resolveTypeNames(context.Background(), cache, "test-agent", []int64{587, 587, 588})
@@ -97,8 +97,8 @@ func (f *fakeSystemNameCache) System(ctx context.Context, userAgent string, id i
 
 func TestResolveSystemNames_Dedup(t *testing.T) {
 	cache := &fakeSystemNameCache{systems: map[int64]sde.System{
-		30000142: {ID: 30000142, Name: map[string]string{"en": "Jita"}},
-		30002187: {ID: 30002187, Name: map[string]string{"en": "Amarr"}},
+		30000142: {ID: 30000142, Name: "Jita"},
+		30002187: {ID: 30002187, Name: "Amarr"},
 	}}
 
 	got := resolveSystemNames(context.Background(), cache, "test-agent", []int64{30000142, 30000142, 30002187})
@@ -167,8 +167,8 @@ func (f *fakeRegionNameCache) Region(ctx context.Context, userAgent string, id i
 
 func TestResolveRegionNames_Dedup(t *testing.T) {
 	cache := &fakeRegionNameCache{regions: map[int64]sde.Region{
-		10000002: {ID: 10000002, Name: map[string]string{"en": "The Forge"}},
-		10000003: {ID: 10000003, Name: map[string]string{"en": "Vale of the Silent"}},
+		10000002: {ID: 10000002, Name: "The Forge"},
+		10000003: {ID: 10000003, Name: "Vale of the Silent"},
 	}}
 
 	got := resolveRegionNames(context.Background(), cache, "test-agent", []int64{10000002, 10000002, 10000003})
@@ -237,8 +237,8 @@ func (f *fakeConstellationNameCache) Constellation(ctx context.Context, userAgen
 
 func TestResolveConstellationNames_Dedup(t *testing.T) {
 	cache := &fakeConstellationNameCache{constellations: map[int64]sde.Constellation{
-		20000020: {ID: 20000020, Name: map[string]string{"en": "Kimotoro"}},
-		20000021: {ID: 20000021, Name: map[string]string{"en": "Sinq Laison"}},
+		20000020: {ID: 20000020, Name: "Kimotoro"},
+		20000021: {ID: 20000021, Name: "Sinq Laison"},
 	}}
 
 	got := resolveConstellationNames(context.Background(), cache, "test-agent", []int64{20000020, 20000020, 20000021})
@@ -517,8 +517,8 @@ func (f *fakeRaceNameCache) Race(ctx context.Context, userAgent string, id int64
 
 func TestResolveRaceNames_Dedup(t *testing.T) {
 	cache := &fakeRaceNameCache{races: map[int64]sde.Race{
-		1: {ID: 1, Name: map[string]string{"en": "Caldari"}},
-		2: {ID: 2, Name: map[string]string{"en": "Minmatar"}},
+		1: {ID: 1, Name: "Caldari"},
+		2: {ID: 2, Name: "Minmatar"},
 	}}
 
 	got := resolveRaceNames(context.Background(), cache, "test-agent", []int64{1, 1, 2})
@@ -587,8 +587,8 @@ func (f *fakeBloodlineNameCache) Bloodline(ctx context.Context, userAgent string
 
 func TestResolveBloodlineNames_Dedup(t *testing.T) {
 	cache := &fakeBloodlineNameCache{bloodlines: map[int64]sde.Bloodline{
-		1: {ID: 1, Name: map[string]string{"en": "Deteis"}},
-		2: {ID: 2, Name: map[string]string{"en": "Civire"}},
+		1: {ID: 1, Name: "Deteis"},
+		2: {ID: 2, Name: "Civire"},
 	}}
 
 	got := resolveBloodlineNames(context.Background(), cache, "test-agent", []int64{1, 1, 2})
@@ -657,8 +657,8 @@ func (f *fakeFactionNameCache) Faction(ctx context.Context, userAgent string, id
 
 func TestResolveFactionNames_Dedup(t *testing.T) {
 	cache := &fakeFactionNameCache{factions: map[int64]sde.Faction{
-		500001: {ID: 500001, Name: map[string]string{"en": "Caldari State"}},
-		500002: {ID: 500002, Name: map[string]string{"en": "Minmatar Republic"}},
+		500001: {ID: 500001, Name: "Caldari State"},
+		500002: {ID: 500002, Name: "Minmatar Republic"},
 	}}
 
 	got := resolveFactionNames(context.Background(), cache, "test-agent", []int64{500001, 500001, 500002})
@@ -727,8 +727,8 @@ func (f *fakeGroupNameCache) Group(ctx context.Context, userAgent string, id int
 
 func TestResolveGroupNames_Dedup(t *testing.T) {
 	cache := &fakeGroupNameCache{groups: map[int64]sde.Group{
-		25: {ID: 25, Name: map[string]string{"en": "Frigate"}},
-		26: {ID: 26, Name: map[string]string{"en": "Destroyer"}},
+		25: {ID: 25, Name: "Frigate"},
+		26: {ID: 26, Name: "Destroyer"},
 	}}
 
 	got := resolveGroupNames(context.Background(), cache, "test-agent", []int64{25, 25, 26})

@@ -5,30 +5,29 @@ import (
 	"testing"
 )
 
-func TestStar_KnownID_ReturnsRecord(t *testing.T) {
+func TestStar_KnownID_ReturnsRowWithCelestialStatistics(t *testing.T) {
 	store := seedStore(t)
-	putRecord(t, store, "stars", 40000001,
-		`{"_key": 40000001, "age": 14262808228, "luminosity": 0.01575, "name": "Tanoo - Star", "radius": 63350000, "solarSystemId": 30000001, "spectralClass": "K2 V", "temperature": 4567, "typeId": 45041}`)
+	seedExec(t, store, `INSERT INTO mapDenormalize (itemID, typeID, groupID, solarSystemID, itemName) VALUES (40009076, 3796, 6, 30000142, 'Jita - Sun')`)
+	seedExec(t, store, `INSERT INTO mapCelestialStatistics (celestialID, temperature, spectralClass, luminosity, age, radius) VALUES (40009076, 7305.0, 'F1 V', 1.692, 21750000000000000.0, 696000000.0)`)
 
-	got, ok, err := store.Star(context.Background(), "test-agent", 40000001)
+	got, ok, err := store.Star(context.Background(), testUserAgent, 40009076)
 	if err != nil {
 		t.Fatalf("Star returned error: %v", err)
 	}
 	if !ok {
 		t.Fatal("Star ok = false, want true")
 	}
-	if got.ID != 40000001 || got.Name != "Tanoo - Star" || got.SolarSystemID != 30000001 || got.TypeID != 45041 {
-		t.Errorf("got = %+v, want ID=40000001 Name=\"Tanoo - Star\" SolarSystemID=30000001 TypeID=45041", got)
+	if got.ID != 40009076 || got.TypeID != 3796 || got.SolarSystemID != 30000142 || got.Name != "Jita - Sun" {
+		t.Errorf("got = %+v, want ID=40009076 TypeID=3796 SolarSystemID=30000142 Name=%q", got, "Jita - Sun")
 	}
-	if got.Age != 14262808228 || got.Luminosity != 0.01575 || got.Radius != 63350000 || got.SpectralClass != "K2 V" || got.Temperature != 4567 {
-		t.Errorf("got = %+v, want Age=14262808228 Luminosity=0.01575 Radius=63350000 SpectralClass=\"K2 V\" Temperature=4567", got)
+	if got.SpectralClass != "F1 V" || got.Luminosity != 1.692 || got.Temperature != 7305 {
+		t.Errorf("SpectralClass/Luminosity/Temperature = %q/%v/%v, want F1 V/1.692/7305", got.SpectralClass, got.Luminosity, got.Temperature)
 	}
 }
 
 func TestStar_UnknownID_ReturnsNotOK(t *testing.T) {
 	store := seedStore(t)
-
-	_, ok, err := store.Star(context.Background(), "test-agent", 999)
+	_, ok, err := store.Star(context.Background(), testUserAgent, 999)
 	if err != nil {
 		t.Fatalf("Star returned error: %v", err)
 	}
@@ -37,33 +36,37 @@ func TestStar_UnknownID_ReturnsNotOK(t *testing.T) {
 	}
 }
 
-func TestStar_MismatchedKey_ReturnsError(t *testing.T) {
+func TestStar_NoCelestialStatisticsRow_ReturnsZeroValuedPhysicalFields(t *testing.T) {
 	store := seedStore(t)
-	putRecord(t, store, "stars", 40000001,
-		`{"_key": 999, "age": 1, "luminosity": 0.1, "name": "X", "radius": 1, "solarSystemId": 1, "spectralClass": "K2 V", "temperature": 1, "typeId": 1}`)
+	seedExec(t, store, `INSERT INTO mapDenormalize (itemID, typeID, groupID, solarSystemID, itemName) VALUES (40009076, 3796, 6, 30000142, 'Jita - Sun')`)
 
-	_, _, err := store.Star(context.Background(), "test-agent", 40000001)
-	if err == nil {
-		t.Fatal("Star returned nil error, want an error for a mismatched _key")
-	}
-}
-
-func TestPutStar_ThenStar_RoundTrips(t *testing.T) {
-	store := seedStore(t)
-	want := Star{ID: 40000199, Age: 1, Luminosity: 0.5, Name: "New Star", Radius: 100, SolarSystemID: 30000099, SpectralClass: "G2 V", Temperature: 5000, TypeID: 45041}
-
-	if err := store.PutStar(want); err != nil {
-		t.Fatalf("PutStar returned error: %v", err)
-	}
-
-	got, ok, err := store.Star(context.Background(), "test-agent", 40000199)
+	got, ok, err := store.Star(context.Background(), testUserAgent, 40009076)
 	if err != nil {
 		t.Fatalf("Star returned error: %v", err)
 	}
 	if !ok {
-		t.Fatal("Star ok = false after PutStar, want true")
+		t.Fatal("Star ok = false, want true even without a mapCelestialStatistics row")
 	}
-	if got != want {
-		t.Errorf("got = %+v, want %+v", got, want)
+	if got.SpectralClass != "" || got.Luminosity != 0 {
+		t.Errorf("SpectralClass/Luminosity = %q/%v, want zero values", got.SpectralClass, got.Luminosity)
+	}
+}
+
+func TestPutStar_ThenStar_ReturnsOverlaidValue(t *testing.T) {
+	store := seedStore(t)
+	want := Star{ID: 999, Name: "Read-Through Star", SolarSystemID: 30000142, TypeID: 3796}
+
+	if err := store.PutStar(want); err != nil {
+		t.Fatalf("PutStar returned error: %v", err)
+	}
+	got, ok, err := store.Star(context.Background(), testUserAgent, 999)
+	if err != nil {
+		t.Fatalf("Star returned error: %v", err)
+	}
+	if !ok {
+		t.Fatal("Star ok = false, want true after PutStar")
+	}
+	if got.Name != want.Name {
+		t.Errorf("Name = %q, want %q", got.Name, want.Name)
 	}
 }

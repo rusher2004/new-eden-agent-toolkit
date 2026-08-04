@@ -1,5 +1,7 @@
 # `sde/` Package Infrastructure — Design
 
+**Superseded by:** [`2026-08-04-sde-sqlite-migration-design.md`](2026-08-04-sde-sqlite-migration-design.md) — this plan's bbolt + CCP-jsonl-zip pipeline was replaced by a directly-queried SQLite dump. This document remains an accurate record of what was built and why at the time.
+
 ## Goal
 
 Build the `sde/` package the foundation design spec called for and deliberately deferred: a local

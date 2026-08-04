@@ -2,28 +2,20 @@ package sde
 
 import (
 	"context"
-	"encoding/json"
+	"database/sql"
+	"errors"
 	"fmt"
-
-	"go.etcd.io/bbolt"
 )
 
-// Race is a minimal decode of an SDE race record, augmented at sync time
-// with AllianceID from EVE Ref's esi-scrape dataset -- the official SDE's
-// races.jsonl has no such field, and there is no alliances.jsonl anywhere
-// in the SDE archive at all.
+// Race is a minimal decode of a fuzzwork chrRaces row, augmented at read
+// time with AllianceID from EVE Ref's esi-scrape dataset (in-memory only --
+// see sync.go) -- chrRaces has no such column, and there is no alliances
+// table anywhere in the fuzzwork dump either.
 type Race struct {
 	ID          int64
 	AllianceID  *int64
-	Description map[string]string
-	Name        map[string]string
-}
-
-type raceRecord struct {
-	Key         int64             `json:"_key"`
-	AllianceID  *int64            `json:"allianceId,omitempty"`
-	Description map[string]string `json:"description"`
-	Name        map[string]string `json:"name"`
+	Description string
+	Name        string
 }
 
 // Races returns every cached race. Returns an empty slice, not an error, if
@@ -33,23 +25,33 @@ func (s *Store) Races(ctx context.Context, userAgent string) ([]Race, error) {
 		return nil, nil
 	}
 	_ = s.ensureSynced(ctx, userAgent)
+	if s.db == nil {
+		return nil, nil
+	}
+
+	rows, err := s.db.QueryContext(ctx, `SELECT raceID, raceName, description FROM chrRaces ORDER BY raceID`)
+	if err != nil {
+		return nil, fmt.Errorf("query races: %w", err)
+	}
+	defer rows.Close()
 
 	var out []Race
-	err := s.db.View(func(tx *bbolt.Tx) error {
-		b := tx.Bucket([]byte("races"))
-		if b == nil {
-			return nil
+	for rows.Next() {
+		var (
+			id          int64
+			name        sql.NullString
+			description sql.NullString
+		)
+		if err := rows.Scan(&id, &name, &description); err != nil {
+			return nil, fmt.Errorf("scan race: %w", err)
 		}
-		return b.ForEach(func(_, v []byte) error {
-			var raw raceRecord
-			if err := json.Unmarshal(v, &raw); err != nil {
-				return fmt.Errorf("parse cached race: %w", err)
-			}
-			out = append(out, Race{ID: raw.Key, AllianceID: raw.AllianceID, Description: raw.Description, Name: raw.Name})
-			return nil
-		})
-	})
-	return out, err
+		r := Race{ID: id, Name: name.String, Description: description.String}
+		if allianceID, ok := s.raceAlliances[id]; ok {
+			r.AllianceID = &allianceID
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }
 
 // Race looks up a race by ID. ok is false if the ID isn't in the cache.
@@ -58,29 +60,25 @@ func (s *Store) Race(ctx context.Context, userAgent string, id int64) (Race, boo
 		return Race{}, false, nil
 	}
 	_ = s.ensureSynced(ctx, userAgent)
+	if s.db == nil {
+		return Race{}, false, nil
+	}
 
 	var (
-		out Race
-		ok  bool
+		name        sql.NullString
+		description sql.NullString
 	)
-	err := s.db.View(func(tx *bbolt.Tx) error {
-		b := tx.Bucket([]byte("races"))
-		if b == nil {
-			return nil
+	row := s.db.QueryRowContext(ctx, `SELECT raceName, description FROM chrRaces WHERE raceID = ?`, id)
+	if err := row.Scan(&name, &description); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Race{}, false, nil
 		}
-		v := b.Get(int64Key(id))
-		if v == nil {
-			return nil
-		}
-		var raw raceRecord
-		if err := json.Unmarshal(v, &raw); err != nil {
-			return fmt.Errorf("parse cached race %d: %w", id, err)
-		}
-		if raw.Key != id {
-			return fmt.Errorf("cached race %d has mismatched key %d", id, raw.Key)
-		}
-		out, ok = Race{ID: raw.Key, AllianceID: raw.AllianceID, Description: raw.Description, Name: raw.Name}, true
-		return nil
-	})
-	return out, ok, err
+		return Race{}, false, fmt.Errorf("query race %d: %w", id, err)
+	}
+
+	out := Race{ID: id, Name: name.String, Description: description.String}
+	if allianceID, ok := s.raceAlliances[id]; ok {
+		out.AllianceID = &allianceID
+	}
+	return out, true, nil
 }

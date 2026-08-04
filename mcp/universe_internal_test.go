@@ -89,7 +89,7 @@ func TestListUniverseAncestries_CacheHit_MapsFields(t *testing.T) {
 	iconID := int64(1641)
 	shortDesc := "Progressive members of the upper class."
 	cache := &fakeAncestryCache{ancestries: []sde.Ancestry{
-		{ID: 1, BloodlineID: 5, Description: map[string]string{"en": "Holders are..."}, Name: map[string]string{"en": "Liberal Holders"}, IconID: &iconID, ShortDescription: &shortDesc},
+		{ID: 1, BloodlineID: 5, Description: "Holders are...", Name: "Liberal Holders", IconID: &iconID, ShortDescription: &shortDesc},
 	}}
 
 	got, err := listUniverseAncestries(context.Background(), cache, "test-agent")
@@ -149,7 +149,7 @@ func TestListUniverseAncestriesHandler_PropagatesError(t *testing.T) {
 
 func TestListUniverseBloodlines_CacheHit_MapsFieldsAndDefaultsMissingShipTypeID(t *testing.T) {
 	cache := &fakeBloodlineCache{bloodlines: []sde.Bloodline{
-		{ID: 1, Charisma: 6, CorporationID: 1000006, Description: map[string]string{"en": "The Deteis are..."}, Intelligence: 7, Memory: 7, Name: map[string]string{"en": "Deteis"}, Perception: 5, RaceID: 1, Willpower: 5},
+		{ID: 1, Charisma: 6, CorporationID: 1000006, Description: "The Deteis are...", Intelligence: 7, Memory: 7, Name: "Deteis", Perception: 5, RaceID: 1, Willpower: 5},
 	}}
 
 	got, err := listUniverseBloodlines(context.Background(), cache, "test-agent")
@@ -196,7 +196,7 @@ func TestListUniverseBloodlinesHandler_PropagatesError(t *testing.T) {
 func TestListUniverseRaces_CacheHit_ReturnsAllianceID(t *testing.T) {
 	allianceID := int64(500001)
 	cache := &fakeRaceCache{races: []sde.Race{
-		{ID: 1, AllianceID: &allianceID, Description: map[string]string{"en": "Founded on the tenets..."}, Name: map[string]string{"en": "Caldari"}},
+		{ID: 1, AllianceID: &allianceID, Description: "Founded on the tenets...", Name: "Caldari"},
 	}}
 
 	got, err := listUniverseRaces(context.Background(), cache, "test-agent")
@@ -210,7 +210,7 @@ func TestListUniverseRaces_CacheHit_ReturnsAllianceID(t *testing.T) {
 
 func TestListUniverseRaces_CacheHit_NoAllianceID_ReturnsNil(t *testing.T) {
 	cache := &fakeRaceCache{races: []sde.Race{
-		{ID: 1, Description: map[string]string{"en": "Founded on the tenets..."}, Name: map[string]string{"en": "Caldari"}},
+		{ID: 1, Description: "Founded on the tenets...", Name: "Caldari"},
 	}}
 
 	got, err := listUniverseRaces(context.Background(), cache, "test-agent")
@@ -258,7 +258,9 @@ func TestListUniverseRacesHandler_PropagatesError(t *testing.T) {
 func TestListUniverseFactions_CacheHit_MapsFieldsIncludingStationCounts(t *testing.T) {
 	corpID := int64(1000035)
 	cache := &fakeFactionCache{factions: []sde.Faction{
-		{ID: 500001, Name: map[string]string{"en": "Caldari State"}, Description: map[string]string{"en": "The Caldari State..."}, IsUnique: true, SizeFactor: 5.0, CorporationID: &corpID, StationCount: 120, StationSystemCount: 45},
+		// IsUnique omitted -- a sqlite-served Faction never has it (see
+		// sde.Faction's doc comment), so the fixture matches real behavior.
+		{ID: 500001, Name: "Caldari State", Description: "The Caldari State...", SizeFactor: 5.0, CorporationID: &corpID, StationCount: 120, StationSystemCount: 45},
 	}}
 
 	got, err := listUniverseFactions(context.Background(), cache, "test-agent")
@@ -268,14 +270,18 @@ func TestListUniverseFactions_CacheHit_MapsFieldsIncludingStationCounts(t *testi
 	if len(got) != 1 || got[0].FactionID != 500001 || got[0].StationCount != 120 || got[0].StationSystemCount != 45 {
 		t.Errorf("got = %+v, want one entry FactionID=500001 StationCount=120 StationSystemCount=45", got)
 	}
+	if got[0].IsUnique != nil {
+		t.Errorf("IsUnique = %v, want nil on a cache hit (chrFactions has no source for it)", *got[0].IsUnique)
+	}
 }
 
 func TestListUniverseFactionsHandler_MapsFields(t *testing.T) {
 	orig := listUniverseFactions
 	t.Cleanup(func() { listUniverseFactions = orig })
 	corpID := int64(1000035)
+	isUnique := true
 	listUniverseFactions = func(ctx context.Context, sdeStore factionCache, userAgent string) ([]UniverseFaction, error) {
-		return []UniverseFaction{{FactionID: 500001, Name: "Caldari State", IsUnique: true, CorporationID: &corpID}}, nil
+		return []UniverseFaction{{FactionID: 500001, Name: "Caldari State", IsUnique: &isUnique, CorporationID: &corpID}}, nil
 	}
 
 	handler := listUniverseFactionsHandler("v1", nil)
@@ -283,7 +289,7 @@ func TestListUniverseFactionsHandler_MapsFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
-	if len(out.Factions) != 1 || out.Factions[0].FactionID != 500001 || !out.Factions[0].IsUnique {
+	if len(out.Factions) != 1 || out.Factions[0].FactionID != 500001 || out.Factions[0].IsUnique == nil || !*out.Factions[0].IsUnique {
 		t.Errorf("out = %+v, want one entry FactionID=500001 IsUnique=true", out)
 	}
 	if out.Factions[0].CorporationID == nil || *out.Factions[0].CorporationID != 1000035 {
@@ -433,7 +439,7 @@ func TestListUniverseCategoriesHandler_PropagatesError(t *testing.T) {
 
 func TestGetUniverseCategory_CacheHit_MapsFields(t *testing.T) {
 	cache := &fakeCategoryCache{
-		category:   sde.Category{ID: 6, Name: map[string]string{"en": "Ship"}, Published: true, GroupIDs: []int64{25}},
+		category:   sde.Category{ID: 6, Name: "Ship", Published: true, GroupIDs: []int64{25}},
 		categoryOK: true,
 	}
 
@@ -580,7 +586,7 @@ func TestListUniverseGroupsHandler_PropagatesError(t *testing.T) {
 
 func TestGetUniverseGroup_CacheHit_MapsFields(t *testing.T) {
 	cache := &fakeGroupCache{
-		group:   sde.Group{ID: 25, CategoryID: 6, Name: map[string]string{"en": "Frigate"}, Published: true, TypeIDs: []int64{587}},
+		group:   sde.Group{ID: 25, CategoryID: 6, Name: "Frigate", Published: true, TypeIDs: []int64{587}},
 		groupOK: true,
 	}
 
@@ -675,7 +681,7 @@ func TestGetUniverseType_CacheHit_MapsFieldsIncludingPackagedVolume(t *testing.T
 	packagedVolume := 2500.0
 	cache := &fakeTypeCache{
 		typ: sde.Type{
-			ID: 587, GroupID: 25, Name: map[string]string{"en": "Rifter"}, Description: map[string]string{"en": "Fast."},
+			ID: 587, GroupID: 25, Name: "Rifter", Description: "Fast.",
 			Published: true, Mass: &mass, PackagedVolume: &packagedVolume,
 			DogmaAttributes: []sde.TypeDogmaAttribute{{AttributeID: 182, Value: 3386.0}},
 			DogmaEffects:    []sde.TypeDogmaEffect{{EffectID: 4, IsDefault: true}},
@@ -869,8 +875,8 @@ func TestListUniverseRegionsHandler_PropagatesError(t *testing.T) {
 func TestGetUniverseRegion_CacheHit_MapsFields(t *testing.T) {
 	cache := &fakeRegionCache{
 		region: sde.Region{
-			ID: 10000001, Name: map[string]string{"en": "Derelik"},
-			Description: map[string]string{"en": "A dangerous frontier region."}, ConstellationIDs: []int64{20000001},
+			ID: 10000001, Name: "Derelik",
+			Description: pStr("A dangerous frontier region."), ConstellationIDs: []int64{20000001},
 		},
 		regionOK: true,
 	}
@@ -892,7 +898,7 @@ func TestGetUniverseRegion_CacheHit_MapsFields(t *testing.T) {
 
 func TestGetUniverseRegion_CacheHit_NoDescription_ReturnsNilDescription(t *testing.T) {
 	cache := &fakeRegionCache{
-		region:   sde.Region{ID: 10000002, Name: map[string]string{"en": "No Description"}},
+		region:   sde.Region{ID: 10000002, Name: "No Description"},
 		regionOK: true,
 	}
 
@@ -973,7 +979,7 @@ func TestListUniverseConstellationsHandler_PropagatesError(t *testing.T) {
 func TestGetUniverseConstellation_CacheHit_MapsFields(t *testing.T) {
 	cache := &fakeConstellationCache{
 		constellation: sde.Constellation{
-			ID: 20000001, RegionID: 10000001, Name: map[string]string{"en": "San Matar"},
+			ID: 20000001, RegionID: 10000001, Name: "San Matar",
 			Position: sde.Position{X: 1, Y: 2, Z: 3}, SystemIDs: []int64{30000001},
 		},
 		constellationOK: true,
@@ -1069,7 +1075,7 @@ func TestGetUniverseSystem_CacheHit_MapsFieldsIncludingPlanets(t *testing.T) {
 	starID := int64(40000001)
 	cache := &fakeSystemCache{
 		system: sde.System{
-			ID: 30000001, ConstellationID: 20000001, Name: map[string]string{"en": "Tanoo"},
+			ID: 30000001, ConstellationID: 20000001, Name: "Tanoo",
 			Position: sde.Position{X: 1, Y: 2, Z: 3}, SecurityStatus: 0.85, SecurityClass: &secClass,
 			StarID: &starID, StargateIDs: []int64{50000056}, StationIDs: []int64{60000001},
 			Planets: []sde.SystemPlanet{{PlanetID: 40000002, MoonIDs: []int64{40000004}, AsteroidBeltIDs: []int64{40000003}}},
@@ -1498,12 +1504,13 @@ func TestGetUniverseStationHandler_MapsFields(t *testing.T) {
 	orig := getUniverseStation
 	t.Cleanup(func() { getUniverseStation = orig })
 	owner := int64(1000035)
+	services := []string{"market", "repair-facilities"}
 	getUniverseStation = func(ctx context.Context, sdeStore stationCache, userAgent string, stationID int64) (UniverseStation, error) {
 		return UniverseStation{
 			StationID: 60003760, SystemID: 30000142, TypeID: 1529,
 			Name: "Jita IV - Moon 4 - Caldari Navy Assembly Plant", Position: Position{X: 1, Y: 2, Z: 3},
 			MaxDockableShipVolume: 50000000, OfficeRentalCost: 10000, Owner: &owner,
-			ReprocessingEfficiency: 0.5, ReprocessingStationsTake: 0.05, Services: []string{"market", "repair-facilities"},
+			ReprocessingEfficiency: 0.5, ReprocessingStationsTake: 0.05, Services: &services,
 		}, nil
 	}
 
@@ -1518,7 +1525,7 @@ func TestGetUniverseStationHandler_MapsFields(t *testing.T) {
 	if out.Owner == nil || *out.Owner != 1000035 {
 		t.Errorf("Owner = %v, want 1000035", out.Owner)
 	}
-	if len(out.Services) != 2 {
+	if out.Services == nil || len(*out.Services) != 2 {
 		t.Errorf("Services = %v, want 2 entries", out.Services)
 	}
 }
@@ -2337,7 +2344,7 @@ func TestGetUniverseStation_CacheMiss_FetchesFromESIAndWritesBack(t *testing.T) 
 	if got.Owner == nil || *got.Owner != 1000035 {
 		t.Errorf("Owner = %v, want 1000035", got.Owner)
 	}
-	if len(got.Services) != 2 {
+	if got.Services == nil || len(*got.Services) != 2 {
 		t.Errorf("Services = %v, want 2 entries", got.Services)
 	}
 	if cache.putCall == nil || cache.putCall.ID != 60003760 {
@@ -2430,7 +2437,7 @@ func TestListUniverseFactions_CacheMiss_FetchesFromESI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listUniverseFactions returned error: %v", err)
 	}
-	if len(got) != 1 || got[0].FactionID != 500001 || !got[0].IsUnique || got[0].Name != "Caldari State" {
+	if len(got) != 1 || got[0].FactionID != 500001 || got[0].IsUnique == nil || !*got[0].IsUnique || got[0].Name != "Caldari State" {
 		t.Errorf("got = %+v, want one entry FactionID=500001 IsUnique=true Name=Caldari State", got)
 	}
 	if got[0].CorporationID == nil || *got[0].CorporationID != 1000035 {

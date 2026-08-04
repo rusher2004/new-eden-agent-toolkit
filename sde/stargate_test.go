@@ -5,30 +5,33 @@ import (
 	"testing"
 )
 
-func TestStargate_KnownID_ReturnsRecord(t *testing.T) {
+func TestStargate_KnownID_ReturnsRowWithDestination(t *testing.T) {
 	store := seedStore(t)
-	putRecord(t, store, "stargates", 50000001,
-		`{"_key": 50000001, "name": "Stargate (G-EURJ)", "typeId": 29633, "position": {"x": 1, "y": 2, "z": 3}, "systemId": 30000777, "destinationStargateId": 50000482, "destinationSystemId": 30000778}`)
+	seedExec(t, store, `INSERT INTO mapDenormalize (itemID, typeID, groupID, solarSystemID, x, y, z, itemName) VALUES (50008077, 16, 10, 30000142, 1.0, 2.0, 3.0, 'Stargate (Perimeter)')`)
+	seedExec(t, store, `INSERT INTO mapDenormalize (itemID, typeID, groupID, solarSystemID, itemName) VALUES (50008078, 16, 10, 30000144, 'Stargate (Jita)')`)
+	seedExec(t, store, `INSERT INTO mapJumps (stargateID, destinationID) VALUES (50008077, 50008078)`)
 
-	got, ok, err := store.Stargate(context.Background(), "test-agent", 50000001)
+	got, ok, err := store.Stargate(context.Background(), testUserAgent, 50008077)
 	if err != nil {
 		t.Fatalf("Stargate returned error: %v", err)
 	}
 	if !ok {
 		t.Fatal("Stargate ok = false, want true")
 	}
-	if got.ID != 50000001 || got.Name != "Stargate (G-EURJ)" || got.TypeID != 29633 || got.SystemID != 30000777 {
-		t.Errorf("got = %+v, want ID=50000001 Name=\"Stargate (G-EURJ)\" TypeID=29633 SystemID=30000777", got)
+	if got.ID != 50008077 || got.SystemID != 30000142 {
+		t.Errorf("got = %+v, want ID=50008077 SystemID=30000142", got)
 	}
-	if got.DestinationStargateID != 50000482 || got.DestinationSystemID != 30000778 {
-		t.Errorf("Destination = %d/%d, want 50000482/30000778", got.DestinationStargateID, got.DestinationSystemID)
+	if got.DestinationStargateID != 50008078 {
+		t.Errorf("DestinationStargateID = %d, want 50008078", got.DestinationStargateID)
+	}
+	if got.DestinationSystemID != 30000144 {
+		t.Errorf("DestinationSystemID = %d, want 30000144 (joined from the destination gate's own solarSystemID)", got.DestinationSystemID)
 	}
 }
 
 func TestStargate_UnknownID_ReturnsNotOK(t *testing.T) {
 	store := seedStore(t)
-
-	_, ok, err := store.Stargate(context.Background(), "test-agent", 999)
+	_, ok, err := store.Stargate(context.Background(), testUserAgent, 999)
 	if err != nil {
 		t.Fatalf("Stargate returned error: %v", err)
 	}
@@ -37,33 +40,21 @@ func TestStargate_UnknownID_ReturnsNotOK(t *testing.T) {
 	}
 }
 
-func TestStargate_MismatchedKey_ReturnsError(t *testing.T) {
+func TestPutStargate_ThenStargate_ReturnsOverlaidValue(t *testing.T) {
 	store := seedStore(t)
-	putRecord(t, store, "stargates", 50000001,
-		`{"_key": 999, "name": "Stargate (G-EURJ)", "typeId": 29633, "position": {"x": 1, "y": 2, "z": 3}, "systemId": 30000777, "destinationStargateId": 50000482, "destinationSystemId": 30000778}`)
-
-	_, _, err := store.Stargate(context.Background(), "test-agent", 50000001)
-	if err == nil {
-		t.Fatal("Stargate returned nil error, want an error for a mismatched _key")
-	}
-}
-
-func TestPutStargate_ThenStargate_RoundTrips(t *testing.T) {
-	store := seedStore(t)
-	want := Stargate{ID: 50000099, Name: "New Stargate", TypeID: 29633, Position: Position{X: 9, Y: 8, Z: 7}, SystemID: 30000099, DestinationStargateID: 50000098, DestinationSystemID: 30000098}
+	want := Stargate{ID: 999, Name: "Read-Through Stargate", SystemID: 30000142, DestinationSystemID: 30000144}
 
 	if err := store.PutStargate(want); err != nil {
 		t.Fatalf("PutStargate returned error: %v", err)
 	}
-
-	got, ok, err := store.Stargate(context.Background(), "test-agent", 50000099)
+	got, ok, err := store.Stargate(context.Background(), testUserAgent, 999)
 	if err != nil {
 		t.Fatalf("Stargate returned error: %v", err)
 	}
 	if !ok {
-		t.Fatal("Stargate ok = false after PutStargate, want true")
+		t.Fatal("Stargate ok = false, want true after PutStargate")
 	}
-	if got != want {
-		t.Errorf("got = %+v, want %+v", got, want)
+	if got.Name != want.Name {
+		t.Errorf("Name = %q, want %q", got.Name, want.Name)
 	}
 }

@@ -2,29 +2,21 @@ package sde
 
 import (
 	"context"
-	"encoding/json"
+	"database/sql"
+	"errors"
 	"fmt"
-
-	"go.etcd.io/bbolt"
 )
 
-// Group is a minimal decode of an SDE group record -- EVE's item hierarchy
-// level between Category and Type (e.g. "Frigate", within the "Ship"
-// category).
+// Group is a minimal decode of a fuzzwork invGroups row -- EVE's item
+// hierarchy level between Category and Type (e.g. "Frigate", within the
+// "Ship" category). TypeIDs is not a stored column -- it's computed via a
+// reverse query over invTypes at read time.
 type Group struct {
 	ID         int64
 	CategoryID int64
-	Name       map[string]string
+	Name       string
 	Published  bool
 	TypeIDs    []int64
-}
-
-type groupRecord struct {
-	Key        int64             `json:"_key"`
-	CategoryID int64             `json:"categoryID"`
-	Name       map[string]string `json:"name"`
-	Published  bool              `json:"published"`
-	TypeIDs    []int64           `json:"typeIds"`
 }
 
 // Group looks up a group by ID. ok is false if the ID isn't in the cache.
@@ -32,71 +24,57 @@ func (s *Store) Group(ctx context.Context, userAgent string, id int64) (Group, b
 	if s == nil {
 		return Group{}, false, nil
 	}
+	if v, ok := getOverlay[Group](s, "group", id); ok {
+		return v, true, nil
+	}
 	_ = s.ensureSynced(ctx, userAgent)
+	if s.db == nil {
+		return Group{}, false, nil
+	}
 
 	var (
-		out Group
-		ok  bool
+		categoryID int64
+		name       sql.NullString
+		published  sql.NullBool
 	)
-	err := s.db.View(func(tx *bbolt.Tx) error {
-		b := tx.Bucket([]byte("groups"))
-		if b == nil {
-			return nil
+	row := s.db.QueryRowContext(ctx, `SELECT categoryID, groupName, published FROM invGroups WHERE groupID = ?`, id)
+	if err := row.Scan(&categoryID, &name, &published); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Group{}, false, nil
 		}
-		v := b.Get(int64Key(id))
-		if v == nil {
-			return nil
-		}
-		var raw groupRecord
-		if err := json.Unmarshal(v, &raw); err != nil {
-			return fmt.Errorf("parse cached group %d: %w", id, err)
-		}
-		if raw.Key != id {
-			return fmt.Errorf("cached group %d has mismatched key %d", id, raw.Key)
-		}
-		out, ok = Group{ID: raw.Key, CategoryID: raw.CategoryID, Name: raw.Name, Published: raw.Published, TypeIDs: raw.TypeIDs}, true
-		return nil
-	})
-	return out, ok, err
+		return Group{}, false, fmt.Errorf("query group %d: %w", id, err)
+	}
+
+	typeIDs, err := s.queryInt64Column(ctx, `SELECT typeID FROM invTypes WHERE groupID = ? ORDER BY typeID`, id)
+	if err != nil {
+		return Group{}, false, fmt.Errorf("query group %d type ids: %w", id, err)
+	}
+
+	return Group{ID: id, CategoryID: categoryID, Name: name.String, Published: published.Bool, TypeIDs: typeIDs}, true, nil
 }
 
-// PutGroup writes g into the cache, keyed by g.ID -- used by mcp/'s
+// PutGroup stores g in the overlay, keyed by g.ID -- used by mcp/'s
 // read-through fallback.
 func (s *Store) PutGroup(g Group) error {
 	if s == nil {
 		return nil
 	}
-	raw, err := json.Marshal(groupRecord{Key: g.ID, CategoryID: g.CategoryID, Name: g.Name, Published: g.Published, TypeIDs: g.TypeIDs})
-	if err != nil {
-		return fmt.Errorf("marshal group %d: %w", g.ID, err)
-	}
-	return s.db.Update(func(tx *bbolt.Tx) error {
-		b, err := tx.CreateBucketIfNotExists([]byte("groups"))
-		if err != nil {
-			return fmt.Errorf("create groups bucket: %w", err)
-		}
-		return b.Put(int64Key(g.ID), raw)
-	})
+	putOverlay(s, "group", g.ID, g)
+	return nil
 }
 
-// GroupIDs returns every group ID currently cached. See CategoryIDs for why
-// no separate sort is needed and what an empty result means.
+// GroupIDs returns every group ID currently cached, ascending.
 func (s *Store) GroupIDs(ctx context.Context, userAgent string) ([]int64, error) {
 	if s == nil {
 		return nil, nil
 	}
 	_ = s.ensureSynced(ctx, userAgent)
-
-	var ids []int64
-	err := s.db.View(func(tx *bbolt.Tx) error {
-		b := tx.Bucket([]byte("groups"))
-		if b == nil {
-			return nil
-		}
-		return b.ForEach(func(k, _ []byte) error {
-			ids = append(ids, int64FromKey(k))
-			return nil
-		})
-	})
-	return ids, err
+	if s.db == nil {
+		return nil, nil
+	}
+	ids, err := s.queryInt64Column(ctx, `SELECT groupID FROM invGroups ORDER BY groupID`)
+	if err != nil {
+		return nil, fmt.Errorf("query group ids: %w", err)
+	}
+	return ids, nil
 }

@@ -40,7 +40,7 @@ var resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAge
 		if err != nil || !ok {
 			continue
 		}
-		names[id] = t.Name["en"]
+		names[id] = t.Name
 	}
 	return names
 }
@@ -69,7 +69,7 @@ var resolveSystemNames = func(ctx context.Context, sdeStore systemNameCache, use
 		if err != nil || !ok {
 			continue
 		}
-		names[id] = s.Name["en"]
+		names[id] = s.Name
 	}
 	return names
 }
@@ -95,7 +95,7 @@ var resolveRegionNames = func(ctx context.Context, sdeStore regionNameCache, use
 		if err != nil || !ok {
 			continue
 		}
-		names[id] = r.Name["en"]
+		names[id] = r.Name
 	}
 	return names
 }
@@ -121,7 +121,7 @@ var resolveConstellationNames = func(ctx context.Context, sdeStore constellation
 		if err != nil || !ok {
 			continue
 		}
-		names[id] = c.Name["en"]
+		names[id] = c.Name
 	}
 	return names
 }
@@ -232,7 +232,7 @@ var resolveRaceNames = func(ctx context.Context, sdeStore raceNameCache, userAge
 		if err != nil || !ok {
 			continue
 		}
-		names[id] = r.Name["en"]
+		names[id] = r.Name
 	}
 	return names
 }
@@ -258,7 +258,7 @@ var resolveBloodlineNames = func(ctx context.Context, sdeStore bloodlineNameCach
 		if err != nil || !ok {
 			continue
 		}
-		names[id] = b.Name["en"]
+		names[id] = b.Name
 	}
 	return names
 }
@@ -284,7 +284,7 @@ var resolveFactionNames = func(ctx context.Context, sdeStore factionNameCache, u
 		if err != nil || !ok {
 			continue
 		}
-		names[id] = f.Name["en"]
+		names[id] = f.Name
 	}
 	return names
 }
@@ -312,7 +312,7 @@ var resolveGroupNames = func(ctx context.Context, sdeStore groupNameCache, userA
 		if err != nil || !ok {
 			continue
 		}
-		names[id] = g.Name["en"]
+		names[id] = g.Name
 	}
 	return names
 }

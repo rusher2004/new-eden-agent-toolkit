@@ -5,101 +5,67 @@ import (
 	"testing"
 )
 
-func TestFactions_ReturnsAllWithAugmentedCounts(t *testing.T) {
+func TestFactions_ReturnsEveryCachedFactionWithNilIsUnique(t *testing.T) {
 	store := seedStore(t)
-	putRecord(t, store, "factions", 500001,
-		`{"_key": 500001, "corporationID": 1000035, "description": {"en": "The Caldari State..."}, "militiaCorporationID": 1000180, "name": {"en": "Caldari State"}, "sizeFactor": 5.0, "solarSystemID": 30000145, "uniqueName": true, "stationCount": 120, "stationSystemCount": 45}`)
+	seedExec(t, store, `INSERT INTO chrFactions (factionID, factionName, description, solarSystemID, corporationID, sizeFactor, stationCount, stationSystemCount, militiaCorporationID)
+		VALUES (500001, 'Caldari State', 'The Caldari State.', 30000142, 1000035, 1.0, 10, 5, 1000180)`)
 
-	got, err := store.Factions(context.Background(), "test-agent")
+	got, err := store.Factions(context.Background(), testUserAgent)
 	if err != nil {
 		t.Fatalf("Factions returned error: %v", err)
 	}
 	if len(got) != 1 {
-		t.Fatalf("Factions = %+v, want one entry", got)
+		t.Fatalf("len(Factions) = %d, want 1", len(got))
 	}
 	f := got[0]
-	if f.ID != 500001 || !f.IsUnique || f.SizeFactor != 5.0 {
-		t.Errorf("got = %+v, want ID=500001 IsUnique=true SizeFactor=5.0", f)
+	if f.ID != 500001 || f.Name != "Caldari State" || f.Description != "The Caldari State." {
+		t.Errorf("got = %+v, want ID=500001 Name=%q Description=%q", f, "Caldari State", "The Caldari State.")
 	}
-	if f.Name["en"] != "Caldari State" {
-		t.Errorf("Name[en] = %q, want Caldari State", f.Name["en"])
+	if f.IsUnique != nil {
+		t.Errorf("IsUnique = %v, want nil (chrFactions has no uniqueName-equivalent column)", *f.IsUnique)
+	}
+	if f.StationCount != 10 || f.StationSystemCount != 5 {
+		t.Errorf("StationCount/StationSystemCount = %d/%d, want 10/5", f.StationCount, f.StationSystemCount)
 	}
 	if f.CorporationID == nil || *f.CorporationID != 1000035 {
 		t.Errorf("CorporationID = %v, want 1000035", f.CorporationID)
 	}
-	if f.MilitiaCorporationID == nil || *f.MilitiaCorporationID != 1000180 {
-		t.Errorf("MilitiaCorporationID = %v, want 1000180", f.MilitiaCorporationID)
-	}
-	if f.SolarSystemID == nil || *f.SolarSystemID != 30000145 {
-		t.Errorf("SolarSystemID = %v, want 30000145", f.SolarSystemID)
-	}
-	if f.StationCount != 120 || f.StationSystemCount != 45 {
-		t.Errorf("StationCount/StationSystemCount = %d/%d, want 120/45", f.StationCount, f.StationSystemCount)
-	}
 }
 
-func TestFactions_EmptyBucket_ReturnsEmptySlice(t *testing.T) {
-	store := seedStore(t)
-
-	got, err := store.Factions(context.Background(), "test-agent")
+func TestFactions_NeverSynced_ReturnsEmptySlice(t *testing.T) {
+	store := &Store{}
+	got, err := store.Factions(context.Background(), testUserAgent)
 	if err != nil {
 		t.Fatalf("Factions returned error: %v", err)
 	}
 	if len(got) != 0 {
-		t.Errorf("Factions = %+v, want empty", got)
+		t.Errorf("Factions = %v, want empty", got)
 	}
 }
 
-func TestFaction_KnownID_ReturnsAllLocales(t *testing.T) {
+func TestFaction_KnownID_ReturnsRow(t *testing.T) {
 	store := seedStore(t)
-	putRecord(t, store, "factions", 500001, `{"_key": 500001, "corporationID": 1000035, "description": {"en": "..."}, "militiaCorporationID": 1000180, "name": {"en": "Caldari State"}, "sizeFactor": 5.0, "solarSystemID": 30000145, "uniqueName": true, "stationCount": 120, "stationSystemCount": 45}`)
+	seedExec(t, store, `INSERT INTO chrFactions (factionID, factionName, sizeFactor, stationCount, stationSystemCount) VALUES (500001, 'Caldari State', 1.0, 0, 0)`)
 
-	got, ok, err := store.Faction(context.Background(), "test-agent", 500001)
+	got, ok, err := store.Faction(context.Background(), testUserAgent, 500001)
 	if err != nil {
 		t.Fatalf("Faction returned error: %v", err)
 	}
 	if !ok {
 		t.Fatal("Faction ok = false, want true")
 	}
-	if got.ID != 500001 {
-		t.Errorf("got.ID = %d, want 500001", got.ID)
-	}
-	if got.Name["en"] != "Caldari State" {
-		t.Errorf("Name[en] = %q, want Caldari State", got.Name["en"])
-	}
-	if got.IsUnique != true {
-		t.Errorf("IsUnique = %v, want true", got.IsUnique)
+	if got.Name != "Caldari State" {
+		t.Errorf("Name = %q, want Caldari State", got.Name)
 	}
 }
 
 func TestFaction_UnknownID_ReturnsNotOK(t *testing.T) {
 	store := seedStore(t)
-
-	_, ok, err := store.Faction(context.Background(), "test-agent", 999)
+	_, ok, err := store.Faction(context.Background(), testUserAgent, 999)
 	if err != nil {
 		t.Fatalf("Faction returned error: %v", err)
 	}
 	if ok {
 		t.Error("Faction ok = true, want false for an unknown ID")
-	}
-}
-
-func TestFaction_MalformedCachedRecord_ReturnsError(t *testing.T) {
-	store := seedStore(t)
-	putRecord(t, store, "factions", 500001, `not valid json`)
-
-	_, _, err := store.Faction(context.Background(), "test-agent", 500001)
-	if err == nil {
-		t.Fatal("Faction returned nil error, want a parse error for a corrupted cache entry")
-	}
-}
-
-func TestFaction_MismatchedKey_ReturnsError(t *testing.T) {
-	store := seedStore(t)
-	putRecord(t, store, "factions", 500001, `{"_key": 999, "corporationID": 1000035, "description": {"en": "..."}, "militiaCorporationID": 1000180, "name": {"en": "Caldari State"}, "sizeFactor": 5.0, "solarSystemID": 30000145, "uniqueName": true, "stationCount": 120, "stationSystemCount": 45}`)
-
-	_, _, err := store.Faction(context.Background(), "test-agent", 500001)
-	if err == nil {
-		t.Fatal("Faction returned nil error, want an error for a mismatched _key")
 	}
 }

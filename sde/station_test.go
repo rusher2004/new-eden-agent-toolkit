@@ -5,41 +5,36 @@ import (
 	"testing"
 )
 
-func TestStation_KnownID_ReturnsRecord(t *testing.T) {
+func TestStation_KnownID_ReturnsRowWithJoinedRaceID(t *testing.T) {
 	store := seedStore(t)
-	owner := int64(1000002)
-	raceID := int64(1)
-	putRecord(t, store, "stations", 60000004,
-		`{"_key": 60000004, "name": "Muvolailen X - Moon 3 - CBD Corporation Storage", "systemId": 30002780, "typeId": 1531, "position": {"x": 1, "y": 2, "z": 3}, "maxDockableShipVolume": 50000000, "officeRentalCost": 3627229, "owner": 1000002, "raceId": 1, "reprocessingEfficiency": 0.5, "reprocessingStationsTake": 0.05, "services": ["docking", "market"]}`)
+	seedExec(t, store, `INSERT INTO invTypes (typeID, groupID, typeName, published, raceID) VALUES (1531, 15, 'Caldari Trading Post', 1, 1)`)
+	seedExec(t, store, `INSERT INTO staStations (stationID, stationName, solarSystemID, stationTypeID, x, y, z, maxShipVolumeDockable, officeRentalCost, corporationID, reprocessingEfficiency, reprocessingStationsTake)
+		VALUES (60003760, 'Jita IV - Moon 4', 30000142, 1531, 1.0, 2.0, 3.0, 500000000.0, 800000.0, 1000035, 0.5, 0.05)`)
 
-	got, ok, err := store.Station(context.Background(), "test-agent", 60000004)
+	got, ok, err := store.Station(context.Background(), testUserAgent, 60003760)
 	if err != nil {
 		t.Fatalf("Station returned error: %v", err)
 	}
 	if !ok {
 		t.Fatal("Station ok = false, want true")
 	}
-	if got.ID != 60000004 || got.Name != "Muvolailen X - Moon 3 - CBD Corporation Storage" || got.SystemID != 30002780 || got.TypeID != 1531 {
-		t.Errorf("got = %+v, want ID=60000004 SystemID=30002780 TypeID=1531", got)
+	if got.ID != 60003760 || got.Name != "Jita IV - Moon 4" || got.SystemID != 30000142 || got.TypeID != 1531 {
+		t.Errorf("got = %+v, want ID=60003760 Name=%q SystemID=30000142 TypeID=1531", got, "Jita IV - Moon 4")
 	}
-	if got.Owner == nil || *got.Owner != owner {
-		t.Errorf("Owner = %v, want %d", got.Owner, owner)
+	if got.Owner == nil || *got.Owner != 1000035 {
+		t.Errorf("Owner = %v, want 1000035", got.Owner)
 	}
-	if got.RaceID == nil || *got.RaceID != raceID {
-		t.Errorf("RaceID = %v, want %d", got.RaceID, raceID)
+	if got.RaceID == nil || *got.RaceID != 1 {
+		t.Errorf("RaceID = %v, want 1 (joined from invTypes.raceID)", got.RaceID)
 	}
-	if got.MaxDockableShipVolume != 50000000 || got.OfficeRentalCost != 3627229 || got.ReprocessingEfficiency != 0.5 || got.ReprocessingStationsTake != 0.05 {
-		t.Errorf("got = %+v, want MaxDockableShipVolume=50000000 OfficeRentalCost=3627229 ReprocessingEfficiency=0.5 ReprocessingStationsTake=0.05", got)
-	}
-	if len(got.Services) != 2 || got.Services[0] != "docking" || got.Services[1] != "market" {
-		t.Errorf("Services = %v, want [docking market]", got.Services)
+	if got.Services != nil {
+		t.Errorf("Services = %v, want nil (staOperationServices has no rows in the fuzzwork dump)", *got.Services)
 	}
 }
 
 func TestStation_UnknownID_ReturnsNotOK(t *testing.T) {
 	store := seedStore(t)
-
-	_, ok, err := store.Station(context.Background(), "test-agent", 999)
+	_, ok, err := store.Station(context.Background(), testUserAgent, 999)
 	if err != nil {
 		t.Fatalf("Station returned error: %v", err)
 	}
@@ -48,38 +43,22 @@ func TestStation_UnknownID_ReturnsNotOK(t *testing.T) {
 	}
 }
 
-func TestStation_MismatchedKey_ReturnsError(t *testing.T) {
+func TestPutStation_ThenStation_ReturnsOverlaidServices(t *testing.T) {
 	store := seedStore(t)
-	putRecord(t, store, "stations", 60000004,
-		`{"_key": 999, "name": "X", "systemId": 1, "typeId": 1, "position": {"x": 1, "y": 2, "z": 3}}`)
-
-	_, _, err := store.Station(context.Background(), "test-agent", 60000004)
-	if err == nil {
-		t.Fatal("Station returned nil error, want an error for a mismatched _key")
-	}
-}
-
-func TestPutStation_ThenStation_RoundTrips(t *testing.T) {
-	store := seedStore(t)
-	owner := int64(1000002)
-	want := Station{
-		ID: 60000099, Name: "New Station", SystemID: 30000099, TypeID: 1531, Position: Position{X: 9, Y: 8, Z: 7},
-		MaxDockableShipVolume: 1000, OfficeRentalCost: 10000, Owner: &owner,
-		ReprocessingEfficiency: 0.5, ReprocessingStationsTake: 0.05, Services: []string{"docking"},
-	}
+	services := []string{"market", "reprocessing-plant"}
+	want := Station{ID: 999, Name: "Read-Through Station", Services: &services}
 
 	if err := store.PutStation(want); err != nil {
 		t.Fatalf("PutStation returned error: %v", err)
 	}
-
-	got, ok, err := store.Station(context.Background(), "test-agent", 60000099)
+	got, ok, err := store.Station(context.Background(), testUserAgent, 999)
 	if err != nil {
 		t.Fatalf("Station returned error: %v", err)
 	}
 	if !ok {
-		t.Fatal("Station ok = false after PutStation, want true")
+		t.Fatal("Station ok = false, want true after PutStation")
 	}
-	if got.ID != want.ID || got.Name != want.Name || *got.Owner != *want.Owner || len(got.Services) != 1 {
-		t.Errorf("got = %+v, want %+v", got, want)
+	if got.Services == nil || len(*got.Services) != 2 {
+		t.Errorf("Services = %v, want [market reprocessing-plant] (overlay values keep whatever PutStation was given)", got.Services)
 	}
 }

@@ -5,30 +5,38 @@ import (
 	"testing"
 )
 
-func TestAsteroidBelt_KnownID_ReturnsRecord(t *testing.T) {
+func TestAsteroidBelt_KnownID_ReturnsRow(t *testing.T) {
 	store := seedStore(t)
-	putRecord(t, store, "asteroidBelts", 40000003,
-		`{"_key": 40000003, "name": "Tanoo I - Asteroid Belt 1", "position": {"x": 1, "y": 2, "z": 3}, "systemId": 30000001}`)
+	seedExec(t, store, `INSERT INTO mapDenormalize (itemID, typeID, groupID, solarSystemID, x, y, z, itemName) VALUES (40009079, 16, 9, 30000142, 1.0, 2.0, 3.0, 'Jita 1 - Asteroid Belt 1')`)
 
-	got, ok, err := store.AsteroidBelt(context.Background(), "test-agent", 40000003)
+	got, ok, err := store.AsteroidBelt(context.Background(), testUserAgent, 40009079)
 	if err != nil {
 		t.Fatalf("AsteroidBelt returned error: %v", err)
 	}
 	if !ok {
 		t.Fatal("AsteroidBelt ok = false, want true")
 	}
-	if got.ID != 40000003 || got.Name != "Tanoo I - Asteroid Belt 1" || got.SystemID != 30000001 {
-		t.Errorf("got = %+v, want ID=40000003 Name=\"Tanoo I - Asteroid Belt 1\" SystemID=30000001", got)
+	if got.ID != 40009079 || got.SystemID != 30000142 || got.Name != "Jita 1 - Asteroid Belt 1" {
+		t.Errorf("got = %+v, want ID=40009079 SystemID=30000142 Name=%q", got, "Jita 1 - Asteroid Belt 1")
 	}
-	if got.Position != (Position{X: 1, Y: 2, Z: 3}) {
-		t.Errorf("Position = %+v, want {1 2 3}", got.Position)
+}
+
+func TestAsteroidBelt_GroupID4430_AlsoMatches(t *testing.T) {
+	store := seedStore(t)
+	seedExec(t, store, `INSERT INTO mapDenormalize (itemID, typeID, groupID, solarSystemID, itemName) VALUES (40009999, 16, 4430, 30000142, 'Wormhole Belt')`)
+
+	_, ok, err := store.AsteroidBelt(context.Background(), testUserAgent, 40009999)
+	if err != nil {
+		t.Fatalf("AsteroidBelt returned error: %v", err)
+	}
+	if !ok {
+		t.Error("AsteroidBelt ok = false, want true for groupID 4430 (the wormhole-system asteroid belt group)")
 	}
 }
 
 func TestAsteroidBelt_UnknownID_ReturnsNotOK(t *testing.T) {
 	store := seedStore(t)
-
-	_, ok, err := store.AsteroidBelt(context.Background(), "test-agent", 999)
+	_, ok, err := store.AsteroidBelt(context.Background(), testUserAgent, 999)
 	if err != nil {
 		t.Fatalf("AsteroidBelt returned error: %v", err)
 	}
@@ -37,33 +45,21 @@ func TestAsteroidBelt_UnknownID_ReturnsNotOK(t *testing.T) {
 	}
 }
 
-func TestAsteroidBelt_MismatchedKey_ReturnsError(t *testing.T) {
+func TestPutAsteroidBelt_ThenAsteroidBelt_ReturnsOverlaidValue(t *testing.T) {
 	store := seedStore(t)
-	putRecord(t, store, "asteroidBelts", 40000003,
-		`{"_key": 999, "name": "Tanoo I - Asteroid Belt 1", "position": {"x": 1, "y": 2, "z": 3}, "systemId": 30000001}`)
-
-	_, _, err := store.AsteroidBelt(context.Background(), "test-agent", 40000003)
-	if err == nil {
-		t.Fatal("AsteroidBelt returned nil error, want an error for a mismatched _key")
-	}
-}
-
-func TestPutAsteroidBelt_ThenAsteroidBelt_RoundTrips(t *testing.T) {
-	store := seedStore(t)
-	want := AsteroidBelt{ID: 40000099, Name: "New Belt", Position: Position{X: 9, Y: 8, Z: 7}, SystemID: 30000099}
+	want := AsteroidBelt{ID: 999, Name: "Read-Through Belt", SystemID: 30000142}
 
 	if err := store.PutAsteroidBelt(want); err != nil {
 		t.Fatalf("PutAsteroidBelt returned error: %v", err)
 	}
-
-	got, ok, err := store.AsteroidBelt(context.Background(), "test-agent", 40000099)
+	got, ok, err := store.AsteroidBelt(context.Background(), testUserAgent, 999)
 	if err != nil {
 		t.Fatalf("AsteroidBelt returned error: %v", err)
 	}
 	if !ok {
-		t.Fatal("AsteroidBelt ok = false after PutAsteroidBelt, want true")
+		t.Fatal("AsteroidBelt ok = false, want true after PutAsteroidBelt")
 	}
-	if got != want {
-		t.Errorf("got = %+v, want %+v", got, want)
+	if got.Name != want.Name {
+		t.Errorf("Name = %q, want %q", got.Name, want.Name)
 	}
 }

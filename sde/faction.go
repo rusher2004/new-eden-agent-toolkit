@@ -2,22 +2,28 @@ package sde
 
 import (
 	"context"
-	"encoding/json"
+	"database/sql"
+	"errors"
 	"fmt"
-
-	"go.etcd.io/bbolt"
 )
 
-// Faction is a minimal decode of an SDE faction record. StationCount and
-// StationSystemCount are not present on the raw factions.jsonl record at
-// all -- sync.go's writer computes them via a 3-hop join (npcStations ->
-// npcCorporations -> aggregate per faction) and injects them before
-// writing.
+// Faction is a minimal decode of a fuzzwork chrFactions row. IsUnique is
+// *bool, not bool: chrFactions has no uniqueName-equivalent column (checked
+// directly via PRAGMA table_info), a documented field-drop in the migration
+// design spec, so a sqlite-served Faction always has a nil IsUnique -- a
+// plain false would misrepresent the field as a known, confirmed value
+// (every real EVE faction name is in fact unique, so the true value is
+// almost certainly true, not false). Unlike Region.Description/
+// Station.Services, there's no Put-and-overlay path here to mitigate it on
+// a cache miss: mcp/universe.go's Factions() has no read-through fallback at
+// all (see its full-list-only comment), so a genuinely fresh ESI fetch
+// builds the mcp output type directly from ESI's response, never through
+// this struct.
 type Faction struct {
 	ID                   int64
-	Name                 map[string]string
-	Description          map[string]string
-	IsUnique             bool
+	Name                 string
+	Description          string
+	IsUnique             *bool
 	SizeFactor           float64
 	CorporationID        *int64
 	MilitiaCorporationID *int64
@@ -26,49 +32,54 @@ type Faction struct {
 	StationSystemCount   int64
 }
 
-type factionRecord struct {
-	Key                  int64             `json:"_key"`
-	Name                 map[string]string `json:"name"`
-	Description          map[string]string `json:"description"`
-	IsUnique             bool              `json:"uniqueName"`
-	SizeFactor           float64           `json:"sizeFactor"`
-	CorporationID        *int64            `json:"corporationID,omitempty"`
-	MilitiaCorporationID *int64            `json:"militiaCorporationID,omitempty"`
-	SolarSystemID        *int64            `json:"solarSystemID,omitempty"`
-	StationCount         int64             `json:"stationCount"`
-	StationSystemCount   int64             `json:"stationSystemCount"`
+func scanFactionRow(scanner interface{ Scan(...any) error }) (Faction, error) {
+	var (
+		id                                          int64
+		name                                        sql.NullString
+		description                                 sql.NullString
+		solarSystemID, corporationID, militiaCorpID sql.NullInt64
+		sizeFactor                                  sql.NullFloat64
+		stationCount, stationSystemCount            sql.NullInt64
+	)
+	if err := scanner.Scan(&id, &name, &description, &solarSystemID, &corporationID, &sizeFactor, &stationCount, &stationSystemCount, &militiaCorpID); err != nil {
+		return Faction{}, err
+	}
+	return Faction{
+		ID: id, Name: name.String, Description: description.String, SizeFactor: sizeFactor.Float64,
+		CorporationID: nullInt(corporationID), MilitiaCorporationID: nullInt(militiaCorpID), SolarSystemID: nullInt(solarSystemID),
+		StationCount: stationCount.Int64, StationSystemCount: stationSystemCount.Int64,
+	}, nil
 }
 
+const factionSelectColumns = `factionID, factionName, description, solarSystemID, corporationID, sizeFactor, stationCount, stationSystemCount, militiaCorporationID`
+
 // Factions returns every cached faction. Returns an empty slice, not an
-// error, if the store has never synced successfully -- mcp/'s caller
-// treats an empty result as a signal to read-through to a live ESI list
-// call.
+// error, if the store has never synced successfully -- mcp/'s caller treats
+// an empty result as a signal to read-through to a live ESI list call.
 func (s *Store) Factions(ctx context.Context, userAgent string) ([]Faction, error) {
 	if s == nil {
 		return nil, nil
 	}
 	_ = s.ensureSynced(ctx, userAgent)
+	if s.db == nil {
+		return nil, nil
+	}
+
+	rows, err := s.db.QueryContext(ctx, `SELECT `+factionSelectColumns+` FROM chrFactions ORDER BY factionID`)
+	if err != nil {
+		return nil, fmt.Errorf("query factions: %w", err)
+	}
+	defer rows.Close()
 
 	var out []Faction
-	err := s.db.View(func(tx *bbolt.Tx) error {
-		b := tx.Bucket([]byte("factions"))
-		if b == nil {
-			return nil
+	for rows.Next() {
+		f, err := scanFactionRow(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan faction: %w", err)
 		}
-		return b.ForEach(func(_, v []byte) error {
-			var raw factionRecord
-			if err := json.Unmarshal(v, &raw); err != nil {
-				return fmt.Errorf("parse cached faction: %w", err)
-			}
-			out = append(out, Faction{
-				ID: raw.Key, Name: raw.Name, Description: raw.Description, IsUnique: raw.IsUnique,
-				SizeFactor: raw.SizeFactor, CorporationID: raw.CorporationID, MilitiaCorporationID: raw.MilitiaCorporationID,
-				SolarSystemID: raw.SolarSystemID, StationCount: raw.StationCount, StationSystemCount: raw.StationSystemCount,
-			})
-			return nil
-		})
-	})
-	return out, err
+		out = append(out, f)
+	}
+	return out, rows.Err()
 }
 
 // Faction looks up a faction by ID. ok is false if the ID isn't in the cache.
@@ -77,33 +88,17 @@ func (s *Store) Faction(ctx context.Context, userAgent string, id int64) (Factio
 		return Faction{}, false, nil
 	}
 	_ = s.ensureSynced(ctx, userAgent)
+	if s.db == nil {
+		return Faction{}, false, nil
+	}
 
-	var (
-		out Faction
-		ok  bool
-	)
-	err := s.db.View(func(tx *bbolt.Tx) error {
-		b := tx.Bucket([]byte("factions"))
-		if b == nil {
-			return nil
-		}
-		v := b.Get(int64Key(id))
-		if v == nil {
-			return nil
-		}
-		var raw factionRecord
-		if err := json.Unmarshal(v, &raw); err != nil {
-			return fmt.Errorf("parse cached faction %d: %w", id, err)
-		}
-		if raw.Key != id {
-			return fmt.Errorf("cached faction %d has mismatched key %d", id, raw.Key)
-		}
-		out, ok = Faction{
-			ID: raw.Key, Name: raw.Name, Description: raw.Description, IsUnique: raw.IsUnique,
-			SizeFactor: raw.SizeFactor, CorporationID: raw.CorporationID, MilitiaCorporationID: raw.MilitiaCorporationID,
-			SolarSystemID: raw.SolarSystemID, StationCount: raw.StationCount, StationSystemCount: raw.StationSystemCount,
-		}, true
-		return nil
-	})
-	return out, ok, err
+	row := s.db.QueryRowContext(ctx, `SELECT `+factionSelectColumns+` FROM chrFactions WHERE factionID = ?`, id)
+	f, err := scanFactionRow(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Faction{}, false, nil
+	}
+	if err != nil {
+		return Faction{}, false, fmt.Errorf("query faction %d: %w", id, err)
+	}
+	return f, true, nil
 }

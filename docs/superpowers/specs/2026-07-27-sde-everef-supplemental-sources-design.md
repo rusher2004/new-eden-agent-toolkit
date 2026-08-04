@@ -1,5 +1,7 @@
 # Closing the Remaining Universe-Tag Gaps with EVE Ref's Supplemental Datasets — Design
 
+**Superseded by:** [`2026-08-04-sde-sqlite-migration-design.md`](2026-08-04-sde-sqlite-migration-design.md) — this plan's bbolt + CCP-jsonl-zip pipeline was replaced by a directly-queried SQLite dump. This document remains an accurate record of what was built and why at the time.
+
 ## Goal
 
 The just-shipped `sde-universe-migration` (PR #9) migrated 18 of 24 Universe-tag tools onto a

@@ -2,14 +2,14 @@ package sde
 
 import (
 	"context"
-	"encoding/json"
+	"database/sql"
+	"errors"
 	"fmt"
-
-	"go.etcd.io/bbolt"
 )
 
-// Moon is a minimal decode of an EVE Ref esi-scrape moon record. Sourced
-// entirely from esi-scrape, same as AsteroidBelt -- see its doc comment.
+// Moon is a minimal decode of a fuzzwork mapDenormalize row filtered to
+// groupID 8 (Moon). See Planet's doc comment for why mapDenormalize replaces
+// the old esi-scrape source.
 type Moon struct {
 	ID       int64
 	Name     string
@@ -17,61 +17,42 @@ type Moon struct {
 	SystemID int64
 }
 
-type moonRecord struct {
-	Key      int64    `json:"_key"`
-	Name     string   `json:"name"`
-	Position Position `json:"position"`
-	SystemID int64    `json:"systemId"`
-}
-
 // Moon looks up a moon by ID. ok is false if the ID isn't in the cache.
 func (s *Store) Moon(ctx context.Context, userAgent string, id int64) (Moon, bool, error) {
 	if s == nil {
 		return Moon{}, false, nil
 	}
+	if v, ok := getOverlay[Moon](s, "moon", id); ok {
+		return v, true, nil
+	}
 	_ = s.ensureSynced(ctx, userAgent)
+	if s.db == nil {
+		return Moon{}, false, nil
+	}
 
 	var (
-		out Moon
-		ok  bool
+		name     sql.NullString
+		systemID int64
+		x, y, z  sql.NullFloat64
 	)
-	err := s.db.View(func(tx *bbolt.Tx) error {
-		b := tx.Bucket([]byte("moons"))
-		if b == nil {
-			return nil
+	row := s.db.QueryRowContext(ctx,
+		`SELECT itemName, solarSystemID, x, y, z FROM mapDenormalize WHERE itemID = ? AND groupID = 8`, id)
+	if err := row.Scan(&name, &systemID, &x, &y, &z); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Moon{}, false, nil
 		}
-		v := b.Get(int64Key(id))
-		if v == nil {
-			return nil
-		}
-		var raw moonRecord
-		if err := json.Unmarshal(v, &raw); err != nil {
-			return fmt.Errorf("parse cached moon %d: %w", id, err)
-		}
-		if raw.Key != id {
-			return fmt.Errorf("cached moon %d has mismatched key %d", id, raw.Key)
-		}
-		out, ok = Moon{ID: raw.Key, Name: raw.Name, Position: raw.Position, SystemID: raw.SystemID}, true
-		return nil
-	})
-	return out, ok, err
+		return Moon{}, false, fmt.Errorf("query moon %d: %w", id, err)
+	}
+
+	return Moon{ID: id, Name: name.String, SystemID: systemID, Position: Position{X: x.Float64, Y: y.Float64, Z: z.Float64}}, true, nil
 }
 
-// PutMoon writes m into the cache, keyed by m.ID -- used by mcp/'s
+// PutMoon stores m in the overlay, keyed by m.ID -- used by mcp/'s
 // read-through fallback.
 func (s *Store) PutMoon(m Moon) error {
 	if s == nil {
 		return nil
 	}
-	raw, err := json.Marshal(moonRecord{Key: m.ID, Name: m.Name, Position: m.Position, SystemID: m.SystemID})
-	if err != nil {
-		return fmt.Errorf("marshal moon %d: %w", m.ID, err)
-	}
-	return s.db.Update(func(tx *bbolt.Tx) error {
-		b, err := tx.CreateBucketIfNotExists([]byte("moons"))
-		if err != nil {
-			return fmt.Errorf("create moons bucket: %w", err)
-		}
-		return b.Put(int64Key(m.ID), raw)
-	})
+	putOverlay(s, "moon", m.ID, m)
+	return nil
 }

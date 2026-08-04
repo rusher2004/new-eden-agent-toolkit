@@ -2,18 +2,16 @@ package sde
 
 import (
 	"context"
-	"encoding/json"
+	"database/sql"
+	"errors"
 	"fmt"
-
-	"go.etcd.io/bbolt"
 )
 
-// Graphic is a minimal decode of an SDE graphic record, augmented at sync
-// time with SofDNA from EVE Ref's esi-scrape dataset. CollisionFile is
-// deliberately not modeled -- confirmed absent from every one of the
-// archive's 6051 graphics.jsonl records AND from every record in the
-// esi-scrape mirror of ESI's own live responses, not merely a sample
-// coincidence in either source.
+// Graphic is a minimal decode of a fuzzwork eveGraphics row, augmented at
+// read time with SofDNA from EVE Ref's esi-scrape dataset (in-memory only --
+// see sync.go). CollisionFile is deliberately not modeled -- confirmed
+// absent from both the fuzzwork dump and the esi-scrape mirror of ESI's own
+// live responses.
 type Graphic struct {
 	ID             int64
 	GraphicFile    *string
@@ -24,93 +22,71 @@ type Graphic struct {
 	SofRaceName    *string
 }
 
-type graphicRecord struct {
-	Key            int64   `json:"_key"`
-	GraphicFile    *string `json:"graphicFile,omitempty"`
-	IconFolder     *string `json:"iconFolder,omitempty"`
-	SofDNA         *string `json:"sofDna,omitempty"`
-	SofFactionName *string `json:"sofFactionName,omitempty"`
-	SofHullName    *string `json:"sofHullName,omitempty"`
-	SofRaceName    *string `json:"sofRaceName,omitempty"`
-}
-
-// Graphic looks up a graphic by ID. ok is false if the ID isn't in the cache.
+// Graphic looks up a graphic by ID. ok is false if the ID isn't in the
+// cache.
 func (s *Store) Graphic(ctx context.Context, userAgent string, id int64) (Graphic, bool, error) {
 	if s == nil {
 		return Graphic{}, false, nil
 	}
+	if v, ok := getOverlay[Graphic](s, "graphic", id); ok {
+		return v, true, nil
+	}
 	_ = s.ensureSynced(ctx, userAgent)
+	if s.db == nil {
+		return Graphic{}, false, nil
+	}
 
-	var (
-		out Graphic
-		ok  bool
-	)
-	err := s.db.View(func(tx *bbolt.Tx) error {
-		b := tx.Bucket([]byte("graphics"))
-		if b == nil {
-			return nil
+	var graphicFile, iconFolder, sofFactionName, sofHullName, sofRaceName sql.NullString
+	row := s.db.QueryRowContext(ctx,
+		`SELECT graphicFile, iconFolder, sofFactionName, sofHullName, sofRaceName FROM eveGraphics WHERE graphicID = ?`, id)
+	if err := row.Scan(&graphicFile, &iconFolder, &sofFactionName, &sofHullName, &sofRaceName); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Graphic{}, false, nil
 		}
-		v := b.Get(int64Key(id))
-		if v == nil {
-			return nil
-		}
-		var raw graphicRecord
-		if err := json.Unmarshal(v, &raw); err != nil {
-			return fmt.Errorf("parse cached graphic %d: %w", id, err)
-		}
-		if raw.Key != id {
-			return fmt.Errorf("cached graphic %d has mismatched key %d", id, raw.Key)
-		}
-		out, ok = Graphic{
-			ID: raw.Key, GraphicFile: raw.GraphicFile, IconFolder: raw.IconFolder, SofDNA: raw.SofDNA,
-			SofFactionName: raw.SofFactionName, SofHullName: raw.SofHullName, SofRaceName: raw.SofRaceName,
-		}, true
-		return nil
-	})
-	return out, ok, err
+		return Graphic{}, false, fmt.Errorf("query graphic %d: %w", id, err)
+	}
+
+	out := Graphic{ID: id}
+	if graphicFile.Valid {
+		out.GraphicFile = &graphicFile.String
+	}
+	if iconFolder.Valid {
+		out.IconFolder = &iconFolder.String
+	}
+	if sofFactionName.Valid {
+		out.SofFactionName = &sofFactionName.String
+	}
+	if sofHullName.Valid {
+		out.SofHullName = &sofHullName.String
+	}
+	if sofRaceName.Valid {
+		out.SofRaceName = &sofRaceName.String
+	}
+	if dna, ok := s.graphicSofDNA[id]; ok {
+		out.SofDNA = &dna
+	}
+
+	return out, true, nil
 }
 
-// PutGraphic writes g into the cache, keyed by g.ID -- used by mcp/'s
+// PutGraphic stores g in the overlay, keyed by g.ID -- used by mcp/'s
 // read-through fallback.
 func (s *Store) PutGraphic(g Graphic) error {
 	if s == nil {
 		return nil
 	}
-	raw, err := json.Marshal(graphicRecord{
-		Key: g.ID, GraphicFile: g.GraphicFile, IconFolder: g.IconFolder, SofDNA: g.SofDNA,
-		SofFactionName: g.SofFactionName, SofHullName: g.SofHullName, SofRaceName: g.SofRaceName,
-	})
-	if err != nil {
-		return fmt.Errorf("marshal graphic %d: %w", g.ID, err)
-	}
-	return s.db.Update(func(tx *bbolt.Tx) error {
-		b, err := tx.CreateBucketIfNotExists([]byte("graphics"))
-		if err != nil {
-			return fmt.Errorf("create graphics bucket: %w", err)
-		}
-		return b.Put(int64Key(g.ID), raw)
-	})
+	putOverlay(s, "graphic", g.ID, g)
+	return nil
 }
 
-// GraphicIDs returns every graphic ID currently cached. See
-// sde/category.go's CategoryIDs for why no separate sort is needed and
-// what an empty result means.
+// GraphicIDs returns every graphic ID currently cached, ascending.
 func (s *Store) GraphicIDs(ctx context.Context, userAgent string) ([]int64, error) {
 	if s == nil {
 		return nil, nil
 	}
 	_ = s.ensureSynced(ctx, userAgent)
-
-	var ids []int64
-	err := s.db.View(func(tx *bbolt.Tx) error {
-		b := tx.Bucket([]byte("graphics"))
-		if b == nil {
-			return nil
-		}
-		return b.ForEach(func(k, _ []byte) error {
-			ids = append(ids, int64FromKey(k))
-			return nil
-		})
-	})
-	return ids, err
+	if s.db == nil {
+		return nil, nil
+	}
+	return s.queryInt64Column(ctx, `SELECT graphicID FROM eveGraphics ORDER BY graphicID`)
 }

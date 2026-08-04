@@ -1,5 +1,16 @@
 # neat plugin — changelog
 
+## 0.5.0
+- `sde/` moves from a bbolt-backed cache seeded from CCP's own SDE jsonl export to a directly
+  SQL-queried SQLite dump published by fuzzwork.co.uk (`~/.neat/sde/eve.db`, replacing
+  `~/.neat/sde/sde.db`, which is left in place and orphaned by this change). No tool-facing
+  behavior change other than the three field regressions below — same 24 Universe tools remain
+  SDE-backed via the same read-through cache.
+- Three tool outputs now always come back absent (previously populated for at least some rows):
+  `get_universe_region`'s `description`, `get_universe_station`'s `services`, and
+  `list_universe_factions`' `isUnique`. None have a source column in the fuzzwork dump; a
+  cache-miss ESI fallback still populates them fresh, only cache hits are affected.
+
 ## 0.4.0
 - Adds SDE-resolved `*Name` fields (`RaceName`, `BloodlineName`, `FactionName`, `GroupName`)
   alongside the existing bare `*ID` fields across 8 non-Universe MCP files (alliance, character,

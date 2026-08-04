@@ -16,7 +16,7 @@ import (
 
 func connectedSession(t *testing.T, store *config.Store) (*mcpsdk.ClientSession, *mcpsdk.ServerSession) {
 	t.Helper()
-	sdeStore, err := sde.Open(filepath.Join(t.TempDir(), "sde.db"))
+	sdeStore, err := sde.Open(filepath.Join(t.TempDir(), "eve.db"))
 	if err != nil {
 		t.Fatalf("sde.Open: %v", err)
 	}

@@ -2,35 +2,32 @@ package sde
 
 import (
 	"context"
-	"encoding/json"
+	"database/sql"
+	"errors"
 	"fmt"
-
-	"go.etcd.io/bbolt"
 )
 
-// SystemPlanet is a minimal decode of one planet entry within a solar
-// system record, mirroring mcp.UniverseSystemPlanet's shape as its own
-// sde-owned type -- sde/ does not import mcp/.
+// SystemPlanet is a minimal decode of one planet entry within a solar system
+// record, mirroring mcp.UniverseSystemPlanet's shape as its own sde-owned
+// type -- sde/ does not import mcp/. Computed via mapDenormalize's orbitID
+// column (a moon/belt's orbitID is its parent planet's itemID) at read time,
+// not a stored relation.
 type SystemPlanet struct {
 	PlanetID        int64
 	AsteroidBeltIDs []int64
 	MoonIDs         []int64
 }
 
-// System is a minimal decode of an SDE solar system record -- EVE's
-// geography level between Constellation and celestial bodies. StationIDs is
-// not present on the raw mapSolarSystems.jsonl record at all -- it's
-// augmented at sync time from a reverse index over npcStations.jsonl (see
-// sync.go), or supplied directly by a read-through ESI fetch (ESI's system
-// detail response already includes it). Planets has no source in the
-// official SDE at all (would need a full mapPlanets.jsonl pass for two
-// nested ID arrays) -- it's sourced entirely from EVE Ref's esi-scrape
-// dataset at sync time, or directly from a read-through ESI fetch (ESI's
-// response already includes it, same as StationIDs).
+// System is a minimal decode of a fuzzwork mapSolarSystems row -- EVE's
+// geography level between Constellation and celestial bodies. StarID,
+// StargateIDs, StationIDs, and Planets are not stored columns -- all four
+// are computed via reverse queries over mapDenormalize/staStations/mapJumps
+// at read time (celestial groupIDs: 6=Sun, 7=Planet, 8=Moon, 9/4430=Asteroid
+// Belt, 10=Stargate, verified directly against the live dump).
 type System struct {
 	ID              int64
 	ConstellationID int64
-	Name            map[string]string
+	Name            string
 	Position        Position
 	SecurityStatus  float64
 	SecurityClass   *string
@@ -40,121 +37,104 @@ type System struct {
 	Planets         []SystemPlanet
 }
 
-type systemPlanetRecord struct {
-	PlanetID        int64   `json:"planetId"`
-	AsteroidBeltIDs []int64 `json:"asteroidBeltIds,omitempty"`
-	MoonIDs         []int64 `json:"moonIds,omitempty"`
-}
-
-type systemRecord struct {
-	Key             int64                `json:"_key"`
-	ConstellationID int64                `json:"constellationID"`
-	Name            map[string]string    `json:"name"`
-	Position        Position             `json:"position"`
-	SecurityStatus  float64              `json:"securityStatus"`
-	SecurityClass   *string              `json:"securityClass,omitempty"`
-	StarID          *int64               `json:"starID,omitempty"`
-	StargateIDs     []int64              `json:"stargateIds,omitempty"`
-	StationIDs      []int64              `json:"stationIds,omitempty"`
-	Planets         []systemPlanetRecord `json:"planets,omitempty"`
-}
-
 // System looks up a solar system by ID. ok is false if the ID isn't in the
 // cache.
 func (s *Store) System(ctx context.Context, userAgent string, id int64) (System, bool, error) {
 	if s == nil {
 		return System{}, false, nil
 	}
+	if v, ok := getOverlay[System](s, "system", id); ok {
+		return v, true, nil
+	}
 	_ = s.ensureSynced(ctx, userAgent)
+	if s.db == nil {
+		return System{}, false, nil
+	}
 
 	var (
-		out System
-		ok  bool
+		constellationID int64
+		name            sql.NullString
+		x, y, z         sql.NullFloat64
+		security        sql.NullFloat64
+		securityClass   sql.NullString
 	)
-	err := s.db.View(func(tx *bbolt.Tx) error {
-		b := tx.Bucket([]byte("systems"))
-		if b == nil {
-			return nil
+	row := s.db.QueryRowContext(ctx,
+		`SELECT constellationID, solarSystemName, x, y, z, security, securityClass FROM mapSolarSystems WHERE solarSystemID = ?`, id)
+	if err := row.Scan(&constellationID, &name, &x, &y, &z, &security, &securityClass); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return System{}, false, nil
 		}
-		v := b.Get(int64Key(id))
-		if v == nil {
-			return nil
+		return System{}, false, fmt.Errorf("query system %d: %w", id, err)
+	}
+
+	out := System{
+		ID: id, ConstellationID: constellationID, Name: name.String,
+		Position:       Position{X: x.Float64, Y: y.Float64, Z: z.Float64},
+		SecurityStatus: security.Float64,
+	}
+	if securityClass.Valid {
+		out.SecurityClass = &securityClass.String
+	}
+
+	starIDs, err := s.queryInt64Column(ctx, `SELECT itemID FROM mapDenormalize WHERE solarSystemID = ? AND groupID = 6 LIMIT 1`, id)
+	if err != nil {
+		return System{}, false, fmt.Errorf("query system %d star id: %w", id, err)
+	}
+	if len(starIDs) > 0 {
+		out.StarID = &starIDs[0]
+	}
+
+	stargateIDs, err := s.queryInt64Column(ctx, `SELECT itemID FROM mapDenormalize WHERE solarSystemID = ? AND groupID = 10 ORDER BY itemID`, id)
+	if err != nil {
+		return System{}, false, fmt.Errorf("query system %d stargate ids: %w", id, err)
+	}
+	out.StargateIDs = stargateIDs
+
+	stationIDs, err := s.queryInt64Column(ctx, `SELECT stationID FROM staStations WHERE solarSystemID = ? ORDER BY stationID`, id)
+	if err != nil {
+		return System{}, false, fmt.Errorf("query system %d station ids: %w", id, err)
+	}
+	out.StationIDs = stationIDs
+
+	planetIDs, err := s.queryInt64Column(ctx, `SELECT itemID FROM mapDenormalize WHERE solarSystemID = ? AND groupID = 7 ORDER BY celestialIndex, itemID`, id)
+	if err != nil {
+		return System{}, false, fmt.Errorf("query system %d planet ids: %w", id, err)
+	}
+	for _, planetID := range planetIDs {
+		moonIDs, err := s.queryInt64Column(ctx, `SELECT itemID FROM mapDenormalize WHERE orbitID = ? AND groupID = 8 ORDER BY itemID`, planetID)
+		if err != nil {
+			return System{}, false, fmt.Errorf("query system %d planet %d moon ids: %w", id, planetID, err)
 		}
-		var raw systemRecord
-		if err := json.Unmarshal(v, &raw); err != nil {
-			return fmt.Errorf("parse cached system %d: %w", id, err)
+		beltIDs, err := s.queryInt64Column(ctx, `SELECT itemID FROM mapDenormalize WHERE orbitID = ? AND groupID IN (9, 4430) ORDER BY itemID`, planetID)
+		if err != nil {
+			return System{}, false, fmt.Errorf("query system %d planet %d belt ids: %w", id, planetID, err)
 		}
-		if raw.Key != id {
-			return fmt.Errorf("cached system %d has mismatched key %d", id, raw.Key)
-		}
-		out = System{
-			ID: raw.Key, ConstellationID: raw.ConstellationID, Name: raw.Name, Position: raw.Position,
-			SecurityStatus: raw.SecurityStatus, SecurityClass: raw.SecurityClass, StarID: raw.StarID,
-			StargateIDs: raw.StargateIDs, StationIDs: raw.StationIDs,
-		}
-		if len(raw.Planets) > 0 {
-			out.Planets = make([]SystemPlanet, len(raw.Planets))
-			for i, p := range raw.Planets {
-				out.Planets[i] = SystemPlanet{PlanetID: p.PlanetID, AsteroidBeltIDs: p.AsteroidBeltIDs, MoonIDs: p.MoonIDs}
-			}
-		}
-		ok = true
-		return nil
-	})
-	return out, ok, err
+		out.Planets = append(out.Planets, SystemPlanet{PlanetID: planetID, AsteroidBeltIDs: beltIDs, MoonIDs: moonIDs})
+	}
+
+	return out, true, nil
 }
 
-// PutSystem writes sys into the cache, keyed by sys.ID -- used by mcp/'s
-// read-through fallback. Unlike the bulk sync path, a read-through fetch
-// gets StationIDs and Planets directly from ESI's response, no augmentation
-// needed.
+// PutSystem stores sys in the overlay, keyed by sys.ID -- used by mcp/'s
+// read-through fallback. Unlike the sqlite-served path, a read-through fetch
+// gets StationIDs and Planets directly from ESI's response, no further
+// queries needed.
 func (s *Store) PutSystem(sys System) error {
 	if s == nil {
 		return nil
 	}
-	raw := systemRecord{
-		Key: sys.ID, ConstellationID: sys.ConstellationID, Name: sys.Name, Position: sys.Position,
-		SecurityStatus: sys.SecurityStatus, SecurityClass: sys.SecurityClass, StarID: sys.StarID,
-		StargateIDs: sys.StargateIDs, StationIDs: sys.StationIDs,
-	}
-	if len(sys.Planets) > 0 {
-		raw.Planets = make([]systemPlanetRecord, len(sys.Planets))
-		for i, p := range sys.Planets {
-			raw.Planets[i] = systemPlanetRecord{PlanetID: p.PlanetID, AsteroidBeltIDs: p.AsteroidBeltIDs, MoonIDs: p.MoonIDs}
-		}
-	}
-	data, err := json.Marshal(raw)
-	if err != nil {
-		return fmt.Errorf("marshal system %d: %w", sys.ID, err)
-	}
-	return s.db.Update(func(tx *bbolt.Tx) error {
-		b, err := tx.CreateBucketIfNotExists([]byte("systems"))
-		if err != nil {
-			return fmt.Errorf("create systems bucket: %w", err)
-		}
-		return b.Put(int64Key(sys.ID), data)
-	})
+	putOverlay(s, "system", sys.ID, sys)
+	return nil
 }
 
-// SystemIDs returns every solar system ID currently cached. See
-// sde/category.go's CategoryIDs for why no separate sort is needed and
-// what an empty result means.
+// SystemIDs returns every solar system ID currently cached, ascending.
 func (s *Store) SystemIDs(ctx context.Context, userAgent string) ([]int64, error) {
 	if s == nil {
 		return nil, nil
 	}
 	_ = s.ensureSynced(ctx, userAgent)
-
-	var ids []int64
-	err := s.db.View(func(tx *bbolt.Tx) error {
-		b := tx.Bucket([]byte("systems"))
-		if b == nil {
-			return nil
-		}
-		return b.ForEach(func(k, _ []byte) error {
-			ids = append(ids, int64FromKey(k))
-			return nil
-		})
-	})
-	return ids, err
+	if s.db == nil {
+		return nil, nil
+	}
+	return s.queryInt64Column(ctx, `SELECT solarSystemID FROM mapSolarSystems ORDER BY solarSystemID`)
 }

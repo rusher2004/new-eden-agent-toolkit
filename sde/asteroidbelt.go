@@ -2,30 +2,22 @@ package sde
 
 import (
 	"context"
-	"encoding/json"
+	"database/sql"
+	"errors"
 	"fmt"
-
-	"go.etcd.io/bbolt"
 )
 
-// AsteroidBelt is a minimal decode of an EVE Ref esi-scrape asteroid belt
-// record. Unlike every other sde/ resource, there is no CCP SDE source for
-// this data at all -- asteroid belt names are computed server-side by CCP,
-// never stored in any static file. This is sourced entirely from EVE Ref's
-// esi-scrape dataset (a mirror of ESI's own live responses), seeded in bulk
-// at sync time; a read-through miss still falls back to a live ESI call.
+// AsteroidBelt is a minimal decode of a fuzzwork mapDenormalize row filtered
+// to groupID 9 or 4430 (both observed as "Asteroid Belt" in invGroups --
+// 4430 covers wormhole-system belts). Unlike every other sde/ resource,
+// there is no CCP SDE jsonl source for this data at all even historically --
+// asteroid belt names are computed server-side by CCP. mapDenormalize
+// carries it directly, replacing the old esi-scrape-only source.
 type AsteroidBelt struct {
 	ID       int64
 	Name     string
 	Position Position
 	SystemID int64
-}
-
-type asteroidBeltRecord struct {
-	Key      int64    `json:"_key"`
-	Name     string   `json:"name"`
-	Position Position `json:"position"`
-	SystemID int64    `json:"systemId"`
 }
 
 // AsteroidBelt looks up an asteroid belt by ID. ok is false if the ID isn't
@@ -34,49 +26,37 @@ func (s *Store) AsteroidBelt(ctx context.Context, userAgent string, id int64) (A
 	if s == nil {
 		return AsteroidBelt{}, false, nil
 	}
+	if v, ok := getOverlay[AsteroidBelt](s, "asteroidBelt", id); ok {
+		return v, true, nil
+	}
 	_ = s.ensureSynced(ctx, userAgent)
+	if s.db == nil {
+		return AsteroidBelt{}, false, nil
+	}
 
 	var (
-		out AsteroidBelt
-		ok  bool
+		name     sql.NullString
+		systemID int64
+		x, y, z  sql.NullFloat64
 	)
-	err := s.db.View(func(tx *bbolt.Tx) error {
-		b := tx.Bucket([]byte("asteroidBelts"))
-		if b == nil {
-			return nil
+	row := s.db.QueryRowContext(ctx,
+		`SELECT itemName, solarSystemID, x, y, z FROM mapDenormalize WHERE itemID = ? AND groupID IN (9, 4430)`, id)
+	if err := row.Scan(&name, &systemID, &x, &y, &z); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return AsteroidBelt{}, false, nil
 		}
-		v := b.Get(int64Key(id))
-		if v == nil {
-			return nil
-		}
-		var raw asteroidBeltRecord
-		if err := json.Unmarshal(v, &raw); err != nil {
-			return fmt.Errorf("parse cached asteroid belt %d: %w", id, err)
-		}
-		if raw.Key != id {
-			return fmt.Errorf("cached asteroid belt %d has mismatched key %d", id, raw.Key)
-		}
-		out, ok = AsteroidBelt{ID: raw.Key, Name: raw.Name, Position: raw.Position, SystemID: raw.SystemID}, true
-		return nil
-	})
-	return out, ok, err
+		return AsteroidBelt{}, false, fmt.Errorf("query asteroid belt %d: %w", id, err)
+	}
+
+	return AsteroidBelt{ID: id, Name: name.String, SystemID: systemID, Position: Position{X: x.Float64, Y: y.Float64, Z: z.Float64}}, true, nil
 }
 
-// PutAsteroidBelt writes b into the cache, keyed by b.ID -- used by mcp/'s
+// PutAsteroidBelt stores b in the overlay, keyed by b.ID -- used by mcp/'s
 // read-through fallback.
 func (s *Store) PutAsteroidBelt(b AsteroidBelt) error {
 	if s == nil {
 		return nil
 	}
-	raw, err := json.Marshal(asteroidBeltRecord{Key: b.ID, Name: b.Name, Position: b.Position, SystemID: b.SystemID})
-	if err != nil {
-		return fmt.Errorf("marshal asteroid belt %d: %w", b.ID, err)
-	}
-	return s.db.Update(func(tx *bbolt.Tx) error {
-		bkt, err := tx.CreateBucketIfNotExists([]byte("asteroidBelts"))
-		if err != nil {
-			return fmt.Errorf("create asteroidBelts bucket: %w", err)
-		}
-		return bkt.Put(int64Key(b.ID), raw)
-	})
+	putOverlay(s, "asteroidBelt", b.ID, b)
+	return nil
 }
