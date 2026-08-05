@@ -19,6 +19,15 @@ var addCharacter = sso.AddCharacter
 // exercised while domain tools are being built; narrowing this to a
 // minimal per-tool set is a follow-up once real tools exist and their
 // actual scope needs are known.
+//
+// Verified against CCP's live OpenAPI 3.0 spec (fetched with the current compatibility date, per
+// docs/superpowers/specs/2026-07-25-esi-coverage-roadmap-design.md's fetch method) that every
+// scope every implemented tool actually needs is present here. Two scopes that were present but
+// don't correspond to any real CCP scope were removed as part of that verification:
+// "esi-wallet.read_corporation_wallet.v1" (singular -- a bogus duplicate of the real
+// "esi-wallet.read_corporation_wallets.v1", plural, below) and
+// "esi-characters.read_chat_channels.v1" (no corresponding real scope or tool at all -- chat
+// channels aren't a feature this project implements).
 var allScopes = []string{
 	"publicData",
 	"esi-calendar.respond_calendar_events.v1",
@@ -30,7 +39,6 @@ var allScopes = []string{
 	"esi-mail.send_mail.v1",
 	"esi-skills.read_skills.v1",
 	"esi-skills.read_skillqueue.v1",
-	"esi-wallet.read_corporation_wallet.v1",
 	"esi-search.search_structures.v1",
 	"esi-clones.read_clones.v1",
 	"esi-characters.read_contacts.v1",
@@ -47,7 +55,6 @@ var allScopes = []string{
 	"esi-markets.structure_markets.v1",
 	"esi-corporations.read_structures.v1",
 	"esi-characters.read_loyalty.v1",
-	"esi-characters.read_chat_channels.v1",
 	"esi-characters.read_medals.v1",
 	"esi-characters.read_standings.v1",
 	"esi-characters.read_agents_research.v1",

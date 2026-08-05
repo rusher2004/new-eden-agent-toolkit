@@ -44,10 +44,36 @@ place to check what's left, instead of re-deriving the order from the spec each 
 | 32 | Structures | 6 | Done (PR #6) |
 | 33 | Universe | 30 | Done (PR #6) |
 | 34 | User Interface | 5 | Done (PR #6) |
-| 35 | Wallet | 6 | Done (PR #5) |
+| 35 | Wallet | 6 | Done (PR #5, corrected in PR #15 -- see note) |
 | 36 | Wars | 3 | Done (PR #6) |
+| 37 | Military Campaigns | 6 | Blocked -- see note |
 
-219 total endpoints across all 36 tags.
+219 total endpoints across the original 36 tags (225 including Military Campaigns).
+
+**Wallet correction:** PR #5 marked all 6 Wallet endpoints "Done," but only `WalletBalance`/
+`get_wallet_balance` (1 of 6) was actually implemented — the character wallet journal/transactions
+and all three corporation wallet endpoints (balance, journal, transactions) were never built. This
+was discovered when a user hit a wall trying to read a corporation's wallet balance (the exact gap:
+`get_corporation_divisions` only exposes division *names*, and ESI's
+`GET /corporations/{corporation_id}/wallets/` was never wired up). The remaining 5 endpoints were
+added in PR #15, using the same conventions as every other batch in this table.
+
+**Military Campaigns (blocked):** PR #15's full-coverage audit re-fetched CCP's live OpenAPI spec
+with the current compatibility date (`?compatibility_date=2026-08-04` — the bare, undated
+`/meta/openapi-3.0.json` silently returns a stale/default spec that hides newer tags, which is why
+this wasn't caught by re-running the original tag count) and found a 37th tag, "Military
+Campaigns" (6 endpoints: `GET /military-campaigns`, `GET /military-campaigns/{campaign_id}`,
+`GET /military-campaigns/{campaign_id}/objectives`,
+`GET /military-campaigns/{campaign_id}/objectives/{objective_id}`,
+`GET /characters/{character_id}/military-campaigns/objectives`,
+`GET /characters/{character_id}/military-campaigns/objectives/{objective_id}`), added by CCP after
+the original sweep. It cannot be implemented yet: `github.com/fnt-eve/goesi-openapi` v0.0.37 (the
+latest published version) has no generated bindings for it at all, and this project's hard rule is
+that every ESI call goes through that generated client -- never a hand-rolled HTTP request. Needs
+an upstream `goesi-openapi` release that regenerates against a spec including this tag before a
+batch can be planned. The rest of the audit (every one of the original 36 tags' operationIds
+diffed against both the live dated spec and the installed `goesi-openapi` module, plus every
+`allScopes` entry checked against real CCP scopes in both directions) found no other gaps.
 
 ## Conventions (apply to every batch)
 
