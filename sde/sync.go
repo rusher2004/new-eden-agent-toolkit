@@ -6,7 +6,6 @@ import (
 	"compress/gzip"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -22,7 +21,6 @@ import (
 )
 
 const dumpURL = "https://www.fuzzwork.co.uk/dump/latest-sqlite.db.gz"
-const referenceDataURL = "https://data.everef.net/reference-data/reference-data-latest.tar.xz"
 const esiScrapeURL = "https://data.everef.net/esi-scrape/eve-ref-esi-scrape-latest.tar.xz"
 const esiScrapePathPrefix = "eve-ref-esi-scrape/data/tranquility/universe/"
 
@@ -33,8 +31,13 @@ const esiScrapePathPrefix = "eve-ref-esi-scrape/data/tranquility/universe/"
 // eve.db vs the old sde.db, in fact -- but bumping this too is cheap
 // insurance and documents the shape change explicitly) forces a fresh
 // download rather than trying to open a file that was never written by this
-// code.
-const schemaVersion = "3"
+// code. Bumped again to "4" when Type started SELECTing invTypes.packagedVolume
+// (a column fuzzwork's dump only started carrying 2026-08-11) -- without this,
+// an install whose cached eve.db predates that column would hit "no such
+// column: packagedVolume" on every Type lookup in the degraded-mode branches
+// that keep serving an existing cache after a failed version-check or
+// re-download, rather than self-healing via a forced re-download.
+const schemaVersion = "4"
 
 // Timeout covers the entire request including body read, so it must be sized
 // for the largest download this client makes, not just a typical one -- the
@@ -139,12 +142,11 @@ func (s *Store) sync(ctx context.Context, userAgent string) error {
 		}
 	}
 
-	// reference-data/esi-scrape augmentation is never persisted to disk (see
-	// Store's typeVolumes/raceAlliances/graphicSofDNA doc comment) -- every
-	// process's single sync() fetches both fresh, best-effort, regardless of
-	// whether either has changed remotely, since there is no local copy to
-	// otherwise fall back to skipping.
-	s.typeVolumes = fetchReferenceDataTypeVolumes(ctx, s.referenceDataURL, userAgent)
+	// esi-scrape augmentation is never persisted to disk (see Store's
+	// raceAlliances/graphicSofDNA doc comment) -- every process's single
+	// sync() fetches it fresh, best-effort, regardless of whether it's
+	// changed remotely, since there is no local copy to otherwise fall back
+	// to skipping.
 	if data, ok := fetchEsiScrapeSupplements(ctx, s.esiScrapeURL, userAgent); ok {
 		s.raceAlliances = data.raceAlliances
 		s.graphicSofDNA = data.graphicSofDNA
@@ -266,47 +268,6 @@ func fetchBytes(ctx context.Context, url, userAgent string) ([]byte, error) {
 		return nil, fmt.Errorf("unexpected status %d from %s", resp.StatusCode, url)
 	}
 	return io.ReadAll(resp.Body)
-}
-
-// fetchReferenceDataTypeVolumes fetches EVE Ref's reference-data dataset and
-// returns typeID -> packagedVolume for every type that has one. Returns nil
-// (not an error) on any failure -- reference-data is a best-effort
-// augmentation, never fatal to the rest of sync().
-func fetchReferenceDataTypeVolumes(ctx context.Context, url, userAgent string) map[int64]float64 {
-	body, err := fetchBytes(ctx, url, userAgent)
-	if err != nil {
-		slog.Default().WarnContext(ctx, "sde: failed to fetch reference-data, skipping PackagedVolume augmentation", "error", err)
-		return nil
-	}
-	members, err := extractTarXZMembers(body, map[string]bool{"types.json": true})
-	if err != nil {
-		slog.Default().WarnContext(ctx, "sde: failed to extract reference-data, skipping PackagedVolume augmentation", "error", err)
-		return nil
-	}
-	typesJSON, ok := members["types.json"]
-	if !ok {
-		slog.Default().WarnContext(ctx, "sde: reference-data archive missing types.json, skipping PackagedVolume augmentation")
-		return nil
-	}
-	var raw map[string]struct {
-		PackagedVolume *float64 `json:"packaged_volume"`
-	}
-	if err := json.Unmarshal(typesJSON, &raw); err != nil {
-		slog.Default().WarnContext(ctx, "sde: failed to parse reference-data types.json, skipping PackagedVolume augmentation", "error", err)
-		return nil
-	}
-	out := make(map[int64]float64, len(raw))
-	for idStr, rec := range raw {
-		if rec.PackagedVolume == nil {
-			continue
-		}
-		id, err := strconv.ParseInt(idStr, 10, 64)
-		if err != nil {
-			continue
-		}
-		out[id] = *rec.PackagedVolume
-	}
-	return out
 }
 
 // esiScrapeData bundles the two values fetchEsiScrapeSupplements extracts

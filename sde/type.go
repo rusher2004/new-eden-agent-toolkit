@@ -22,9 +22,6 @@ type TypeDogmaEffect struct {
 
 // Type is a minimal decode of a fuzzwork invTypes row -- the leaf level of
 // EVE's item hierarchy (e.g. "Rifter", within the "Frigate" group).
-// PackagedVolume has no source in the fuzzwork dump at all -- it's sourced
-// entirely from EVE Ref's reference-data dataset at sync time (see sync.go),
-// held in-memory rather than a stored column.
 type Type struct {
 	ID              int64
 	GroupID         int64
@@ -58,16 +55,16 @@ func (s *Store) Type(ctx context.Context, userAgent string, id int64) (Type, boo
 	}
 
 	var (
-		groupID                                       int64
-		name, description                             sql.NullString
-		published                                     sql.NullBool
-		capacity, mass, radius, volume                sql.NullFloat64
-		graphicID, iconID, marketGroupID, portionSize sql.NullInt64
+		groupID                                        int64
+		name, description                              sql.NullString
+		published                                      sql.NullBool
+		capacity, mass, radius, volume, packagedVolume sql.NullFloat64
+		graphicID, iconID, marketGroupID, portionSize  sql.NullInt64
 	)
 	row := s.db.QueryRowContext(ctx,
-		`SELECT groupID, typeName, description, published, capacity, graphicID, iconID, marketGroupID, mass, portionSize, radius, volume
+		`SELECT groupID, typeName, description, published, capacity, graphicID, iconID, marketGroupID, mass, portionSize, radius, volume, packagedVolume
 		 FROM invTypes WHERE typeID = ?`, id)
-	err := row.Scan(&groupID, &name, &description, &published, &capacity, &graphicID, &iconID, &marketGroupID, &mass, &portionSize, &radius, &volume)
+	err := row.Scan(&groupID, &name, &description, &published, &capacity, &graphicID, &iconID, &marketGroupID, &mass, &portionSize, &radius, &volume, &packagedVolume)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Type{}, false, nil
 	}
@@ -78,11 +75,8 @@ func (s *Store) Type(ctx context.Context, userAgent string, id int64) (Type, boo
 	out := Type{
 		ID: id, GroupID: groupID, Name: name.String, Description: description.String, Published: published.Bool,
 		Capacity: nullFloat(capacity), GraphicID: nullInt(graphicID), IconID: nullInt(iconID),
-		MarketGroupID: nullInt(marketGroupID), Mass: nullFloat(mass), PortionSize: nullInt(portionSize),
-		Radius: nullFloat(radius), Volume: nullFloat(volume),
-	}
-	if v, ok := s.typeVolumes[id]; ok {
-		out.PackagedVolume = &v
+		MarketGroupID: nullInt(marketGroupID), Mass: nullFloat(mass), PackagedVolume: nullFloat(packagedVolume),
+		PortionSize: nullInt(portionSize), Radius: nullFloat(radius), Volume: nullFloat(volume),
 	}
 
 	attrRows, err := s.db.QueryContext(ctx, `SELECT attributeID, valueInt, valueFloat FROM dgmTypeAttributes WHERE typeID = ?`, id)

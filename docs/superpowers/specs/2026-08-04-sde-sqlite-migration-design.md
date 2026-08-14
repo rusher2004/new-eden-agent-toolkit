@@ -1,6 +1,11 @@
 # `sde/` SQLite Backend Migration — Design
 
-**Status:** Implemented (docs/superpowers/plans/2026-08-04-sde-sqlite-migration.md, 11/11 tasks)
+**Status:** Implemented (docs/superpowers/plans/2026-08-04-sde-sqlite-migration.md, 11/11 tasks).
+Update (2026-08-12): CCP added `PackagedVolume` to the SDE itself
+(https://github.com/esi/esi-issues/issues/1499), and fuzzwork's dump picked it up as a plain
+`invTypes.packagedVolume` column — the "fields with no home anywhere in the dump" list below is
+now down to `AllianceID`/`SofDNA`, and the EVE Ref `reference-data` fetch this spec describes for
+`PackagedVolume` (`fetchReferenceDataTypeVolumes`, `typeVolumes`) has been removed from `sde/`.
 **Date:** 2026-08-04
 **Supersedes:** [`2026-07-27-sde-design.md`](2026-07-27-sde-design.md),
 [`2026-07-27-sde-everef-supplemental-sources-design.md`](2026-07-27-sde-everef-supplemental-sources-design.md),

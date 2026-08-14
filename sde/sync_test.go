@@ -88,40 +88,9 @@ func buildEsiScrapeArchive(t *testing.T) []byte {
 	return xzBuf.Bytes()
 }
 
-// buildReferenceDataArchive builds a minimal reference-data tar.xz
-// containing a types.json with one entry, standing in for EVE Ref's
-// reference-data-latest.tar.xz.
-func buildReferenceDataArchive(t *testing.T) []byte {
-	t.Helper()
-	var tarBuf bytes.Buffer
-	tw := tar.NewWriter(&tarBuf)
-	content := []byte(`{"34": {"packaged_volume": 0.15}}`)
-	if err := tw.WriteHeader(&tar.Header{Name: "types.json", Size: int64(len(content)), Mode: 0o600}); err != nil {
-		t.Fatalf("write tar header: %v", err)
-	}
-	if _, err := tw.Write(content); err != nil {
-		t.Fatalf("write tar content: %v", err)
-	}
-	if err := tw.Close(); err != nil {
-		t.Fatalf("close tar writer: %v", err)
-	}
-	var xzBuf bytes.Buffer
-	xw, err := xz.NewWriter(&xzBuf)
-	if err != nil {
-		t.Fatalf("create xz writer: %v", err)
-	}
-	if _, err := xw.Write(tarBuf.Bytes()); err != nil {
-		t.Fatalf("write xz content: %v", err)
-	}
-	if err := xw.Close(); err != nil {
-		t.Fatalf("close xz writer: %v", err)
-	}
-	return xzBuf.Bytes()
-}
-
-// testServers wires up three httptest servers standing in for fuzzwork's
-// dump, EVE Ref reference-data, and EVE Ref esi-scrape, and returns a Store
-// pointed at them plus each response's ETag.
+// testServers wires up two httptest servers standing in for fuzzwork's dump
+// and EVE Ref's esi-scrape export, and returns a Store pointed at them plus
+// the dump's ETag.
 func testServers(t *testing.T) (store *Store, dumpEtag string) {
 	t.Helper()
 
@@ -136,27 +105,6 @@ func testServers(t *testing.T) (store *Store, dumpEtag string) {
 	}))
 	t.Cleanup(dumpSrv.Close)
 
-	refSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("ETag", `"ref-etag-1"`)
-		if r.Method == http.MethodHead {
-			return
-		}
-		// Minimal valid tar.xz with an empty types.json -- exercises the
-		// "fetch succeeded, no volumes found" path, not the failure path.
-		var tarBuf bytes.Buffer
-		tw := tar.NewWriter(&tarBuf)
-		content := []byte(`{"34": {"packaged_volume": 0.15}}`)
-		tw.WriteHeader(&tar.Header{Name: "types.json", Size: int64(len(content)), Mode: 0o600})
-		tw.Write(content)
-		tw.Close()
-		var xzBuf bytes.Buffer
-		xw, _ := xz.NewWriter(&xzBuf)
-		xw.Write(tarBuf.Bytes())
-		xw.Close()
-		w.Write(xzBuf.Bytes())
-	}))
-	t.Cleanup(refSrv.Close)
-
 	scrapeBody := buildEsiScrapeArchive(t)
 	scrapeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("ETag", `"scrape-etag-1"`)
@@ -170,7 +118,7 @@ func testServers(t *testing.T) (store *Store, dumpEtag string) {
 	dbPath := filepath.Join(t.TempDir(), "eve.db")
 	store = &Store{
 		dbPath: dbPath, metaPath: filepath.Join(filepath.Dir(dbPath), "meta.json"),
-		dumpURL: dumpSrv.URL, referenceDataURL: refSrv.URL, esiScrapeURL: scrapeSrv.URL,
+		dumpURL: dumpSrv.URL, esiScrapeURL: scrapeSrv.URL,
 	}
 	// A leftover open *sql.DB handle blocks a later rename/delete of the same
 	// file on Windows (unlike POSIX, which allows unlinking/renaming an
@@ -199,9 +147,6 @@ func TestSync_FirstRun_DownloadsDumpAndAugmentation(t *testing.T) {
 		t.Errorf("typeName = %q, want Rifter", name)
 	}
 
-	if v, ok := store.typeVolumes[34]; !ok || v != 0.15 {
-		t.Errorf("typeVolumes[34] = %v, %v, want 0.15, true", v, ok)
-	}
 	if a, ok := store.raceAlliances[1]; !ok || a != 500001 {
 		t.Errorf("raceAlliances[1] = %v, %v, want 500001, true", a, ok)
 	}
@@ -235,7 +180,7 @@ func TestSync_UnchangedDump_SkipsRedownload(t *testing.T) {
 	store.Close()
 	second := &Store{
 		dbPath: store.dbPath, metaPath: store.metaPath,
-		dumpURL: store.dumpURL, referenceDataURL: store.referenceDataURL, esiScrapeURL: store.esiScrapeURL,
+		dumpURL: store.dumpURL, esiScrapeURL: store.esiScrapeURL,
 	}
 	t.Cleanup(func() { second.Close() })
 	if err := second.sync(context.Background(), testUserAgent); err != nil {
@@ -275,7 +220,7 @@ func TestSync_MissingDBFile_ReDownloadsDespiteUnchangedMeta(t *testing.T) {
 
 	second := &Store{
 		dbPath: store.dbPath, metaPath: store.metaPath,
-		dumpURL: store.dumpURL, referenceDataURL: store.referenceDataURL, esiScrapeURL: store.esiScrapeURL,
+		dumpURL: store.dumpURL, esiScrapeURL: store.esiScrapeURL,
 	}
 	t.Cleanup(func() { second.Close() })
 	if err := second.sync(context.Background(), testUserAgent); err != nil {
@@ -341,14 +286,6 @@ func TestSync_ChangedETag_Redownloads(t *testing.T) {
 		}
 	}))
 	t.Cleanup(dumpSrv.Close)
-	refBody := buildReferenceDataArchive(t)
-	refSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("ETag", `"ref-etag-1"`)
-		if r.Method != http.MethodHead {
-			w.Write(refBody)
-		}
-	}))
-	t.Cleanup(refSrv.Close)
 	scrapeBody := buildEsiScrapeArchive(t)
 	scrapeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("ETag", `"scrape-etag-1"`)
@@ -361,7 +298,7 @@ func TestSync_ChangedETag_Redownloads(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "eve.db")
 	store := &Store{
 		dbPath: dbPath, metaPath: filepath.Join(filepath.Dir(dbPath), "meta.json"),
-		dumpURL: dumpSrv.URL, referenceDataURL: refSrv.URL, esiScrapeURL: scrapeSrv.URL,
+		dumpURL: dumpSrv.URL, esiScrapeURL: scrapeSrv.URL,
 	}
 	if err := store.sync(context.Background(), testUserAgent); err != nil {
 		t.Fatalf("first sync returned error: %v", err)
@@ -382,7 +319,7 @@ func TestSync_ChangedETag_Redownloads(t *testing.T) {
 	etag = `"dump-etag-2"`
 	second := &Store{
 		dbPath: store.dbPath, metaPath: store.metaPath,
-		dumpURL: store.dumpURL, referenceDataURL: store.referenceDataURL, esiScrapeURL: store.esiScrapeURL,
+		dumpURL: store.dumpURL, esiScrapeURL: store.esiScrapeURL,
 	}
 	t.Cleanup(func() { second.Close() })
 	if err := second.sync(context.Background(), testUserAgent); err != nil {
@@ -415,7 +352,7 @@ func TestSync_ChangedETag_Redownloads(t *testing.T) {
 func TestSync_DumpFetchFails_LeavesDBNil(t *testing.T) {
 	store := &Store{
 		dbPath: filepath.Join(t.TempDir(), "eve.db"), metaPath: filepath.Join(t.TempDir(), "meta.json"),
-		dumpURL: "http://127.0.0.1:0/does-not-exist", referenceDataURL: "http://127.0.0.1:0/does-not-exist", esiScrapeURL: "http://127.0.0.1:0/does-not-exist",
+		dumpURL: "http://127.0.0.1:0/does-not-exist", esiScrapeURL: "http://127.0.0.1:0/does-not-exist",
 	}
 	t.Cleanup(func() { store.Close() })
 
@@ -448,7 +385,7 @@ func TestSync_CorruptDBFile_ReDownloadsAndSelfHeals(t *testing.T) {
 
 	second := &Store{
 		dbPath: store.dbPath, metaPath: store.metaPath,
-		dumpURL: store.dumpURL, referenceDataURL: store.referenceDataURL, esiScrapeURL: store.esiScrapeURL,
+		dumpURL: store.dumpURL, esiScrapeURL: store.esiScrapeURL,
 	}
 	t.Cleanup(func() { second.Close() })
 	if err := second.sync(context.Background(), testUserAgent); err != nil {
@@ -483,7 +420,7 @@ func TestSync_VersionCheckFailsWithExistingCache_ContinuesServingIt(t *testing.T
 	store.Close()
 	second := &Store{
 		dbPath: store.dbPath, metaPath: store.metaPath,
-		dumpURL: "http://127.0.0.1:0/unreachable", referenceDataURL: store.referenceDataURL, esiScrapeURL: store.esiScrapeURL,
+		dumpURL: "http://127.0.0.1:0/unreachable", esiScrapeURL: store.esiScrapeURL,
 	}
 	t.Cleanup(func() { second.Close() })
 	if err := second.sync(context.Background(), testUserAgent); err != nil {
@@ -502,17 +439,20 @@ func TestSync_VersionCheckFailsWithExistingCache_ContinuesServingIt(t *testing.T
 	}
 }
 
-func TestSync_ReferenceDataFetchFails_DumpStillSucceeds(t *testing.T) {
+func TestSync_EsiScrapeFetchFails_DumpStillSucceeds(t *testing.T) {
 	store, _ := testServers(t)
-	store.referenceDataURL = "http://127.0.0.1:0/does-not-exist"
+	store.esiScrapeURL = "http://127.0.0.1:0/does-not-exist"
 
 	if err := store.sync(context.Background(), testUserAgent); err != nil {
 		t.Fatalf("sync returned error: %v", err)
 	}
 	if store.db == nil {
-		t.Error("dump sync did not proceed despite reference-data fetch failure")
+		t.Error("dump sync did not proceed despite esi-scrape fetch failure")
 	}
-	if store.typeVolumes != nil {
-		t.Errorf("typeVolumes = %v, want nil after a failed reference-data fetch", store.typeVolumes)
+	if store.raceAlliances != nil {
+		t.Errorf("raceAlliances = %v, want nil after a failed esi-scrape fetch", store.raceAlliances)
+	}
+	if store.graphicSofDNA != nil {
+		t.Errorf("graphicSofDNA = %v, want nil after a failed esi-scrape fetch", store.graphicSofDNA)
 	}
 }

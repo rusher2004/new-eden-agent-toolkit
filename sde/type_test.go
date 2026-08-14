@@ -7,11 +7,10 @@ import (
 
 func TestType_KnownID_ReturnsRow(t *testing.T) {
 	store := seedStore(t)
-	seedExec(t, store, `INSERT INTO invTypes (typeID, groupID, typeName, description, published) VALUES (587, 25, 'Rifter', 'A fast frigate.', 1)`)
+	seedExec(t, store, `INSERT INTO invTypes (typeID, groupID, typeName, description, published, packagedVolume) VALUES (587, 25, 'Rifter', 'A fast frigate.', 1, 2.5)`)
 	seedExec(t, store, `INSERT INTO dgmTypeAttributes (typeID, attributeID, valueFloat) VALUES (587, 182, 3386.0)`)
 	seedExec(t, store, `INSERT INTO dgmTypeAttributes (typeID, attributeID, valueInt) VALUES (587, 4, 1)`)
 	seedExec(t, store, `INSERT INTO dgmTypeEffects (typeID, effectID, isDefault) VALUES (587, 4, 1)`)
-	store.typeVolumes = map[int64]float64{587: 2.5}
 
 	got, ok, err := store.Type(context.Background(), testUserAgent, 587)
 	if err != nil {
@@ -57,6 +56,9 @@ func TestType_NullNameAndPublished_DegradeToZeroValueInsteadOfErroring(t *testin
 	}
 	if got.Name != "" || got.Published {
 		t.Errorf("Name/Published = %q/%v, want empty string/false", got.Name, got.Published)
+	}
+	if got.PackagedVolume != nil {
+		t.Errorf("PackagedVolume = %v, want nil for a NULL packagedVolume column", *got.PackagedVolume)
 	}
 }
 
