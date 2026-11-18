@@ -122,6 +122,28 @@ func (s *persistingTokenSource) Token() (*oauth2.Token, error) {
 	return tok, nil
 }
 
+// replaceCharacterRefreshToken persists a freshly-issued refresh token for
+// characterID and evicts any cached authenticated client for it, holding
+// clientCacheMu across both steps. Without the eviction, re-adding a
+// character whose old refresh token CCP had revoked would save the new
+// token to the keychain while AuthenticatedClient kept returning the cached
+// client still built around the dead one — every ESI call for that
+// character would keep failing with "invalid_grant" until the process
+// restarted. Holding the mutex across the keychain write (same as
+// RemoveCharacter) means a concurrent AuthenticatedClient call either sees
+// the old cache entry before the swap or rebuilds from the new token after
+// it, never caches a client built from the old token after eviction.
+func replaceCharacterRefreshToken(characterID int32, refreshToken string) error {
+	clientCacheMu.Lock()
+	defer clientCacheMu.Unlock()
+
+	if err := creds.SaveCharacterRefreshToken(characterID, refreshToken); err != nil {
+		return fmt.Errorf("save refresh token for character %d: %w", characterID, err)
+	}
+	delete(clientCache, characterID)
+	return nil
+}
+
 // RemoveCharacter deletes characterID's refresh token from the keychain and
 // evicts any cached authenticated client for it, atomically with respect to
 // AuthenticatedClient (both hold clientCacheMu across their entire keychain

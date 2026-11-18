@@ -12,8 +12,6 @@ import (
 
 	goesi "github.com/fnt-eve/goesi-openapi"
 	"golang.org/x/oauth2"
-
-	"github.com/rusher2004/new-eden-agent-toolkit/creds"
 )
 
 // addCharacterMu closes the same-process version of a narrow TOCTOU window
@@ -133,8 +131,8 @@ func addCharacter(ctx context.Context, cfg oauthConfig, userAgent string, scopes
 		return Character{}, err
 	}
 
-	if err := creds.SaveCharacterRefreshToken(characterID, token.RefreshToken); err != nil {
-		return Character{}, fmt.Errorf("save refresh token: %w", err)
+	if err := replaceCharacterRefreshToken(characterID, token.RefreshToken); err != nil {
+		return Character{}, err
 	}
 
 	return Character{ID: characterID, Name: claims.Name}, nil

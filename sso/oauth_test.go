@@ -361,3 +361,77 @@ func TestAddCharacter_InjectsUserAgentIntoExchangeContext(t *testing.T) {
 		t.Errorf("upstream received User-Agent = %q, want %q", gotUserAgent, "neat/test-ua-check")
 	}
 }
+
+// TestAddCharacter_ReAdd_EvictsCachedClient guards against re-adding a
+// character (e.g. after CCP revoked its refresh token) leaving
+// AuthenticatedClient's cached client -- built around the old, dead token
+// -- in place. The new token must be persisted AND the cache entry evicted,
+// so the next AuthenticatedClient call rebuilds from the new token instead
+// of failing with "invalid_grant" until the process restarts.
+func TestAddCharacter_ReAdd_EvictsCachedClient(t *testing.T) {
+	tmpHome := shortTempHome(t)
+	t.Setenv("HOME", tmpHome)
+	t.Setenv("USERPROFILE", tmpHome)
+
+	const characterID = 998866
+	if err := creds.SaveCharacterRefreshToken(characterID, "old-dead-token"); err != nil {
+		t.Fatalf("SaveCharacterRefreshToken: %v", err)
+	}
+	stale, err := sso.AuthenticatedClient(context.Background(), "client-id", characterID, "test-agent")
+	if err != nil {
+		t.Fatalf("AuthenticatedClient before re-add: %v", err)
+	}
+
+	var capturedAuthURL string
+	browserOpened := make(chan struct{})
+	sso.SetOpenBrowserForTest(func(rawURL string) error {
+		capturedAuthURL = rawURL
+		close(browserOpened)
+		return nil
+	})
+	t.Cleanup(sso.ResetOpenBrowserForTest)
+	sso.SetCallbackTimeoutForTest(5 * time.Second)
+	t.Cleanup(sso.ResetCallbackTimeoutForTest)
+
+	fake := &fakeOAuthConfig{
+		token: &oauth2.Token{RefreshToken: "new-token"},
+		claims: &goesi.ESIJWTClaims{
+			RegisteredClaims: jwt.RegisteredClaims{Subject: "CHARACTER:EVE:998866"},
+			Name:             "Returning Pilot",
+		},
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := sso.ExportedAddCharacter(context.Background(), fake, "test-agent", []string{"publicData"})
+		errCh <- err
+	}()
+
+	<-browserOpened
+	parsed, err := url.Parse(capturedAuthURL)
+	if err != nil {
+		t.Fatalf("parse captured auth URL: %v", err)
+	}
+	if err := sso.DeliverCallback("eveauth-neat://callback?code=auth-code&state=" + parsed.Query().Get("state")); err != nil {
+		t.Fatalf("DeliverCallback: %v", err)
+	}
+	if err := <-errCh; err != nil {
+		t.Fatalf("addCharacter: %v", err)
+	}
+
+	got, err := creds.CharacterRefreshToken(characterID)
+	if err != nil {
+		t.Fatalf("CharacterRefreshToken: %v", err)
+	}
+	if got != "new-token" {
+		t.Errorf("persisted refresh token = %q, want %q", got, "new-token")
+	}
+
+	fresh, err := sso.AuthenticatedClient(context.Background(), "client-id", characterID, "test-agent")
+	if err != nil {
+		t.Fatalf("AuthenticatedClient after re-add: %v", err)
+	}
+	if fresh == stale {
+		t.Error("AuthenticatedClient returned the stale cached client after re-add, want a fresh one built from the new token")
+	}
+}
