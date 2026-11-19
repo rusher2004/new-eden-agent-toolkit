@@ -129,7 +129,8 @@ func main() {
 	}
 }
 
-// listTools returns every tool mcp.NewServer registers, in registration order.
+// listTools returns every tool mcp.NewServer registers, sorted by name (the
+// order the MCP SDK lists them in).
 func listTools(ctx context.Context) ([]*mcpsdk.Tool, error) {
 	dir, err := os.MkdirTemp("", "gentooldocs")
 	if err != nil {
@@ -143,7 +144,9 @@ func listTools(ctx context.Context) ([]*mcpsdk.Tool, error) {
 	if err != nil {
 		return nil, fmt.Errorf("connect server: %w", err)
 	}
-	defer serverSession.Wait()
+	// Close rather than Wait: if the client fails to connect, nothing ever
+	// closes the client transport, and Wait would block forever.
+	defer serverSession.Close()
 	client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "gentooldocs", Version: "0"}, nil)
 	session, err := client.Connect(ctx, clientTransport, nil)
 	if err != nil {

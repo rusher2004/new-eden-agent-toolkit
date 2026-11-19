@@ -25,13 +25,14 @@ Get the archive for your computer from the [latest release](https://github.com/r
 - **Mac with Apple silicon (M1 or newer):** `neat_<version>_mac_arm64.tar.gz`
 - **Intel Mac:** `neat_<version>_mac_amd64.tar.gz`
 - **Windows:** `neat_<version>_windows_amd64.zip`
+- **Windows on ARM:** `neat_<version>_windows_arm64.zip`
 - **Linux:** `neat_<version>_linux_amd64.tar.gz` (or `arm64`)
 
 **On a Mac or Linux**, put `neat` in `~/.local/bin` from a terminal:
 
 ```bash
 mkdir -p ~/.local/bin
-tar -xzf ~/Downloads/neat_*.tar.gz -C ~/.local/bin neat
+tar -xzf ~/Downloads/neat_<version>_<platform>.tar.gz -C ~/.local/bin neat  # the exact file you downloaded
 xattr -d com.apple.quarantine ~/.local/bin/neat 2>/dev/null  # Mac only: lets macOS run a downloaded app that isn't from the App Store
 ```
 
@@ -56,7 +57,7 @@ This creates neat's settings folder (`~/.neat`) and checks that neat can use you
 /plugin install neat@neat
 ```
 
-The plugin also teaches Claude how to log characters in and how to run industry and hauling plans step by step. It updates itself; to update right away, run `/plugin marketplace update neat`.
+The plugin also teaches Claude how to log characters in and how to run industry and hauling plans step by step. To get a newer version of the plugin, run `/plugin marketplace update neat` (or turn on auto-update for the `neat` marketplace under `/plugin`), and install the matching `neat` program from the release page.
 
 **Claude desktop app:** open **Settings → Developer → Edit Config**, and add neat to the `claude_desktop_config.json` file that opens, using the full path to the `neat` you installed:
 

@@ -35,7 +35,7 @@ Clients that don't load plugin skills, such as the Claude desktop app, still get
 /plugin install neat@neat
 ```
 
-Claude Code refreshes git-backed marketplaces in the background; `/plugin marketplace update neat` pulls the latest right away. The plugin needs the `neat` binary on PATH; see the main README.
+Claude Code doesn't auto-update third-party marketplaces unless the user turns it on under `/plugin`; `/plugin marketplace update neat` pulls the latest. The plugin needs the `neat` binary on PATH; see the main README.
 
 ## Testing changes
 

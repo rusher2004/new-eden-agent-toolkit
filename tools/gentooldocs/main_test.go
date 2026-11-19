@@ -18,6 +18,8 @@ func TestToolDocsUpToDate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read committed tool reference: %v", err)
 	}
+	// Git on Windows may check the file out with CRLF line endings.
+	got = bytes.ReplaceAll(got, []byte("\r\n"), []byte("\n"))
 	if !bytes.Equal(got, want) {
 		t.Error("docs/reference/tools.md is stale; run `go generate ./...` and commit the result")
 	}
