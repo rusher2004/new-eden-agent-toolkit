@@ -10,8 +10,8 @@ import (
 // AsteroidBelt is a minimal decode of a fuzzwork mapDenormalize row filtered
 // to groupID 9 or 4430 (both observed as "Asteroid Belt" in invGroups --
 // 4430 covers wormhole-system belts). Unlike every other sde/ resource,
-// there is no CCP SDE jsonl source for this data at all even historically --
-// asteroid belt names are computed server-side by CCP. mapDenormalize
+// there is no FC SDE jsonl source for this data at all even historically --
+// asteroid belt names are computed server-side by FC. mapDenormalize
 // carries it directly, replacing the old esi-scrape-only source.
 type AsteroidBelt struct {
 	ID       int64

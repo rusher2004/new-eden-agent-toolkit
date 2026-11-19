@@ -2390,7 +2390,7 @@ git commit -m "feat: resolve ShipTypeMatcher.TypeName via sde/"
 **Interfaces:**
 - Consumes: `resolveTypeNames` (Task 1).
 
-**Verification caveat carried from the design spec**: confirm `DungeonTypeID` actually resolves against a real SDE `Type` record (dungeon type IDs are a different ID space from ship/item types in some CCP data; this needs a real check, not an assumption) before or during this task. If manual verification (e.g. running `neat mcp` locally and calling `get_universe_type` with a known dungeon type ID from a live `get_mercenary_tactical_operation` response) shows it isn't a valid SDE `Type` entry, keep the code below anyway — `resolveTypeNames` silently omits unresolvable IDs, so `DungeonTypeName` simply stays empty in that case, which is the correct, already-designed-for outcome, not a bug requiring a different approach.
+**Verification caveat carried from the design spec**: confirm `DungeonTypeID` actually resolves against a real SDE `Type` record (dungeon type IDs are a different ID space from ship/item types in some FC data; this needs a real check, not an assumption) before or during this task. If manual verification (e.g. running `neat mcp` locally and calling `get_universe_type` with a known dungeon type ID from a live `get_mercenary_tactical_operation` response) shows it isn't a valid SDE `Type` entry, keep the code below anyway — `resolveTypeNames` silently omits unresolvable IDs, so `DungeonTypeName` simply stays empty in that case, which is the correct, already-designed-for outcome, not a bug requiring a different approach.
 
 - [ ] **Step 1: Add the field**
 

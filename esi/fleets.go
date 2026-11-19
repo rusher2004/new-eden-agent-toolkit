@@ -55,7 +55,7 @@ func (c *Client) FleetInfo(ctx context.Context, fleetID int64) (*esiapi.FleetsFl
 }
 
 // UpdateFleet updates fleet-wide settings. Both fields are optional in ESI's request model --
-// pass nil to leave a field unchanged. This is a write: it changes state on CCP's server. ESI
+// pass nil to leave a field unchanged. This is a write: it changes state on FC's server. ESI
 // returns no response body (204), same shape as RespondToCalendarEvent.
 func (c *Client) UpdateFleet(ctx context.Context, fleetID int64, isFreeMove *bool, motd *string) error {
 	resp, err := c.api.FleetsAPI.PutFleetsFleetId(ctx, fleetID).

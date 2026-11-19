@@ -1,5 +1,5 @@
 // Package esi's wars.go covers all 3 of "Wars"'s endpoints. All 3 are public. GetWars uses
-// CCP's cursor-based pagination (max_war_id, "wars with ID less than this"), NOT this project's
+// FC's cursor-based pagination (max_war_id, "wars with ID less than this"), NOT this project's
 // usual page/X-Pages pattern -- verified individually: no .Page() setter on GetWars's request
 // builder. GetWarsWarIdKillmails, unlike the other 2, IS page/X-Pages paginated -- verified
 // individually.

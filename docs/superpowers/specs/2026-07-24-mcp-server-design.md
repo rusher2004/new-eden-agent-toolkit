@@ -6,8 +6,8 @@ Build the `neat mcp` command and the three character-management MCP tools
 (`add_character`, `list_characters`, `remove_character`) that Plan 2a's
 auth-core work (OAuth2/PKCE flow, custom URL scheme, callback handoff) was
 built to support. Also close a compliance gap discovered during this design
-pass: `sso/`'s outbound requests to CCP's login/JWKS endpoints currently
-carry no identifying User-Agent, which CCP's ESI best-practices guidance
+pass: `sso/`'s outbound requests to FC's login/JWKS endpoints currently
+carry no identifying User-Agent, which FC's ESI best-practices guidance
 flags as a bannable offense.
 
 This follows directly from
@@ -26,7 +26,7 @@ New code:
   rationale as `commands` aliasing `cli`) and the three tool registrations.
 - `commands/mcp.go` (new): thin CLI wiring for `neat mcp` — startup
   sequence, then hands off to `mcp/`.
-- `sso/useragent.go` (new): User-Agent construction and the CCP HTTP calls
+- `sso/useragent.go` (new): User-Agent construction and the FC HTTP calls
   that need it.
 
 No changes needed to `config/` or `creds/` — both already expose exactly
@@ -47,12 +47,12 @@ don't need it, matching the existing pattern where `version` only reaches
 ## ESI User-Agent compliance
 
 Per
-[CCP's ESI best-practices guidance](https://developers.eveonline.com/docs/services/esi/best-practices/#user-agents):
+[FC's ESI best-practices guidance](https://developers.eveonline.com/docs/services/esi/best-practices/#user-agents):
 all ESI requests should carry a User-Agent identifying the app; email and
 app name/version are the most strongly preferred identifying fields.
 Non-compliant apps risk being temporarily banned from ESI. `sso/`'s two
-outbound HTTP calls to CCP (JWKS fetch, OAuth2 token exchange) currently
-use Go's default `User-Agent`, added in Plan 2a without full CCP
+outbound HTTP calls to FC (JWKS fetch, OAuth2 token exchange) currently
+use Go's default `User-Agent`, added in Plan 2a without full FC
 best-practice compliance.
 
 **`sso/useragent.go` (new):**
@@ -83,7 +83,7 @@ const (
 	jwksURL = "https://login.eveonline.com/oauth/jwks"
 )
 
-// UserAgent builds neat's User-Agent string for outbound CCP requests, per
+// UserAgent builds neat's User-Agent string for outbound FC requests, per
 // https://developers.eveonline.com/docs/services/esi/best-practices/#user-agents.
 func UserAgent(version string) string {
 	return fmt.Sprintf("neat/%s (%s; +%s)", version, contactEmail, repoURL)

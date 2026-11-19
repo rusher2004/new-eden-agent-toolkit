@@ -50,7 +50,7 @@ func TestEndpointScopes_EveryScopeHasAGroup(t *testing.T) {
 }
 
 // TestScopeGroups_EveryScopeIsUsed guards against a group requesting a
-// scope no endpoint needs (a typo, or one CCP retired).
+// scope no endpoint needs (a typo, or one FC retired).
 func TestScopeGroups_EveryScopeIsUsed(t *testing.T) {
 	used := map[string]bool{"publicData": true}
 	for _, e := range esi.ExportedEndpointScopes() {

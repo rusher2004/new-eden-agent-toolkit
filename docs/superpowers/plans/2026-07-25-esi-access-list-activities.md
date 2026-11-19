@@ -37,8 +37,8 @@ Create `docs/reference/esi-coverage-roadmap.md`:
 ```markdown
 # ESI Coverage Roadmap
 
-Tracks progress covering CCP's full ESI API surface, one batch of resource groups at a time. The
-tag order and endpoint counts below come directly from CCP's live OpenAPI 3.0 spec
+Tracks progress covering FC's full ESI API surface, one batch of resource groups at a time. The
+tag order and endpoint counts below come directly from FC's live OpenAPI 3.0 spec
 (`https://esi.evetech.net/meta/openapi-3.0.json`), fetched the same way
 `github.com/fnt-eve/goesi-openapi` itself generates its client (see
 `docs/superpowers/specs/2026-07-25-esi-coverage-roadmap-design.md` for how this was verified).

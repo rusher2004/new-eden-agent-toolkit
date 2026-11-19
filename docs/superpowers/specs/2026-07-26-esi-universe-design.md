@@ -6,7 +6,7 @@ during the Sovereignty batch.
 
 ## Scope
 
-CCP's "Universe" tag -- the largest remaining tag, 30 endpoints, all verified directly against
+FC's "Universe" tag -- the largest remaining tag, 30 endpoints, all verified directly against
 `github.com/fnt-eve/goesi-openapi@v0.0.37`'s `esi/api_universe.go` and `esi/api/openapi.yaml`.
 
 | # | Endpoint | operationId | Security | Paginated |

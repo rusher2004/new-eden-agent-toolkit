@@ -5,7 +5,7 @@
 **Goal:** Migrate the final 6 Universe-tag celestial-detail tools off ESI-direct, and close 3 of the
 4 remaining field drops (`Race.AllianceID`, `System.Planets`, `Graphic.SofDNA`), using EVE Ref's
 `reference-data` and `esi-scrape` datasets as two new best-effort bulk-seed sources alongside the
-existing CCP SDE zip. `CollisionFile` stays dropped permanently — confirmed absent from ESI's own
+existing FC SDE zip. `CollisionFile` stays dropped permanently — confirmed absent from ESI's own
 live responses, not just the static export.
 
 **Architecture:** `sde/sync()` gains two more fetch phases (`reference-data`'s `types.json` for
@@ -47,7 +47,7 @@ the whole API surface this plan needs).
   `eve-ref-esi-scrape/data/tranquility/universe/stations.en-us.yaml`).
 - Both new sources are fetched via the existing `fetchBytes(ctx, url, userAgent)` helper already
   in `sde/sync.go` — no new HTTP-fetching code, only new extraction/parsing on top of it.
-- Failure isolation (confirmed): the core CCP SDE zip fetch stays sync-fatal exactly as today.
+- Failure isolation (confirmed): the core FC SDE zip fetch stays sync-fatal exactly as today.
   `reference-data`/`esi-scrape` fetch or parse failures are caught, logged via
   `slog.Default().WarnContext(ctx, "sde: failed to fetch <source>, skipping augmentation",
   "error", err)`, and degrade to an empty/`nil` result — the rest of `sync()` proceeds unaffected.
@@ -106,7 +106,7 @@ identical across all 5 scraped locales):
   system_id: 30000001
   type_id: 11
 ```
-No CCP SDE source exists for any of these at all (celestial names are computed server-side by CCP,
+No FC SDE source exists for any of these at all (celestial names are computed server-side by FC,
 never stored statically anywhere) — these three resources are sourced entirely from `esi-scrape`,
 seeded in bulk at sync time (Task 6), with the usual live-ESI-on-miss fallback (Task 7).
 
@@ -223,8 +223,8 @@ import (
 )
 
 // AsteroidBelt is a minimal decode of an EVE Ref esi-scrape asteroid belt
-// record. Unlike every other sde/ resource, there is no CCP SDE source for
-// this data at all -- asteroid belt names are computed server-side by CCP,
+// record. Unlike every other sde/ resource, there is no FC SDE source for
+// this data at all -- asteroid belt names are computed server-side by FC,
 // never stored in any static file. This is sourced entirely from EVE Ref's
 // esi-scrape dataset (a mirror of ESI's own live responses), seeded in bulk
 // at sync time; a read-through miss still falls back to a live ESI call.
@@ -2013,7 +2013,7 @@ git commit -m "feat: add Graphic.SofDNA field"
   and atomicity contract as before (Tasks 1–5's accessors need no further changes).
 
 **Why `store.go` needs two new fields:** `reference-data`/`esi-scrape` are fetched from hardcoded
-URLs, unlike the CCP SDE zip (discovered via `s.indexURL`'s `index.json`). Without an overridable
+URLs, unlike the FC SDE zip (discovered via `s.indexURL`'s `index.json`). Without an overridable
 field on `Store` the same shape as `indexURL` already has, `sync_test.go`'s fixture server
 couldn't redirect these two fetches to a local `httptest.Server`, and every sync test would make
 real network calls. `referenceDataURL`/`esiScrapeURL` follow `indexURL`'s exact precedent:
@@ -2055,7 +2055,7 @@ import (
 
 const defaultIndexURL = "https://data.everef.net/ccp/sde/index.json"
 
-// Store is a local cache of CCP's Static Data Export, backed by bbolt.
+// Store is a local cache of FC's Static Data Export, backed by bbolt.
 // Opening a Store does not sync it -- the first lookup call does that
 // lazily, at most once per Store's lifetime.
 type Store struct {
@@ -4897,7 +4897,7 @@ wrote, quoting its exact previous wording so the diff is unambiguous):
   never call ESI for it. Performance and API-citizenship requirement, not a suggestion.
   Permanent exception: the Universe tag's 6 celestial-detail tools
   (`get_universe_asteroid_belt`/`_moon`/`_planet`/`_stargate`/`_star`/`_station`) call ESI
-  directly and always will — their defining `Name` field doesn't exist anywhere in the SDE (CCP
+  directly and always will — their defining `Name` field doesn't exist anywhere in the SDE (FC
   generates these names server-side from system name + orbital position, not as stored data), so
   "migrating everything except Name" would still cost a live ESI call per lookup for no latency
   win. Every other Universe tag tool (types/groups/categories, regions/constellations/systems,
@@ -4912,16 +4912,16 @@ wrote, quoting its exact previous wording so the diff is unambiguous):
 with:
 ```markdown
 - **Prefer a cached, statically-refreshed source over a live per-request ESI call**: any tool
-  needing a resource available from CCP's SDE or from EVE Ref's `reference-data`/`esi-scrape`
+  needing a resource available from FC's SDE or from EVE Ref's `reference-data`/`esi-scrape`
   bulk exports must read it from `sde/`, never call ESI for it directly. Performance and
   API-citizenship requirement, not a suggestion. `sde/`'s bbolt cache is bulk-seeded once per
-  process lifetime from three sources: CCP's own SDE zip (sync-fatal — a failure here fails the
+  process lifetime from three sources: FC's own SDE zip (sync-fatal — a failure here fails the
   whole sync), and EVE Ref's `reference-data` and `esi-scrape` datasets (each independently
   best-effort — a fetch or parse failure there logs a warning and skips that source's
   augmentation, never fails the rest of the sync). Every Universe tag tool (all 24 of them) is
   `sde/`-backed via a read-through cache: try `sde/` first, fall back to a live ESI call on a
   cache miss, write the result back so the next lookup of that ID is fast. Exactly one field has
-  no source anywhere -- not CCP's SDE, not EVE Ref's `esi-scrape` mirror of ESI's own live
+  no source anywhere -- not FC's SDE, not EVE Ref's `esi-scrape` mirror of ESI's own live
   responses either: `get_universe_graphic`'s `CollisionFile`, confirmed absent from every record
   in both. It is populated on a cache miss (fresh off ESI, in case a future record ever has one)
   but dropped on a cache hit — the sole surviving field drop in the design spec's field-drop
@@ -4932,7 +4932,7 @@ with:
 
 Modify `CLAUDE.md` — replace the `sde/` row with:
 ```markdown
-| `sde/` | Local cache of CCP's Static Data Export plus EVE Ref's `reference-data`/`esi-scrape` bulk exports, backed by `go.etcd.io/bbolt` (`~/.neat/sde/sde.db`). Lazily syncs on first lookup call per `Store` lifetime (at most once per `neat mcp` process run) -- the CCP SDE zip fetch is sync-fatal; the two EVE Ref sources are independently best-effort (a failure there logs a warning and skips that source's augmentation, never fails the rest of the sync), since SDE data is enrichment, not a hard requirement. Backs all 24 of the Universe tag's tools via a read-through cache (`mcp/universe.go` orchestrates the ESI fallback and write-back; `sde/` itself never imports `esi/`) -- only `get_universe_graphic`'s `CollisionFile` field remains permanently unsourced, confirmed absent from every dataset checked. |
+| `sde/` | Local cache of FC's Static Data Export plus EVE Ref's `reference-data`/`esi-scrape` bulk exports, backed by `go.etcd.io/bbolt` (`~/.neat/sde/sde.db`). Lazily syncs on first lookup call per `Store` lifetime (at most once per `neat mcp` process run) -- the FC SDE zip fetch is sync-fatal; the two EVE Ref sources are independently best-effort (a failure there logs a warning and skips that source's augmentation, never fails the rest of the sync), since SDE data is enrichment, not a hard requirement. Backs all 24 of the Universe tag's tools via a read-through cache (`mcp/universe.go` orchestrates the ESI fallback and write-back; `sde/` itself never imports `esi/`) -- only `get_universe_graphic`'s `CollisionFile` field remains permanently unsourced, confirmed absent from every dataset checked. |
 ```
 
 - [ ] **Step 3: Update `README.md`'s matching text**
@@ -4945,7 +4945,7 @@ built. See
 ```
 with:
 ```markdown
-a local SDE cache (`sde/`, combining CCP's SDE with EVE Ref's `reference-data`/`esi-scrape`
+a local SDE cache (`sde/`, combining FC's SDE with EVE Ref's `reference-data`/`esi-scrape`
 exports and backing all 24 of the Universe tag's tools via a read-through cache) are built. See
 ```
 

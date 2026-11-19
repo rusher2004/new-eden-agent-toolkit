@@ -1,17 +1,17 @@
 # Closing the Remaining Universe-Tag Gaps with EVE Ref's Supplemental Datasets — Design
 
-**Superseded by:** [`2026-08-04-sde-sqlite-migration-design.md`](2026-08-04-sde-sqlite-migration-design.md) — this plan's bbolt + CCP-jsonl-zip pipeline was replaced by a directly-queried SQLite dump. This document remains an accurate record of what was built and why at the time.
+**Superseded by:** [`2026-08-04-sde-sqlite-migration-design.md`](2026-08-04-sde-sqlite-migration-design.md) — this plan's bbolt + FC-jsonl-zip pipeline was replaced by a directly-queried SQLite dump. This document remains an accurate record of what was built and why at the time.
 
 ## Goal
 
 The just-shipped `sde-universe-migration` (PR #9) migrated 18 of 24 Universe-tag tools onto a
-read-through cache backed by CCP's official Static Data Export, leaving 6 celestial-detail tools
+read-through cache backed by FC's official Static Data Export, leaving 6 celestial-detail tools
 permanently ESI-direct and 4 fields dropped on cache hits (`PackagedVolume`, `AllianceID`,
 `Planets`, `CollisionFile`/`SofDNA`) — all because the *official* SDE genuinely doesn't carry that
 data. This plan closes all of that except one field, using two more datasets EVE Ref hosts at
 `data.everef.net`, verified directly against real downloaded data during design:
 
-- **`reference-data`** (`data.everef.net/reference-data/`) — CCP's SDE, an ESI scrape, and a
+- **`reference-data`** (`data.everef.net/reference-data/`) — FC's SDE, an ESI scrape, and a
   Hoboleaks mirror pre-merged into one bundle. Its `types.json` carries `packaged_volume` with
   real values (confirmed: type 587 "Rifter" → `2500`).
 - **`esi-scrape`** (`data.everef.net/esi-scrape/`) — a full mirror of ESI's own live `universe/*`
@@ -24,7 +24,7 @@ data. This plan closes all of that except one field, using two more datasets EVE
 
 **Confirmed unfillable, not merely unsourced:** `get_universe_graphic`'s `CollisionFile` — zero
 non-null values across the *entire* `esi-scrape` graphics file (every graphic, every record). ESI
-itself never actually populates this field in practice, not just CCP's static export. This stays
+itself never actually populates this field in practice, not just FC's static export. This stays
 dropped permanently, with that verification noted in the field-drop table rather than left
 looking like an oversight.
 
@@ -39,14 +39,14 @@ Full closure: migrate all 6 celestial-detail tools, and close all 3 fillable fie
 
 ## Architecture: three sources feeding one sync
 
-`sde/`'s `sync()` already fetches one archive (the CCP SDE zip) lazily, once per `Store` lifetime,
+`sde/`'s `sync()` already fetches one archive (the FC SDE zip) lazily, once per `Store` lifetime,
 inside one atomic `db.Update`. This adds two more fetches to the *same* `sync()` call — not a
 separate lazy-sync mechanism — because celestial/race/system/graphic data is cheap enough
 (combined ~91MB, one-time, background to the first tool call) that eager-with-the-SDE is simpler
 than tracking three independent staleness clocks, and it keeps every accessor's `ensureSynced`
 call sharing one `sync.Once` as it does today.
 
-**Failure isolation (confirmed):** the core CCP SDE zip fetch stays sync-fatal, exactly as today —
+**Failure isolation (confirmed):** the core FC SDE zip fetch stays sync-fatal, exactly as today —
 categories/groups/types can't exist at all without it. `reference-data` and `esi-scrape` fetches
 are each independently best-effort: a failure (network error, format change, EVE Ref outage) is
 caught, logged via `slog.Default().WarnContext(ctx, "sde: failed to fetch <source>, skipping
@@ -78,7 +78,7 @@ dependent on the archived `gopkg.in/yaml.v2`).
 
 The "SDE over ESI" hard rule in `CLAUDE.md` reframes to "prefer a cached, statically-refreshed
 source over a live per-request ESI call." The `sde/` package keeps its name (it's still primarily
-the CCP SDE) but its sync pipeline gains `reference-data` and `esi-scrape` as additional bulk-seed
+the FC SDE) but its sync pipeline gains `reference-data` and `esi-scrape` as additional bulk-seed
 sources for specific resources. The hard rule's documented exception shrinks from 6 tools to
 exactly one field (`get_universe_graphic`'s `CollisionFile`).
 

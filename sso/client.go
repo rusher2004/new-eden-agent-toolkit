@@ -91,12 +91,12 @@ func refreshContext(ctx context.Context, userAgent string) context.Context {
 
 // persistingTokenSource wraps another oauth2.TokenSource, persisting the
 // refresh token to creds whenever it changes. golang.org/x/oauth2's own
-// token source updates its in-memory refresh token if CCP ever returns a
+// token source updates its in-memory refresh token if FC ever returns a
 // different one on refresh, but nothing else observes that change — left
 // unpersisted, the keychain copy would go stale and the character would
 // silently break on the next process restart with an opaque invalid_grant.
 // ESI's own SSO docs describe refresh tokens as reusable indefinitely,
-// which suggests CCP does not do this in practice, but this closes the gap
+// which suggests FC does not do this in practice, but this closes the gap
 // defensively regardless.
 type persistingTokenSource struct {
 	characterID int32
@@ -132,7 +132,7 @@ func (s *persistingTokenSource) Token() (*oauth2.Token, error) {
 // replaceCharacterRefreshToken persists a freshly-issued refresh token for
 // characterID and evicts any cached authenticated client for it, holding
 // clientCacheMu across both steps. Without the eviction, re-adding a
-// character whose old refresh token CCP had revoked would save the new
+// character whose old refresh token FC had revoked would save the new
 // token to the keychain while AuthenticatedClient kept returning the cached
 // client still built around the dead one — every ESI call for that
 // character would keep failing with "invalid_grant" until the process

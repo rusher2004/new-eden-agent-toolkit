@@ -25,7 +25,7 @@ const (
 	jwksURL = "https://login.eveonline.com/oauth/jwks"
 )
 
-// UserAgent builds neat's User-Agent string for outbound CCP requests, per
+// UserAgent builds neat's User-Agent string for outbound FC requests, per
 // https://developers.eveonline.com/docs/services/esi/best-practices/#user-agents.
 func UserAgent(version string) string {
 	return fmt.Sprintf("neat/%s (%s; +%s)", version, contactEmail, repoURL)

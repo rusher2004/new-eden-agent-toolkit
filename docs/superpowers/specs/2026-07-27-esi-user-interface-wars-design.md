@@ -56,7 +56,7 @@ JSON body):
 ## Wars
 
 `GetWars` returns bare `[]int64` (war IDs), optionally filtered by `maxWarId` (a cursor: "return
-wars with ID less than this", CCP's own descending-pagination convention for this endpoint --
+wars with ID less than this", FC's own descending-pagination convention for this endpoint --
 NOT the `page`/`X-Pages` pattern used elsewhere in this project. Verified: `ApiGetWarsRequest` has
 no `.Page()` setter, only `.MaxWarId(id int64)`).
 
@@ -143,7 +143,7 @@ func (c *Client) OpenNewMailWindow(ctx context.Context, recipients []int64, subj
 
 ```go
 // Package esi's wars.go covers all 3 of "Wars"'s endpoints. All 3 are public. GetWars uses
-// CCP's cursor-based pagination (max_war_id, "wars with ID less than this"), NOT this project's
+// FC's cursor-based pagination (max_war_id, "wars with ID less than this"), NOT this project's
 // usual page/X-Pages pattern -- verified individually: no .Page() setter on GetWars's request
 // builder. GetWarsWarIdKillmails, unlike the other 2, IS page/X-Pages paginated -- verified
 // individually.

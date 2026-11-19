@@ -5675,7 +5675,7 @@ Modify `CLAUDE.md` — replace the "SDE over ESI" bullet (currently `CLAUDE.md:4
   never call ESI for it. Performance and API-citizenship requirement, not a suggestion.
   Permanent exception: the Universe tag's 6 celestial-detail tools
   (`get_universe_asteroid_belt`/`_moon`/`_planet`/`_stargate`/`_star`/`_station`) call ESI
-  directly and always will — their defining `Name` field doesn't exist anywhere in the SDE (CCP
+  directly and always will — their defining `Name` field doesn't exist anywhere in the SDE (FC
   generates these names server-side from system name + orbital position, not as stored data), so
   "migrating everything except Name" would still cost a live ESI call per lookup for no latency
   win. Every other Universe tag tool (types/groups/categories, regions/constellations/systems,
@@ -5692,7 +5692,7 @@ Modify `CLAUDE.md` — replace the "SDE over ESI" bullet (currently `CLAUDE.md:4
 
 Modify `CLAUDE.md` — replace the `sde/` row (`CLAUDE.md:21`):
 ```markdown
-| `sde/` | Local cache of CCP's Static Data Export, backed by `go.etcd.io/bbolt` (`~/.neat/sde/sde.db`). Lazily syncs against EVE Ref's `data.everef.net/ccp/sde/` index on first lookup call per `Store` lifetime (at most once per `neat mcp` process run) — a failed sync doesn't error the lookup, it just falls back to whatever's already cached, since SDE data is enrichment, not a hard requirement. Backs 18 of the Universe tag's tools via a read-through cache (`mcp/universe.go` orchestrates the ESI fallback and write-back; `sde/` itself never imports `esi/`) — only the 6 celestial-detail tools remain ESI-direct, permanently, since their defining `Name` field has no SDE source. |
+| `sde/` | Local cache of FC's Static Data Export, backed by `go.etcd.io/bbolt` (`~/.neat/sde/sde.db`). Lazily syncs against EVE Ref's `data.everef.net/ccp/sde/` index on first lookup call per `Store` lifetime (at most once per `neat mcp` process run) — a failed sync doesn't error the lookup, it just falls back to whatever's already cached, since SDE data is enrichment, not a hard requirement. Backs 18 of the Universe tag's tools via a read-through cache (`mcp/universe.go` orchestrates the ESI fallback and write-back; `sde/` itself never imports `esi/`) — only the 6 celestial-detail tools remain ESI-direct, permanently, since their defining `Name` field has no SDE source. |
 ```
 
 - [ ] **Step 3: Update `README.md`'s matching text**

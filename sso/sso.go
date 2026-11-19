@@ -16,7 +16,7 @@ import (
 type Character struct {
 	ID   int32
 	Name string
-	// Scopes are the ESI scopes CCP granted in this login, from the
+	// Scopes are the ESI scopes FC granted in this login, from the
 	// token's scp claim.
 	Scopes []string
 }

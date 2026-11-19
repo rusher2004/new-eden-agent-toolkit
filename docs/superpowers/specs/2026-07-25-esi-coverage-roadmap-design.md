@@ -9,12 +9,12 @@ plus the concrete design for the first batch (Access List + Activities).
 
 `esi/` currently covers one resource group (Wallet, from
 `docs/superpowers/specs/2026-07-25-esi-wallet-design.md`). This spec extends that pattern to cover
-the entire ESI API — 36 resource groups ("tags" in CCP's own OpenAPI spec) — as a sequence of
+the entire ESI API — 36 resource groups ("tags" in FC's own OpenAPI spec) — as a sequence of
 batched plans, and designs the first batch in full.
 
 ## Source of truth for the tag order
 
-CCP's live OpenAPI 3.0 spec is fetched the same way `goesi-openapi` itself generates its client
+FC's live OpenAPI 3.0 spec is fetched the same way `goesi-openapi` itself generates its client
 (verified by reading `scripts/get_latest_esi_spec.sh` in the vendored
 `github.com/fnt-eve/goesi-openapi@v0.0.37` module):
 

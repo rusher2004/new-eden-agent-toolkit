@@ -8,7 +8,7 @@
 ## Purpose
 
 Lay the technical foundation for `neat` (New Eden Agent Toolkit): a Go application that lets a
-Claude user interact with EVE Online via CCP's ESI API and the EVE Ref Static Data Export (SDE).
+Claude user interact with EVE Online via FC's ESI API and the EVE Ref Static Data Export (SDE).
 It ships three ways: a Claude Code plugin, a Claude Desktop extension (`.mcpb`), and (implicitly,
 bundled with the plugin) Claude skills. This phase builds the scaffolding — packages, auth,
 config, storage, distribution — not domain-specific ESI tools/skills, which are deferred to
@@ -56,7 +56,7 @@ a future swap contained to two packages instead of a rewrite.
 | Concern | Library | Why |
 |---|---|---|
 | MCP server | `github.com/modelcontextprotocol/go-sdk` | Official, Google-collab, spec-current. Verified directly via `gh api repos/modelcontextprotocol/go-sdk` on 2026-07-23: not archived, pushed 2026-07-17, v1.6.1 latest stable release (v1.7.0-pre.x exists as prerelease only). Preferred over the community `mark3labs/mcp-go` used by `claude-project-tracker` — that project predates the official SDK's maturity. |
-| ESI client | `github.com/fnt-eve/goesi-openapi` | Generated from CCP's official OpenAPI 3.x spec (covers all endpoints without hand-wrapping); ships OAuth2/PKCE + JWT claim verification (JWKS-based, via `MicahParks/keyfunc`) that overlaps almost exactly with what `sso/` needs. Verified via `gh api repos/fnt-eve/goesi-openapi` on 2026-07-23: MIT licensed, not archived, latest release v0.0.37 pushed 2026-07-22. Accepted risk: pre-1.0, 9 stars — mitigated by facading it (see above). |
+| ESI client | `github.com/fnt-eve/goesi-openapi` | Generated from FC's official OpenAPI 3.x spec (covers all endpoints without hand-wrapping); ships OAuth2/PKCE + JWT claim verification (JWKS-based, via `MicahParks/keyfunc`) that overlaps almost exactly with what `sso/` needs. Verified via `gh api repos/fnt-eve/goesi-openapi` on 2026-07-23: MIT licensed, not archived, latest release v0.0.37 pushed 2026-07-22. Accepted risk: pre-1.0, 9 stars — mitigated by facading it (see above). |
 | CLI framework | `github.com/urfave/cli/v3` | Matches `ci-cd-assistant`'s structured command tree + exit-code discipline; more scalable than `claude-project-tracker`'s hand-rolled switch for a project that also needs a real `setup` flow. |
 | Keychain | `github.com/zalando/go-keyring` | Same as both siblings. |
 | SDE cache | `go.etcd.io/bbolt` | Pure-Go embedded KV store, per your evaluation request — fits the "stays up to date with the app, no re-parsing JSONL on every startup" goal. Bucket-per-resource, key = ID, value = JSON-encoded record. |

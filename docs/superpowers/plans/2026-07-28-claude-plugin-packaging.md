@@ -51,7 +51,7 @@ cat > .claude-plugin/marketplace.json << 'EOF'
     "name": "rusher2004"
   },
   "metadata": {
-    "description": "neat -- MCP server for interacting with EVE Online via CCP's ESI API and the EVE Ref Static Data Export."
+    "description": "neat -- MCP server for interacting with EVE Online via FC's ESI API and the EVE Ref Static Data Export."
   },
   "plugins": [
     {
@@ -72,7 +72,7 @@ cat > claude_resources/neat/.claude-plugin/plugin.json << 'EOF'
 {
   "name": "neat",
   "version": "0.1.0",
-  "description": "MCP server for EVE Online via CCP's ESI API and the EVE Ref Static Data Export -- 217 tools covering wallet, assets, corporations, industry, universe data, and more.",
+  "description": "MCP server for EVE Online via FC's ESI API and the EVE Ref Static Data Export -- 217 tools covering wallet, assets, corporations, industry, universe data, and more.",
   "author": {
     "name": "rusher2004"
   },

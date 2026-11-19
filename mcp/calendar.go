@@ -243,7 +243,7 @@ type RespondCalendarEventOutput struct {
 	Response    string `json:"response"`
 }
 
-// respondCalendarEventHandler is neat's first write tool. It changes state on CCP's server, so
+// respondCalendarEventHandler is neat's first write tool. It changes state on FC's server, so
 // unlike every read-only handler in this project it validates its input BEFORE loading
 // config.Store or calling ESI — failing fast on bad input without an unnecessary IO round-trip.
 func respondCalendarEventHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[RespondCalendarEventInput, RespondCalendarEventOutput] {

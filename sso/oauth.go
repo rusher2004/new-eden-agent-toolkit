@@ -27,7 +27,7 @@ var addCharacterMu sync.Mutex
 // another login session in this process is still open.
 var ErrAddCharacterInProgress = errors.New("a character login session is already open in the browser; finish it there (or close its tab) first")
 
-// callbackPort is the fixed loopback port of the OAuth2 redirect. CCP's SSO
+// callbackPort is the fixed loopback port of the OAuth2 redirect. FC's SSO
 // requires the redirect URI to match the one registered on the ESI
 // application exactly, port included, so it can't be chosen at runtime.
 const callbackPort = "48211"
@@ -47,7 +47,7 @@ var callbackListenAddr = "127.0.0.1:" + callbackPort
 var onListening = func(string) {}
 
 // callbackTimeout bounds how long a session waits for the browser to come
-// back from CCP's login page after a login starts. Overridable in tests.
+// back from FC's login page after a login starts. Overridable in tests.
 var callbackTimeout = 5 * time.Minute
 
 // pageIdleTimeout ends a session once its page has stopped checking in for
@@ -106,7 +106,7 @@ type AddOptions struct {
 }
 
 // AddCharacters runs a browser login session: it serves the OAuth2 redirect
-// on a loopback port, opens the browser at CCP's login page, and keeps
+// on a loopback port, opens the browser at FC's login page, and keeps
 // serving a page that lists the user's characters and lets them log in
 // more, until they click Done, close the tab, or a login times out. Each
 // character's refresh token is saved as soon as its login completes. It

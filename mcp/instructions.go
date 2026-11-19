@@ -5,7 +5,7 @@ package mcp
 // is the one place every client learns how to onboard a new user and how to
 // treat neat's tools. Keep it short and in step with the add-character and
 // industry skills in claude_resources/neat/skills/.
-const Instructions = `neat connects you to the user's EVE Online account: their characters' data through CCP's ESI API, static game data from a local copy of the Static Data Export, and industry, hauling and route planning.
+const Instructions = `neat connects you to the user's EVE Online account: their characters' data through Fenris Creations' ESI API, static game data from a local copy of the Static Data Export, and industry, hauling and route planning.
 
 Getting started: call list_characters. If no character is logged in, help the user add one: call list_scope_groups, ask in plain terms what they want neat to help with (industry, trading, mail, fleets...), and call add_character with the matching scopeGroups, or with none if they aren't sure, since basic is always granted and more can be added later. Tell them their browser will open at EVE's login page, where they can log in one or more characters.
 

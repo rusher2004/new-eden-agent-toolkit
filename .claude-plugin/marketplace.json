@@ -4,7 +4,7 @@
     "name": "rusher2004"
   },
   "metadata": {
-    "description": "neat -- connects Claude to EVE Online: your characters' data through CCP's ESI API, static game data, and industry, hauling and route planning."
+    "description": "neat -- connects Claude to EVE Online: your characters' data through Fenris Creations' ESI API, static game data, and industry, hauling and route planning."
   },
   "plugins": [
     {

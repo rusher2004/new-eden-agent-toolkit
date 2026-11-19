@@ -8,7 +8,7 @@ alone (14 endpoints — large enough to be its own batch, no bundling).
 
 ## Scope
 
-Character mixes public and private endpoints, verified against CCP's live spec:
+Character mixes public and private endpoints, verified against FC's live spec:
 
 - **4 public** (arbitrary-character lookups, no auth): `GetCharactersDetail`, `PostCharactersAffiliation`,
   `GetCharactersCharacterIdCorporationhistory`, `GetCharactersCharacterIdPortrait`. These use
@@ -23,7 +23,7 @@ Character mixes public and private endpoints, verified against CCP's live spec:
 
 All 10 private scopes verified already present in `mcp/add_character.go`'s `allScopes`
 (`esi-characters.read_agents_research.v1`, `read_blueprints.v1`, `read_contacts.v1` [for CSPA —
-CCP's own scope for this charge-cost lookup], `read_fatigue.v1`, `read_medals.v1`,
+FC's own scope for this charge-cost lookup], `read_fatigue.v1`, `read_medals.v1`,
 `read_notifications.v1` [covers both notifications and notifications/contacts], `read_corporation_roles.v1`,
 `read_standings.v1`, `read_titles.v1`).
 

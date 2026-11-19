@@ -114,7 +114,7 @@ convenience).
 
 ## Performance
 
-`sde/`'s type table is bulk-synced in full at process start (CCP's SDE zip fetch is sync-fatal, so
+`sde/`'s type table is bulk-synced in full at process start (FC's SDE zip fetch is sync-fatal, so
 if the process is running at all, the full type table is present). Because of that, the
 high-cardinality endpoints flagged in the inventory (`list_market_prices`, `get_killmail`, contract
 items) are still fast: virtually every lookup is a cache hit — a single in-process bbolt read, not

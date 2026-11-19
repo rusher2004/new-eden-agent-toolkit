@@ -8,12 +8,13 @@ Once it's set up, you can ask Claude things like:
 - "Where are all my Hulks, and what's in the hangar in Jita?"
 - "What's in my skill queue and when does it finish?"
 - "Which of my market orders have been undercut?"
+- "Help me setup a PI network with my characters."
 - "What would it cost to build 10 Ravens with my blueprints at my Raitaru? Should I build the components or buy them?"
 - "Plan a jump freighter route from Jita to my home system that stays out of Delve."
 - "Find me a quiet low-sec system bordering a high-sec system near Amarr."
 - "Summarize my unread mail and the corp calendar for this week."
 
-neat runs entirely on your own computer, nothing is stored on a server. Your login tokens live in your operating system's keychain, never in a file. neat talks only to CCP, and downloads public game data from fuzzwork.co.uk and EVE Ref. See [Privacy](https://github.com/rusher2004/new-eden-agent-toolkit/blob/main/PRIVACY.md) for everything neat connects to and stores.
+neat runs entirely on your own computer, nothing is stored on a server. Your login tokens live in your operating system's keychain, never in a file. neat talks only to Fenris Creations (FC), the makers of EVE, and downloads public game data from fuzzwork.co.uk and EVE Ref. See [Privacy](https://github.com/rusher2004/new-eden-agent-toolkit/blob/main/PRIVACY.md) for everything neat connects to and stores.
 
 It works in [Claude Code](https://claude.com/claude-code) and the [Claude desktop app](https://claude.ai/download), and in any other app that supports MCP servers.
 
@@ -118,7 +119,7 @@ For build plans, neat needs to know things ESI can't tell it: which rigs your st
 ## Where neat keeps things
 
 - `~/.neat/config.json`: which characters are logged in, plus your saved facility, haul and trade hub profiles
-- `~/.neat/sde/`: a local copy of EVE's static game data (about 500 MB), downloaded the first time it's needed and refreshed when CCP publishes a new one
+- `~/.neat/sde/`: a local copy of EVE's static game data (about 500 MB), downloaded the first time it's needed and refreshed when FC publishes a new one
 - `~/.neat/plans/`: build plans you've asked for
 - Your OS keychain (macOS Keychain, Windows Credential Manager, or the Linux Secret Service), under the name `neat`: each character's login token
 
@@ -130,7 +131,7 @@ To uninstall, delete the `neat` program and the `~/.neat` folder, remove the `ne
 - **macOS says neat can't be opened, or it quits immediately.** Run the `xattr` command from step 1. If you copied a new version over an old one, delete the old file first and copy it again.
 - **Logging in fails because port 48211 is in use.** neat briefly runs a small web page on your own computer at that port to receive EVE's login. Close whatever else is using it and try again.
 - **EVE's login page shows "HTTP Error 400. The size of the request headers is too long".** Clear your browser's cookies for `login.eveonline.com` and try again.
-- **The first question about items or systems is slow.** neat is downloading EVE's static data. It only does this once, and again when CCP publishes an update.
+- **The first question about items or systems is slow.** neat is downloading EVE's static data. It only does this once, and again when FC publishes an update.
 - **A tool says a character "hasn't granted" a scope.** Say yes when Claude offers to grant it, and log in as that same character.
 
 ## Development
@@ -152,4 +153,4 @@ See [docs/README.md](docs/README.md) for how the code is organized, how releases
 
 ---
 
-EVE Online and all related names are trademarks of CCP hf. neat is a fan project and isn't affiliated with or endorsed by CCP.
+EVE Online and all related names are trademarks of Fenris Creations hf. neat is a fan project and isn't affiliated with or endorsed by Fenris Creations.

@@ -1,6 +1,6 @@
 # Wiring `sde/` into the Universe Tag — Design
 
-**Superseded by:** [`2026-08-04-sde-sqlite-migration-design.md`](2026-08-04-sde-sqlite-migration-design.md) — this plan's bbolt + CCP-jsonl-zip pipeline was replaced by a directly-queried SQLite dump. This document remains an accurate record of what was built and why at the time.
+**Superseded by:** [`2026-08-04-sde-sqlite-migration-design.md`](2026-08-04-sde-sqlite-migration-design.md) — this plan's bbolt + FC-jsonl-zip pipeline was replaced by a directly-queried SQLite dump. This document remains an accurate record of what was built and why at the time.
 
 ## Goal
 
@@ -9,7 +9,7 @@ Migrate the Universe tag's tools off their documented temporary ESI-direct excep
 which built the package but wired in zero consumers. **18 of the 24 exception-listed tools
 migrate** — everything SDE can meaningfully cover. Only the **6 celestial-detail tools**
 (`get_universe_asteroid_belt`/`_moon`/`_planet`/`_stargate`/`_star`/`_station`) stay ESI-direct,
-and only because their defining field, `Name`, doesn't exist anywhere in the SDE — CCP generates
+and only because their defining field, `Name`, doesn't exist anywhere in the SDE — FC generates
 these names server-side from system name + orbital position, not as stored data. Migrating
 "everything except Name" would still require a live ESI call per lookup, for no real latency win.
 This is a hard, unavoidable gap, not a judgment call.
