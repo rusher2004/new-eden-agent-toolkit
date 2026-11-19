@@ -15,6 +15,7 @@ require (
 	golang.org/x/mod v0.43.0
 	golang.org/x/oauth2 v0.38.0
 	golang.org/x/sys v0.50.0
+	gonum.org/v1/gonum v0.16.0
 	modernc.org/sqlite v1.62.0
 )
 

@@ -1,5 +1,17 @@
 # neat plugin — changelog
 
+## 0.7.0
+- Industry planning. A new pure `industry/` package does every calculation, and 22 new MCP tools expose it:
+  - facility, haul and hub profiles, plus `describe_facility` and `calibrate_facility_profile`;
+  - owned blueprints, build skills and stock checks;
+  - order-book quotes with in-game Multibuy lists;
+  - job fees, research, copying and invention estimates;
+  - reprocessing yield and the cheapest compressed-ore mix;
+  - jump and gate routes with dotlan links, and haul load packing;
+  - `plan_build`, which plans a whole build end to end and saves it under `~/.neat/plans/`.
+- Every facility kind (NPC station, Upwell structure, starbase) in every security band is supported. Structure and rig bonuses, which products each rig covers, refinery and implant bonuses, and jump drive attributes all come from the SDE.
+- Three skills: `industry-build-plan`, `industry-profile-setup` and `haul-route-setup`. They cover discovery and decisions only; the tools do the math.
+
 ## 0.6.0
 - **Fixes `get_universe_type` and every `TypeName`/`ShipTypeName` enrichment, both broken against the current SDE.** fuzzwork's dump dropped the `invTypes.radius` column, so every type lookup failed. `get_universe_type` errored outright, and the name fields across all type-enriched tools silently came back empty. `get_universe_type`'s `radius` now comes from EVE Ref's `reference-data` export, fetched once per process alongside the existing `esi-scrape` fetch (about 57 MB more on the first SDE lookup, with a brief memory spike while it's parsed). If that fetch fails, `radius` is absent on a cache hit and populated only when the type is fetched fresh from ESI.
 - Adds 14 tools for three ESI tags new since the last sweep. Military Campaigns: `list_military_campaigns`, `get_military_campaign`, `list_military_campaign_objectives`, `get_military_campaign_objective`, `list_character_military_campaign_objectives`, `get_character_military_campaign_objective_participation`. Cosmetics: `list_character_skinr_licenses`, `list_character_skinr_component_licenses`, `get_skinr`. Paragon Hub: `list_paragon_hub_skinr_listings`, `list_character_paragon_hub_skinr_listings`, `list_paragon_hub_skinr_listings_for_alliance`, `list_paragon_hub_skinr_listings_for_corporation`, `list_paragon_hub_skinr_listings_for_character`. SKINR ship types, cosmetic slots, and components get SDE-resolved names.

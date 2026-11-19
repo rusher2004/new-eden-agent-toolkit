@@ -25,7 +25,7 @@ CREATE TABLE dgmTypeEffects (typeID INTEGER, effectID INTEGER, isDefault BOOLEAN
 CREATE TABLE mapRegions (regionID INTEGER PRIMARY KEY, regionName VARCHAR(100));
 CREATE TABLE mapConstellations (constellationID INTEGER PRIMARY KEY, regionID INTEGER, constellationName VARCHAR(100), x FLOAT, y FLOAT, z FLOAT);
 CREATE TABLE mapSolarSystems (solarSystemID INTEGER PRIMARY KEY, constellationID INTEGER, solarSystemName VARCHAR(100), x FLOAT, y FLOAT, z FLOAT, security FLOAT, securityClass VARCHAR(2));
-CREATE TABLE staStations (stationID INTEGER PRIMARY KEY, stationName VARCHAR(100), solarSystemID INTEGER, stationTypeID INTEGER, x FLOAT, y FLOAT, z FLOAT, maxShipVolumeDockable FLOAT, officeRentalCost FLOAT, corporationID INTEGER, reprocessingEfficiency FLOAT, reprocessingStationsTake FLOAT);
+CREATE TABLE staStations (stationID INTEGER PRIMARY KEY, stationName VARCHAR(100), solarSystemID INTEGER, stationTypeID INTEGER, x FLOAT, y FLOAT, z FLOAT, maxShipVolumeDockable FLOAT, officeRentalCost FLOAT, corporationID INTEGER, operationID INTEGER, reprocessingEfficiency FLOAT, reprocessingStationsTake FLOAT);
 CREATE TABLE mapDenormalize (itemID INTEGER PRIMARY KEY, typeID INTEGER, groupID INTEGER, solarSystemID INTEGER, orbitID INTEGER, x FLOAT, y FLOAT, z FLOAT, itemName VARCHAR(100), celestialIndex INTEGER);
 CREATE TABLE mapCelestialStatistics (celestialID INTEGER PRIMARY KEY, temperature FLOAT, spectralClass VARCHAR(10), luminosity FLOAT, age FLOAT, radius FLOAT);
 CREATE TABLE mapJumps (stargateID INTEGER PRIMARY KEY, destinationID INTEGER);
@@ -33,6 +33,18 @@ CREATE TABLE chrFactions (factionID INTEGER PRIMARY KEY, factionName VARCHAR(100
 CREATE TABLE chrRaces (raceID INTEGER PRIMARY KEY, raceName VARCHAR(100), description VARCHAR(1000));
 CREATE TABLE chrBloodlines (bloodlineID INTEGER PRIMARY KEY, bloodlineName VARCHAR(100), raceID INTEGER, description VARCHAR(1000), shipTypeID INTEGER, corporationID INTEGER, perception INTEGER, willpower INTEGER, charisma INTEGER, memory INTEGER, intelligence INTEGER);
 CREATE TABLE chrAncestries (ancestryID INTEGER PRIMARY KEY, ancestryName VARCHAR(100), bloodlineID INTEGER, description VARCHAR(1000), iconID INTEGER, shortDescription VARCHAR(500));
+CREATE TABLE industryActivity (typeID INTEGER, activityID INTEGER, time INTEGER);
+CREATE TABLE industryActivityMaterials (typeID INTEGER, activityID INTEGER, materialTypeID INTEGER, quantity INTEGER);
+CREATE TABLE industryActivityProducts (typeID INTEGER, activityID INTEGER, productTypeID INTEGER, quantity INTEGER);
+CREATE TABLE industryActivitySkills (typeID INTEGER, activityID INTEGER, skillID INTEGER, level INTEGER);
+CREATE TABLE industryActivityProbabilities (typeID INTEGER, activityID INTEGER, productTypeID INTEGER, probability DECIMAL(3, 2));
+CREATE TABLE invTypeMaterials (typeID INTEGER, materialTypeID INTEGER, quantity INTEGER);
+CREATE TABLE dgmEffects (effectID INTEGER PRIMARY KEY, effectName VARCHAR(400), modifierInfo TEXT);
+CREATE TABLE mapSolarSystemJumps (fromRegionID INTEGER, fromConstellationID INTEGER, fromSolarSystemID INTEGER, toSolarSystemID INTEGER, toConstellationID INTEGER, toRegionID INTEGER);
+CREATE TABLE indModifierSources (typeID INTEGER, activityName VARCHAR(100), modifierType VARCHAR(100), dogmaAttributeID INTEGER, filterID INTEGER);
+CREATE TABLE indTargetFilters (targetFilterID INTEGER PRIMARY KEY, name VARCHAR(100));
+CREATE TABLE indTargetFilterCategories (targetFilterID INTEGER, categoryID INTEGER);
+CREATE TABLE indTargetFilterGroups (targetFilterID INTEGER, groupID INTEGER);
 CREATE TABLE eveGraphics (graphicID INTEGER PRIMARY KEY, sofFactionName VARCHAR(100), graphicFile VARCHAR(256), sofHullName VARCHAR(100), sofRaceName VARCHAR(100), iconFolder VARCHAR(256));
 CREATE TABLE skinrComponents (componentID INTEGER PRIMARY KEY, name VARCHAR(255), categoryID INTEGER, rarityID INTEGER, finish VARCHAR(50), published BOOLEAN, iconFile VARCHAR(512), resourceFile VARCHAR(512), projectionTypeU VARCHAR(50), projectionTypeV VARCHAR(50), sequenceBinderCount INTEGER, sequenceBinderTypeID INTEGER);
 CREATE TABLE skinrSlots (slotID INTEGER PRIMARY KEY, name VARCHAR(255), categoryID INTEGER);

@@ -140,6 +140,12 @@ func TestServer_AllToolsRegistered(t *testing.T) {
 		"list_paragon_hub_skinr_listings", "list_character_paragon_hub_skinr_listings",
 		"list_paragon_hub_skinr_listings_for_alliance", "list_paragon_hub_skinr_listings_for_corporation",
 		"list_paragon_hub_skinr_listings_for_character",
+		"save_facility_profile", "list_facility_profiles", "delete_facility_profile", "describe_facility",
+		"calibrate_facility_profile", "save_haul_profile", "list_haul_profiles", "delete_haul_profile",
+		"save_hub_profile", "list_hub_profiles", "find_owned_blueprints", "check_build_skills",
+		"check_material_stock", "quote_market_purchase", "estimate_job_cost", "estimate_research",
+		"estimate_invention", "estimate_reprocessing_yield", "solve_ore_mix", "plan_jump_route", "plan_haul",
+		"plan_build",
 	} {
 		if !names[want] {
 			t.Errorf("missing tool %q, got %v", want, names)

@@ -237,3 +237,21 @@ func (s *Store) queryInt64Column(ctx context.Context, query string, args ...any)
 	}
 	return ids, rows.Err()
 }
+
+// OpenStatic opens an existing fuzzwork-format SQLite dump at path for
+// reading, without ever syncing it from the network. Use it when the caller
+// manages the dump file itself (and in tests). PutX write-backs still go to
+// the in-memory overlay.
+func OpenStatic(path string) (*Store, error) {
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		return nil, fmt.Errorf("open sde dump %s: %w", path, err)
+	}
+	if err := db.Ping(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("open sde dump %s: %w", path, err)
+	}
+	s := &Store{dbPath: path, metaPath: filepath.Join(filepath.Dir(path), "meta.json"), db: db}
+	s.syncOnce.Do(func() {})
+	return s, nil
+}

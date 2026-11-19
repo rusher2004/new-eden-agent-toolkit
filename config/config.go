@@ -18,7 +18,10 @@ type Character struct {
 
 // Config is neat's persisted, non-secret state.
 type Config struct {
-	Characters []Character `json:"characters"`
+	Characters       []Character       `json:"characters"`
+	FacilityProfiles []FacilityProfile `json:"facilityProfiles,omitempty"`
+	HaulProfiles     []HaulProfile     `json:"haulProfiles,omitempty"`
+	HubProfiles      []HubProfile      `json:"hubProfiles,omitempty"`
 }
 
 // Store reads and writes a Config to a fixed path on disk.

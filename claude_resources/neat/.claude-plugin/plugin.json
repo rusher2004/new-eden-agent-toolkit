@@ -1,7 +1,7 @@
 {
   "name": "neat",
-  "version": "0.6.0",
-  "description": "MCP server for EVE Online via CCP's ESI API and the EVE Ref Static Data Export -- 217 tools covering wallet, assets, corporations, industry, universe data, and more.",
+  "version": "0.7.0",
+  "description": "MCP server for EVE Online via CCP's ESI API and the EVE Ref Static Data Export -- 258 tools covering wallet, assets, corporations, industry, universe data and more, plus industry build planning, compressed-ore buying, jump freighter hauling and route planning, with skills that drive them.",
   "author": {
     "name": "rusher2004"
   },

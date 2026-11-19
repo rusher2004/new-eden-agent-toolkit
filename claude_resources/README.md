@@ -1,7 +1,8 @@
 # Claude resources — `neat`
 
-Claude Code resources for `neat`. Currently a single plugin that registers the `neat` MCP server —
-no skills or commands yet (see the project's design spec for what's deferred).
+Claude Code resources for `neat`: a single plugin that registers the `neat` MCP server and ships three
+skills — `industry-build-plan`, `industry-profile-setup` and `haul-route-setup` — that drive neat's
+industry planning tools. The skills hold discovery and decision steps only; every number comes from a tool.
 
 Contents:
 
@@ -14,6 +15,7 @@ new-eden-agent-toolkit/
     └── neat/               # the plugin
         ├── .claude-plugin/plugin.json
         ├── .mcp.json       # registers the neat MCP server
+        ├── skills/         # industry-build-plan, industry-profile-setup, haul-route-setup
         └── CHANGELOG.md
 ```
 
