@@ -3,7 +3,7 @@
 **Batch:** Market tag, 11 endpoints — 2 private ("my own character"), 2 corp-scoped, 6 public,
 1 that looks public but is actually private (structure market orders). Full verification detail,
 including drafted and sandbox-compiled code for both layers with a live `mcpsdk.AddTool`+`Connect`
-registration test, recorded at `market-batch-draft.md`.
+registration test.
 
 ## Endpoints (verified against installed `github.com/fnt-eve/goesi-openapi@v0.0.37` and its
 `esi/api/openapi.yaml` security requirements)

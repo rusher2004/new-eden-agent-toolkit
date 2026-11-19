@@ -18,7 +18,7 @@
 - External test packages by default (`package foo_test`); `*_internal_test.go` only when a test genuinely needs an unexported symbol.
 - Table-driven tests only where they naturally fit; independent, clearly-named tests otherwise. Standard library only — no `testify`.
 - `keyring.MockInit()` before any test touches keychain-backed code.
-- User-Agent for all outbound CCP requests: `"neat/<version> (robertinthecloud@icloud.com; +https://github.com/rusher2004/new-eden-agent-toolkit)"`.
+- User-Agent for all outbound CCP requests: `"neat/<version> (maintainer@example.com; +https://github.com/rusher2004/new-eden-agent-toolkit)"`.
 - `mcp/` package files alias the SDK import as `mcpsdk` (`mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"`) to avoid shadowing the package's own name — same rationale as `commands` aliasing `cli`.
 - Docs (`CLAUDE.md`, `README.md`) updated in the same PR as the behavior they describe, per this repo's doc-sync rule.
 - Design spec: `docs/superpowers/specs/2026-07-24-mcp-server-design.md`. Foundation spec: `docs/superpowers/specs/2026-07-23-foundation-design.md`.
@@ -51,7 +51,7 @@ import (
 
 func TestUserAgent_Format(t *testing.T) {
 	got := UserAgent("1.2.3")
-	want := "neat/1.2.3 (robertinthecloud@icloud.com; +https://github.com/rusher2004/new-eden-agent-toolkit)"
+	want := "neat/1.2.3 (maintainer@example.com; +https://github.com/rusher2004/new-eden-agent-toolkit)"
 	if got != want {
 		t.Errorf("UserAgent(%q) = %q, want %q", "1.2.3", got, want)
 	}
@@ -102,7 +102,7 @@ import (
 )
 
 const (
-	contactEmail = "robertinthecloud@icloud.com"
+	contactEmail = "maintainer@example.com"
 	repoURL      = "https://github.com/rusher2004/new-eden-agent-toolkit"
 
 	// jwksURL is duplicated from goesi-openapi's unexported esiJWKSURL

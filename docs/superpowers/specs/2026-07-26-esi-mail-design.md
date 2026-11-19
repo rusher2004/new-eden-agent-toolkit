@@ -5,8 +5,7 @@ largest write-heavy batch since Fleets.
 
 ## Endpoints (verified against installed `github.com/fnt-eve/goesi-openapi@v0.0.37` and its
 `esi/api/openapi.yaml` security requirements — full verification detail, including drafted and
-sandbox-compiled code for both layers, delegated to a research subagent and recorded at
-`mail-batch-draft.md`)
+sandbox-compiled code for both layers, delegated to a research subagent)
 
 All 9 `/characters/{character_id}/mail...` paths require an
 `esi-mail.{read_mail,send_mail,organize_mail}.v1` character-scoped OAuth2 scope — every method is

@@ -1,5 +1,8 @@
 # neat plugin — changelog
 
+## 0.7.1
+- Prepares the repo for sharing: tests, fixtures, examples and design docs no longer reference specific players' characters, corporations, structures or home systems. The jump-route regression tests now use Jita → PF-QHK, checked against dotlan. The plugin README drops the private-repo install notes.
+
 ## 0.7.0
 - Industry planning. A new pure `industry/` package does every calculation, and 22 new MCP tools expose it:
   - facility, haul and hub profiles, plus `describe_facility` and `calibrate_facility_profile`;

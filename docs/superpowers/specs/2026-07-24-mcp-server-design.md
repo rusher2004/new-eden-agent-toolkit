@@ -71,7 +71,7 @@ import (
 )
 
 const (
-	contactEmail = "robertinthecloud@icloud.com"
+	contactEmail = "maintainer@example.com"
 	repoURL      = "https://github.com/rusher2004/new-eden-agent-toolkit"
 
 	// jwksURL is duplicated from goesi-openapi's unexported esiJWKSURL

@@ -2,8 +2,7 @@
 
 **Batch:** Planetary Interaction tag, 4 endpoints — 2 private ("my own character"), 1 corp-scoped,
 1 public. Full verification detail, including drafted and sandbox-compiled code for both layers
-with a live `mcpsdk.AddTool`+`Connect` registration test, recorded at
-`pi-batch-draft.md`.
+with a live `mcpsdk.AddTool`+`Connect` registration test.
 
 ## Endpoints (verified against installed `github.com/fnt-eve/goesi-openapi@v0.0.37` and its
 `esi/api/openapi.yaml` security requirements)

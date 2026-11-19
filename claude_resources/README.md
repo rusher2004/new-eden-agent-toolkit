@@ -34,11 +34,7 @@ binary on your `PATH`, then run `neat setup` once to store ESI credentials in yo
 2) /plugin install neat@neat
 ```
 
-This repo is **private**. Manual install/update reuses your existing git credentials (`gh auth
-login`, SSH agent — whatever `git`/`gh` already use on this machine). Claude Code also
-auto-refreshes git-backed marketplaces in the background; for that to work against a private repo
-without an interactive prompt, set a `GITHUB_TOKEN` or `GH_TOKEN` environment variable. Otherwise,
-pull the latest plugin content on demand with `/plugin marketplace update neat`.
+Claude Code auto-refreshes git-backed marketplaces in the background. To pull the latest plugin content on demand, run `/plugin marketplace update neat`.
 
 ## How to test
 
