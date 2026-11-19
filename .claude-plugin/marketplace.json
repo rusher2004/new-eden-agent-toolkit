@@ -4,13 +4,13 @@
     "name": "rusher2004"
   },
   "metadata": {
-    "description": "neat -- MCP server for interacting with EVE Online via CCP's ESI API and the EVE Ref Static Data Export."
+    "description": "neat -- connects Claude to EVE Online: your characters' data through CCP's ESI API, static game data, and industry, hauling and route planning."
   },
   "plugins": [
     {
       "name": "neat",
       "source": "./claude_resources/neat",
-      "description": "Registers the neat MCP server (217 tools covering ESI + a local SDE cache) with Claude Code."
+      "description": "Lets Claude read your EVE Online characters, corporations, markets and universe data, and plan industry builds and jump freighter hauls. Needs the neat program installed."
     }
   ]
 }

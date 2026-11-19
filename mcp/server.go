@@ -1,3 +1,5 @@
+//go:generate go run ../tools/gentooldocs -out ../docs/reference/tools.md
+
 // Package mcp builds neat's MCP server and registers its character tools.
 package mcp
 
@@ -89,7 +91,7 @@ import (
 // list_paragon_hub_skinr_listings_for_corporation, and
 // list_paragon_hub_skinr_listings_for_character registered.
 func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Store) *mcpsdk.Server {
-	server := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "neat", Version: version}, nil)
+	server := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "neat", Version: version}, &mcpsdk.ServerOptions{Instructions: Instructions})
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name: "add_character",

@@ -5,10 +5,11 @@ description: Log EVE Online characters in to neat, or grant a logged-in characte
 
 # Adding characters
 
-neat asks EVE for access in scope groups: `basic` (skills, location, ship, clones) is always granted, and the user picks the rest. Requesting only what they need keeps EVE's login working across several logins in a row. A login asking for every scope at once can fail with "Request Too Long".
+neat asks EVE for access in scope groups: `basic` (skills, location, ship, clones) is always granted, and the user picks the rest. Requesting only what they need keeps EVE's login working across several logins in a row. A login asking for every scope at once can fail with "HTTP Error 400. The size of the request headers is too long".
 
 ## 1. Ask what they'll use neat for
 
+- Call `list_characters` first. If the character they mean is already logged in and only needs more access, go to section 3 instead.
 - Call `list_scope_groups` to see the groups and what each one covers.
 - Ask the user what they want neat to help with, in plain terms ("industry, the market, reading mail, fleets..."). Don't read them the group list unless they ask.
 - Map their answer to groups. For example, industry planning wants `industry`, `assets` and `market`. Corporation groups only work for characters with the matching in-game corporation roles; mention that when you pick one.
@@ -19,6 +20,8 @@ neat asks EVE for access in scope groups: `basic` (skills, location, ship, clone
 - Call `add_character` with the chosen `scopeGroups`. Tell the user their browser will open at EVE's login page.
 - After they log in, the browser shows neat's page, where they can add more characters with the same access, then click "I'm done" or close the tab. The tool returns once they do.
 - Report who was added and which scope groups each one granted.
+- If the login fails because port 48211 is in use, tell the user another program on their computer holds it and to close it and try again. If EVE's page says the request headers are too long, have them clear their browser's cookies for `login.eveonline.com`.
+- If this was their first character, suggest two or three things to ask that fit the access they just granted, such as their wallet balance, their skill queue, or where their ships are.
 
 ## 3. Granting more access later
 

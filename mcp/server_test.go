@@ -183,3 +183,19 @@ func TestServer_RemoveCharacterNotFound_SurfacesAsToolError(t *testing.T) {
 		t.Errorf("content text = %q, want it to contain %q", text, "character not found")
 	}
 }
+
+func TestServer_SendsInstructions(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	clientSession, _ := connectedSession(t, store)
+
+	got := clientSession.InitializeResult().Instructions
+	if got != mcp.Instructions {
+		t.Fatalf("initialize instructions = %q, want mcp.Instructions", got)
+	}
+	for _, tool := range []string{"list_characters", "list_scope_groups", "add_character"} {
+		if !strings.Contains(got, tool) {
+			t.Errorf("instructions don't mention %s, which onboarding depends on", tool)
+		}
+	}
+}

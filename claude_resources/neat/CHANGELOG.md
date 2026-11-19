@@ -1,5 +1,10 @@
 # neat plugin — changelog
 
+## 0.8.2
+- neat now gives every app it connects to a short set of instructions: how to help a new user log in their first character, what to do when a character is missing access, to check with you before tools that change things in EVE, and to leave industry numbers to neat's tools. This matters most in the Claude desktop app and other apps that don't load the plugin's skills.
+- The `add-character` skill checks who's already logged in before starting a login, explains the two common login errors, and suggests a few first questions after you add your first character.
+- New documentation: the README is rewritten for players (install, connecting to Claude Code or the Claude desktop app, choosing what neat can see, troubleshooting), and `docs/reference/tools.md` lists every tool by area. The plugin and marketplace descriptions no longer quote a stale tool count.
+
 ## 0.8.1
 - No changes to neat itself. Building from source gains `make install`, which builds `neat` and installs it to `~/.local/bin`, removing the old binary first so macOS doesn't kill the new one on launch.
 
