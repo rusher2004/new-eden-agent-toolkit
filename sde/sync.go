@@ -73,19 +73,12 @@ func (s *Store) sync(ctx context.Context, userAgent string) error {
 		return err
 	}
 
-	// reference-data/esi-scrape augmentation is never persisted to disk (see
-	// Store's typeRadii/raceAlliances/graphicSofDNA doc comment) -- every
-	// process's single sync() fetches both fresh, best-effort, regardless of
-	// whether either has changed remotely, since there is no local copy to
-	// otherwise fall back to skipping. It runs after every successful
-	// syncDump, including its "keep serving the existing cache" fallbacks
-	// (a failed dump HEAD or re-download), so a fuzzwork hiccup never also
-	// drops Radius/AllianceID/SofDNA for the rest of the process.
-	s.typeRadii = fetchReferenceDataTypeRadii(ctx, s.referenceDataURL, userAgent)
-	if data, ok := fetchEsiScrapeSupplements(ctx, s.esiScrapeURL, userAgent); ok {
-		s.raceAlliances = data.raceAlliances
-		s.graphicSofDNA = data.graphicSofDNA
-	}
+	// The reference-data/esi-scrape augmentation (see everef.go) is
+	// best-effort and runs after every successful syncDump, including its
+	// "keep serving the existing cache" fallbacks (a failed dump HEAD or
+	// re-download), so a fuzzwork hiccup never also drops
+	// Radius/AllianceID/SofDNA for the rest of the process.
+	s.syncSupplements(ctx, userAgent)
 	return nil
 }
 

@@ -27,7 +27,7 @@ neat keeps a local copy of EVE's static game data (items, ships, blueprints, sys
 | Address | What for | When |
 |---|---|---|
 | `www.fuzzwork.co.uk` | A SQLite copy of CCP's Static Data Export, about 176 MB to download and about 500 MB on disk | The first time neat needs game data in each session, it checks whether a newer copy exists, and downloads it if there is one |
-| `data.everef.net` | Three details missing from the fuzzwork copy: item sizes (radius), which alliance a race belongs to, and graphic details | The first time neat needs game data in each session; kept in memory only |
+| `data.everef.net` | Three details missing from the fuzzwork copy: item sizes (radius), which alliance a race belongs to, and graphic details | The first time neat needs game data in each session, it checks a small index file to see whether either archive has changed, and downloads only one that has. What it uses from them is saved in `~/.neat/sde/everef.json` |
 
 ### Your AI app
 
@@ -49,8 +49,8 @@ Every request to CCP, fuzzwork and EVE Ref carries a User-Agent header like `nea
 | Your OS keychain (macOS Keychain, Windows Credential Manager, or the Linux Secret Service), under the service name `neat` | One entry per logged-in character, `character_refresh_token:<character ID>`, holding that character's EVE refresh token | This is the only secret neat keeps. Removing a character in neat deletes its entry. `neat setup` briefly writes and deletes a test entry (`internal:setup_canary`) to check that the keychain works. |
 | `~/.neat/config.json` | Each logged-in character's ID and name, plus any facility, haul and trade hub profiles you saved: structure names and their rigs, services and taxes, your hauling ships and pilots, and routing preferences such as areas to avoid | Contains no tokens. Only your user account can read it. |
 | `~/.neat/plans/` | One file per build plan you asked for, named by date and product: costs, build-or-buy decisions, shopping lists, haul loads and job schedules, including the stock you already own that the plan uses | Only your user account can read these. Delete them whenever you like. |
-| `~/.neat/sde/eve.db` and `~/.neat/sde/meta.json` | The downloaded copy of EVE's static game data, and a note of which version it is | Public game data only. A temporary `eve.db.*.tmp` file sits next to it while a new copy downloads. |
-| Memory only (gone when neat stops) | Each character's short-lived access token, the EVE Ref details listed above, and any game data neat fetched from ESI that the local copy was missing | Nothing in memory is written to disk. |
+| `~/.neat/sde/eve.db`, `~/.neat/sde/meta.json` and `~/.neat/sde/everef.json` | The downloaded copy of EVE's static game data, a note of which version it is, and the details neat uses from EVE Ref's archives along with their versions | Public game data only. Temporary `eve.db.*.tmp` and `everef.json.*.tmp` files sit next to them while a new copy is saved. |
+| Memory only (gone when neat stops) | Each character's short-lived access token, and any game data neat fetched from ESI that the local copy was missing | Nothing in memory is written to disk. |
 
 neat doesn't write log files of its own. It prints warnings and errors, such as a failed download, to your AI app, which may save them in its own logs.
 
