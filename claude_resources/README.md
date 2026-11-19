@@ -1,44 +1,44 @@
-# Claude resources — `neat`
+# neat Claude Code plugin
 
-Claude Code resources for `neat`: a single plugin that registers the `neat` MCP server and ships three
-skills — `industry-build-plan`, `industry-profile-setup` and `haul-route-setup` — that drive neat's
-industry planning tools. The skills hold discovery and decision steps only; every number comes from a tool.
+This folder holds the Claude Code plugin for neat. It registers the `neat` MCP server and adds skills that guide Claude through the multi-step parts of using it. Installing neat and connecting it to Claude is covered in the [main README](../README.md#install); this page is for people working on the plugin.
 
-Contents:
+## What's in it
 
 ```
 new-eden-agent-toolkit/
 ├── .claude-plugin/
-│   └── marketplace.json   # marketplace "neat" -- must live at repo root for the `github`
-│                           # source type below to find it
+│   └── marketplace.json   # the "neat" marketplace; must sit at the repo root so
+│                          # `/plugin marketplace add rusher2004/new-eden-agent-toolkit` finds it
 └── claude_resources/
     └── neat/               # the plugin
-        ├── .claude-plugin/plugin.json
-        ├── .mcp.json       # registers the neat MCP server
-        ├── skills/         # industry-build-plan, industry-profile-setup, haul-route-setup
-        └── CHANGELOG.md
+        ├── .claude-plugin/plugin.json   # version is generated from VERSION
+        ├── .mcp.json                    # runs `neat mcp` from the user's PATH
+        ├── skills/
+        └── CHANGELOG.md                 # user-facing release notes
 ```
 
-## Prerequisite: install the `neat` CLI
+The skills:
 
-The plugin's `.mcp.json` expects `neat` to be resolvable on `PATH`. Download a release from
-[GitHub Releases](https://github.com/rusher2004/new-eden-agent-toolkit/releases), put the `neat`
-binary on your `PATH`, then run `neat setup` once to store ESI credentials in your OS keychain.
+- `add-character`: log characters in, picking scope groups from what the user wants to do, and grant more access when a tool reports a missing scope.
+- `industry-build-plan`: plan a build end to end, from blueprints and builders through build-or-buy, refining and hauling to a shareable plan page.
+- `industry-profile-setup`: save and calibrate facility profiles (NPC stations, Upwell structures, starbases) with their rigs, services and taxes.
+- `haul-route-setup`: save haul profiles and routing preferences, and compare jump routes.
 
-## Install the plugin (user scope)
+Skills hold discovery and decision steps only. Every number comes from a neat tool, so skills never contain formulas or arithmetic. When a tool a skill drives changes its inputs, outputs or behavior, update the skill in the same change.
 
-**Two ordered steps** — step 1 registers the marketplace, step 2 installs the plugin from it:
+Clients that don't load plugin skills, such as the Claude desktop app, still get the essentials (how to onboard a new user, scope errors, confirming before write tools, never computing industry numbers) from the MCP server's instructions in `mcp/instructions.go`. Keep the two consistent.
+
+## Install
 
 ```text
-1) /plugin marketplace add rusher2004/new-eden-agent-toolkit
-2) /plugin install neat@neat
+/plugin marketplace add rusher2004/new-eden-agent-toolkit
+/plugin install neat@neat
 ```
 
-Claude Code auto-refreshes git-backed marketplaces in the background. To pull the latest plugin content on demand, run `/plugin marketplace update neat`.
+Claude Code doesn't auto-update third-party marketplaces unless the user turns it on under `/plugin`; `/plugin marketplace update neat` pulls the latest. The plugin needs the `neat` binary on PATH; see the main README.
 
-## How to test
+## Testing changes
 
-1. Complete the prerequisite above (`neat` on `PATH`, `neat setup` run once).
-2. Install the plugin per the steps above.
-3. In a Claude Code session, confirm the `neat` MCP server is connected (`claude mcp list` or ask
-   Claude to call any `neat` tool, e.g. `get_status`).
+1. Install your local build with `make install`, so the plugin's `neat mcp` runs it.
+2. Point Claude Code at your working copy instead of GitHub: `/plugin marketplace add ./` from the repo root, then `/plugin install neat@neat`. After editing a skill, run `/plugin marketplace update neat` and restart Claude Code.
+3. Check the server is connected with `/mcp`, then ask Claude something that drives the skill you changed, such as "add my EVE character" for `add-character`.

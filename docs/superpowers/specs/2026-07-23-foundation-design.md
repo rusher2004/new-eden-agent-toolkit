@@ -1,6 +1,6 @@
 # New Eden Agent Toolkit — Foundation Design
 
-**Status:** Approved, not yet implemented
+**Status:** Approved, mostly implemented. As of 2026-11-19 the Claude Code plugin ships and the OAuth2 redirect uses a loopback HTTP callback instead of the custom URL scheme below (`2026-11-19-loopback-oauth-callback-design.md`); the Claude Desktop `.mcpb` extension has not been built, so Desktop users add neat to `claude_desktop_config.json` by hand (see `README.md`).
 
 **Superseded in part (2026-11-19):** the OAuth2 redirect no longer uses the `eveauth-neat://` custom scheme, its per-OS registration (`urlscheme/`), the `callback-handler` subcommand, the `~/.neat/bin/neat` launcher or the Unix-socket handoff described below. It is a loopback HTTP redirect to `http://127.0.0.1:48211/callback` served by `sso/` itself, reversing this spec's "custom scheme only, no loopback-HTTP fallback" decision so the browser tab can land on a neat page. See `2026-11-19-loopback-oauth-callback-design.md`.
 **Date:** 2026-07-23
