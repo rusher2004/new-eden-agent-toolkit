@@ -55,7 +55,7 @@ func TestServer_AllToolsRegistered(t *testing.T) {
 		names[tool.Name] = true
 	}
 	for _, want := range []string{
-		"add_character", "list_characters", "remove_character", "get_wallet_balance",
+		"add_character", "list_scope_groups", "list_characters", "remove_character", "get_wallet_balance",
 		"list_character_wallet_journal", "list_character_wallet_transactions",
 		"list_corporation_wallets", "list_corporation_wallet_journal", "list_corporation_wallet_transactions",
 		"list_access_lists", "get_access_list",
@@ -181,5 +181,21 @@ func TestServer_RemoveCharacterNotFound_SurfacesAsToolError(t *testing.T) {
 	}
 	if !strings.Contains(text, "character not found") {
 		t.Errorf("content text = %q, want it to contain %q", text, "character not found")
+	}
+}
+
+func TestServer_SendsInstructions(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	clientSession, _ := connectedSession(t, store)
+
+	got := clientSession.InitializeResult().Instructions
+	if got != mcp.Instructions {
+		t.Fatalf("initialize instructions = %q, want mcp.Instructions", got)
+	}
+	for _, tool := range []string{"list_characters", "list_scope_groups", "add_character"} {
+		if !strings.Contains(got, tool) {
+			t.Errorf("instructions don't mention %s, which onboarding depends on", tool)
+		}
 	}
 }

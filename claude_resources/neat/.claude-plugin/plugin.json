@@ -1,7 +1,7 @@
 {
   "name": "neat",
-  "version": "0.7.1",
-  "description": "MCP server for EVE Online via CCP's ESI API and the EVE Ref Static Data Export -- 258 tools covering wallet, assets, corporations, industry, universe data and more, plus industry build planning, compressed-ore buying, jump freighter hauling and route planning, with skills that drive them.",
+  "version": "0.8.2",
+  "description": "Connects Claude to EVE Online: wallets, assets, skills, mail, market, corporations and universe data through CCP's ESI API, plus industry build planning, compressed-ore buying, jump freighter hauling and route planning, with skills that guide logins and planning. Needs the neat program on PATH.",
   "author": {
     "name": "rusher2004"
   },

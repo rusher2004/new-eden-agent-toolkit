@@ -26,13 +26,6 @@ jobs:
           - language: go
             os: ubuntu-latest
             build-mode: manual
-          # The Swift URL-scheme handler is a single file compiled with swiftc
-          # (no Xcode project or Package.swift), so CodeQL's autobuild can't
-          # find anything to build. Build it with the same Makefile target the
-          # Go build depends on.
-          - language: swift
-            os: macos-latest
-            build-mode: manual
     steps:
       - uses: actions/checkout@v4
 
@@ -48,9 +41,6 @@ jobs:
 
       - if: matrix.language == 'go'
         run: go build ./...
-
-      - if: matrix.language == 'swift'
-        run: make urlscheme-macos-bundle
 
       - uses: github/codeql-action/analyze@v4
         with:

@@ -13,7 +13,6 @@ func Root(version, clientID string) *cli.Command {
 		Commands: []*cli.Command{
 			versionCommand(version),
 			setupCommand(),
-			callbackHandlerCommand(),
 			mcpCommand(version, clientID),
 		},
 	}

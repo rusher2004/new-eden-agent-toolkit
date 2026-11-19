@@ -1,62 +1,155 @@
 # neat — New Eden Agent Toolkit
 
-A Go MCP server, Claude Code plugin, and Claude Desktop extension for interacting with EVE Online
-via CCP's ESI API and the EVE Ref Static Data Export (SDE).
+neat is a tool that enables you to work with Claude for all things Eve Online. Using static data exports and the ESI API, you'll have anything you need related to your characters, corporations, and the wider Eve universe.
 
-Design spec: `docs/superpowers/specs/2026-07-23-foundation-design.md`.
-Implementation plans: `docs/superpowers/plans/`.
+Once it's set up, you can ask Claude things like:
 
-## Status
+- "How much ISK do my characters have, and what did I spend it on this week?"
+- "Where are all my Hulks, and what's in the hangar in Jita?"
+- "What's in my skill queue and when does it finish?"
+- "Which of my market orders have been undercut?"
+- "What would it cost to build 10 Ravens with my blueprints at my Raitaru? Should I build the components or buy them?"
+- "Plan a jump freighter route from Jita to my home system that stays out of Delve."
+- "Find me a quiet low-sec system bordering a high-sec system near Amarr."
+- "Summarize my unread mail and the corp calendar for this week."
 
-Foundation phase. CLI skeleton (`config/`, `creds/`), the ESI OAuth2/PKCE character-auth flow (`urlscheme/`, `sso/`), the MCP server with its character-management tools (`mcp/`, `neat mcp`), real ESI-backed domain tools (`esi/`) covering all 39 ESI resource tags (Wallet through Wars, plus Military Campaigns, Cosmetics, and Paragon Hub), and a local SDE cache (`sde/`, backed by fuzzwork.co.uk's directly-queried SQLite conversion of CCP's SDE, narrowly supplemented from EVE Ref's `reference-data` and `esi-scrape` exports, and backing 24 of the Universe tag's 30 tools via a read-through cache) are built. See `docs/reference/esi-coverage-roadmap.md` for the full per-tag ESI breakdown. The Claude Code plugin is available: `/plugin marketplace add rusher2004/new-eden-agent-toolkit` then `/plugin install neat@neat` registers the `neat` MCP server (requires the `neat` binary on `PATH` and `neat setup` run once — see `claude_resources/README.md`). The Claude Desktop extension doesn't exist yet.
+neat runs entirely on your own computer, nothing is stored on a server. Your login tokens live in your operating system's keychain, never in a file. neat talks only to CCP, and downloads public game data from fuzzwork.co.uk and EVE Ref. See [Privacy](https://github.com/rusher2004/new-eden-agent-toolkit/blob/main/PRIVACY.md) for everything neat connects to and stores.
 
-## Architecture
+It works in [Claude Code](https://claude.com/claude-code) and the [Claude desktop app](https://claude.ai/download), and in any other app that supports MCP servers.
 
-Flat package structure at repo root. No `internal/`. One package per responsibility:
+> heads up, the first time neat needs to access info about in-game items or universe stuff, there will be a big download of the static data export, so it'll take a few minutes or more.
 
-| Package | Responsibility |
-|---|---|
-| `cmd/` | `main.go` entrypoint only |
-| `commands/` | `urfave/cli/v3` command tree (`version`, `setup`, `mcp`, `callback-handler` (hidden)) |
-| `config/` | Non-secret state in `~/.neat/config.json`: logged-in characters, plus named facility, haul and hub profiles for industry planning |
-| `creds/` | OS keychain wrapper (`zalando/go-keyring`), service name `"neat"` |
-| `urlscheme/` | Per-OS registration of `eveauth-neat://` as the ESI OAuth redirect handler |
-| `sso/` | ESI OAuth2/PKCE login flow: PKCE + state generation, Unix-socket callback handoff, orchestration via `goesi-openapi`, refresh-token persistence via `creds/`. All outbound requests to CCP (JWKS fetch, OAuth2 token exchange) carry `sso.UserAgent(version)`, per ESI's User-Agent best practices. Also caches a per-character auto-refreshing HTTP client for `esi/`'s use (`AuthenticatedClient`/`RemoveCharacter`/re-adding a character, all atomic with respect to each other; re-adding a known character evicts its cached client so the new login takes effect immediately) — refreshing relies entirely on `golang.org/x/oauth2`'s token source, including persisting a rotated refresh token back to `creds/` if CCP ever issues one |
-| `mcp/` | MCP server (official `github.com/modelcontextprotocol/go-sdk`) and its two hundred fifty-eight tools: `add_character`, `list_characters`, `remove_character`, `get_wallet_balance`, `list_character_wallet_journal`, `list_character_wallet_transactions`, `list_corporation_wallets`, `list_corporation_wallet_journal`, `list_corporation_wallet_transactions`, `list_access_lists`, `get_access_list`, `list_mercenary_tactical_operations`, `get_mercenary_tactical_operation`, `list_raidable_skyhooks`, `list_alliances`, `get_alliance`, `list_alliance_corporations`, `get_alliance_icons`, `list_assets`, `get_asset_locations`, `get_asset_names`, `list_corporation_assets`, `get_corporation_asset_locations`, `get_corporation_asset_names`, `list_calendar_events`, `get_calendar_event`, `list_calendar_event_attendees`, `respond_calendar_event` (this project's first write tool -- verb-first name, description states it changes state, no confirmation parameter), `get_character`, `get_character_affiliations`, `list_character_corporation_history`, `get_character_portrait`, `list_character_agents_research`, `list_character_blueprints`, `get_character_fatigue`, `list_character_medals`, `list_character_notifications`, `list_character_notification_contacts`, `get_character_roles`, `list_character_standings`, `list_character_titles`, `get_character_cspa_cost`, `get_character_clones`, `list_character_implants`, `list_character_contacts`, `list_character_contact_labels`, `list_corporation_contacts`, `list_corporation_contact_labels`, `list_alliance_contacts`, `list_alliance_contact_labels`, `add_character_contacts`, `update_character_contacts`, `remove_character_contacts` (the project's 2nd/3rd/4th write tools — verb-first names, descriptions state they change state on EVE's server), `list_character_contracts`, `list_character_contract_bids`, `list_character_contract_items`, `list_corporation_contracts`, `list_corporation_contract_bids`, `list_corporation_contract_items`, `list_public_contracts`, `list_public_contract_bids`, `list_public_contract_items`, `get_corporation`, `list_corporation_alliance_history`, `get_corporation_icons`, `list_npc_corporations`, `list_corporation_members`, `get_corporation_members_limit`, `list_corporation_member_titles`, `list_corporation_member_tracking`, `list_corporation_roles`, `list_corporation_roles_history`, `list_corporation_titles`, `get_corporation_divisions`, `list_corporation_shareholders`, `list_corporation_standings`, `list_corporation_blueprints`, `list_corporation_container_logs`, `list_corporation_facilities`, `list_corporation_medals`, `list_corporation_medals_issued`, `list_corporation_starbases`, `get_corporation_starbase`, `list_corporation_structures`, `get_corporation_project_contribution`, `list_corporation_project_contributors`, `get_corporation_project_detail`, `list_corporation_projects`, `list_dogma_attributes`, `get_dogma_attribute`, `get_dogma_dynamic_item`, `list_dogma_effects`, `get_dogma_effect`, `get_character_fw_stats`, `get_corporation_fw_stats`, `get_fw_leaderboards`, `get_fw_character_leaderboards`, `get_fw_corporation_leaderboards`, `list_fw_stats`, `list_fw_systems`, `list_fw_wars`, `list_character_fittings`, `create_character_fitting`, `delete_character_fitting`, `get_character_fleet`, `get_fleet`, `update_fleet`, `list_fleet_members`, `invite_fleet_member`, `move_fleet_member`, `kick_fleet_member`, `list_fleet_wings`, `create_fleet_wing`, `rename_fleet_wing`, `delete_fleet_wing`, `create_fleet_squad`, `rename_fleet_squad`, `delete_fleet_squad`, `list_character_freelance_jobs`, `get_character_freelance_job_participation`, `list_corporation_freelance_jobs`, `list_corporation_freelance_job_participants`, `get_freelance_job`, `list_freelance_jobs`, `list_incursions`, `list_character_industry_jobs`, `list_character_mining`, `list_corporation_mining_extractions`, `list_corporation_mining_observers`, `get_corporation_mining_observer_detail`, `list_corporation_industry_jobs`, `list_industry_facilities`, `list_industry_systems`, and `list_insurance_prices`, `list_character_killmails_recent`, `list_corporation_killmails_recent`, `get_killmail`, `get_character_location`, `get_character_online`, `get_character_ship`, `list_character_loyalty_points`, `list_loyalty_store_offers`, `list_character_mail`, `get_character_mail_labels`, `list_character_mail_lists`, `get_character_mail`, `send_character_mail`, `create_character_mail_label`, `update_character_mail`, `delete_character_mail`, `delete_character_mail_label`, `list_character_market_orders`, `list_character_market_order_history`, `list_corporation_market_orders`, `list_corporation_market_order_history`, `list_market_groups`, `get_market_group`, `list_market_prices`, `get_market_history`, `list_market_orders`, `list_market_types`, `list_structure_market_orders`, `get_esi_changelog`, `list_esi_compatibility_dates`, `get_esi_name`, `get_esi_status`, `list_character_planets`, `get_character_planet`, `list_corporation_customs_offices`, `get_planetary_schematic`, `get_route`, `search_character`, `get_character_attributes`, `list_character_skill_queue`, `list_character_skills`, `list_sovereignty_campaigns`, `list_sovereignty_systems`, `get_status`, `list_character_mercenary_dens`, `get_character_mercenary_den`, `list_corporation_skyhooks`, `get_corporation_skyhook`, `list_corporation_sovereignty_hubs`, `get_corporation_sovereignty_hub`, `list_universe_ancestries`, `list_universe_bloodlines`, `list_universe_races`, `list_universe_factions`, `list_universe_categories`, `get_universe_category`, `list_universe_groups`, `get_universe_group`, `list_universe_types`, `get_universe_type`, `list_universe_regions`, `get_universe_region`, `list_universe_constellations`, `get_universe_constellation`, `list_universe_systems`, `get_universe_system`, `get_universe_asteroid_belt`, `get_universe_moon`, `get_universe_planet`, `get_universe_stargate`, `get_universe_star`, `get_universe_station`, `list_universe_graphics`, `get_universe_graphic`, `list_universe_structures`, `get_universe_structure`, `list_universe_system_jumps`, `list_universe_system_kills`, `resolve_universe_ids`, `resolve_universe_names`, `set_autopilot_waypoint`, `open_contract_window`, `open_information_window`, `open_market_details_window`, `open_new_mail_window`, `list_wars`, `get_war`, `list_war_killmails`, `list_military_campaigns`, `get_military_campaign`, `list_military_campaign_objectives`, `get_military_campaign_objective`, `list_character_military_campaign_objectives`, `get_character_military_campaign_objective_participation`, `list_character_skinr_licenses`, `list_character_skinr_component_licenses`, `get_skinr`, `list_paragon_hub_skinr_listings`, `list_character_paragon_hub_skinr_listings`, `list_paragon_hub_skinr_listings_for_alliance`, `list_paragon_hub_skinr_listings_for_corporation`, `list_paragon_hub_skinr_listings_for_character`, `save_facility_profile`, `list_facility_profiles`, `delete_facility_profile`, `describe_facility`, `calibrate_facility_profile`, `save_haul_profile`, `list_haul_profiles`, `delete_haul_profile`, `save_hub_profile`, `list_hub_profiles`, `find_owned_blueprints`, `check_build_skills`, `check_material_stock`, `quote_market_purchase`, `estimate_job_cost`, `estimate_research`, `estimate_invention`, `estimate_reprocessing_yield`, `solve_ore_mix`, `plan_jump_route`, `plan_haul`, and `plan_build` (the industry planning tools — see `industry/` below; the profile writers change only `~/.neat/config.json`, and `plan_build` saves its full plan under `~/.neat/plans/`). `mcp/enrich.go` holds `resolveTypeNames`, the shared SDE-backed `type_id` → name resolver that populates the `*Name` sibling fields (`TypeName`, `ShipTypeName`, ...) alongside the bare `*ID` fields ESI returns, across 44 tools in 19 non-Universe files (`assets.go`, `contracts.go`, `killmails.go`, `market.go`, `industry.go`, `wallet.go`, ...). It deduplicates IDs per call and drops failed lookups rather than erroring — enrichment is additive, so one bad ID must never fail a tool call over data ESI already returned. Batch 2 extended `mcp/enrich.go` with six sibling resolvers (`resolveSystemNames`/`resolveRegionNames`/`resolveConstellationNames`/`resolveStationNames`/`resolvePlanetNames`/`resolveMoonNames`) covering the same additive-`*Name` pattern for system/region/constellation/station/planet/moon IDs across 14 more files. Batch 3 further extended `mcp/enrich.go` with four sibling resolvers (`resolveRaceNames`/`resolveBloodlineNames`/`resolveFactionNames`/`resolveGroupNames`) covering the same additive-`*Name` pattern for race/bloodline/faction/group IDs across 8 more files, closing out batch 1's originally-flagged follow-up list. The Wallet tag's two wallet-transactions tools (`list_character_wallet_transactions`/`list_corporation_wallet_transactions`) adopt the same `TypeName` enrichment via `resolveTypeNames`, bringing `wallet.go` into the enriched-file set for the first time. The Cosmetics tag adds two SDE-only sibling resolvers, `resolveSkinrComponentNames`/`resolveSkinrSlotNames`, enriching `get_skinr`'s slots and `list_character_skinr_component_licenses` with component and slot names (alongside `get_skinr`'s `ShipTypeName` via `resolveTypeNames`). |
-| `industry/` | Pure industry, hauling and routing calculations — no network, disk or clock access; `mcp/industry_*.go` gathers SDE, ESI and config inputs and calls it. Facility bonuses resolved from the SDE's own `indModifierSources`/`indTargetFilters` tables and dogma attributes for every facility kind (NPC station, Upwell structure, starbase) in every security band (highsec, lowsec, nullsec incl. Pochven/Zarzakh, wormhole); per-job material rounding, job time, job fees (or a calibrated rate), ME/TE research, copying and invention; blueprint tree expansion with build/buy decisions, owned copies and stock netting; order-book walking and build-vs-buy; Upwell and NPC reprocessing yield; the compressed-ore linear program (`gonum.org/v1/gonum/optimize/convex/lp`); jump fuel, range and fatigue (EVE's 9.46e15 m light year, fuel rounded per jump — matches dotlan to the unit); cargo packing into loads; jump/gate route search with pilot preferences and dotlan links; job scheduling across builders. Every number the SDE doesn't carry is a sourced constant in `industry/constants.go`. Design: `docs/superpowers/specs/2026-11-18-industry-planning-design.md` |
-| `esi/` | Thin facade over `github.com/fnt-eve/goesi-openapi`. `NewClient` builds a per-character authenticated ESI API client from `sso.AuthenticatedClient`'s cached, auto-refreshing HTTP client; `NewPublicClient` builds an unauthenticated client for resource groups where every endpoint is public (e.g. Alliance — no character needed at all). Holds no state of its own. Covers one ESI resource group ("tag") per file (`wallet.go`, `access_list.go`, `activities.go`, `alliance.go`, ...) — see `docs/reference/esi-coverage-roadmap.md` for what's covered and what's left across all 39 tags (the original 36, plus Military Campaigns, Cosmetics, and Paragon Hub, all implemented since goesi-openapi v0.0.42 / compatibility date 2026-08-18). `esi.AllPages` walks every page of any paginated call. |
-| `sde/` | Local cache of fuzzwork.co.uk's periodically-refreshed SQLite conversion of CCP's Static Data Export (`~/.neat/sde/eve.db`), queried directly via `database/sql` + `modernc.org/sqlite` — no intermediate key-value store. Lazily syncs on first lookup call per `Store` lifetime (at most once per `neat mcp` process run): an ETag-gated download+gunzip+atomic-rename of the dump (sync-fatal on failure) plus narrow, in-memory-only fetches from EVE Ref for the three fields with no source in the dump — best-effort: type `Radius` from the `reference-data` export (fuzzwork dropped `invTypes.radius`; found in the 2026-11-18 audit), and race `AllianceID`/graphic `SofDNA` from the `esi-scrape` export. Type `PackagedVolume` used to come from `reference-data` too, until CCP added it to the SDE itself (esi-issues#1499); fuzzwork's dump now carries it as a plain `invTypes.packagedVolume` column, read directly like `mass`/`volume`. `PutX`'s cache-miss write-back lands in a process-lifetime in-memory overlay, not the downloaded file itself, which is treated as read-only. Backs 24 of the Universe tag's 30 tools via a read-through cache (`mcp/universe.go` orchestrates the ESI fallback and write-back; `sde/` itself never imports `esi/`) — the other 6 are permanently ESI-direct by design (live/non-cacheable data). Four fields are permanently unsourced across every dataset checked: `get_universe_graphic`'s `CollisionFile`, `get_universe_region`'s `Description`, `get_universe_station`'s `Services`, and `list_universe_factions`'s `IsUnique` — see `docs/superpowers/specs/2026-08-04-sde-sqlite-migration-design.md` for how each was found and why none were solved with an additional data source. Also serves two SDE-only lookups with no ESI resource behind them at all (so no read-through fallback or overlay): SKINR components (`skinrComponents`) and cosmetic slots (`skinrSlots`), backing the Cosmetics tag's name enrichment. It also serves industry planning (`sde/industry.go`, `sde/dogma.go`, `sde/routing.go`): blueprints by type and by product, reprocessing outputs, compressed ores, NPC station reprocessing data, dogma attributes, rig modifiers, the `indModifierSources`/`indTargetFilter*` tables, and every system's position, security and stargates for routing. Those accessors return `sde.ErrUnavailable` instead of a silent miss, since planning has no ESI fallback. `sde.OpenStatic` opens a dump without ever syncing; `sde/sdetest` uses it to build fixture databases for other packages' tests. |
+## Install
 
-See `CLAUDE.md` for conventions and the doc-sync rule that keeps this file, that one, and the
-design spec from drifting apart.
+### 1. Download neat
 
-## Build
+Get the archive for your computer from the [latest release](https://github.com/rusher2004/new-eden-agent-toolkit/releases/latest):
 
-On macOS, first build the embedded URL-scheme handler (required before `go build`/`go test` will
-compile — `go:embed` fails if the path doesn't exist):
+- **Mac with Apple silicon (M1 or newer):** `neat_<version>_mac_arm64.tar.gz`
+- **Intel Mac:** `neat_<version>_mac_amd64.tar.gz`
+- **Windows:** `neat_<version>_windows_amd64.zip`
+- **Windows on ARM:** `neat_<version>_windows_arm64.zip`
+- **Linux:** `neat_<version>_linux_amd64.tar.gz` (or `arm64`)
+
+**On a Mac or Linux**, put `neat` in `~/.local/bin` from a terminal:
 
 ```bash
-make urlscheme-macos-bundle
+mkdir -p ~/.local/bin
+tar -xzf ~/Downloads/neat_<version>_<platform>.tar.gz -C ~/.local/bin neat  # the exact file you downloaded
+xattr -d com.apple.quarantine ~/.local/bin/neat 2>/dev/null  # Mac only: lets macOS run a downloaded app that isn't from the App Store
 ```
 
-`clientID` (the ESI OAuth2 client ID) is also injected via `-ldflags` from the git-ignored
-`app_config.json` — `make build` wraps this for local development.
+If `neat version` then says "command not found", add `~/.local/bin` to your PATH: run `echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc` (or `~/.bashrc` on Linux), then open a new terminal.
 
-```bash
-go build -ldflags "-X main.version=$(cat VERSION 2>/dev/null || echo dev) -X main.clientID=$(jq -r .clientId app_config.json)" -o neat ./cmd
-```
+**On Windows**, unzip the archive and move `neat.exe` into a folder of its own, such as `%LOCALAPPDATA%\Programs\neat`. Then add that folder to your PATH: search the Start menu for "Edit environment variables for your account", select **Path**, click **Edit**, then **New**, and paste the folder. Open a new terminal so it picks up the change.
 
-## Test
-
-```bash
-go test ./...
-```
-
-## Setup
+### 2. Check it works
 
 ```bash
 neat setup
 ```
 
-Creates `~/.neat/config.json` if it doesn't already exist, and verifies the OS keychain is
-accessible before you need it for anything credential-related.
+This creates neat's settings folder (`~/.neat`) and checks that neat can use your keychain. On a Mac you may be asked to allow keychain access; on Linux you need a keychain service such as GNOME Keyring or KWallet running.
+
+### 3. Connect it to Claude
+
+**Claude Code:** run these two commands inside Claude Code, then restart it:
+
+```text
+/plugin marketplace add rusher2004/new-eden-agent-toolkit
+/plugin install neat@neat
+```
+
+The plugin also teaches Claude how to log characters in and how to run industry and hauling plans step by step. To get a newer version of the plugin, run `/plugin marketplace update neat` (or turn on auto-update for the `neat` marketplace under `/plugin`), and install the matching `neat` program from the release page.
+
+**Claude desktop app:** open **Settings → Developer → Edit Config**, and add neat to the `claude_desktop_config.json` file that opens, using the full path to the `neat` you installed:
+
+```json
+{
+  "mcpServers": {
+    "neat": {
+      "command": "/Users/YOUR_NAME/.local/bin/neat",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+On Windows the command looks like `"C:\\Users\\YOUR_NAME\\AppData\\Local\\Programs\\neat\\neat.exe"`. Keep anything else already in the file. Quit and reopen the app, and neat appears in its list of connected tools.
+
+**Other MCP apps:** run `neat mcp` as a stdio MCP server.
+
+### 4. Log in a character
+
+Ask Claude to "add my EVE character". It asks what you want neat to help with, then opens EVE's login page in your browser. After you log in, the browser shows a neat page where you can log in more characters with the same access, then click **I'm done** or close the tab.
+
+## Choosing what neat can see
+
+EVE asks you to approve the access an app requests. neat groups that access by what you'll use it for, and every character gets the `basic` group: skills, location, current ship, clones and implants. You add the rest as you need them, for example:
+
+- `wallet`, `assets`, `market`, `contracts`: your ISK, your stuff and your trading
+- `industry`: blueprints, industry jobs and mining; industry planning also wants `assets` and `market`
+- `mail`, `calendar`, `contacts`, `fleet`, `fittings`
+- `corporation`, `corporation_finance`, `corporation_industry`: your corporation's data, which also needs the matching in-game corporation roles
+
+You don't have to get it right up front. If you ask for something a character hasn't allowed yet, Claude tells you which access it needs and asks before sending you back to EVE's login page to grant it. The character keeps everything it already allowed. Ask Claude to "list neat's scope groups" for the full list.
+
+To log a character out of neat, ask Claude to remove it. That deletes its saved login from your keychain. You can also revoke neat's access entirely from EVE's [third-party applications page](https://community.eveonline.com/support/third-party-applications/).
+
+## What neat can do
+
+neat has over 250 tools covering nearly everything ESI offers, plus planning tools of its own:
+
+- **Your characters:** wallets, assets, skills and skill queues, clones and implants, location and ship, standings, loyalty points, mail, calendar, contacts, notifications, fittings, killmails and planetary colonies
+- **Your corporation and alliance:** members, roles, wallets, assets, contracts, industry jobs, structures, starbases, mining and more, for characters with the right roles
+- **The market:** orders, price history, prices in player structures, and public contracts
+- **The universe:** every item, ship, system and station, routes, sovereignty, faction warfare, incursions, wars and server status
+- **Fleets and the game client:** manage your fleet, set autopilot waypoints, and open in-game windows
+- **Industry planning:** full build plans with build-or-buy decisions, job costs, research and invention estimates, refining and the cheapest compressed-ore mix, jump freighter routes with fuel and fatigue, and in-game Multibuy lists
+
+Some tools change things in EVE: sending mail, editing contacts, fittings and fleets, answering calendar invites, setting waypoints. Claude is told to check with you before using them.
+
+The [tool reference](docs/reference/tools.md) lists every tool.
+
+### Industry planning
+
+For build plans, neat needs to know things ESI can't tell it: which rigs your structure has and what taxes it charges, which ship you haul with, which areas you avoid. Claude asks you for these the first time and saves them as named profiles, so you only describe each structure or freighter once. Every number in a plan comes from neat's calculations against EVE's own data, not from Claude's guesswork, and you can check a facility against a real job in game to calibrate its fees.
+
+## Where neat keeps things
+
+- `~/.neat/config.json`: which characters are logged in, plus your saved facility, haul and trade hub profiles
+- `~/.neat/sde/`: a local copy of EVE's static game data (about 500 MB), downloaded the first time it's needed and refreshed when CCP publishes a new one
+- `~/.neat/plans/`: build plans you've asked for
+- Your OS keychain (macOS Keychain, Windows Credential Manager, or the Linux Secret Service), under the name `neat`: each character's login token
+
+To uninstall, delete the `neat` program and the `~/.neat` folder, remove the `neat` entries from your keychain, and uninstall the plugin (`/plugin uninstall neat@neat`) or remove neat from your desktop app config.
+
+## Troubleshooting
+
+- **Claude doesn't see neat's tools.** In Claude Code, check that `neat version` works in a terminal; the plugin runs `neat` from your PATH. In the desktop app, use the full path to `neat` in the config file, because the app doesn't see your terminal's PATH, then quit and reopen the app.
+- **macOS says neat can't be opened, or it quits immediately.** Run the `xattr` command from step 1. If you copied a new version over an old one, delete the old file first and copy it again.
+- **Logging in fails because port 48211 is in use.** neat briefly runs a small web page on your own computer at that port to receive EVE's login. Close whatever else is using it and try again.
+- **EVE's login page shows "HTTP Error 400. The size of the request headers is too long".** Clear your browser's cookies for `login.eveonline.com` and try again.
+- **The first question about items or systems is slow.** neat is downloading EVE's static data. It only does this once, and again when CCP publishes an update.
+- **A tool says a character "hasn't granted" a scope.** Say yes when Claude offers to grant it, and log in as that same character.
+
+## Development
+
+To build neat from source you need Go, `jq`, and your own ESI application from [developers.eveonline.com](https://developers.eveonline.com/), with the callback URL `http://127.0.0.1:48211/callback` and every scope enabled. Put its client ID in a git-ignored `app_config.json`:
+
+```json
+{ "clientId": "your-esi-client-id" }
+```
+
+Then:
+
+```bash
+make install   # builds neat and installs it to ~/.local/bin
+go test ./...
+```
+
+See [docs/README.md](docs/README.md) for how the code is organized, how releases work, and the design docs behind it.
+
+---
+
+EVE Online and all related names are trademarks of CCP hf. neat is a fan project and isn't affiliated with or endorsed by CCP.

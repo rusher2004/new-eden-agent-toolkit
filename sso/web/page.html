@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>{{if .Finished}}All set{{else}}EVE characters{{end}} · neat</title>
+<style>
+:root {
+  --bg: #0b0e13; --card: #141922; --tile: #1a202b; --text: #e6edf3; --muted: #8b949e; --border: #2a313c;
+  --accent: #2f81f7; --accent-hover: #4493f8; --accent-text: #ffffff;
+  --ok-bg: #12261b; --ok: #3fb950; --err-bg: #2d1414; --err: #f85149;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 880px; margin: 40px auto; padding: 0 16px; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 24px; }
+.brand { font-size: 13px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 4px; }
+header { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin: 0 0 8px; }
+h1 { font-size: 22px; margin: 0; }
+.notice { border-radius: 8px; padding: 10px 12px; margin: 0 0 20px; }
+.notice.success { background: var(--ok-bg); color: var(--ok); }
+.notice.error { background: var(--err-bg); color: var(--err); }
+.hint { color: var(--muted); font-size: 14px; margin: 0 0 20px; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.actions form { margin: 0; }
+button { font: inherit; font-weight: 600; border-radius: 8px; padding: 8px 14px; cursor: pointer; border: 1px solid var(--border); background: var(--tile); color: var(--text); }
+button:hover { border-color: var(--muted); }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+button.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+button:disabled { opacity: .5; cursor: default; }
+h2 { font-size: 13px; font-weight: 600; color: var(--muted); margin: 0 0 12px; }
+.grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 12px; }
+.grid li { position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 10px 12px; background: var(--tile); border: 1px solid var(--border); border-radius: 10px; text-align: center; }
+.grid li.new { border-color: var(--ok); }
+.grid img { width: 72px; height: 72px; border-radius: 8px; background: var(--border); }
+.grid .name { font-weight: 500; font-size: 14px; line-height: 1.3; overflow-wrap: anywhere; }
+.badge { font-size: 11px; font-weight: 600; color: var(--ok); background: var(--ok-bg); border-radius: 999px; padding: 2px 8px; }
+.empty { color: var(--muted); margin: 0; }
+.toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); max-width: calc(100% - 32px); background: var(--ok-bg); color: var(--ok); border: 1px solid var(--ok); border-radius: 8px; padding: 10px 16px; font-weight: 500; box-shadow: 0 8px 24px rgba(0, 0, 0, .5); transition: opacity .4s, transform .4s; }
+.toast.hide { opacity: 0; transform: translate(-50%, 12px); pointer-events: none; }
+</style>
+</head>
+<body{{with .Token}} data-token="{{.}}"{{end}}>
+<main>
+<div class="card">
+  <p class="brand">neat</p>
+  {{if .Finished}}
+  <header><h1>All set</h1></header>
+  <p class="hint">You can close this tab and go back to Claude.</p>
+  {{else}}
+  <header>
+    <h1>EVE Online characters</h1>
+    <div class="actions">
+      <form method="post" action="/login"><input type="hidden" name="token" value="{{.Token}}"><button class="primary" type="submit">Add another character</button></form>
+      <form method="post" action="/done"><input type="hidden" name="token" value="{{.Token}}"><button type="submit">I'm done</button></form>
+    </div>
+  </header>
+  <p class="hint">Done adding characters? You can close this tab; neat finishes up on its own.</p>
+  {{if eq .Notice.Kind "error"}}<p class="notice error" role="alert">{{.Notice.Text}}</p>{{end}}
+  <p class="notice error" id="ended" role="status" hidden>This login session has ended. To add more characters, ask Claude to add a character again.</p>
+  {{end}}
+
+  <h2>Characters neat can use</h2>
+  {{if .Characters}}
+  <ul class="grid">
+    {{range .Characters}}
+    <li{{if .New}} class="new"{{end}}>
+      <img src="https://images.evetech.net/characters/{{.ID}}/portrait?size=128" alt="">
+      <span class="name">{{.Name}}</span>
+      {{if .New}}<span class="badge">Added just now</span>{{end}}
+    </li>
+    {{end}}
+  </ul>
+  {{else}}
+  <p class="empty">No characters yet.</p>
+  {{end}}
+</div>
+</main>
+{{if and (not .Finished) (eq .Notice.Kind "success")}}<div class="toast" id="toast" role="status">{{.Notice.Text}}</div>{{end}}
+{{if .Token}}<script src="/page.js"></script>{{end}}
+</body>
+</html>
