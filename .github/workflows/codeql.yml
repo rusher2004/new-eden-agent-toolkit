@@ -1,0 +1,57 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 6 * * 1"
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: actions
+            os: ubuntu-latest
+            build-mode: none
+          - language: go
+            os: ubuntu-latest
+            build-mode: manual
+          # The Swift URL-scheme handler is a single file compiled with swiftc
+          # (no Xcode project or Package.swift), so CodeQL's autobuild can't
+          # find anything to build. Build it with the same Makefile target the
+          # Go build depends on.
+          - language: swift
+            os: macos-latest
+            build-mode: manual
+    steps:
+      - uses: actions/checkout@v4
+
+      - if: matrix.language == 'go'
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+
+      - if: matrix.language == 'go'
+        run: go build ./...
+
+      - if: matrix.language == 'swift'
+        run: make urlscheme-macos-bundle
+
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:${{ matrix.language }}"
