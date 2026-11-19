@@ -1,5 +1,8 @@
 # neat plugin — changelog
 
+## 0.8.3
+- neat no longer downloads about 134 MB from EVE Ref every time it starts. It saves the few details it uses from EVE Ref's two archives in `~/.neat/sde/everef.json` and downloads an archive again only when EVE Ref publishes a new version, so the first question about items or systems in each session no longer waits on those downloads. If EVE Ref can't be reached, neat uses the saved copy.
+
 ## 0.8.2
 - neat now gives every app it connects to a short set of instructions: how to help a new user log in their first character, what to do when a character is missing access, to check with you before tools that change things in EVE, and to leave industry numbers to neat's tools. This matters most in the Claude desktop app and other apps that don't load the plugin's skills.
 - The `add-character` skill checks who's already logged in before starting a login, explains the two common login errors, and suggests a few first questions after you add your first character.

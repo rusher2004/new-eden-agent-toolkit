@@ -52,9 +52,11 @@ type Store struct {
 	dbPath   string
 	metaPath string
 
-	dumpURL          string
-	referenceDataURL string
-	esiScrapeURL     string
+	dumpURL               string
+	referenceDataURL      string
+	referenceDataIndexURL string
+	esiScrapeURL          string
+	esiScrapeIndexURL     string
 
 	syncOnce sync.Once
 	syncErr  error
@@ -80,11 +82,11 @@ type Store struct {
 
 	// Set once per sync(), from EVE Ref's reference-data (typeRadii) and
 	// esi-scrape (raceAlliances, graphicSofDNA) bulk exports -- the three
-	// fields with no source anywhere in the fuzzwork dump. Never persisted to
-	// disk (unlike db): every process's single sync() re-fetches both sources
-	// fresh, since there is no local copy to otherwise fall back to. nil (not
-	// an error) if the corresponding fetch failed or was never attempted (e.g.
-	// this Store has never synced).
+	// fields with no source anywhere in the fuzzwork dump. Saved to
+	// everef.json beside db with each archive's etag from EVE Ref's index,
+	// so a later process downloads an archive again only when it changed
+	// (see everef.go). nil (not an error) if the archive has never been
+	// fetched successfully, or this Store has never synced.
 	typeRadii     map[int64]float64
 	raceAlliances map[int64]int64
 	graphicSofDNA map[int64]string
@@ -99,11 +101,13 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("create sde cache directory: %w", err)
 	}
 	return &Store{
-		dbPath:           path,
-		metaPath:         filepath.Join(filepath.Dir(path), "meta.json"),
-		dumpURL:          dumpURL,
-		referenceDataURL: referenceDataURL,
-		esiScrapeURL:     esiScrapeURL,
+		dbPath:                path,
+		metaPath:              filepath.Join(filepath.Dir(path), "meta.json"),
+		dumpURL:               dumpURL,
+		referenceDataURL:      referenceDataURL,
+		referenceDataIndexURL: referenceDataIndexURL,
+		esiScrapeURL:          esiScrapeURL,
+		esiScrapeIndexURL:     esiScrapeIndexURL,
 	}, nil
 }
 
@@ -127,10 +131,9 @@ func (s *Store) Close() error {
 }
 
 // storeMeta is the small sidecar persisted to metaPath -- bbolt's old _meta
-// bucket's replacement. Unlike the old design, only the dump's own version is
-// tracked here: reference-data/esi-scrape's augmentation is never persisted
-// (see typeRadii et al.'s doc comment), so there is nothing to gate a skip on
-// for those two sources.
+// bucket's replacement. Only the dump's own version is tracked here; the
+// EVE Ref archives' etags live with their values in everef.json (see
+// everef.go).
 type storeMeta struct {
 	SchemaVersion string `json:"schemaVersion"`
 	DumpVersion   string `json:"dumpVersion"`
