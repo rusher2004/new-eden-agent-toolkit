@@ -18,7 +18,7 @@ func (c *Client) Alliances(ctx context.Context) ([]int64, error) {
 
 // AllianceDetail returns one alliance's name, ticker, founding info, and optional
 // executor-corporation/faction-warfare affiliation.
-func (c *Client) AllianceDetail(ctx context.Context, allianceID int64) (*esiapi.AllianceDetail, error) {
+func (c *Client) AllianceDetail(ctx context.Context, allianceID int64) (*esiapi.AlliancesDetail, error) {
 	result, resp, err := c.api.AllianceAPI.GetAlliancesAllianceId(ctx, allianceID).Execute()
 	if err != nil {
 		return nil, fmt.Errorf("get alliance detail: %w", describeError(err, resp))

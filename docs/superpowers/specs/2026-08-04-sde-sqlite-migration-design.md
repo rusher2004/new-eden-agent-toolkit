@@ -1,6 +1,6 @@
 # `sde/` SQLite Backend Migration — Design
 
-**Status:** Implemented (docs/superpowers/plans/2026-08-04-sde-sqlite-migration.md, 11/11 tasks).
+**Status:** Implemented (docs/superpowers/plans/2026-08-04-sde-sqlite-migration.md, 11/11 tasks). Amended by the 2026-11-18 SDE/ESI audit: fuzzwork's dump dropped `invTypes.radius`, so type `Radius` is now sourced from EVE Ref's `reference-data` export (which this spec's `fetchReferenceDataTypeVolumes` used for `PackagedVolume` before PR #16 removed it), via the same best-effort, in-memory pattern; `esi-scrape` was rejected for it because it has been frozen since 2025-11-26. See CLAUDE.md's Hard rules and Known gaps.
 Update (2026-08-12): CCP added `PackagedVolume` to the SDE itself
 (https://github.com/esi/esi-issues/issues/1499), and fuzzwork's dump picked it up as a plain
 `invTypes.packagedVolume` column — the "fields with no home anywhere in the dump" list below is

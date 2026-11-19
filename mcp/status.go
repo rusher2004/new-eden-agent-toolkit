@@ -13,21 +13,21 @@ import (
 
 // --- get_status (public) ---
 
-var getStatus = func(ctx context.Context, userAgent string) (int32, string, time.Time, *bool, error) {
+var getStatus = func(ctx context.Context, userAgent string) (int64, string, time.Time, bool, error) {
 	client := esi.NewPublicClient(userAgent)
 	status, err := client.Status(ctx)
 	if err != nil {
-		return 0, "", time.Time{}, nil, err
+		return 0, "", time.Time{}, false, err
 	}
 	return status.Players, status.ServerVersion, status.StartTime, status.Vip, nil
 }
 
 type GetStatusInput struct{}
 type GetStatusOutput struct {
-	Players       int32     `json:"players"`
+	Players       int64     `json:"players"`
 	ServerVersion string    `json:"serverVersion"`
 	StartTime     time.Time `json:"startTime"`
-	Vip           *bool     `json:"vip,omitempty"`
+	Vip           bool      `json:"vip"`
 }
 
 func getStatusHandler(version string) mcpsdk.ToolHandlerFor[GetStatusInput, GetStatusOutput] {

@@ -100,6 +100,14 @@ var allScopes = []string{
 	"esi-contracts.read_corporation_contracts.v1",
 	"esi-corporations.read_starbases.v1",
 	"esi-characters.read_fw_stats.v1",
+	// New-style scope names (namespace.resource.subject:verb rather than esi-x.y.v1), introduced
+	// with ESI compatibility date 2026-08-18 and declared in the live spec's OAuth2 scheme.
+	// esi.activity.char:read gates the Military Campaigns tag's 2 character endpoints;
+	// esi.cosmetic.char:read gates Cosmetics' 2 character endpoints and Paragon Hub's 4
+	// authenticated ones. The ESI application registered at developers.eveonline.com must have
+	// both enabled too, or CCP's SSO rejects the whole login with invalid_scope.
+	"esi.activity.char:read",
+	"esi.cosmetic.char:read",
 }
 
 // AddCharacterOutput is add_character's tool result.

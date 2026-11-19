@@ -316,3 +316,61 @@ var resolveGroupNames = func(ctx context.Context, sdeStore groupNameCache, userA
 	}
 	return names
 }
+
+// skinrComponentNameCache is the minimal read-only view of sde.Store.SkinrComponent() that
+// resolveSkinrComponentNames needs.
+type skinrComponentNameCache interface {
+	SkinrComponent(ctx context.Context, userAgent string, id int64) (sde.SkinrComponent, bool, error)
+}
+
+// resolveSkinrComponentNames looks up SKINR component (nanocoating/pattern) names for a set of
+// IDs, following resolveTypeNames's exact contract: dedup, drop a miss or error rather than
+// erroring. Unlike the other resolvers, a miss has no ESI resource to fall back to even in
+// principle -- SKINR components exist only in the SDE.
+var resolveSkinrComponentNames = func(ctx context.Context, sdeStore skinrComponentNameCache, userAgent string, ids []int64) map[int64]string {
+	if len(ids) == 0 {
+		return nil
+	}
+	seen := make(map[int64]struct{}, len(ids))
+	names := make(map[int64]string, len(ids))
+	for _, id := range ids {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		c, ok, err := sdeStore.SkinrComponent(ctx, userAgent, id)
+		if err != nil || !ok {
+			continue
+		}
+		names[id] = c.Name
+	}
+	return names
+}
+
+// skinrSlotNameCache is the minimal read-only view of sde.Store.SkinrSlot() that
+// resolveSkinrSlotNames needs.
+type skinrSlotNameCache interface {
+	SkinrSlot(ctx context.Context, userAgent string, id int64) (sde.SkinrSlot, bool, error)
+}
+
+// resolveSkinrSlotNames looks up SKINR cosmetic slot names for a set of slot IDs, following
+// resolveTypeNames's exact contract.
+var resolveSkinrSlotNames = func(ctx context.Context, sdeStore skinrSlotNameCache, userAgent string, ids []int64) map[int64]string {
+	if len(ids) == 0 {
+		return nil
+	}
+	seen := make(map[int64]struct{}, len(ids))
+	names := make(map[int64]string, len(ids))
+	for _, id := range ids {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		s, ok, err := sdeStore.SkinrSlot(ctx, userAgent, id)
+		if err != nil || !ok {
+			continue
+		}
+		names[id] = s.Name
+	}
+	return names
+}

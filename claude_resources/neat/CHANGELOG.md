@@ -1,5 +1,13 @@
 # neat plugin — changelog
 
+## 0.6.0
+- **Fixes `get_universe_type` and every `TypeName`/`ShipTypeName` enrichment, both broken against the current SDE.** fuzzwork's dump dropped the `invTypes.radius` column, so every type lookup failed. `get_universe_type` errored outright, and the name fields across all type-enriched tools silently came back empty. `get_universe_type`'s `radius` now comes from EVE Ref's `reference-data` export, fetched once per process alongside the existing `esi-scrape` fetch (about 57 MB more on the first SDE lookup, with a brief memory spike while it's parsed). If that fetch fails, `radius` is absent on a cache hit and populated only when the type is fetched fresh from ESI.
+- Adds 14 tools for three ESI tags new since the last sweep. Military Campaigns: `list_military_campaigns`, `get_military_campaign`, `list_military_campaign_objectives`, `get_military_campaign_objective`, `list_character_military_campaign_objectives`, `get_character_military_campaign_objective_participation`. Cosmetics: `list_character_skinr_licenses`, `list_character_skinr_component_licenses`, `get_skinr`. Paragon Hub: `list_paragon_hub_skinr_listings`, `list_character_paragon_hub_skinr_listings`, `list_paragon_hub_skinr_listings_for_alliance`, `list_paragon_hub_skinr_listings_for_corporation`, `list_paragon_hub_skinr_listings_for_character`. SKINR ship types, cosmetic slots, and components get SDE-resolved names.
+- `add_character` now also requests `esi.activity.char:read` and `esi.cosmetic.char:read`, needed by the new character-scoped tools. Characters added before this version must be re-added to grant them; existing tools keep working without re-adding.
+- `get_status`'s `vip` is now always present (ESI made it required); `players` widened to a 64-bit integer.
+- When an ESI response can't be parsed, or an error carries no ESI error detail, the tool error now includes the start of the raw response (up to 512 bytes), so unexpected replies can be diagnosed.
+- Targets ESI compatibility date 2026-08-18 (via `goesi-openapi` v0.0.42), up from 2026-07-21.
+
 ## 0.5.0
 - `sde/` moves from a bbolt-backed cache seeded from CCP's own SDE jsonl export to a directly
   SQL-queried SQLite dump published by fuzzwork.co.uk (`~/.neat/sde/eve.db`, replacing

@@ -22,6 +22,14 @@ type TypeDogmaEffect struct {
 
 // Type is a minimal decode of a fuzzwork invTypes row -- the leaf level of
 // EVE's item hierarchy (e.g. "Rifter", within the "Frigate" group).
+//
+// Radius has no source in the fuzzwork dump: invTypes dropped its radius
+// column (found in the 2026-11-18 SDE/ESI audit -- selecting it failed every
+// Type lookup with "no such column: radius"), and dgmTypeAttributes' radius
+// attribute (162) covers only a few dozen types. It's sourced instead from EVE
+// Ref's reference-data dataset at sync time (see sync.go's
+// fetchReferenceDataTypeRadii), held in-memory rather than a stored column --
+// nil if that best-effort fetch failed or the type has no radius there.
 type Type struct {
 	ID              int64
 	GroupID         int64
@@ -55,16 +63,16 @@ func (s *Store) Type(ctx context.Context, userAgent string, id int64) (Type, boo
 	}
 
 	var (
-		groupID                                        int64
-		name, description                              sql.NullString
-		published                                      sql.NullBool
-		capacity, mass, radius, volume, packagedVolume sql.NullFloat64
-		graphicID, iconID, marketGroupID, portionSize  sql.NullInt64
+		groupID                                       int64
+		name, description                             sql.NullString
+		published                                     sql.NullBool
+		capacity, mass, volume, packagedVolume        sql.NullFloat64
+		graphicID, iconID, marketGroupID, portionSize sql.NullInt64
 	)
 	row := s.db.QueryRowContext(ctx,
-		`SELECT groupID, typeName, description, published, capacity, graphicID, iconID, marketGroupID, mass, portionSize, radius, volume, packagedVolume
+		`SELECT groupID, typeName, description, published, capacity, graphicID, iconID, marketGroupID, mass, portionSize, volume, packagedVolume
 		 FROM invTypes WHERE typeID = ?`, id)
-	err := row.Scan(&groupID, &name, &description, &published, &capacity, &graphicID, &iconID, &marketGroupID, &mass, &portionSize, &radius, &volume, &packagedVolume)
+	err := row.Scan(&groupID, &name, &description, &published, &capacity, &graphicID, &iconID, &marketGroupID, &mass, &portionSize, &volume, &packagedVolume)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Type{}, false, nil
 	}
@@ -76,7 +84,10 @@ func (s *Store) Type(ctx context.Context, userAgent string, id int64) (Type, boo
 		ID: id, GroupID: groupID, Name: name.String, Description: description.String, Published: published.Bool,
 		Capacity: nullFloat(capacity), GraphicID: nullInt(graphicID), IconID: nullInt(iconID),
 		MarketGroupID: nullInt(marketGroupID), Mass: nullFloat(mass), PackagedVolume: nullFloat(packagedVolume),
-		PortionSize: nullInt(portionSize), Radius: nullFloat(radius), Volume: nullFloat(volume),
+		PortionSize: nullInt(portionSize), Volume: nullFloat(volume),
+	}
+	if r, ok := s.typeRadii[id]; ok {
+		out.Radius = &r
 	}
 
 	attrRows, err := s.db.QueryContext(ctx, `SELECT attributeID, valueInt, valueFloat FROM dgmTypeAttributes WHERE typeID = ?`, id)

@@ -14,7 +14,7 @@ import (
 
 // CharacterLocation returns the client's own character's current solar system, and station or
 // structure ID if docked/boarded.
-func (c *Client) CharacterLocation(ctx context.Context) (*esiapi.CharactersCharacterIdLocationGet, error) {
+func (c *Client) CharacterLocation(ctx context.Context) (*esiapi.CharactersLocation, error) {
 	result, resp, err := c.api.LocationAPI.GetCharactersCharacterIdLocation(ctx, int64(c.characterID)).Execute()
 	if err != nil {
 		return nil, fmt.Errorf("get character location: %w", describeError(err, resp))
@@ -46,7 +46,7 @@ func (c *Client) CharacterOnline(ctx context.Context) (*CharacterOnlineStatus, e
 }
 
 // CharacterShip returns the client's own character's current ship.
-func (c *Client) CharacterShip(ctx context.Context) (*esiapi.CharactersCharacterIdShipGet, error) {
+func (c *Client) CharacterShip(ctx context.Context) (*esiapi.CharactersShip, error) {
 	result, resp, err := c.api.LocationAPI.GetCharactersCharacterIdShip(ctx, int64(c.characterID)).Execute()
 	if err != nil {
 		return nil, fmt.Errorf("get character ship: %w", describeError(err, resp))

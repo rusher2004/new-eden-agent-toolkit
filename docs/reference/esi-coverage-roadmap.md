@@ -46,9 +46,11 @@ place to check what's left, instead of re-deriving the order from the spec each 
 | 34 | User Interface | 5 | Done (PR #6) |
 | 35 | Wallet | 6 | Done (PR #5, corrected in PR #15 -- see note) |
 | 36 | Wars | 3 | Done (PR #6) |
-| 37 | Military Campaigns | 6 | Blocked -- see note |
+| 37 | Military Campaigns | 6 | Done (2026-11-18 SDE/ESI audit -- see note) |
+| 38 | Cosmetics | 3 | Done (2026-11-18 SDE/ESI audit -- see note) |
+| 39 | Paragon Hub | 5 | Done (2026-11-18 SDE/ESI audit -- see note) |
 
-219 total endpoints across the original 36 tags (225 including Military Campaigns).
+233 total endpoints across 39 tags: the original 36 tags' 219, plus Military Campaigns (6), Cosmetics (3), and Paragon Hub (5). Verified against the live spec at compatibility date 2026-08-18, the latest ESI accepted as of 2026-11-18.
 
 **Wallet correction:** PR #5 marked all 6 Wallet endpoints "Done," but only `WalletBalance`/
 `get_wallet_balance` (1 of 6) was actually implemented — the character wallet journal/transactions
@@ -58,22 +60,9 @@ was discovered when a user hit a wall trying to read a corporation's wallet bala
 `GET /corporations/{corporation_id}/wallets/` was never wired up). The remaining 5 endpoints were
 added in PR #15, using the same conventions as every other batch in this table.
 
-**Military Campaigns (blocked):** PR #15's full-coverage audit re-fetched CCP's live OpenAPI spec
-with the current compatibility date (`?compatibility_date=2026-08-04` — the bare, undated
-`/meta/openapi-3.0.json` silently returns a stale/default spec that hides newer tags, which is why
-this wasn't caught by re-running the original tag count) and found a 37th tag, "Military
-Campaigns" (6 endpoints: `GET /military-campaigns`, `GET /military-campaigns/{campaign_id}`,
-`GET /military-campaigns/{campaign_id}/objectives`,
-`GET /military-campaigns/{campaign_id}/objectives/{objective_id}`,
-`GET /characters/{character_id}/military-campaigns/objectives`,
-`GET /characters/{character_id}/military-campaigns/objectives/{objective_id}`), added by CCP after
-the original sweep. It cannot be implemented yet: `github.com/fnt-eve/goesi-openapi` v0.0.37 (the
-latest published version) has no generated bindings for it at all, and this project's hard rule is
-that every ESI call goes through that generated client -- never a hand-rolled HTTP request. Needs
-an upstream `goesi-openapi` release that regenerates against a spec including this tag before a
-batch can be planned. The rest of the audit (every one of the original 36 tags' operationIds
-diffed against both the live dated spec and the installed `goesi-openapi` module, plus every
-`allScopes` entry checked against real CCP scopes in both directions) found no other gaps.
+**2026-11-18 SDE/ESI audit (unblocks Military Campaigns, adds Cosmetics and Paragon Hub):** ESI's newest compatibility date is now 2026-08-18. Diffing the live spec at that date against 2026-08-04 (the date PR #15 audited) shows 8 added operations across two new tags, Cosmetics and Paragon Hub, and no removed or changed operations or schemas. `goesi-openapi` v0.0.42 is generated against 2026-08-18 (its `Configuration` now defaults `X-Compatibility-Date` to that date) and ships bindings for all three previously-missing tags, so Military Campaigns' 6, Cosmetics' 3, and Paragon Hub's 5 endpoints are implemented as 14 tools. The character endpoints of all three tags use CCP's new-style scope names, `esi.activity.char:read` (Military Campaigns) and `esi.cosmetic.char:read` (Cosmetics, Paragon Hub). Both are declared in the live spec's OAuth2 scheme, added to `allScopes`, and must also be enabled on the ESI application at developers.eveonline.com, or the SSO rejects the whole login. The bump's only breaking change for existing tools was a regenerated `Status` model (`players` int32 to int64, `vip` optional to required), which `get_status` now mirrors. Every other existing endpoint's request builder and every other model the code uses is field-for-field unchanged. The 14 new endpoints' cursor-paginated listings take `limit` 10-100 (ESI returns 422 below 10).
+
+**Military Campaigns (originally blocked; resolved by the audit above):** PR #15's full-coverage audit re-fetched CCP's live OpenAPI spec with the current compatibility date (`?compatibility_date=2026-08-04` — the bare, undated `/meta/openapi-3.0.json` silently returns a stale/default spec that hides newer tags, which is why this wasn't caught by re-running the original tag count) and found a 37th tag, "Military Campaigns" (6 endpoints: `GET /military-campaigns`, `GET /military-campaigns/{campaign_id}`, `GET /military-campaigns/{campaign_id}/objectives`, `GET /military-campaigns/{campaign_id}/objectives/{objective_id}`, `GET /characters/{character_id}/military-campaigns/objectives`, `GET /characters/{character_id}/military-campaigns/objectives/{objective_id}`), added by CCP after the original sweep. It cannot be implemented yet: `github.com/fnt-eve/goesi-openapi` v0.0.37 (the latest published version) has no generated bindings for it at all, and this project's hard rule is that every ESI call goes through that generated client -- never a hand-rolled HTTP request. Needs an upstream `goesi-openapi` release that regenerates against a spec including this tag before a batch can be planned. The rest of the audit (every one of the original 36 tags' operationIds diffed against both the live dated spec and the installed `goesi-openapi` module, plus every `allScopes` entry checked against real CCP scopes in both directions) found no other gaps.
 
 ## Conventions (apply to every batch)
 

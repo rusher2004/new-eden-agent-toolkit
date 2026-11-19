@@ -11,9 +11,8 @@ func TestGetStatusHandler_MapsFields(t *testing.T) {
 	orig := getStatus
 	t.Cleanup(func() { getStatus = orig })
 	startTime := time.Date(2026, 7, 25, 11, 0, 0, 0, time.UTC)
-	vip := false
-	getStatus = func(ctx context.Context, userAgent string) (int32, string, time.Time, *bool, error) {
-		return 23456, "1234567", startTime, &vip, nil
+	getStatus = func(ctx context.Context, userAgent string) (int64, string, time.Time, bool, error) {
+		return 23456, "1234567", startTime, true, nil
 	}
 
 	handler := getStatusHandler("v1")
@@ -27,16 +26,16 @@ func TestGetStatusHandler_MapsFields(t *testing.T) {
 	if !out.StartTime.Equal(startTime) {
 		t.Errorf("StartTime = %v, want %v", out.StartTime, startTime)
 	}
-	if out.Vip == nil || *out.Vip {
-		t.Errorf("Vip = %v, want *false", out.Vip)
+	if !out.Vip {
+		t.Errorf("Vip = %v, want true", out.Vip)
 	}
 }
 
 func TestGetStatusHandler_PropagatesError(t *testing.T) {
 	orig := getStatus
 	t.Cleanup(func() { getStatus = orig })
-	getStatus = func(ctx context.Context, userAgent string) (int32, string, time.Time, *bool, error) {
-		return 0, "", time.Time{}, nil, errors.New("boom")
+	getStatus = func(ctx context.Context, userAgent string) (int64, string, time.Time, bool, error) {
+		return 0, "", time.Time{}, false, errors.New("boom")
 	}
 
 	handler := getStatusHandler("v1")

@@ -133,6 +133,13 @@ func TestServer_AllToolsRegistered(t *testing.T) {
 		"list_universe_system_jumps", "list_universe_system_kills", "resolve_universe_ids", "resolve_universe_names",
 		"set_autopilot_waypoint", "open_contract_window", "open_information_window",
 		"open_market_details_window", "open_new_mail_window", "list_wars", "get_war", "list_war_killmails",
+		"list_military_campaigns", "get_military_campaign", "list_military_campaign_objectives",
+		"get_military_campaign_objective", "list_character_military_campaign_objectives",
+		"get_character_military_campaign_objective_participation",
+		"list_character_skinr_licenses", "list_character_skinr_component_licenses", "get_skinr",
+		"list_paragon_hub_skinr_listings", "list_character_paragon_hub_skinr_listings",
+		"list_paragon_hub_skinr_listings_for_alliance", "list_paragon_hub_skinr_listings_for_corporation",
+		"list_paragon_hub_skinr_listings_for_character",
 	} {
 		if !names[want] {
 			t.Errorf("missing tool %q, got %v", want, names)

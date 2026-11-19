@@ -39,6 +39,43 @@ func TestType_KnownID_ReturnsRow(t *testing.T) {
 	}
 }
 
+func TestType_Radius_ComesFromReferenceData(t *testing.T) {
+	store := seedStore(t)
+	seedExec(t, store, `INSERT INTO invTypes (typeID, groupID, typeName, published) VALUES (587, 25, 'Rifter', 1)`)
+	seedExec(t, store, `INSERT INTO invTypes (typeID, groupID, typeName, published) VALUES (34, 18, 'Tritanium', 1)`)
+	store.typeRadii = map[int64]float64{587: 31.0}
+
+	rifter, ok, err := store.Type(context.Background(), testUserAgent, 587)
+	if err != nil || !ok {
+		t.Fatalf("Type(587) = ok %v, err %v, want ok", ok, err)
+	}
+	if rifter.Radius == nil || *rifter.Radius != 31.0 {
+		t.Errorf("Rifter Radius = %v, want 31", rifter.Radius)
+	}
+
+	trit, ok, err := store.Type(context.Background(), testUserAgent, 34)
+	if err != nil || !ok {
+		t.Fatalf("Type(34) = ok %v, err %v, want ok", ok, err)
+	}
+	if trit.Radius != nil {
+		t.Errorf("Tritanium Radius = %v, want nil when reference-data has no radius for it", *trit.Radius)
+	}
+}
+
+func TestType_Radius_NilWhenReferenceDataFetchFailed(t *testing.T) {
+	store := seedStore(t)
+	seedExec(t, store, `INSERT INTO invTypes (typeID, groupID, typeName, published) VALUES (587, 25, 'Rifter', 1)`)
+	// store.typeRadii left nil, as sync() leaves it after a failed fetch.
+
+	got, ok, err := store.Type(context.Background(), testUserAgent, 587)
+	if err != nil || !ok {
+		t.Fatalf("Type(587) = ok %v, err %v, want ok", ok, err)
+	}
+	if got.Radius != nil {
+		t.Errorf("Radius = %v, want nil when the reference-data fetch failed", *got.Radius)
+	}
+}
+
 func TestType_NullNameAndPublished_DegradeToZeroValueInsteadOfErroring(t *testing.T) {
 	// typeName/published are nullable in the fuzzwork schema (PRAGMA
 	// table_info confirmed notnull=0) even though every real row today

@@ -35,8 +35,8 @@ func TestStatus_ParsesResponse(t *testing.T) {
 	if !status.StartTime.Equal(wantStart) {
 		t.Errorf("StartTime = %v, want %v", status.StartTime, wantStart)
 	}
-	if status.Vip == nil || *status.Vip {
-		t.Errorf("Vip = %v, want *false", status.Vip)
+	if status.Vip {
+		t.Errorf("Vip = %v, want false", status.Vip)
 	}
 }
 

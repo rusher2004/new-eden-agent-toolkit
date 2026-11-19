@@ -1,9 +1,10 @@
 // Package sde caches CCP's Static Data Export -- sourced from fuzzwork.co.uk's
 // periodically-refreshed SQLite conversion of the SDE, queried directly via
 // database/sql -- plus a narrow, in-memory-only augmentation from EVE Ref's
-// esi-scrape bulk export for the handful of fields (race AllianceID, graphic
-// SofDNA) the fuzzwork dump doesn't carry. Type PackagedVolume used to be
-// sourced the same way, from EVE Ref's reference-data export, until CCP added
+// bulk exports for the handful of fields the fuzzwork dump doesn't carry:
+// type Radius from reference-data (fuzzwork dropped invTypes.radius; found in
+// the 2026-11-18 audit), and race AllianceID/graphic SofDNA from esi-scrape.
+// Type PackagedVolume used to come from reference-data too, until CCP added
 // it to the SDE itself (see https://github.com/esi/esi-issues/issues/1499)
 // and fuzzwork's dump picked it up as an invTypes column. See
 // docs/superpowers/specs/2026-08-04-sde-sqlite-migration-design.md for the
@@ -51,8 +52,9 @@ type Store struct {
 	dbPath   string
 	metaPath string
 
-	dumpURL      string
-	esiScrapeURL string
+	dumpURL          string
+	referenceDataURL string
+	esiScrapeURL     string
 
 	syncOnce sync.Once
 	syncErr  error
@@ -76,12 +78,14 @@ type Store struct {
 	// and merging a sync.Map scan) for an edge case that resolves itself.
 	overlay sync.Map
 
-	// Set once per sync(), from EVE Ref's esi-scrape bulk export -- the two
+	// Set once per sync(), from EVE Ref's reference-data (typeRadii) and
+	// esi-scrape (raceAlliances, graphicSofDNA) bulk exports -- the three
 	// fields with no source anywhere in the fuzzwork dump. Never persisted to
-	// disk (unlike db): every process's single sync() re-fetches it fresh,
-	// since there is no local copy to otherwise fall back to. nil (not an
-	// error) if the fetch failed or was never attempted (e.g. this Store has
-	// never synced).
+	// disk (unlike db): every process's single sync() re-fetches both sources
+	// fresh, since there is no local copy to otherwise fall back to. nil (not
+	// an error) if the corresponding fetch failed or was never attempted (e.g.
+	// this Store has never synced).
+	typeRadii     map[int64]float64
 	raceAlliances map[int64]int64
 	graphicSofDNA map[int64]string
 }
@@ -95,10 +99,11 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("create sde cache directory: %w", err)
 	}
 	return &Store{
-		dbPath:       path,
-		metaPath:     filepath.Join(filepath.Dir(path), "meta.json"),
-		dumpURL:      dumpURL,
-		esiScrapeURL: esiScrapeURL,
+		dbPath:           path,
+		metaPath:         filepath.Join(filepath.Dir(path), "meta.json"),
+		dumpURL:          dumpURL,
+		referenceDataURL: referenceDataURL,
+		esiScrapeURL:     esiScrapeURL,
 	}, nil
 }
 
@@ -123,9 +128,9 @@ func (s *Store) Close() error {
 
 // storeMeta is the small sidecar persisted to metaPath -- bbolt's old _meta
 // bucket's replacement. Unlike the old design, only the dump's own version is
-// tracked here: esi-scrape's augmentation is never persisted (see
-// raceAlliances/graphicSofDNA's doc comment), so there is nothing to gate a
-// skip on for that source.
+// tracked here: reference-data/esi-scrape's augmentation is never persisted
+// (see typeRadii et al.'s doc comment), so there is nothing to gate a skip on
+// for those two sources.
 type storeMeta struct {
 	SchemaVersion string `json:"schemaVersion"`
 	DumpVersion   string `json:"dumpVersion"`

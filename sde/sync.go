@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -21,6 +22,7 @@ import (
 )
 
 const dumpURL = "https://www.fuzzwork.co.uk/dump/latest-sqlite.db.gz"
+const referenceDataURL = "https://data.everef.net/reference-data/reference-data-latest.tar.xz"
 const esiScrapeURL = "https://data.everef.net/esi-scrape/eve-ref-esi-scrape-latest.tar.xz"
 const esiScrapePathPrefix = "eve-ref-esi-scrape/data/tranquility/universe/"
 
@@ -67,6 +69,30 @@ func (s *Store) ensureSynced(ctx context.Context, userAgent string) error {
 }
 
 func (s *Store) sync(ctx context.Context, userAgent string) error {
+	if err := s.syncDump(ctx, userAgent); err != nil {
+		return err
+	}
+
+	// reference-data/esi-scrape augmentation is never persisted to disk (see
+	// Store's typeRadii/raceAlliances/graphicSofDNA doc comment) -- every
+	// process's single sync() fetches both fresh, best-effort, regardless of
+	// whether either has changed remotely, since there is no local copy to
+	// otherwise fall back to skipping. It runs after every successful
+	// syncDump, including its "keep serving the existing cache" fallbacks
+	// (a failed dump HEAD or re-download), so a fuzzwork hiccup never also
+	// drops Radius/AllianceID/SofDNA for the rest of the process.
+	s.typeRadii = fetchReferenceDataTypeRadii(ctx, s.referenceDataURL, userAgent)
+	if data, ok := fetchEsiScrapeSupplements(ctx, s.esiScrapeURL, userAgent); ok {
+		s.raceAlliances = data.raceAlliances
+		s.graphicSofDNA = data.graphicSofDNA
+	}
+	return nil
+}
+
+// syncDump brings s.db up to date with fuzzwork's dump, or falls back to the
+// existing on-disk cache when the remote check or re-download fails. A nil
+// return means s.db is usable; an error means no usable cache exists.
+func (s *Store) syncDump(ctx context.Context, userAgent string) error {
 	meta, err := s.readMeta()
 	if err != nil {
 		return fmt.Errorf("read cached sde meta: %w", err)
@@ -140,16 +166,6 @@ func (s *Store) sync(ctx context.Context, userAgent string) error {
 		if err := s.writeMeta(meta); err != nil {
 			return fmt.Errorf("write sde meta: %w", err)
 		}
-	}
-
-	// esi-scrape augmentation is never persisted to disk (see Store's
-	// raceAlliances/graphicSofDNA doc comment) -- every process's single
-	// sync() fetches it fresh, best-effort, regardless of whether it's
-	// changed remotely, since there is no local copy to otherwise fall back
-	// to skipping.
-	if data, ok := fetchEsiScrapeSupplements(ctx, s.esiScrapeURL, userAgent); ok {
-		s.raceAlliances = data.raceAlliances
-		s.graphicSofDNA = data.graphicSofDNA
 	}
 	return nil
 }
@@ -268,6 +284,50 @@ func fetchBytes(ctx context.Context, url, userAgent string) ([]byte, error) {
 		return nil, fmt.Errorf("unexpected status %d from %s", resp.StatusCode, url)
 	}
 	return io.ReadAll(resp.Body)
+}
+
+// fetchReferenceDataTypeRadii fetches EVE Ref's reference-data dataset and
+// returns typeID -> radius for every type that has one. Returns nil (not an
+// error) on any failure -- reference-data is a best-effort augmentation,
+// never fatal to the rest of sync(). Chosen over esi-scrape, which also
+// carries radius, because esi-scrape has not been regenerated since
+// 2025-11-26 while reference-data is rebuilt from each new SDE (verified in
+// the 2026-11-18 audit: built the same day, from the live server's build).
+func fetchReferenceDataTypeRadii(ctx context.Context, url, userAgent string) map[int64]float64 {
+	body, err := fetchBytes(ctx, url, userAgent)
+	if err != nil {
+		slog.Default().WarnContext(ctx, "sde: failed to fetch reference-data, skipping Radius augmentation", "error", err)
+		return nil
+	}
+	members, err := extractTarXZMembers(body, map[string]bool{"types.json": true})
+	if err != nil {
+		slog.Default().WarnContext(ctx, "sde: failed to extract reference-data, skipping Radius augmentation", "error", err)
+		return nil
+	}
+	typesJSON, ok := members["types.json"]
+	if !ok {
+		slog.Default().WarnContext(ctx, "sde: reference-data archive missing types.json, skipping Radius augmentation")
+		return nil
+	}
+	var raw map[string]struct {
+		Radius *float64 `json:"radius"`
+	}
+	if err := json.Unmarshal(typesJSON, &raw); err != nil {
+		slog.Default().WarnContext(ctx, "sde: failed to parse reference-data types.json, skipping Radius augmentation", "error", err)
+		return nil
+	}
+	out := make(map[int64]float64, len(raw))
+	for idStr, rec := range raw {
+		if rec.Radius == nil {
+			continue
+		}
+		id, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil {
+			continue
+		}
+		out[id] = *rec.Radius
+	}
+	return out
 }
 
 // esiScrapeData bundles the two values fetchEsiScrapeSupplements extracts

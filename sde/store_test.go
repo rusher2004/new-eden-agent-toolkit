@@ -11,11 +11,15 @@ import (
 // testSchema is the subset of the fuzzwork dump's schema every sde/ accessor
 // test needs -- far smaller than the real ~150-table dump, but identical
 // column names/types (verified directly against the live dump) for every
-// table sde/ actually queries.
+// table sde/ actually queries. invTypes in particular mirrors the live
+// dump's full column list exactly (re-verified in the 2026-11-18 audit, when
+// fuzzwork dropped invTypes.radius): a fixture that keeps a column the real
+// dump has dropped lets a broken SELECT pass every test while failing every
+// lookup in production.
 const testSchema = `
 CREATE TABLE invCategories (categoryID INTEGER PRIMARY KEY, categoryName VARCHAR(100), published BOOLEAN);
 CREATE TABLE invGroups (groupID INTEGER PRIMARY KEY, categoryID INTEGER, groupName VARCHAR(100), published BOOLEAN);
-CREATE TABLE invTypes (typeID INTEGER PRIMARY KEY, groupID INTEGER, typeName VARCHAR(100), description TEXT, published BOOLEAN, capacity FLOAT, graphicID INTEGER, iconID INTEGER, marketGroupID INTEGER, mass FLOAT, portionSize INTEGER, radius FLOAT, volume FLOAT, raceID INTEGER, packagedVolume FLOAT);
+CREATE TABLE invTypes (typeID INTEGER PRIMARY KEY, groupID INTEGER, typeName VARCHAR(100), description TEXT, mass FLOAT, volume FLOAT, capacity FLOAT, portionSize INTEGER, raceID INTEGER, basePrice DECIMAL(19, 4), published BOOLEAN, marketGroupID INTEGER, iconID INTEGER, soundID INTEGER, graphicID INTEGER, factionID INTEGER, metaLevel INTEGER, techLevel INTEGER, shipTreeGroupID INTEGER, packagedVolume FLOAT, isDynamicType BOOLEAN, isRepackable BOOLEAN);
 CREATE TABLE dgmTypeAttributes (typeID INTEGER, attributeID INTEGER, valueInt INTEGER, valueFloat FLOAT, PRIMARY KEY (typeID, attributeID));
 CREATE TABLE dgmTypeEffects (typeID INTEGER, effectID INTEGER, isDefault BOOLEAN, PRIMARY KEY (typeID, effectID));
 CREATE TABLE mapRegions (regionID INTEGER PRIMARY KEY, regionName VARCHAR(100));
@@ -30,6 +34,8 @@ CREATE TABLE chrRaces (raceID INTEGER PRIMARY KEY, raceName VARCHAR(100), descri
 CREATE TABLE chrBloodlines (bloodlineID INTEGER PRIMARY KEY, bloodlineName VARCHAR(100), raceID INTEGER, description VARCHAR(1000), shipTypeID INTEGER, corporationID INTEGER, perception INTEGER, willpower INTEGER, charisma INTEGER, memory INTEGER, intelligence INTEGER);
 CREATE TABLE chrAncestries (ancestryID INTEGER PRIMARY KEY, ancestryName VARCHAR(100), bloodlineID INTEGER, description VARCHAR(1000), iconID INTEGER, shortDescription VARCHAR(500));
 CREATE TABLE eveGraphics (graphicID INTEGER PRIMARY KEY, sofFactionName VARCHAR(100), graphicFile VARCHAR(256), sofHullName VARCHAR(100), sofRaceName VARCHAR(100), iconFolder VARCHAR(256));
+CREATE TABLE skinrComponents (componentID INTEGER PRIMARY KEY, name VARCHAR(255), categoryID INTEGER, rarityID INTEGER, finish VARCHAR(50), published BOOLEAN, iconFile VARCHAR(512), resourceFile VARCHAR(512), projectionTypeU VARCHAR(50), projectionTypeV VARCHAR(50), sequenceBinderCount INTEGER, sequenceBinderTypeID INTEGER);
+CREATE TABLE skinrSlots (slotID INTEGER PRIMARY KEY, name VARCHAR(255), categoryID INTEGER);
 `
 
 // seedStore opens a fresh temp-file sqlite Store with testSchema applied and
