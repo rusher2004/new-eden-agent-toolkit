@@ -99,7 +99,7 @@ To log a character out of neat, ask Claude to remove it. That deletes its saved 
 
 ## What neat can do
 
-neat has over 250 tools covering nearly everything ESI offers, plus planning tools of its own:
+neat covers every ESI endpoint, plus planning tools of its own:
 
 - **Your characters:** wallets, assets, skills and skill queues, clones and implants, location and ship, standings, loyalty points, mail, calendar, contacts, notifications, fittings, killmails and planetary colonies
 - **Your corporation and alliance:** members, roles, wallets, assets, contracts, industry jobs, structures, starbases, mining and more, for characters with the right roles
