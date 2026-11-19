@@ -24,9 +24,7 @@ Flat package structure at repo root. No `internal/`. One package per responsibil
 
 - ~~CCP added a 37th ESI tag, "Military Campaigns" (6 endpoints), blocked on an upstream `goesi-openapi` release.~~ Resolved in the 2026-11-18 SDE/ESI audit: `goesi-openapi` v0.0.42 (generated against compatibility date 2026-08-18) ships bindings for it plus two more tags CCP added since, Cosmetics (3) and Paragon Hub (5), and all 14 endpoints are now implemented. See `docs/reference/esi-coverage-roadmap.md`.
 - **EVE Ref's `esi-scrape` dataset has not been regenerated since 2025-11-26** (found in the 2026-11-18 audit: EVE Ref's own `esi-scrape/index.json` gives `eve-ref-esi-scrape-latest.tar.xz` a `last_modified` of 2025-11-26T15:42:24Z, the archive's `status.yaml` snapshot is of server build 3116156 started that morning, and `history/2025/` ends with that day's snapshot; Cloudflare's `Last-Modified` header looks current but is synthesized at the edge, differing between simultaneous requests). `sde/` still fetches it for race `AllianceID` and graphic `SofDNA`, which are rarely-changing enough that a year-stale copy is still correct for every existing race and nearly every graphic, but anything CCP added since is missing from it. EVE Ref's still-current `reference-data` export has no race or graphic files, so it can't replace `esi-scrape` for these two (it does replace it as type `Radius`'s source -- see Hard rules). Revisit if EVE Ref resumes publishing, or if a graphic's `SofDNA` going missing turns up in practice.
-- ~~No CI configuration exists in this repo at all.~~ Resolved: `.github/workflows/test.yml` runs
-  `go build`/`go vet`/`go test -race` on real `ubuntu-latest`, `macos-latest`, and `windows-latest`
-  runners on every push/PR.
+- ~~No CI configuration exists in this repo at all.~~ Resolved: `.github/workflows/test.yml` runs `go build`/`go vet`/`go test -race` on real `ubuntu-latest`, `macos-latest`, and `windows-latest` runners on every push/PR.
 - ~~Cross-process TOCTOU in `sso.bindExclusive`'s stale-socket recovery path.~~ Gone with the Unix-socket handoff: a second `neat` process is now kept out by the exclusive TCP bind of the callback port, which the OS makes atomic, and a crashed process leaves no file behind to recover.
 - ~~The browser tab never closes/navigates after a successful `add_character` login.~~ Resolved by moving the OAuth2 redirect from the `eveauth-neat://` custom scheme to a loopback HTTP server (`docs/superpowers/specs/2026-11-19-loopback-oauth-callback-design.md`): CCP's tab now lands on neat's own page.
 - **The callback port is fixed (48211)**, because CCP's SSO matches the registered callback URL exactly and doesn't implement RFC 8252 §7.3's any-port loopback matching. If another program holds the port, `add_character` fails with an error naming it rather than falling back. Revisit if CCP ever accepts any-port loopback redirects.
@@ -101,8 +99,7 @@ actually does.
 
 ## Build
 
-`clientID` (the ESI OAuth2 client ID) is injected via `-ldflags` from the git-ignored
-`app_config.json` — `make build` wraps this for local development.
+`clientID` (the ESI OAuth2 client ID) is injected via `-ldflags` from the git-ignored `app_config.json` — `make build` wraps this for local development.
 
 ```bash
 go build -ldflags "-X main.version=$(cat VERSION 2>/dev/null || echo dev) -X main.clientID=$(jq -r .clientId app_config.json)" -o neat ./cmd

@@ -29,3 +29,12 @@ func TestCollect_MultipleScopes_Fails(t *testing.T) {
 		t.Errorf("err = %v, want a multiple-scopes error", err)
 	}
 }
+
+func TestCollect_AlternativeSecurityRequirements_Fails(t *testing.T) {
+	s := spec{Paths: map[string]map[string]operation{
+		"/a": {"get": {Security: []map[string][]string{{}, {"OAuth2": {"one"}}}}},
+	}}
+	if _, err := collect(s); err == nil || !strings.Contains(err.Error(), "alternative security requirements") {
+		t.Errorf("err = %v, want an alternative-requirements error", err)
+	}
+}

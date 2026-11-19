@@ -31,8 +31,7 @@ design spec from drifting apart.
 
 ## Build
 
-`clientID` (the ESI OAuth2 client ID) is injected via `-ldflags` from the git-ignored
-`app_config.json` — `make build` wraps this for local development.
+`clientID` (the ESI OAuth2 client ID) is injected via `-ldflags` from the git-ignored `app_config.json` — `make build` wraps this for local development.
 
 ```bash
 go build -ldflags "-X main.version=$(cat VERSION 2>/dev/null || echo dev) -X main.clientID=$(jq -r .clientId app_config.json)" -o neat ./cmd

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"os/exec"
@@ -56,7 +57,9 @@ var pageIdleTimeout = 30 * time.Second
 
 // closeGrace is how long a session lingers after its page reports being
 // closed, so that a reload, which also fires the close beacon, picks the
-// session back up instead of finding the server gone.
+// session back up instead of finding the server gone. The reloaded page
+// pings as soon as it loads, since the old page's beacon arrives only after
+// the new page was already served.
 var closeGrace = 5 * time.Second
 
 func defaultOpenBrowser(rawURL string) error {
@@ -142,7 +145,9 @@ func addCharacters(ctx context.Context, cfg oauthConfig, userAgent string, opts 
 	sessionCtx := context.WithValue(ctx, oauth2.HTTPClient, userAgentClient(userAgent))
 	s, err := newLoginSession(sessionCtx, cfg, opts, listener.Addr().String())
 	if err != nil {
-		listener.Close()
+		if closeErr := listener.Close(); closeErr != nil {
+			slog.Default().WarnContext(ctx, "sso: failed to close the login callback listener", "error", closeErr)
+		}
 		return nil, err
 	}
 
@@ -153,7 +158,9 @@ func addCharacters(ctx context.Context, cfg oauthConfig, userAgent string, opts 
 		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {
-			server.Close()
+			if closeErr := server.Close(); closeErr != nil {
+				slog.Default().WarnContext(ctx, "sso: failed to close the login session server", "shutdownError", err, "error", closeErr)
+			}
 		}
 		<-serveErr
 	}()

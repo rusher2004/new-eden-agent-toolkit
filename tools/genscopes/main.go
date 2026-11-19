@@ -102,6 +102,12 @@ func collect(s spec) ([]endpoint, error) {
 	for path, ops := range s.Paths {
 		for method, op := range ops {
 			e := endpoint{method: strings.ToUpper(method), path: path}
+			if len(op.Security) > 1 {
+				// Several entries are alternatives (any one satisfies the
+				// endpoint, e.g. optional auth); esi/ can't express that, and
+				// keeping only one would block requests ESI allows.
+				return nil, fmt.Errorf("%s %s lists %d alternative security requirements; esi/scopes.go supports one", method, path, len(op.Security))
+			}
 			for _, req := range op.Security {
 				switch scopes := req["OAuth2"]; len(scopes) {
 				case 0:

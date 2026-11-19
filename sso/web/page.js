@@ -21,11 +21,18 @@
     document.querySelectorAll("button").forEach(function (b) { b.disabled = true; });
   }
 
-  var timer = setInterval(function () {
+  function ping() {
     fetch("/ping", { method: "POST", body: body() })
       .then(function (r) { if (!r.ok) ended(); })
       .catch(ended);
-  }, 10000);
+  }
+
+  // Ping once right away: on a reload, the previous page's close beacon
+  // reaches neat after this page was served (the old page unloads only
+  // once the new one arrives) and cuts the session to a few seconds, so
+  // waiting for the first interval would let it expire under this page.
+  var timer = setInterval(ping, 10000);
+  ping();
 
   window.addEventListener("pagehide", function (e) {
     // persisted means the page went into the back/forward cache rather

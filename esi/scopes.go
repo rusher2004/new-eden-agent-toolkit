@@ -3,6 +3,7 @@ package esi
 //go:generate go run ../tools/genscopes -out scopes_gen.go
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -86,7 +87,14 @@ type scopeCheckTransport struct {
 
 func (t *scopeCheckTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if scope, ok := requiredScope(req.Method, req.URL.Path); ok && !slices.Contains(t.granted, scope) {
-		return nil, &MissingScopeError{CharacterID: t.characterID, Scope: scope, Group: sso.ScopeGroupFor(scope)}
+		missing := &MissingScopeError{CharacterID: t.characterID, Scope: scope, Group: sso.ScopeGroupFor(scope)}
+		// http.RoundTripper must close the request body, even on error.
+		if req.Body != nil {
+			if err := req.Body.Close(); err != nil {
+				return nil, errors.Join(missing, fmt.Errorf("close request body: %w", err))
+			}
+		}
+		return nil, missing
 	}
 	return t.base.RoundTrip(req)
 }
