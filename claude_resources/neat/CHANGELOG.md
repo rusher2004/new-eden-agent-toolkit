@@ -2,6 +2,7 @@
 
 ## 0.8.4
 - Updated for EVE's developer rebranding as Fenris Creations (FC): neat's descriptions, instructions to Claude and documentation now use the new name. Nothing about how neat works has changed.
+- The README, the privacy notice and neat's login page now carry the proprietary notice that EVE's Developer License Agreement asks third-party apps to keep.
 - The README suggests a new thing to ask: help setting up a PI network with your characters.
 
 ## 0.8.3

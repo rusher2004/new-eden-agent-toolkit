@@ -153,4 +153,6 @@ See [docs/README.md](docs/README.md) for how the code is organized, how releases
 
 ---
 
-EVE Online and all related names are trademarks of Fenris Creations hf. neat is a fan project and isn't affiliated with or endorsed by Fenris Creations.
+© 2014 CCP hf. All rights reserved. "EVE", "EVE Online", "CCP", and all related logos and images are trademarks or registered trademarks of CCP hf.
+
+neat is a fan project and isn't affiliated with or endorsed by Fenris Creations.

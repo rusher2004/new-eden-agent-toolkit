@@ -70,3 +70,9 @@ While you're adding a character, neat runs a small web page at `http://127.0.0.1
 - **Log out one character:** ask Claude to remove it. neat deletes its keychain entry and its line in `config.json`. To also cancel neat's access on FC's side, revoke it on EVE's [third-party applications page](https://community.eveonline.com/support/third-party-applications/).
 - **Remove everything:** delete the `neat` program and the `~/.neat` folder, delete any `neat` entries left in your keychain, and remove neat from your AI app (`/plugin uninstall neat@neat` in Claude Code, or its entry in the desktop app's config).
 - **Conversations:** what neat returned during a conversation stays in your AI app's history. Delete it there.
+
+---
+
+© 2014 CCP hf. All rights reserved. "EVE", "EVE Online", "CCP", and all related logos and images are trademarks or registered trademarks of CCP hf.
+
+neat is a fan project and isn't affiliated with or endorsed by Fenris Creations.
