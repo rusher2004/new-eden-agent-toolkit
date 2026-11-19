@@ -20,6 +20,7 @@ type eveRefServer struct {
 	etag      atomic.Value // string
 	downloads atomic.Int32
 	failGet   atomic.Bool
+	gotETag   atomic.Value // string: the etag query parameter of the last download
 }
 
 func newEveRefServer(t *testing.T, archive, etag string, body []byte) *eveRefServer {
@@ -41,6 +42,7 @@ func newEveRefServer(t *testing.T, archive, etag string, body []byte) *eveRefSer
 				return
 			}
 			e.downloads.Add(1)
+			e.gotETag.Store(r.URL.Query().Get("etag"))
 			w.Write(body)
 		default:
 			http.NotFound(w, r)
@@ -201,4 +203,16 @@ func TestSupplements_OtherVersionSavedFile_DownloadsAgain(t *testing.T) {
 		t.Errorf("reference-data downloaded %d times, want 2 for a saved file from another version", got)
 	}
 	assertSupplements(t, second)
+}
+
+func TestSupplements_DownloadCarriesIndexETag(t *testing.T) {
+	newStore, ref, scrape := supplementsStore(t)
+	runSync(t, newStore)
+
+	if got, _ := ref.gotETag.Load().(string); got != "ref-1" {
+		t.Errorf("reference-data download etag parameter = %q, want %q", got, "ref-1")
+	}
+	if got, _ := scrape.gotETag.Load().(string); got != "scrape-1" {
+		t.Errorf("esi-scrape download etag parameter = %q, want %q", got, "scrape-1")
+	}
 }

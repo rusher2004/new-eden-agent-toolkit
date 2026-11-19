@@ -94,7 +94,7 @@ func (s *Store) syncReferenceData(ctx context.Context, userAgent string, cached 
 	if current {
 		return cached, false
 	}
-	radii := fetchReferenceDataTypeRadii(ctx, s.referenceDataURL, userAgent)
+	radii := fetchReferenceDataTypeRadii(ctx, versionedArchiveURL(s.referenceDataURL, remote), userAgent)
 	if radii == nil {
 		if cached != nil {
 			slog.Default().WarnContext(ctx, "sde: using previously saved reference-data")
@@ -115,7 +115,7 @@ func (s *Store) syncEsiScrape(ctx context.Context, userAgent string, cached *esi
 	if current {
 		return cached, false
 	}
-	data, ok := fetchEsiScrapeSupplements(ctx, s.esiScrapeURL, userAgent)
+	data, ok := fetchEsiScrapeSupplements(ctx, versionedArchiveURL(s.esiScrapeURL, remote), userAgent)
 	if !ok {
 		if cached != nil {
 			slog.Default().WarnContext(ctx, "sde: using previously saved esi-scrape data")
@@ -136,6 +136,28 @@ func checkSupplement(ctx context.Context, name, indexURL, archiveURL, userAgent,
 		return "", false
 	}
 	return remote, cachedETag != "" && cachedETag == remote
+}
+
+// versionedArchiveURL returns archiveURL with etag added as a query
+// parameter, so the download can't be served from a Cloudflare edge copy
+// filled before the archive changed. data.everef.net caches both index.json
+// and the archive for up to 120 seconds, keyed by full URL: without this, a
+// fresh index paired with a stale edge copy of the archive would save the old
+// archive's values under the new etag, and they'd never be replaced until EVE
+// Ref published yet another version. The origin ignores the parameter.
+// archiveURL is returned unchanged when etag is unknown or it won't parse.
+func versionedArchiveURL(archiveURL, etag string) string {
+	if etag == "" {
+		return archiveURL
+	}
+	u, err := url.Parse(archiveURL)
+	if err != nil {
+		return archiveURL
+	}
+	q := u.Query()
+	q.Set("etag", etag)
+	u.RawQuery = q.Encode()
+	return u.String()
 }
 
 // eveRefIndex is the part of an EVE Ref index.json that neat reads.
