@@ -4,7 +4,6 @@ project_name: neat
 before:
   hooks:
     - go mod tidy
-    - make urlscheme-macos-bundle
 
 builds:
   - id: neat

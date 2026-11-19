@@ -1,5 +1,5 @@
 // Package sso owns ESI's OAuth2/PKCE login flow: opening the browser,
-// receiving the callback, exchanging the code, and persisting the
+// serving the loopback callback and session page, exchanging the code, and persisting the
 // resulting refresh token via creds/.
 package sso
 
@@ -8,8 +8,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"math"
-	"os"
-	"path/filepath"
 
 	goesi "github.com/fnt-eve/goesi-openapi"
 )
@@ -42,30 +40,6 @@ func characterIDFromClaims(claims *goesi.ESIJWTClaims) (int32, error) {
 		return 0, fmt.Errorf("character ID %d is out of int32 range", id64)
 	}
 	return int32(id64), nil
-}
-
-// callbackSocketPath resolves the Unix domain socket path used to hand off
-// the OAuth2 redirect URL from the callback-handler subcommand to the
-// blocked add_character flow: ~/.neat/run/callback.sock.
-func callbackSocketPath() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("resolve home directory: %w", err)
-	}
-	return filepath.Join(home, ".neat", "run", "callback.sock"), nil
-}
-
-// callbackLockPath resolves the Unix domain socket path used purely as a
-// liveness signal for detecting a concurrent add_character flow:
-// ~/.neat/run/callback.lock. It is bound but never Accept()-ed — see
-// listenForCallback in socket.go for why it is kept separate from the
-// delivery socket.
-func callbackLockPath() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("resolve home directory: %w", err)
-	}
-	return filepath.Join(home, ".neat", "run", "callback.lock"), nil
 }
 
 // ExportedCharacterIDFromClaims exposes characterIDFromClaims for external tests.

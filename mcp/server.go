@@ -93,7 +93,7 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "add_character",
-		Description: "Log in a new EVE Online character via ESI OAuth2, opening the user's browser to complete authentication.",
+		Description: "Log in EVE Online characters via ESI OAuth2. Opens the user's browser at EVE's login page; afterwards the browser shows a neat page listing their characters, where they can log in more characters before clicking Done or closing the tab. Blocks until then and returns every character added. Re-adding a known character refreshes its login.",
 	}, addCharacterHandler(version, clientID, store))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{

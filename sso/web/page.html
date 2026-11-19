@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{if .Finished}}All set{{else}}EVE characters{{end}} · neat</title>
+<style>
+:root {
+  --bg: #f4f5f7; --card: #ffffff; --text: #1b1f24; --muted: #5d6673; --border: #dde1e6;
+  --accent: #1f6feb; --accent-text: #ffffff; --ok-bg: #e6f4ea; --ok: #1a7f37; --err-bg: #fdecea; --err: #b42318;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1117; --card: #161b22; --text: #e6edf3; --muted: #8b949e; --border: #30363d;
+    --accent: #2f81f7; --accent-text: #ffffff; --ok-bg: #12261b; --ok: #3fb950; --err-bg: #2d1414; --err: #f85149;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 520px; margin: 48px auto; padding: 0 16px; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 24px; }
+.brand { font-size: 13px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 4px; }
+h1 { font-size: 22px; margin: 0 0 16px; }
+.notice { border-radius: 8px; padding: 10px 12px; margin: 0 0 16px; }
+.notice.success { background: var(--ok-bg); color: var(--ok); }
+.notice.error { background: var(--err-bg); color: var(--err); }
+h2 { font-size: 13px; font-weight: 600; color: var(--muted); margin: 0 0 8px; }
+ul { list-style: none; margin: 0 0 20px; padding: 0; }
+li { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-top: 1px solid var(--border); }
+li:first-child { border-top: 0; }
+li img { width: 40px; height: 40px; border-radius: 6px; background: var(--border); }
+li .name { flex: 1; font-weight: 500; overflow-wrap: anywhere; }
+.badge { font-size: 12px; font-weight: 600; color: var(--ok); background: var(--ok-bg); border-radius: 999px; padding: 2px 8px; }
+.empty { color: var(--muted); margin: 0 0 20px; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 16px; }
+.actions form { margin: 0; }
+button { font: inherit; font-weight: 600; border-radius: 8px; padding: 8px 14px; cursor: pointer; border: 1px solid var(--border); background: var(--card); color: var(--text); }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+button:disabled { opacity: .5; cursor: default; }
+.hint { color: var(--muted); font-size: 14px; margin: 0; }
+</style>
+</head>
+<body{{with .Token}} data-token="{{.}}"{{end}}>
+<main>
+<div class="card">
+  <p class="brand">neat</p>
+  {{if .Finished}}
+  <h1>All set</h1>
+  <p class="notice success">You can close this tab and go back to Claude.</p>
+  {{else}}
+  <h1>EVE Online characters</h1>
+  {{with .Notice}}<p class="notice {{.Kind}}" role="status">{{.Text}}</p>{{end}}
+  <p class="notice error" id="ended" role="status" hidden>This login session has ended. To add more characters, ask Claude to add a character again.</p>
+  {{end}}
+
+  <h2>Characters neat can use</h2>
+  {{if .Characters}}
+  <ul>
+    {{range .Characters}}
+    <li>
+      <img src="https://images.evetech.net/characters/{{.ID}}/portrait?size=64" alt="">
+      <span class="name">{{.Name}}</span>
+      {{if .New}}<span class="badge">Added just now</span>{{end}}
+    </li>
+    {{end}}
+  </ul>
+  {{else}}
+  <p class="empty">No characters yet.</p>
+  {{end}}
+
+  {{if not .Finished}}
+  <div class="actions">
+    <form method="post" action="/login"><input type="hidden" name="token" value="{{.Token}}"><button class="primary" type="submit">Add another character</button></form>
+    <form method="post" action="/done"><input type="hidden" name="token" value="{{.Token}}"><button type="submit">I'm done</button></form>
+  </div>
+  <p class="hint">Done adding characters? You can close this tab; neat finishes up on its own.</p>
+  {{end}}
+</div>
+</main>
+{{if .Token}}<script src="/page.js"></script>{{end}}
+</body>
+</html>

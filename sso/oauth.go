@@ -4,7 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
+	"net"
+	"net/http"
 	"os/exec"
 	"runtime"
 	"sync"
@@ -14,25 +15,51 @@ import (
 	"golang.org/x/oauth2"
 )
 
-// addCharacterMu closes the same-process version of a narrow TOCTOU window
-// in the socket-level collision check (see Task 6's review): without it,
-// two goroutines calling addCharacter at nearly the same instant could both
-// pass the liveness probe before either finishes binding. TryLock makes
-// that check atomic and immediate, no timing window at all, for callers in
-// this process. It does not protect against two separate neat OS processes
-// racing — accepted as a narrow residual limitation.
+// addCharacterMu lets only one login session run per process. A second
+// add_character call in the same process fails immediately with
+// ErrAddCharacterInProgress instead of failing to bind the callback port.
+// A second neat process is kept out by the port bind itself, which the OS
+// makes exclusive.
 var addCharacterMu sync.Mutex
 
-// RedirectURI is the ESI OAuth2 redirect URI registered for this app.
-const RedirectURI = "eveauth-neat://callback"
+// ErrAddCharacterInProgress is returned when add_character is called while
+// another login session in this process is still open.
+var ErrAddCharacterInProgress = errors.New("a character login session is already open in the browser; finish it there (or close its tab) first")
 
-// callbackTimeout bounds how long AddCharacter waits for the browser
-// callback. Overridable in tests.
+// callbackPort is the fixed loopback port of the OAuth2 redirect. CCP's SSO
+// requires the redirect URI to match the one registered on the ESI
+// application exactly, port included, so it can't be chosen at runtime.
+const callbackPort = "48211"
+
+// RedirectURI is the ESI OAuth2 redirect URI registered for this app. It
+// uses the 127.0.0.1 literal rather than "localhost", per RFC 8252 §8.3, so
+// the browser can't resolve it to an IPv6 or non-loopback address that
+// nothing is listening on.
+const RedirectURI = "http://127.0.0.1:" + callbackPort + "/callback"
+
+// callbackListenAddr is where a login session's HTTP server listens.
+// Overridable in tests, which listen on an ephemeral port instead.
+var callbackListenAddr = "127.0.0.1:" + callbackPort
+
+// onListening is told the base URL of each session's server once it is
+// listening. A no-op outside tests, which use it to find the ephemeral port.
+var onListening = func(string) {}
+
+// callbackTimeout bounds how long a session waits for the browser to come
+// back from CCP's login page after a login starts. Overridable in tests.
 var callbackTimeout = 5 * time.Minute
 
-// openBrowser launches the user's default browser at rawURL. Overridable
-// in tests so no real browser is launched during automated runs.
-var openBrowser = func(rawURL string) error {
+// pageIdleTimeout ends a session once its page has stopped checking in for
+// this long (the tab was closed, but its close beacon never arrived). The
+// page pings every 10 seconds while open. Overridable in tests.
+var pageIdleTimeout = 30 * time.Second
+
+// closeGrace is how long a session lingers after its page reports being
+// closed, so that a reload, which also fires the close beacon, picks the
+// session back up instead of finding the server gone.
+var closeGrace = 5 * time.Second
+
+func defaultOpenBrowser(rawURL string) error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
@@ -48,7 +75,11 @@ var openBrowser = func(rawURL string) error {
 	return nil
 }
 
-// oauthConfig is the subset of *goesi.Config's behavior AddCharacter needs.
+// openBrowser launches the user's default browser at rawURL. Overridable
+// in tests so no real browser is launched during automated runs.
+var openBrowser = defaultOpenBrowser
+
+// oauthConfig is the subset of *goesi.Config's behavior AddCharacters needs.
 // Defined here rather than imported from goesi so tests can substitute a
 // fake with no network or JWT-verification dependency.
 type oauthConfig interface {
@@ -56,15 +87,33 @@ type oauthConfig interface {
 	Exchange(ctx context.Context, code, state, expectedState string) (*oauth2.Token, *goesi.ESIJWTClaims, error)
 }
 
-// AddCharacter runs the full OAuth2/PKCE flow for a new character: opens
-// the browser, waits for the callback, exchanges the code, and persists
-// the refresh token.
-func AddCharacter(ctx context.Context, clientID, userAgent string, scopes []string) (Character, error) {
+// AddOptions configures a login session.
+type AddOptions struct {
+	// Scopes are the ESI scopes requested for every character.
+	Scopes []string
+	// OnAdded is called after each character's refresh token is saved,
+	// before the browser is shown the result, so the caller can record the
+	// character (e.g. in config) while the session is still open. An error
+	// is shown on the page and the character is not counted as added.
+	OnAdded func(Character) error
+	// SavedCharacters lists the characters neat already knows, for the
+	// session page. Optional: without it, the page lists only the
+	// characters added in this session.
+	SavedCharacters func() ([]Character, error)
+}
+
+// AddCharacters runs a browser login session: it serves the OAuth2 redirect
+// on a loopback port, opens the browser at CCP's login page, and keeps
+// serving a page that lists the user's characters and lets them log in
+// more, until they click Done, close the tab, or a login times out. Each
+// character's refresh token is saved as soon as its login completes. It
+// returns every character added; it fails only if none was.
+func AddCharacters(ctx context.Context, clientID, userAgent string, opts AddOptions) ([]Character, error) {
 	cfg, err := newOAuthConfig(ctx, clientID, userAgent)
 	if err != nil {
-		return Character{}, fmt.Errorf("build OAuth config: %w", err)
+		return nil, fmt.Errorf("build OAuth config: %w", err)
 	}
-	return addCharacter(ctx, cfg, userAgent, scopes)
+	return addCharacters(ctx, cfg, userAgent, opts)
 }
 
 func newOAuthConfig(ctx context.Context, clientID, userAgent string) (oauthConfig, error) {
@@ -79,88 +128,69 @@ func newOAuthConfig(ctx context.Context, clientID, userAgent string) (oauthConfi
 	return cfg, nil
 }
 
-func addCharacter(ctx context.Context, cfg oauthConfig, userAgent string, scopes []string) (Character, error) {
+func addCharacters(ctx context.Context, cfg oauthConfig, userAgent string, opts AddOptions) ([]Character, error) {
 	if !addCharacterMu.TryLock() {
-		return Character{}, ErrAddCharacterInProgress
+		return nil, ErrAddCharacterInProgress
 	}
 	defer addCharacterMu.Unlock()
 
-	ctx = context.WithValue(ctx, oauth2.HTTPClient, userAgentClient(userAgent))
-
-	lockPath, err := callbackLockPath()
+	listener, err := net.Listen("tcp", callbackListenAddr)
 	if err != nil {
-		return Character{}, err
+		return nil, fmt.Errorf("listen for the login callback on %s (another neat process may have a login open, or another program is using the port): %w", callbackListenAddr, err)
 	}
-	deliveryPath, err := callbackSocketPath()
+
+	sessionCtx := context.WithValue(ctx, oauth2.HTTPClient, userAgentClient(userAgent))
+	s, err := newLoginSession(sessionCtx, cfg, opts, listener.Addr().String())
 	if err != nil {
-		return Character{}, err
+		listener.Close()
+		return nil, err
 	}
 
-	listener, err := listenForCallback(lockPath, deliveryPath)
+	server := &http.Server{Handler: s.handler(), ReadHeaderTimeout: 10 * time.Second}
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- server.Serve(listener) }()
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			server.Close()
+		}
+		<-serveErr
+	}()
+	onListening("http://" + listener.Addr().String())
+
+	authURL, err := s.startLogin()
 	if err != nil {
-		return Character{}, err
+		return nil, err
 	}
-	defer listener.Close()
-
-	state, err := generateState()
-	if err != nil {
-		return Character{}, fmt.Errorf("generate state: %w", err)
+	if err := openBrowser(authURL); err != nil {
+		return nil, fmt.Errorf("open browser: %w", err)
 	}
 
-	if err := openBrowser(cfg.AuthURL(state, scopes)); err != nil {
-		return Character{}, fmt.Errorf("open browser: %w", err)
+	waitErr := s.wait(ctx)
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return nil, ctxErr
 	}
 
-	rawCallback, err := receiveCallback(ctx, listener.delivery, callbackTimeout)
-	if err != nil {
-		return Character{}, err
+	added, lastErr := s.result()
+	switch {
+	case len(added) > 0:
+		return added, nil
+	case lastErr != nil:
+		return nil, lastErr
+	case waitErr != nil:
+		return nil, waitErr
+	default:
+		return nil, errors.New("the browser login session ended without adding a character")
 	}
-
-	code, gotState, err := parseCallback(rawCallback)
-	if err != nil {
-		return Character{}, err
-	}
-
-	token, claims, err := cfg.Exchange(ctx, code, gotState, state)
-	if err != nil {
-		return Character{}, fmt.Errorf("exchange authorization code: %w", err)
-	}
-
-	characterID, err := characterIDFromClaims(claims)
-	if err != nil {
-		return Character{}, err
-	}
-
-	if err := replaceCharacterRefreshToken(characterID, token.RefreshToken); err != nil {
-		return Character{}, err
-	}
-
-	return Character{ID: characterID, Name: claims.Name}, nil
 }
 
-func parseCallback(rawURL string) (code, state string, err error) {
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return "", "", fmt.Errorf("parse callback URL: %w", err)
-	}
-	q := u.Query()
-	code = q.Get("code")
-	state = q.Get("state")
-	if code == "" {
-		return "", "", errors.New("callback URL missing code parameter")
-	}
-	if state == "" {
-		return "", "", errors.New("callback URL missing state parameter")
-	}
-	return code, state, nil
-}
-
-// ExportedAddCharacter exposes addCharacter for external tests.
-func ExportedAddCharacter(ctx context.Context, cfg interface {
+// ExportedAddCharacters exposes addCharacters for external tests.
+func ExportedAddCharacters(ctx context.Context, cfg interface {
 	AuthURL(state string, scopes []string) string
 	Exchange(ctx context.Context, code, state, expectedState string) (*oauth2.Token, *goesi.ESIJWTClaims, error)
-}, userAgent string, scopes []string) (Character, error) {
-	return addCharacter(ctx, cfg, userAgent, scopes)
+}, userAgent string, opts AddOptions) ([]Character, error) {
+	return addCharacters(ctx, cfg, userAgent, opts)
 }
 
 // SetOpenBrowserForTest overrides the browser launcher for tests.
@@ -168,34 +198,30 @@ func SetOpenBrowserForTest(fn func(rawURL string) error) {
 	openBrowser = fn
 }
 
-// ResetOpenBrowserForTest restores the real browser launcher. Since the
-// real implementation is only ever assigned once (as openBrowser's
-// initializer), tests must not depend on running before any other test has
-// overridden it — resetting re-assigns the same real logic inline.
+// ResetOpenBrowserForTest restores the real browser launcher.
 func ResetOpenBrowserForTest() {
-	openBrowser = func(rawURL string) error {
-		var cmd *exec.Cmd
-		switch runtime.GOOS {
-		case "darwin":
-			cmd = exec.Command("open", rawURL)
-		case "windows":
-			cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", rawURL)
-		default:
-			cmd = exec.Command("xdg-open", rawURL)
-		}
-		if err := cmd.Start(); err != nil {
-			return fmt.Errorf("launch browser: %w", err)
-		}
-		return nil
-	}
+	openBrowser = defaultOpenBrowser
 }
 
-// SetCallbackTimeoutForTest overrides the callback wait timeout for tests.
-func SetCallbackTimeoutForTest(d time.Duration) {
-	callbackTimeout = d
+// SetListenForTest makes sessions listen on addr (e.g. "127.0.0.1:0") and
+// report their base URL to onListen, for tests.
+func SetListenForTest(addr string, onListen func(baseURL string)) {
+	callbackListenAddr = addr
+	onListening = onListen
 }
 
-// ResetCallbackTimeoutForTest restores the real 5-minute callback timeout.
-func ResetCallbackTimeoutForTest() {
-	callbackTimeout = 5 * time.Minute
+// ResetListenForTest restores the real callback address.
+func ResetListenForTest() {
+	callbackListenAddr = "127.0.0.1:" + callbackPort
+	onListening = func(string) {}
+}
+
+// SetTimeoutsForTest overrides the session's timeouts for tests.
+func SetTimeoutsForTest(callback, pageIdle, grace time.Duration) {
+	callbackTimeout, pageIdleTimeout, closeGrace = callback, pageIdle, grace
+}
+
+// ResetTimeoutsForTest restores the real timeouts.
+func ResetTimeoutsForTest() {
+	callbackTimeout, pageIdleTimeout, closeGrace = 5*time.Minute, 30*time.Second, 5*time.Second
 }

@@ -10,9 +10,9 @@ import (
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
-// addCharacter is overridable in tests so no real browser/network/OAuth2
+// addCharacters is overridable in tests so no real browser/network/OAuth2
 // flow runs during unit tests.
-var addCharacter = sso.AddCharacter
+var addCharacters = sso.AddCharacters
 
 // allScopes is the full ESI scope list neat currently requests at login.
 // Deliberately broad during development so any ESI endpoint can be
@@ -110,29 +110,57 @@ var allScopes = []string{
 	"esi.cosmetic.char:read",
 }
 
-// AddCharacterOutput is add_character's tool result.
-type AddCharacterOutput struct {
+// AddedCharacter is one character added by add_character.
+type AddedCharacter struct {
 	CharacterID   int32  `json:"characterId"`
 	CharacterName string `json:"characterName"`
 }
 
+// AddCharacterOutput is add_character's tool result: every character the
+// user logged in during the browser session, in the order they were added.
+type AddCharacterOutput struct {
+	Characters []AddedCharacter `json:"characters"`
+}
+
 func addCharacterHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[any, AddCharacterOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, _ any) (*mcpsdk.CallToolResult, AddCharacterOutput, error) {
-		char, err := addCharacter(ctx, clientID, sso.UserAgent(version), allScopes)
+		chars, err := addCharacters(ctx, clientID, sso.UserAgent(version), sso.AddOptions{
+			Scopes: allScopes,
+			// Save each character as its login completes, not once the
+			// session ends, so the session page lists it and an abandoned
+			// session doesn't lose it.
+			OnAdded: func(c sso.Character) error {
+				cfg, err := store.Load()
+				if err != nil {
+					return fmt.Errorf("load config: %w", err)
+				}
+				upsertCharacter(&cfg, config.Character{ID: c.ID, Name: c.Name})
+				if err := store.Save(cfg); err != nil {
+					return fmt.Errorf("save config: %w", err)
+				}
+				return nil
+			},
+			SavedCharacters: func() ([]sso.Character, error) {
+				cfg, err := store.Load()
+				if err != nil {
+					return nil, fmt.Errorf("load config: %w", err)
+				}
+				out := make([]sso.Character, len(cfg.Characters))
+				for i, c := range cfg.Characters {
+					out[i] = sso.Character{ID: c.ID, Name: c.Name}
+				}
+				return out, nil
+			},
+		})
 		if err != nil {
 			return nil, AddCharacterOutput{}, fmt.Errorf("add character: %w", err)
 		}
 
-		cfg, err := store.Load()
-		if err != nil {
-			return nil, AddCharacterOutput{}, fmt.Errorf("load config: %w", err)
+		out := AddCharacterOutput{Characters: make([]AddedCharacter, len(chars))}
+		for i, c := range chars {
+			out.Characters[i] = AddedCharacter{CharacterID: c.ID, CharacterName: c.Name}
 		}
-		upsertCharacter(&cfg, config.Character{ID: char.ID, Name: char.Name})
-		if err := store.Save(cfg); err != nil {
-			return nil, AddCharacterOutput{}, fmt.Errorf("save config: %w", err)
-		}
-
-		return nil, AddCharacterOutput{CharacterID: char.ID, CharacterName: char.Name}, nil
+		return nil, out, nil
 	}
 }
 
