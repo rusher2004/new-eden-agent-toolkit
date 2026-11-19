@@ -1,5 +1,8 @@
 # neat plugin — changelog
 
+## 0.8.1
+- No changes to neat itself. Building from source gains `make install`, which builds `neat` and installs it to `~/.local/bin`, removing the old binary first so macOS doesn't kill the new one on launch.
+
 ## 0.8.0
 - **Action needed: change the callback URL on your ESI application** at developers.eveonline.com to `http://127.0.0.1:48211/callback`. Until you do, EVE's login page rejects `add_character` logins with an invalid redirect URI error. Existing characters keep working; refresh tokens don't depend on the callback URL.
 - After you log in, the browser tab now lands on a neat page instead of being left on EVE's login page. The page lists your characters, marks the ones just added, and has **Add another character** and **I'm done** buttons. You can also just close the tab.

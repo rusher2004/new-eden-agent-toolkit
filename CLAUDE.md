@@ -105,6 +105,12 @@ actually does.
 go build -ldflags "-X main.version=$(cat VERSION 2>/dev/null || echo dev) -X main.clientID=$(jq -r .clientId app_config.json)" -o neat ./cmd
 ```
 
+`make install` builds and installs `neat` to `~/.local/bin` (override with `PREFIX=...`). It removes the old binary before copying the new one, because on macOS copying a build over an existing binary in place makes the kernel kill it on launch (exit 137); if you install by hand, `rm` first.
+
+```bash
+make install
+```
+
 ## Versioning & Release
 
 The top-level `VERSION` file is the single source of truth for the `neat` binary version, the
