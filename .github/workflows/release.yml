@@ -9,10 +9,8 @@ name: Release
 # workflow. To cut a release: bump VERSION in a PR and merge.
 # workflow_dispatch allows a manual re-run against the current VERSION.
 #
-# Runs on macos-latest (not ubuntu-latest): the darwin build embeds a
-# swiftc-compiled .app bundle via go:embed (urlscheme/urlscheme_darwin.go),
-# which needs `make urlscheme-macos-bundle` -- swiftc only exists on macOS.
-# Go itself cross-compiles the linux/windows targets fine from this runner.
+# Every target is a pure-Go CGO_ENABLED=0 build, so Go cross-compiles all
+# three OSes from this one Linux runner.
 on:
   push:
     branches: [main]
@@ -23,7 +21,7 @@ permissions:
 
 jobs:
   release:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
         with:

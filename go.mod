@@ -14,7 +14,6 @@ require (
 	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/mod v0.43.0
 	golang.org/x/oauth2 v0.38.0
-	golang.org/x/sys v0.50.0
 	gonum.org/v1/gonum v0.16.0
 	modernc.org/sqlite v1.62.0
 )
@@ -32,6 +31,7 @@ require (
 	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	golang.org/x/sync v0.25.0 // indirect
+	golang.org/x/sys v0.50.0 // indirect
 	golang.org/x/time v0.16.0 // indirect
 	gopkg.in/validator.v2 v2.0.1 // indirect
 	modernc.org/libc v1.82.2 // indirect

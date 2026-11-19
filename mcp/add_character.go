@@ -3,6 +3,8 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"sort"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -10,130 +12,121 @@ import (
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
-// addCharacter is overridable in tests so no real browser/network/OAuth2
-// flow runs during unit tests.
-var addCharacter = sso.AddCharacter
+// addCharacters and grantedScopes are overridable in tests so no real
+// browser/network/OAuth2 flow runs during unit tests.
+var (
+	addCharacters = sso.AddCharacters
+	grantedScopes = sso.GrantedScopes
+)
 
-// allScopes is the full ESI scope list neat currently requests at login.
-// Deliberately broad during development so any ESI endpoint can be
-// exercised while domain tools are being built; narrowing this to a
-// minimal per-tool set is a follow-up once real tools exist and their
-// actual scope needs are known.
-//
-// Verified against CCP's live OpenAPI 3.0 spec (fetched with the current compatibility date, per
-// docs/superpowers/specs/2026-07-25-esi-coverage-roadmap-design.md's fetch method) that every
-// scope every implemented tool actually needs is present here. Two scopes that were present but
-// don't correspond to any real CCP scope were removed as part of that verification:
-// "esi-wallet.read_corporation_wallet.v1" (singular -- a bogus duplicate of the real
-// "esi-wallet.read_corporation_wallets.v1", plural, below) and
-// "esi-characters.read_chat_channels.v1" (no corresponding real scope or tool at all -- chat
-// channels aren't a feature this project implements).
-var allScopes = []string{
-	"publicData",
-	"esi-calendar.respond_calendar_events.v1",
-	"esi-calendar.read_calendar_events.v1",
-	"esi-location.read_location.v1",
-	"esi-location.read_ship_type.v1",
-	"esi-mail.organize_mail.v1",
-	"esi-mail.read_mail.v1",
-	"esi-mail.send_mail.v1",
-	"esi-skills.read_skills.v1",
-	"esi-skills.read_skillqueue.v1",
-	"esi-search.search_structures.v1",
-	"esi-clones.read_clones.v1",
-	"esi-characters.read_contacts.v1",
-	"esi-killmails.read_killmails.v1",
-	"esi-corporations.read_corporation_membership.v1",
-	"esi-assets.read_assets.v1",
-	"esi-planets.manage_planets.v1",
-	"esi-fleets.read_fleet.v1",
-	"esi-fleets.write_fleet.v1",
-	"esi-ui.open_window.v1",
-	"esi-characters.write_contacts.v1",
-	"esi-fittings.read_fittings.v1",
-	"esi-fittings.write_fittings.v1",
-	"esi-markets.structure_markets.v1",
-	"esi-corporations.read_structures.v1",
-	"esi-characters.read_loyalty.v1",
-	"esi-characters.read_medals.v1",
-	"esi-characters.read_standings.v1",
-	"esi-characters.read_agents_research.v1",
-	"esi-industry.read_character_jobs.v1",
-	"esi-markets.read_character_orders.v1",
-	"esi-characters.read_blueprints.v1",
-	"esi-characters.read_corporation_roles.v1",
-	"esi-location.read_online.v1",
-	"esi-contracts.read_character_contracts.v1",
-	"esi-clones.read_implants.v1",
-	"esi-characters.read_fatigue.v1",
-	"esi-killmails.read_corporation_killmails.v1",
-	"esi-corporations.track_members.v1",
-	"esi-wallet.read_corporation_wallets.v1",
-	"esi-characters.read_notifications.v1",
-	"esi-corporations.read_divisions.v1",
-	"esi-corporations.read_contacts.v1",
-	"esi-assets.read_corporation_assets.v1",
-	"esi-corporations.read_titles.v1",
-	"esi-corporations.read_blueprints.v1",
-	"esi-corporations.read_standings.v1",
-	"esi-industry.read_corporation_jobs.v1",
-	"esi-markets.read_corporation_orders.v1",
-	"esi-corporations.read_container_logs.v1",
-	"esi-industry.read_character_mining.v1",
-	"esi-industry.read_corporation_mining.v1",
-	"esi-planets.read_customs_offices.v1",
-	"esi-corporations.read_facilities.v1",
-	"esi-corporations.read_medals.v1",
-	"esi-characters.read_titles.v1",
-	"esi-alliances.read_contacts.v1",
-	"esi-corporations.read_fw_stats.v1",
-	"esi-corporations.read_projects.v1",
-	"esi-corporations.read_freelance_jobs.v1",
-	"esi-characters.read_freelance_jobs.v1",
-	"esi-structures.read_corporation.v1",
-	"esi-structures.read_character.v1",
-	"esi-activities.read_character.v1",
-	"esi-access.read_lists.v1",
-	"esi-wallet.read_character_wallet.v1",
-	"esi-universe.read_structures.v1",
-	"esi-ui.write_waypoint.v1",
-	"esi-contracts.read_corporation_contracts.v1",
-	"esi-corporations.read_starbases.v1",
-	"esi-characters.read_fw_stats.v1",
-	// New-style scope names (namespace.resource.subject:verb rather than esi-x.y.v1), introduced
-	// with ESI compatibility date 2026-08-18 and declared in the live spec's OAuth2 scheme.
-	// esi.activity.char:read gates the Military Campaigns tag's 2 character endpoints;
-	// esi.cosmetic.char:read gates Cosmetics' 2 character endpoints and Paragon Hub's 4
-	// authenticated ones. The ESI application registered at developers.eveonline.com must have
-	// both enabled too, or CCP's SSO rejects the whole login with invalid_scope.
-	"esi.activity.char:read",
-	"esi.cosmetic.char:read",
+// AddCharacterInput is add_character's input.
+type AddCharacterInput struct {
+	ScopeGroups []string `json:"scopeGroups,omitempty" jsonschema:"scope groups to grant beyond the always-included basic group, by name from list_scope_groups; pick them from what the user says they'll use neat for, and leave empty if they don't know"`
+	CharacterID int32    `json:"characterId,omitempty" jsonschema:"set when re-authorizing an existing character to grant more scope groups: its currently granted scopes are kept and scopeGroups added to them"`
 }
 
-// AddCharacterOutput is add_character's tool result.
+// AddedCharacter is one character added by add_character.
+type AddedCharacter struct {
+	CharacterID   int32    `json:"characterId"`
+	CharacterName string   `json:"characterName"`
+	ScopeGroups   []string `json:"scopeGroups"`
+}
+
+// AddCharacterOutput is add_character's tool result: every character the
+// user logged in during the browser session, in the order they were added,
+// and warnings about a re-authorization that didn't go as asked.
 type AddCharacterOutput struct {
-	CharacterID   int32  `json:"characterId"`
-	CharacterName string `json:"characterName"`
+	Characters []AddedCharacter `json:"characters"`
+	Warnings   []string         `json:"warnings,omitempty"`
 }
 
-func addCharacterHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[any, AddCharacterOutput] {
-	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, _ any) (*mcpsdk.CallToolResult, AddCharacterOutput, error) {
-		char, err := addCharacter(ctx, clientID, sso.UserAgent(version), allScopes)
+func addCharacterHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[AddCharacterInput, AddCharacterOutput] {
+	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in AddCharacterInput) (*mcpsdk.CallToolResult, AddCharacterOutput, error) {
+		userAgent := sso.UserAgent(version)
+		scopes, err := sso.ScopesFor(in.ScopeGroups)
+		if err != nil {
+			return nil, AddCharacterOutput{}, err
+		}
+		var warnings []string
+		if in.CharacterID != 0 {
+			// CCP replaces a token's scopes on every login rather than
+			// adding to them, so a re-authorization must ask again for
+			// everything the character already granted. If they can't be
+			// read (most often a revoked refresh token, which this login
+			// is the fix for), go ahead, but say what may have been lost.
+			kept, err := grantedScopes(ctx, clientID, in.CharacterID, userAgent)
+			if err != nil {
+				slog.Default().WarnContext(ctx, "add_character: can't read the character's current scopes; requesting only the chosen groups", "characterId", in.CharacterID, "error", err)
+				warnings = append(warnings, fmt.Sprintf("couldn't read the scope groups character %d had already granted (%v), so this login requested only %v. Any other group it had before is no longer granted: ask the user whether it needs any back, and if so call add_character again with characterId %d and those groups.", in.CharacterID, err, sso.GrantedGroups(scopes), in.CharacterID))
+			}
+			scopes = union(scopes, kept)
+		}
+
+		chars, err := addCharacters(ctx, clientID, userAgent, sso.AddOptions{
+			Scopes: scopes,
+			// Save each character as its login completes, not once the
+			// session ends, so the session page lists it and an abandoned
+			// session doesn't lose it.
+			OnAdded: func(c sso.Character) error {
+				cfg, err := store.Load()
+				if err != nil {
+					return fmt.Errorf("load config: %w", err)
+				}
+				upsertCharacter(&cfg, config.Character{ID: c.ID, Name: c.Name})
+				if err := store.Save(cfg); err != nil {
+					return fmt.Errorf("save config: %w", err)
+				}
+				return nil
+			},
+			SavedCharacters: func() ([]sso.Character, error) {
+				cfg, err := store.Load()
+				if err != nil {
+					return nil, fmt.Errorf("load config: %w", err)
+				}
+				out := make([]sso.Character, len(cfg.Characters))
+				for i, c := range cfg.Characters {
+					out[i] = sso.Character{ID: c.ID, Name: c.Name}
+				}
+				return out, nil
+			},
+		})
 		if err != nil {
 			return nil, AddCharacterOutput{}, fmt.Errorf("add character: %w", err)
 		}
 
-		cfg, err := store.Load()
-		if err != nil {
-			return nil, AddCharacterOutput{}, fmt.Errorf("load config: %w", err)
+		out := AddCharacterOutput{Characters: make([]AddedCharacter, len(chars))}
+		reauthorized := false
+		for i, c := range chars {
+			out.Characters[i] = AddedCharacter{CharacterID: c.ID, CharacterName: c.Name, ScopeGroups: sso.GrantedGroups(c.Scopes)}
+			if c.ID == in.CharacterID {
+				reauthorized = true
+			}
 		}
-		upsertCharacter(&cfg, config.Character{ID: char.ID, Name: char.Name})
-		if err := store.Save(cfg); err != nil {
-			return nil, AddCharacterOutput{}, fmt.Errorf("save config: %w", err)
+		if in.CharacterID != 0 && !reauthorized {
+			// Every character logged in this session was granted the
+			// target's scopes, but the target itself is unchanged.
+			warnings = append(warnings, fmt.Sprintf("character %d was not re-authorized: the user didn't log in as it on EVE's page, so it still lacks the requested scope groups. Tell the user, and if they want to try again, call add_character with characterId %d and ask them to log in as that character.", in.CharacterID, in.CharacterID))
 		}
-
-		return nil, AddCharacterOutput{CharacterID: char.ID, CharacterName: char.Name}, nil
+		out.Warnings = warnings
+		return nil, out, nil
 	}
+}
+
+// union returns the sorted, de-duplicated union of a and b.
+func union(a, b []string) []string {
+	set := make(map[string]bool, len(a)+len(b))
+	for _, s := range a {
+		set[s] = true
+	}
+	for _, s := range b {
+		set[s] = true
+	}
+	out := make([]string, 0, len(set))
+	for s := range set {
+		out = append(out, s)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // upsertCharacter replaces the entry in cfg.Characters matching c.ID, or
@@ -146,4 +139,27 @@ func upsertCharacter(cfg *config.Config, c config.Character) {
 		}
 	}
 	cfg.Characters = append(cfg.Characters, c)
+}
+
+// ScopeGroupInfo describes one scope group for list_scope_groups.
+type ScopeGroupInfo struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Default     bool     `json:"default"`
+	Scopes      []string `json:"scopes"`
+}
+
+// ListScopeGroupsOutput is list_scope_groups' tool result.
+type ListScopeGroupsOutput struct {
+	Groups []ScopeGroupInfo `json:"groups"`
+}
+
+func listScopeGroupsHandler() mcpsdk.ToolHandlerFor[any, ListScopeGroupsOutput] {
+	return func(context.Context, *mcpsdk.CallToolRequest, any) (*mcpsdk.CallToolResult, ListScopeGroupsOutput, error) {
+		out := ListScopeGroupsOutput{Groups: make([]ScopeGroupInfo, len(sso.ScopeGroups))}
+		for i, g := range sso.ScopeGroups {
+			out.Groups[i] = ScopeGroupInfo{Name: g.Name, Description: g.Description, Default: g.Name == sso.DefaultScopeGroup, Scopes: g.Scopes}
+		}
+		return nil, out, nil
+	}
 }

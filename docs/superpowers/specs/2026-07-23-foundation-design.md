@@ -1,6 +1,8 @@
 # New Eden Agent Toolkit — Foundation Design
 
 **Status:** Approved, not yet implemented
+
+**Superseded in part (2026-11-19):** the OAuth2 redirect no longer uses the `eveauth-neat://` custom scheme, its per-OS registration (`urlscheme/`), the `callback-handler` subcommand, the `~/.neat/bin/neat` launcher or the Unix-socket handoff described below. It is a loopback HTTP redirect to `http://127.0.0.1:48211/callback` served by `sso/` itself, reversing this spec's "custom scheme only, no loopback-HTTP fallback" decision so the browser tab can land on a neat page. See `2026-11-19-loopback-oauth-callback-design.md`.
 **Date:** 2026-07-23
 
 ## Purpose

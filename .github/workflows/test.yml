@@ -19,12 +19,6 @@ jobs:
         with:
           go-version-file: go.mod
 
-      # go:embed fails at compile time if this hasn't been built yet — every
-      # macOS build/test/vet step below depends on it.
-      - name: Build macOS URL-scheme handler
-        if: runner.os == 'macOS'
-        run: make urlscheme-macos-bundle
-
       # CGO_ENABLED=0 only here: this validates the actual shipped-binary
       # constraint (static, cross-compilable, no CGO dependency). go test
       # -race below needs CGO to build its runtime - that requirement is

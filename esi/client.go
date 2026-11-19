@@ -25,7 +25,12 @@ func NewClient(ctx context.Context, clientID string, characterID int32, userAgen
 	if err != nil {
 		return nil, fmt.Errorf("build authenticated client: %w", err)
 	}
-	return newClientFromHTTPClient(httpClient, characterID, userAgent), nil
+	granted, err := sso.GrantedScopes(ctx, clientID, characterID, userAgent)
+	if err != nil {
+		return nil, fmt.Errorf("read granted scopes: %w", err)
+	}
+	checked := &http.Client{Transport: &scopeCheckTransport{base: httpClient.Transport, characterID: characterID, granted: granted}}
+	return newClientFromHTTPClient(checked, characterID, userAgent), nil
 }
 
 func newClientFromHTTPClient(httpClient *http.Client, characterID int32, userAgent string) *Client {

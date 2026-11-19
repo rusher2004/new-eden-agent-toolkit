@@ -1,5 +1,16 @@
 # neat plugin — changelog
 
+## 0.8.0
+- **Action needed: change the callback URL on your ESI application** at developers.eveonline.com to `http://127.0.0.1:48211/callback`. Until you do, EVE's login page rejects `add_character` logins with an invalid redirect URI error. Existing characters keep working; refresh tokens don't depend on the callback URL.
+- After you log in, the browser tab now lands on a neat page instead of being left on EVE's login page. The page lists your characters, marks the ones just added, and has **Add another character** and **I'm done** buttons. You can also just close the tab.
+- `add_character` can add several characters in one call and returns them all: its output is now `{"characters": [{"characterId", "characterName"}, ...]}` instead of a single character. Each character is saved as soon as its login completes.
+- The `eveauth-neat://` URL scheme, its macOS helper app, and the hidden `callback-handler` command are removed. `neat mcp` no longer registers anything with the OS or copies itself to `~/.neat/bin/neat` at startup. Leftovers from older versions are harmless and can be deleted by hand: `~/.neat/NeatURLHandler.app` and `~/.neat/bin/` on macOS, the `HKCU\Software\Classes\eveauth-neat` registry key on Windows, `~/.local/share/applications/neat-url-handler.desktop` on Linux.
+- Login needs port 48211 on 127.0.0.1 to be free while it runs. If something else is using it, `add_character` fails with an error naming the port.
+- **Logins now ask for only the access you need.** Requesting all 72 ESI scopes at once made EVE's login page fail with "HTTP Error 400. The size of the request headers is too long" after a couple of logins. Scopes now come in groups: `basic` (skills, location, ship, clones) is always granted, and you choose the others, such as `wallet`, `assets`, `industry`, `market`, `mail` or `corporation`. The new `list_scope_groups` tool lists them, and the new `add-character` skill has Claude ask what you'll use neat for and pick the groups.
+- `add_character` takes `scopeGroups` and, to grant more access to a character later, `characterId`; a re-authorization keeps everything the character already granted. Its output now lists the scope groups each character granted, plus `warnings` when a re-authorization didn't go as asked: the user logged in as a different character, or the character's earlier scopes couldn't be read so only the requested groups were granted.
+- A tool that needs a scope its character hasn't granted now fails before calling ESI, with an error naming the scope group and how to grant it, instead of an unexplained 403. Characters added before this version keep all their scopes; nothing changes for them.
+- The ESI application at developers.eveonline.com still needs every scope enabled, so that any group can be requested.
+
 ## 0.7.1
 - Prepares the repo for sharing: tests, fixtures, examples and design docs no longer reference specific players' characters, corporations, structures or home systems. The jump-route regression tests now use Jita → PF-QHK, checked against dotlan. The plugin README drops the private-repo install notes.
 
