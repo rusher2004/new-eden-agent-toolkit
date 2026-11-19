@@ -5,6 +5,7 @@ import (
 	"errors"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/zalando/go-keyring"
@@ -197,6 +198,73 @@ func TestListScopeGroups_MarksDefault(t *testing.T) {
 	for _, g := range out.Groups {
 		if g.Default != (g.Name == sso.DefaultScopeGroup) {
 			t.Errorf("group %q default = %v", g.Name, g.Default)
+		}
+	}
+}
+
+func TestAddCharacterHandler_ReAuthorize_WarnsWhenOldScopesUnreadable(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	var got []string
+	captureScopes(t, &got)
+
+	origGranted := grantedScopes
+	t.Cleanup(func() { grantedScopes = origGranted })
+	grantedScopes = func(context.Context, string, int32, string) ([]string, error) {
+		return nil, errors.New("refresh token revoked")
+	}
+
+	_, out, err := addCharacterHandler("v1", "client-id", store)(context.Background(), nil, AddCharacterInput{CharacterID: 42, ScopeGroups: []string{"wallet"}})
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	want, err := sso.ScopesFor([]string{"wallet"})
+	if err != nil {
+		t.Fatalf("ScopesFor: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("requested scopes = %v, want only the chosen groups %v", got, want)
+	}
+	if len(out.Warnings) != 1 || !strings.Contains(out.Warnings[0], "refresh token revoked") || !strings.Contains(out.Warnings[0], "characterId 42") {
+		t.Errorf("warnings = %q, want one naming the read error and how to re-grant", out.Warnings)
+	}
+}
+
+func TestAddCharacterHandler_ReAuthorize_WarnsWhenOtherCharacterLoggedIn(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	fakeAddCharacters(t, []sso.Character{{ID: 43, Name: "Alt Pilot"}}, nil)
+
+	origGranted := grantedScopes
+	t.Cleanup(func() { grantedScopes = origGranted })
+	grantedScopes = func(context.Context, string, int32, string) ([]string, error) { return nil, nil }
+
+	_, out, err := addCharacterHandler("v1", "client-id", store)(context.Background(), nil, AddCharacterInput{CharacterID: 42, ScopeGroups: []string{"wallet"}})
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if len(out.Warnings) != 1 || !strings.Contains(out.Warnings[0], "character 42 was not re-authorized") {
+		t.Errorf("warnings = %q, want one saying character 42 wasn't re-authorized", out.Warnings)
+	}
+}
+
+func TestAddCharacterHandler_NoWarningsOnPlainAddOrMatchingReAuthorize(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	var got []string
+	captureScopes(t, &got)
+
+	origGranted := grantedScopes
+	t.Cleanup(func() { grantedScopes = origGranted })
+	grantedScopes = func(context.Context, string, int32, string) ([]string, error) { return []string{"publicData"}, nil }
+
+	for _, in := range []AddCharacterInput{{}, {CharacterID: 42, ScopeGroups: []string{"wallet"}}} {
+		_, out, err := addCharacterHandler("v1", "client-id", store)(context.Background(), nil, in)
+		if err != nil {
+			t.Fatalf("handler(%+v): %v", in, err)
+		}
+		if len(out.Warnings) != 0 {
+			t.Errorf("handler(%+v) warnings = %q, want none", in, out.Warnings)
 		}
 	}
 }

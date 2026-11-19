@@ -26,6 +26,7 @@ When a tool fails because a character "hasn't granted neat the ESI scope ...", t
 
 - Tell the user what that access is for, and ask whether to grant it. Don't re-authorize without asking.
 - If they agree, call `add_character` with that `characterId` and the named group in `scopeGroups`. The character keeps everything it already granted. Tell them to log in as that same character on EVE's page.
+- If the result has `warnings`, act on them before retrying: if the user logged in as a different character, tell them and offer to try again; if the character's earlier scope groups couldn't be read, tell them which groups it has now and ask whether it needs any others back.
 - Then retry what failed.
 
 If you can tell the user is about to need several new groups (say they're starting industry planning), ask about all of them at once rather than one failure at a time.

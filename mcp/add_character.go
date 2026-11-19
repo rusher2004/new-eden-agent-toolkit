@@ -33,9 +33,11 @@ type AddedCharacter struct {
 }
 
 // AddCharacterOutput is add_character's tool result: every character the
-// user logged in during the browser session, in the order they were added.
+// user logged in during the browser session, in the order they were added,
+// and warnings about a re-authorization that didn't go as asked.
 type AddCharacterOutput struct {
 	Characters []AddedCharacter `json:"characters"`
+	Warnings   []string         `json:"warnings,omitempty"`
 }
 
 func addCharacterHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[AddCharacterInput, AddCharacterOutput] {
@@ -45,13 +47,17 @@ func addCharacterHandler(version, clientID string, store *config.Store) mcpsdk.T
 		if err != nil {
 			return nil, AddCharacterOutput{}, err
 		}
+		var warnings []string
 		if in.CharacterID != 0 {
 			// CCP replaces a token's scopes on every login rather than
 			// adding to them, so a re-authorization must ask again for
-			// everything the character already granted.
+			// everything the character already granted. If they can't be
+			// read (most often a revoked refresh token, which this login
+			// is the fix for), go ahead, but say what may have been lost.
 			kept, err := grantedScopes(ctx, clientID, in.CharacterID, userAgent)
 			if err != nil {
 				slog.Default().WarnContext(ctx, "add_character: can't read the character's current scopes; requesting only the chosen groups", "characterId", in.CharacterID, "error", err)
+				warnings = append(warnings, fmt.Sprintf("couldn't read the scope groups character %d had already granted (%v), so this login requested only %v. Any other group it had before is no longer granted: ask the user whether it needs any back, and if so call add_character again with characterId %d and those groups.", in.CharacterID, err, sso.GrantedGroups(scopes), in.CharacterID))
 			}
 			scopes = union(scopes, kept)
 		}
@@ -89,9 +95,19 @@ func addCharacterHandler(version, clientID string, store *config.Store) mcpsdk.T
 		}
 
 		out := AddCharacterOutput{Characters: make([]AddedCharacter, len(chars))}
+		reauthorized := false
 		for i, c := range chars {
 			out.Characters[i] = AddedCharacter{CharacterID: c.ID, CharacterName: c.Name, ScopeGroups: sso.GrantedGroups(c.Scopes)}
+			if c.ID == in.CharacterID {
+				reauthorized = true
+			}
 		}
+		if in.CharacterID != 0 && !reauthorized {
+			// Every character logged in this session was granted the
+			// target's scopes, but the target itself is unchanged.
+			warnings = append(warnings, fmt.Sprintf("character %d was not re-authorized: the user didn't log in as it on EVE's page, so it still lacks the requested scope groups. Tell the user, and if they want to try again, call add_character with characterId %d and ask them to log in as that character.", in.CharacterID, in.CharacterID))
+		}
+		out.Warnings = warnings
 		return nil, out, nil
 	}
 }
