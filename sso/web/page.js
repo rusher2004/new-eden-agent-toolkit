@@ -2,6 +2,12 @@
 // the page goes away so the waiting add_character call can return promptly.
 (function () {
   "use strict";
+  var toast = document.getElementById("toast");
+  if (toast) {
+    setTimeout(function () { toast.classList.add("hide"); }, 4000);
+    toast.addEventListener("transitionend", function () { toast.remove(); });
+  }
+
   var token = document.body.dataset.token;
   if (!token) return;
 

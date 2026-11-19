@@ -262,6 +262,11 @@ func (s *loginSession) handlePage(w http.ResponseWriter, _ *http.Request) {
 	s.mu.Lock()
 	s.extendBy(pageIdleTimeout)
 	n := s.notice
+	// A success shows once, as a toast; the character's "Added just now"
+	// badge carries it after that. An error stays until the next login.
+	if n.Kind == "success" {
+		s.notice = notice{}
+	}
 	s.mu.Unlock()
 	s.render(w, http.StatusOK, n, false)
 }

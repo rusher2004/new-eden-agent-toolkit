@@ -255,6 +255,10 @@ func TestAddCharacters_LoginThenDone_ReturnsCharacterAndSavesToken(t *testing.T)
 		}
 	}
 
+	if again, _ := s.page(); strings.Contains(again, "Added Test Pilot.") {
+		t.Error("success toast shown again on reload, want it shown once")
+	}
+
 	resp, body = s.post("/done", token)
 	if resp.StatusCode != http.StatusOK || !strings.Contains(body, "All set") {
 		t.Errorf("POST /done = %d, body missing 'All set'", resp.StatusCode)
