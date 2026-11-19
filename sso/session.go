@@ -237,7 +237,7 @@ func (s *loginSession) completeLogin(q url.Values, expectedState string) (Charac
 	if err := replaceCharacterRefreshToken(characterID, token.RefreshToken); err != nil {
 		return Character{}, err
 	}
-	char := Character{ID: characterID, Name: claims.Name}
+	char := Character{ID: characterID, Name: claims.Name, Scopes: []string(claims.Scopes)}
 	if s.opts.OnAdded != nil {
 		if err := s.opts.OnAdded(char); err != nil {
 			return Character{}, fmt.Errorf("record %s: %w", char.Name, err)

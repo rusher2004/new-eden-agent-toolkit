@@ -12,9 +12,16 @@ import (
 	"github.com/rusher2004/new-eden-agent-toolkit/creds"
 )
 
+// cachedClient is one character's authenticated client and the token
+// source behind it, which GrantedScopes reads the current token from.
+type cachedClient struct {
+	client *http.Client
+	source oauth2.TokenSource
+}
+
 var (
 	clientCacheMu sync.Mutex
-	clientCache   = map[int32]*http.Client{}
+	clientCache   = map[int32]cachedClient{}
 )
 
 // AuthenticatedClient returns an authenticated, auto-refreshing HTTP client
@@ -46,7 +53,7 @@ func AuthenticatedClient(ctx context.Context, clientID string, characterID int32
 	defer clientCacheMu.Unlock()
 
 	if c, ok := clientCache[characterID]; ok {
-		return c, nil
+		return c.client, nil
 	}
 
 	refreshToken, err := creds.CharacterRefreshToken(characterID)
@@ -70,7 +77,7 @@ func AuthenticatedClient(ctx context.Context, clientID string, characterID int32
 	}
 	client := oauth2.NewClient(rCtx, source)
 
-	clientCache[characterID] = client
+	clientCache[characterID] = cachedClient{client: client, source: source}
 	return client, nil
 }
 

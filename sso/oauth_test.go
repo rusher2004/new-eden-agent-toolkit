@@ -67,6 +67,7 @@ func (f *fakeOAuthConfig) Exchange(ctx context.Context, code, state, expectedSta
 	claims := &goesi.ESIJWTClaims{
 		RegisteredClaims: jwt.RegisteredClaims{Subject: "CHARACTER:EVE:" + strconv.Itoa(int(c.ID))},
 		Name:             c.Name,
+		Scopes:           goesi.StringOrArray(c.Scopes),
 	}
 	return &oauth2.Token{RefreshToken: "refresh-" + code}, claims, nil
 }
@@ -244,7 +245,7 @@ func TestAddCharacters_LoginThenDone_ReturnsCharacterAndSavesToken(t *testing.T)
 	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/" {
 		t.Fatalf("callback = %d to %q, want 303 to /", resp.StatusCode, resp.Header.Get("Location"))
 	}
-	if got := <-s.added; got != (sso.Character{ID: 998877, Name: "Test Pilot"}) {
+	if got := <-s.added; !reflect.DeepEqual(got, sso.Character{ID: 998877, Name: "Test Pilot"}) {
 		t.Errorf("OnAdded got %+v", got)
 	}
 
@@ -550,4 +551,53 @@ func TestAddCharacters_ReAdd_EvictsCachedClient(t *testing.T) {
 	if fresh == stale {
 		t.Error("AuthenticatedClient returned the stale cached client after re-add, want a fresh one built from the new token")
 	}
+}
+
+func TestAddCharacters_RequestsScopesAndRecordsGranted(t *testing.T) {
+	fake := pilots()
+	granted := []string{"publicData", "esi-skills.read_skills.v1"}
+	fake.chars["char-998879"] = sso.Character{ID: 998879, Name: "Scoped Pilot", Scopes: granted}
+	t.Setenv("HOME", t.TempDir())
+
+	authURLs := make(chan string, 1)
+	baseCh := make(chan string, 1)
+	sso.SetListenForTest("127.0.0.1:0", func(base string) { baseCh <- base })
+	t.Cleanup(sso.ResetListenForTest)
+	sso.SetOpenBrowserForTest(func(rawURL string) error { authURLs <- rawURL; return nil })
+	t.Cleanup(sso.ResetOpenBrowserForTest)
+
+	var gotScopes []string
+	recordingFake := &scopeRecordingConfig{fakeOAuthConfig: fake, scopes: &gotScopes}
+	result := make(chan addResult, 1)
+	go func() {
+		chars, err := sso.ExportedAddCharacters(context.Background(), recordingFake, "test-agent", sso.AddOptions{Scopes: granted})
+		result <- addResult{chars, err}
+	}()
+	s := &session{t: t, base: <-baseCh, authURLs: authURLs, result: result,
+		client: &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+
+	s.callback("char-998879", s.state())
+	_, token := s.page()
+	s.post("/done", token)
+	res := s.wait()
+
+	if !reflect.DeepEqual(gotScopes, granted) {
+		t.Errorf("requested scopes = %v, want %v", gotScopes, granted)
+	}
+	if res.err != nil || len(res.chars) != 1 || !reflect.DeepEqual(res.chars[0].Scopes, granted) {
+		t.Errorf("result = %+v, %v; want the character with its granted scopes", res.chars, res.err)
+	}
+}
+
+// scopeRecordingConfig records the scopes each AuthURL call requests.
+type scopeRecordingConfig struct {
+	*fakeOAuthConfig
+	scopes *[]string
+}
+
+func (c *scopeRecordingConfig) AuthURL(state string, scopes []string) string {
+	if state != "" {
+		*c.scopes = scopes
+	}
+	return c.fakeOAuthConfig.AuthURL(state, scopes)
 }

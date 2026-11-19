@@ -8,7 +8,7 @@ import (
 	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 )
 
-// NewServer builds neat's MCP server with add_character, list_characters,
+// NewServer builds neat's MCP server with add_character, list_scope_groups, list_characters,
 // remove_character, get_wallet_balance, list_character_wallet_journal,
 // list_character_wallet_transactions, list_corporation_wallets,
 // list_corporation_wallet_journal, list_corporation_wallet_transactions,
@@ -92,9 +92,16 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	server := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "neat", Version: version}, nil)
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "add_character",
-		Description: "Log in EVE Online characters via ESI OAuth2. Opens the user's browser at EVE's login page; afterwards the browser shows a neat page listing their characters, where they can log in more characters before clicking Done or closing the tab. Blocks until then and returns every character added. Re-adding a known character refreshes its login.",
+		Name: "add_character",
+		Description: "Log in EVE Online characters via ESI OAuth2. Opens the user's browser at EVE's login page; afterwards the browser shows a neat page listing their characters, where they can log in more characters before clicking Done or closing the tab. Blocks until then and returns every character added, with the scope groups each granted. " +
+			"Every login grants the basic scope group plus scopeGroups: before calling, ask the user what they'll use neat for and pick groups from list_scope_groups (or use only basic if they don't know). " +
+			"To grant more groups to a character later (e.g. after a tool fails because a scope is missing), pass its characterId: its existing scopes are kept. Re-adding a known character refreshes its login.",
 	}, addCharacterHandler(version, clientID, store))
+
+	mcpsdk.AddTool(server, &mcpsdk.Tool{
+		Name:        "list_scope_groups",
+		Description: "List the scope groups add_character can grant a character: each group's name, what it lets neat do, and its ESI scopes. The basic group is always granted.",
+	}, listScopeGroupsHandler())
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_characters",

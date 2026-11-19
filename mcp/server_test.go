@@ -55,7 +55,7 @@ func TestServer_AllToolsRegistered(t *testing.T) {
 		names[tool.Name] = true
 	}
 	for _, want := range []string{
-		"add_character", "list_characters", "remove_character", "get_wallet_balance",
+		"add_character", "list_scope_groups", "list_characters", "remove_character", "get_wallet_balance",
 		"list_character_wallet_journal", "list_character_wallet_transactions",
 		"list_corporation_wallets", "list_corporation_wallet_journal", "list_corporation_wallet_transactions",
 		"list_access_lists", "get_access_list",
