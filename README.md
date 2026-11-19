@@ -1,6 +1,6 @@
 # neat — New Eden Agent Toolkit
 
-neat lets Claude see your EVE Online characters and the game's data, so you can ask about them in plain language instead of clicking through windows and third-party sites.
+neat is a tool that enables you to work with Claude for all things Eve Online. Using static data exports and the ESI API, you'll have anything you need related to your characters, corporations, and the wider Eve universe.
 
 Once it's set up, you can ask Claude things like:
 
@@ -10,11 +10,14 @@ Once it's set up, you can ask Claude things like:
 - "Which of my market orders have been undercut?"
 - "What would it cost to build 10 Ravens with my blueprints at my Raitaru? Should I build the components or buy them?"
 - "Plan a jump freighter route from Jita to my home system that stays out of Delve."
+- "Find me a quiet low-sec system bordering a high-sec system near Amarr."
 - "Summarize my unread mail and the corp calendar for this week."
 
-neat runs on your own computer. You log your characters in through EVE's official login page, the same way you would for any third-party EVE app, and you choose what each one lets neat see. Your login tokens live in your operating system's keychain, never in a file. neat talks only to CCP's ESI API and downloads public game data. It sends nothing anywhere else, but whatever it reads becomes part of your conversation with Claude.
+neat runs entirely on your own computer, nothing is stored on a server. Your login tokens live in your operating system's keychain, never in a file. neat talks only to CCP, and downloads public game data from fuzzwork.co.uk and EVE Ref. See [Privacy](https://github.com/rusher2004/new-eden-agent-toolkit/blob/main/PRIVACY.md) for everything neat connects to and stores.
 
 It works in [Claude Code](https://claude.com/claude-code) and the [Claude desktop app](https://claude.ai/download), and in any other app that supports MCP servers.
+
+> heads up, the first time neat needs to access info about in-game items or universe stuff, there will be a big download of the static data export, so it'll take a few minutes or more.
 
 ## Install
 
