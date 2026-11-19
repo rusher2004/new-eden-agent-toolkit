@@ -7,7 +7,7 @@ subagent spawn cap was hit during the Sovereignty batch.
 
 ## Scope
 
-CCP's "Structures" tag, 6 endpoints, all verified directly against the installed
+FC's "Structures" tag, 6 endpoints, all verified directly against the installed
 `github.com/fnt-eve/goesi-openapi@v0.0.37` module's `esi/api_structures.go` and
 `esi/api/openapi.yaml`:
 

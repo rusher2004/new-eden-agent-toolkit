@@ -787,7 +787,7 @@ Create `CLAUDE.md`:
 # neat — New Eden Agent Toolkit
 
 Go MCP server + Claude Code plugin + Claude Desktop extension for interacting with EVE Online via
-CCP's ESI API and the EVE Ref Static Data Export (SDE). Design spec:
+FC's ESI API and the EVE Ref Static Data Export (SDE). Design spec:
 `docs/superpowers/specs/2026-07-23-foundation-design.md`.
 
 ## Architecture

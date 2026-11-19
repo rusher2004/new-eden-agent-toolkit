@@ -126,7 +126,7 @@ Verified generated signatures (from `github.com/fnt-eve/goesi-openapi@v0.0.37/es
 - `PostCharactersCharacterIdAssetsLocations(ctx, characterId int64) ...RequestBody([]int64) ...Execute() ([]CharactersCharacterIdAssetsLocationsPostInner, *http.Response, error)`
 - `PostCharactersCharacterIdAssetsNames(ctx, characterId int64) ...RequestBody([]int64) ...Execute() ([]CharactersCharacterIdAssetsNamesPostInner, *http.Response, error)`
 - `GetCorporationsCorporationIdAssets(ctx, corporationId int64) ...Execute() ([]CorporationsCorporationIdAssetsGetInner, *http.Response, error)`
-- `PostCorporationsCorporationIdAssetsLocations(ctx, corporationId int64) ...RequestBody([]int64) ...Execute() ([]CharactersCharacterIdAssetsLocationsPostInner, *http.Response, error)` — **note**: the corp variant's response reuses the character variant's `CharactersCharacterIdAssetsLocationsPostInner`/`CharactersCharacterIdAssetsNamesPostInner` types (confirmed from source — CCP's generator produced identical shapes and didn't duplicate the model)
+- `PostCorporationsCorporationIdAssetsLocations(ctx, corporationId int64) ...RequestBody([]int64) ...Execute() ([]CharactersCharacterIdAssetsLocationsPostInner, *http.Response, error)` — **note**: the corp variant's response reuses the character variant's `CharactersCharacterIdAssetsLocationsPostInner`/`CharactersCharacterIdAssetsNamesPostInner` types (confirmed from source — FC's generator produced identical shapes and didn't duplicate the model)
 - `PostCorporationsCorporationIdAssetsNames(ctx, corporationId int64) ...RequestBody([]int64) ...Execute() ([]CharactersCharacterIdAssetsNamesPostInner, *http.Response, error)`
 
 Response models (verified):
@@ -197,7 +197,7 @@ func (c *Client) CalendarEventAttendees(ctx context.Context, eventID int64) ([]e
 // RespondToCalendarEvent sets the client's character's RSVP status on a calendar event.
 // response must be one of "accepted", "declined", or "tentative" — ESI's own accepted values;
 // the MCP layer validates this before calling, so a bad value fails fast with a clear message.
-// This is a write: it changes state on CCP's server. ESI returns no response body (204).
+// This is a write: it changes state on FC's server. ESI returns no response body (204).
 func (c *Client) RespondToCalendarEvent(ctx context.Context, eventID int64, response string) error {
 	resp, err := c.api.CalendarAPI.PutCharactersCharacterIdCalendarEventId(ctx, int64(c.characterID), eventID).
 		PutCharactersCharacterIdCalendarEventIdRequest(esiapi.PutCharactersCharacterIdCalendarEventIdRequest{Response: response}).

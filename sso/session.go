@@ -36,7 +36,7 @@ type loginSession struct {
 	opts       AddOptions
 	host       string // the only Host header the server answers to
 	token      string // anti-CSRF token every POST must carry
-	authOrigin string // CCP's login origin, allowed as a form-action target
+	authOrigin string // FC's login origin, allowed as a form-action target
 
 	wake chan struct{} // signalled whenever expires or finished changes
 
@@ -93,7 +93,7 @@ func (s *loginSession) extendBy(d time.Duration) {
 }
 
 // startLogin begins a new login, replacing any one still in flight, and
-// returns the CCP URL to send the browser to.
+// returns the FC URL to send the browser to.
 func (s *loginSession) startLogin() (string, error) {
 	state, err := generateState()
 	if err != nil {
@@ -297,7 +297,7 @@ func (s *loginSession) handlePing(w http.ResponseWriter, _ *http.Request) {
 
 // handleClosed is the page's beacon on being hidden for good (tab closed,
 // navigated away, or reloaded). It shortens the session to closeGrace
-// unless a login is in flight, since navigating to CCP's login page fires
+// unless a login is in flight, since navigating to FC's login page fires
 // the same beacon.
 func (s *loginSession) handleClosed(w http.ResponseWriter, _ *http.Request) {
 	s.mu.Lock()

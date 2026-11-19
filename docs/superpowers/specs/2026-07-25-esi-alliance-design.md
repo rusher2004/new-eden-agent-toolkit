@@ -9,7 +9,7 @@ PR #6) precede this one.
 ## Goal
 
 Cover the Alliance resource group. Unlike every prior tag, all four Alliance endpoints are public
-— verified against CCP's live OpenAPI spec, every operation has `security: []`. This introduces a
+— verified against FC's live OpenAPI spec, every operation has `security: []`. This introduces a
 new convention: public/unauthenticated tags don't need a per-character existence check or even a
 logged-in character at all.
 
@@ -32,7 +32,7 @@ brainstorm/spec/plan when picked up.
 
 ## New convention: public/unauthenticated tags
 
-Verified via CCP's live OpenAPI spec (`https://esi.evetech.net/meta/openapi-3.0.json`): all four
+Verified via FC's live OpenAPI spec (`https://esi.evetech.net/meta/openapi-3.0.json`): all four
 Alliance operations have `security: []`.
 
 ```

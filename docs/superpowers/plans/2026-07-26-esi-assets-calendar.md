@@ -15,7 +15,7 @@
 - Every `esi/` method that calls `.Execute()` must route its error and `*http.Response` through `describeError` (`esi/error.go`) before wrapping — existing hard rule.
 - External test packages by default (`package foo_test`); `*_internal_test.go` only when a test genuinely needs an unexported symbol.
 - Standard library only in tests — no testify.
-- Raw-ID passthrough: no code in this plan resolves any ID (`type_id`, `location_id`) to a human-readable name. `AssetNames` is a genuine exception worth noting: it returns ESI's own player-assigned custom names (e.g. a renamed ship or container) — a dynamic per-item feature CCP's API itself provides, not an SDE-backed static lookup, so passing it through directly does not violate the SDE-over-ESI rule.
+- Raw-ID passthrough: no code in this plan resolves any ID (`type_id`, `location_id`) to a human-readable name. `AssetNames` is a genuine exception worth noting: it returns ESI's own player-assigned custom names (e.g. a renamed ship or container) — a dynamic per-item feature FC's API itself provides, not an SDE-backed static lookup, so passing it through directly does not violate the SDE-over-ESI rule.
 - Every new MCP tool checks `config.Store` for character existence before calling ESI, returning `ErrCharacterNotFound` if not found — matching every prior character-scoped tool.
 - Write-tool convention (new, established in the design spec): a write tool's name is verb-first and distinct from every `list_`/`get_` read tool (`respond_calendar_event`), and its description explicitly states it changes state. No confirmation parameter. `respond_calendar_event`'s handler validates its `response` input (`"accepted"`, `"declined"`, or `"tentative"`) **before** loading `config.Store` or calling ESI — fail fast on bad input without an unnecessary IO round-trip.
 - This branch is the shared PR branch (`worktree-esi-access-list-activities`, currently at commit `af82075`) — no separate feature branch, per the standing project convention that every ESI-coverage batch since Wallet folds into the same open PR (#6). The current tool-count baseline is **13** (`add_character`, `list_characters`, `remove_character`, `get_wallet_balance`, `list_access_lists`, `get_access_list`, `list_mercenary_tactical_operations`, `get_mercenary_tactical_operation`, `list_raidable_skyhooks`, `list_alliances`, `get_alliance`, `list_alliance_corporations`, `get_alliance_icons`) — verified by reading `mcp/server.go`/`mcp/server_test.go` directly before writing this plan.
@@ -492,7 +492,7 @@ func (c *Client) CalendarEventAttendees(ctx context.Context, eventID int64) ([]e
 // RespondToCalendarEvent sets the client's character's RSVP status on a calendar event.
 // response must be one of "accepted", "declined", or "tentative" — ESI's own accepted values;
 // the MCP layer validates this before calling, so a bad value fails fast with a clear message.
-// This is a write: it changes state on CCP's server. ESI returns no response body (204).
+// This is a write: it changes state on FC's server. ESI returns no response body (204).
 func (c *Client) RespondToCalendarEvent(ctx context.Context, eventID int64, response string) error {
 	resp, err := c.api.CalendarAPI.PutCharactersCharacterIdCalendarEventId(ctx, int64(c.characterID), eventID).
 		PutCharactersCharacterIdCalendarEventIdRequest(esiapi.PutCharactersCharacterIdCalendarEventIdRequest{Response: response}).
@@ -1758,7 +1758,7 @@ type RespondCalendarEventOutput struct {
 	Response    string `json:"response"`
 }
 
-// respondCalendarEventHandler is neat's first write tool. It changes state on CCP's server, so
+// respondCalendarEventHandler is neat's first write tool. It changes state on FC's server, so
 // unlike every read-only handler in this project it validates its input BEFORE loading
 // config.Store or calling ESI — failing fast on bad input without an unnecessary IO round-trip.
 func respondCalendarEventHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[RespondCalendarEventInput, RespondCalendarEventOutput] {

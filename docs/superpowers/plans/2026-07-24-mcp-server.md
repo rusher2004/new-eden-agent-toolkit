@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the `neat mcp` command and its three character-management MCP tools (`add_character`, `list_characters`, `remove_character`), and close a CCP ESI User-Agent compliance gap in `sso/` discovered while designing this plan.
+**Goal:** Build the `neat mcp` command and its three character-management MCP tools (`add_character`, `list_characters`, `remove_character`), and close a FC ESI User-Agent compliance gap in `sso/` discovered while designing this plan.
 
-**Architecture:** A new `mcp/` package builds the MCP server (official `modelcontextprotocol/go-sdk`) and registers the three tools against it; a new `commands/mcp.go` provides the thin CLI entrypoint and startup wiring (launcher-binary population + URL-scheme registration). `sso/` gains a `UserAgent` helper and two outbound-request changes so CCP's login/JWKS endpoints see a compliant identifying header.
+**Architecture:** A new `mcp/` package builds the MCP server (official `modelcontextprotocol/go-sdk`) and registers the three tools against it; a new `commands/mcp.go` provides the thin CLI entrypoint and startup wiring (launcher-binary population + URL-scheme registration). `sso/` gains a `UserAgent` helper and two outbound-request changes so FC's login/JWKS endpoints see a compliant identifying header.
 
 **Tech Stack:** Go 1.26.1, `github.com/modelcontextprotocol/go-sdk` v1.6.1 (`mcp` subpackage, aliased `mcpsdk`), `github.com/fnt-eve/goesi-openapi`, `github.com/MicahParks/jwkset`, `github.com/MicahParks/keyfunc/v3`, `github.com/urfave/cli/v3`.
 
@@ -18,7 +18,7 @@
 - External test packages by default (`package foo_test`); `*_internal_test.go` only when a test genuinely needs an unexported symbol.
 - Table-driven tests only where they naturally fit; independent, clearly-named tests otherwise. Standard library only — no `testify`.
 - `keyring.MockInit()` before any test touches keychain-backed code.
-- User-Agent for all outbound CCP requests: `"neat/<version> (maintainer@example.com; +https://github.com/rusher2004/new-eden-agent-toolkit)"`.
+- User-Agent for all outbound FC requests: `"neat/<version> (maintainer@example.com; +https://github.com/rusher2004/new-eden-agent-toolkit)"`.
 - `mcp/` package files alias the SDK import as `mcpsdk` (`mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"`) to avoid shadowing the package's own name — same rationale as `commands` aliasing `cli`.
 - Docs (`CLAUDE.md`, `README.md`) updated in the same PR as the behavior they describe, per this repo's doc-sync rule.
 - Design spec: `docs/superpowers/specs/2026-07-24-mcp-server-design.md`. Foundation spec: `docs/superpowers/specs/2026-07-23-foundation-design.md`.
@@ -114,7 +114,7 @@ const (
 	jwksURL = "https://login.eveonline.com/oauth/jwks"
 )
 
-// UserAgent builds neat's User-Agent string for outbound CCP requests, per
+// UserAgent builds neat's User-Agent string for outbound FC requests, per
 // https://developers.eveonline.com/docs/services/esi/best-practices/#user-agents.
 func UserAgent(version string) string {
 	return fmt.Sprintf("neat/%s (%s; +%s)", version, contactEmail, repoURL)
@@ -231,7 +231,7 @@ Expected: PASS for every existing test (`TestAddCharacter_FullFlow_Succeeds`, `T
 
 ```bash
 git add sso/useragent.go sso/useragent_internal_test.go sso/oauth.go go.mod go.sum
-git commit -m "feat: add CCP-compliant User-Agent to sso outbound requests"
+git commit -m "feat: add FC-compliant User-Agent to sso outbound requests"
 ```
 
 ---
@@ -1341,7 +1341,7 @@ More packages (`esi/`, `sde/`, `mcp/`) land in follow-up plans — see `docs/sup
 with:
 
 ```markdown
-| `sso/` | ESI OAuth2/PKCE login flow: PKCE + state generation, a two-socket Unix IPC handoff for the callback (a lock socket that's bound but never `Accept()`-ed, plus a separate delivery socket), orchestration via `github.com/fnt-eve/goesi-openapi`, refresh-token persistence via `creds/`. All outbound requests to CCP (JWKS fetch, OAuth2 token exchange) carry `sso.UserAgent(version)`, per ESI's User-Agent best practices |
+| `sso/` | ESI OAuth2/PKCE login flow: PKCE + state generation, a two-socket Unix IPC handoff for the callback (a lock socket that's bound but never `Accept()`-ed, plus a separate delivery socket), orchestration via `github.com/fnt-eve/goesi-openapi`, refresh-token persistence via `creds/`. All outbound requests to FC (JWKS fetch, OAuth2 token exchange) carry `sso.UserAgent(version)`, per ESI's User-Agent best practices |
 | `mcp/` | MCP server (official `github.com/modelcontextprotocol/go-sdk`) and its three tools: `add_character`, `list_characters`, `remove_character` |
 
 More packages (`esi/`, `sde/`) land in follow-up plans — see `docs/superpowers/plans/`.
@@ -1358,7 +1358,7 @@ Also update the `commands/` row to mention `mcp`:
 In the `## Hard rules` section, add:
 
 ```markdown
-- **ESI User-Agent compliance**: every outbound request to CCP's login/ESI endpoints must carry `sso.UserAgent(version)`. CCP's best-practices guidance treats non-compliant User-Agents as grounds for a temporary ban — see `sso/useragent.go`.
+- **ESI User-Agent compliance**: every outbound request to FC's login/ESI endpoints must carry `sso.UserAgent(version)`. FC's best-practices guidance treats non-compliant User-Agents as grounds for a temporary ban — see `sso/useragent.go`.
 ```
 
 - [ ] **Step 3: Update `CLAUDE.md`'s Build section**

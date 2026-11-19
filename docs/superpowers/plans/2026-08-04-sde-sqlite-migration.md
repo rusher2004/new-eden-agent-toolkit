@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace `sde/`'s bbolt + CCP-jsonl-zip + EVE-Ref-reference-data + EVE-Ref-esi-scrape pipeline with a single source — fuzzwork.co.uk's SQLite SDE dump — queried directly, with no change to `sde.Store`'s exported method signatures except `Name`/`Description` fields changing from `map[string]string` to `string`.
+**Goal:** Replace `sde/`'s bbolt + FC-jsonl-zip + EVE-Ref-reference-data + EVE-Ref-esi-scrape pipeline with a single source — fuzzwork.co.uk's SQLite SDE dump — queried directly, with no change to `sde.Store`'s exported method signatures except `Name`/`Description` fields changing from `map[string]string` to `string`.
 
 **Architecture:** `sde/` opens `~/.neat/sde/eve.db` (downloaded/gunzipped from `https://www.fuzzwork.co.uk/dump/latest-sqlite.db.gz`, ETag-checked like today's EVE Ref fetches) via `database/sql` + `modernc.org/sqlite` (pure Go, keeps `CGO_ENABLED=0`), and every accessor runs a parameterized `SELECT` instead of a bbolt bucket `Get`. A small in-process overlay (`sync.Map`) replaces bbolt as the target of `PutX`'s cache-miss write-back. Three fields with no source in the dump (`PackagedVolume`, `AllianceID`, `SofDNA`) keep coming from trimmed-down EVE Ref fetches, held as in-memory `Store` fields set once per sync.
 
@@ -221,7 +221,7 @@ Expected: compile failure — `Store`, `storeMeta`, `putOverlay`, `getOverlay`, 
 - [ ] **Step 4: Rewrite `sde/store.go`**
 
 ```go
-// Package sde caches CCP's Static Data Export -- sourced from fuzzwork.co.uk's
+// Package sde caches FC's Static Data Export -- sourced from fuzzwork.co.uk's
 // periodically-refreshed SQLite conversion of the SDE, queried directly via
 // database/sql -- plus a narrow, in-memory-only augmentation from EVE Ref's
 // esi-scrape/reference-data bulk exports for the handful of fields (type
@@ -1078,7 +1078,7 @@ Expected: per this plan's "A note on task-by-task test execution", this will sti
 git add sde/sync.go sde/sync_test.go
 git commit -m "sde: rewrite sync for fuzzwork dump download + trimmed EVE Ref fetch
 
-Replaces the CCP-jsonl-zip parse-and-write-to-bbolt pipeline with a
+Replaces the FC-jsonl-zip parse-and-write-to-bbolt pipeline with a
 single ETag-gated download+gunzip+atomic-rename of fuzzwork's SQLite
 dump. reference-data/esi-scrape shrink to just the three fields with no
 home in the dump (type PackagedVolume, race AllianceID, graphic SofDNA),
@@ -2686,7 +2686,7 @@ is empty in the dump), documented in the migration design spec."
 - Produces: `type Star struct{ ID, SolarSystemID, TypeID, Age, Radius, Temperature int64; Luminosity float64; Name, SpectralClass string }`, `func (s *Store) Star(...) (Star, bool, error)`, `func (s *Store) PutStar(Star) error`.
 - Produces: `type Stargate struct{ ID, TypeID, SystemID, DestinationStargateID, DestinationSystemID int64; Name string; Position Position }`, `func (s *Store) Stargate(...) (Stargate, bool, error)`, `func (s *Store) PutStargate(Stargate) error`.
 
-All five share the same shape: a single-row query against `mapDenormalize` filtered by `itemID` and the resource's `groupID` (7=Planet, 8=Moon, 9/4430=Asteroid Belt, 6=Sun, 10=Stargate), keeping the existing `AsteroidBelt`/`Moon`/`Planet`/`Star`/`Stargate` doc comments' explanation of *why* each one exists (no separate CCP jsonl source, all celestial detail lives only in `mapDenormalize`/`mapCelestialStatistics` now, not esi-scrape).
+All five share the same shape: a single-row query against `mapDenormalize` filtered by `itemID` and the resource's `groupID` (7=Planet, 8=Moon, 9/4430=Asteroid Belt, 6=Sun, 10=Stargate), keeping the existing `AsteroidBelt`/`Moon`/`Planet`/`Star`/`Stargate` doc comments' explanation of *why* each one exists (no separate FC jsonl source, all celestial detail lives only in `mapDenormalize`/`mapCelestialStatistics` now, not esi-scrape).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -3182,8 +3182,8 @@ import (
 // AsteroidBelt is a minimal decode of a fuzzwork mapDenormalize row filtered
 // to groupID 9 or 4430 (both observed as "Asteroid Belt" in invGroups --
 // 4430 covers wormhole-system belts). Unlike every other sde/ resource,
-// there is no CCP SDE jsonl source for this data at all even historically --
-// asteroid belt names are computed server-side by CCP. mapDenormalize
+// there is no FC SDE jsonl source for this data at all even historically --
+// asteroid belt names are computed server-side by FC. mapDenormalize
 // carries it directly, replacing the old esi-scrape-only source.
 type AsteroidBelt struct {
 	ID       int64
@@ -4588,10 +4588,10 @@ real fuzzwork dump."
 - [ ] **Step 1: Update `CLAUDE.md`'s `sde/` package-table row**
 
 ```markdown
-- `sde/` | Local cache of CCP's Static Data Export plus EVE Ref's
+- `sde/` | Local cache of FC's Static Data Export plus EVE Ref's
   `reference-data`/`esi-scrape` bulk exports, backed by `go.etcd.io/bbolt`
   (`~/.neat/sde/sde.db`). Lazily syncs on first lookup call per `Store`
-  lifetime (at most once per `neat mcp` process run) — the CCP SDE zip fetch
+  lifetime (at most once per `neat mcp` process run) — the FC SDE zip fetch
   is sync-fatal; the two EVE Ref sources are independently best-effort (a
   failure there logs a warning and skips that source's augmentation, never
   fails the rest of the sync), since SDE data is enrichment, not a hard
@@ -4602,7 +4602,7 @@ real fuzzwork dump."
   `get_universe_graphic`'s `CollisionFile` field remains permanently
   unsourced, confirmed absent from every dataset checked.
 + `sde/` | Local cache of fuzzwork.co.uk's periodically-refreshed SQLite
-+ conversion of CCP's Static Data Export (`~/.neat/sde/eve.db`), queried
++ conversion of FC's Static Data Export (`~/.neat/sde/eve.db`), queried
 + directly via `database/sql` + `modernc.org/sqlite` — no intermediate
 + key-value store. Lazily syncs on first lookup call per `Store` lifetime (at
 + most once per `neat mcp` process run): an ETag-gated download+gunzip+atomic-
@@ -4627,15 +4627,15 @@ real fuzzwork dump."
 
 ```markdown
 - **Prefer a cached, statically-refreshed source over a live per-request ESI call**: any tool
-  needing a resource available from CCP's SDE or from EVE Ref's `reference-data`/`esi-scrape`
+  needing a resource available from FC's SDE or from EVE Ref's `reference-data`/`esi-scrape`
   bulk exports must read it from `sde/`, never call ESI for it directly. Performance and
 - API-citizenship requirement, not a suggestion. `sde/`'s bbolt cache is bulk-seeded once per
-- process lifetime from three sources: CCP's own SDE zip (sync-fatal — a failure here fails the
+- process lifetime from three sources: FC's own SDE zip (sync-fatal — a failure here fails the
 - whole sync), and EVE Ref's `reference-data` and `esi-scrape` datasets (each independently
 - best-effort — a fetch or parse failure there logs a warning and skips that source's
 - augmentation, never fails the rest of the sync). 24 of the Universe tag's 30 tools are
 + API-citizenship requirement, not a suggestion. `sde/` is backed by a single downloaded file —
-+ fuzzwork.co.uk's SQLite conversion of CCP's SDE, ETag-checked and re-downloaded once per process
++ fuzzwork.co.uk's SQLite conversion of FC's SDE, ETag-checked and re-downloaded once per process
 + lifetime on change (sync-fatal on failure) — queried directly via SQL, no intermediate
 + key-value store. Three fields with no source in that file (type `PackagedVolume`, race
 + `AllianceID`, graphic `SofDNA`) still come from a narrow, in-memory-only fetch against EVE Ref's
@@ -4650,7 +4650,7 @@ real fuzzwork dump."
   `resolve_universe_ids`/`_names`) are permanently ESI-direct by design -- they resolve live,
   non-cacheable data (structures are player-owned and access-gated; jumps/kills are
   moment-in-time activity counters; the resolve tools take arbitrary caller-supplied
-- names/IDs), not an SDE sourcing gap. Exactly one field has no source anywhere -- not CCP's
+- names/IDs), not an SDE sourcing gap. Exactly one field has no source anywhere -- not FC's
 - SDE, not EVE Ref's `esi-scrape` mirror of ESI's own live responses either:
 - `get_universe_graphic`'s `CollisionFile`, confirmed absent from every record in both. It is
 - populated on a cache miss (fresh off ESI, in case a future record ever has one) but dropped on
@@ -4660,7 +4660,7 @@ real fuzzwork dump."
 + dump: `get_universe_graphic`'s `CollisionFile` (also absent from EVE Ref's `esi-scrape` mirror
 + of ESI's own live responses -- unaffected by the sqlite migration), `get_universe_region`'s
 + `Description` (`mapRegions` has no description column at all -- a genuine regression from the
-+ prior bbolt design, which sourced it from CCP's own jsonl), `get_universe_station`'s `Services`
++ prior bbolt design, which sourced it from FC's own jsonl), `get_universe_station`'s `Services`
 + (`staOperationServices` has zero rows in the dump), and `list_universe_factions`'s `IsUnique`
 + (`chrFactions` has no `uniqueName`-equivalent column). Each is populated on a cache miss (fresh
 + off ESI) but not on a cache hit -- documented in
@@ -4673,10 +4673,10 @@ real fuzzwork dump."
 Foundation phase. CLI skeleton (`config/`, `creds/`), the ESI OAuth2/PKCE character-auth flow
 (`urlscheme/`, `sso/`), the MCP server with its character-management tools (`mcp/`, `neat mcp`),
 real ESI-backed domain tools (`esi/`) covering all 36 ESI resource tags (Wallet through Wars), and
-- a local SDE cache (`sde/`, combining CCP's SDE with EVE Ref's `reference-data`/`esi-scrape`
+- a local SDE cache (`sde/`, combining FC's SDE with EVE Ref's `reference-data`/`esi-scrape`
 - exports and backing 24 of the Universe tag's 30 tools via a read-through cache) are built. See
 + a local SDE cache (`sde/`, backed by fuzzwork.co.uk's directly-queried SQLite conversion of
-+ CCP's SDE, narrowly supplemented from EVE Ref's `reference-data`/`esi-scrape` exports, and
++ FC's SDE, narrowly supplemented from EVE Ref's `reference-data`/`esi-scrape` exports, and
 + backing 24 of the Universe tag's 30 tools via a read-through cache) are built. See
 `docs/reference/esi-coverage-roadmap.md` for the full per-tag ESI breakdown.
 ```
@@ -4692,7 +4692,7 @@ None of these three files currently has a `**Status:**` header line (unlike newe
 ```markdown
 # `sde/` Package Infrastructure — Design
 
-+ **Superseded by:** [`2026-08-04-sde-sqlite-migration-design.md`](2026-08-04-sde-sqlite-migration-design.md) — this plan's bbolt + CCP-jsonl-zip pipeline was replaced by a directly-queried SQLite dump. This document remains an accurate record of what was built and why at the time.
++ **Superseded by:** [`2026-08-04-sde-sqlite-migration-design.md`](2026-08-04-sde-sqlite-migration-design.md) — this plan's bbolt + FC-jsonl-zip pipeline was replaced by a directly-queried SQLite dump. This document remains an accurate record of what was built and why at the time.
 
 ## Goal
 ```
@@ -4711,7 +4711,7 @@ git add CLAUDE.md README.md docs/superpowers/specs/2026-07-27-sde-design.md docs
 git commit -m "docs: sync CLAUDE.md/README.md to the sqlite-backed sde/ design
 
 Package-table rows and the SDE-sourcing Hard rule now describe the
-fuzzwork dump + in-memory overlay design instead of bbolt + CCP-jsonl +
+fuzzwork dump + in-memory overlay design instead of bbolt + FC-jsonl +
 EVE Ref, including the two new field-drops (Region.Description,
 Station.Services, Faction.IsUnique) this migration introduced. The
 three prior sde/ specs get a one-line superseded-by pointer, per this

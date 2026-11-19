@@ -1,10 +1,10 @@
-// Package sde caches CCP's Static Data Export -- sourced from fuzzwork.co.uk's
+// Package sde caches FC's Static Data Export -- sourced from fuzzwork.co.uk's
 // periodically-refreshed SQLite conversion of the SDE, queried directly via
 // database/sql -- plus a narrow, in-memory-only augmentation from EVE Ref's
 // bulk exports for the handful of fields the fuzzwork dump doesn't carry:
 // type Radius from reference-data (fuzzwork dropped invTypes.radius; found in
 // the 2026-11-18 audit), and race AllianceID/graphic SofDNA from esi-scrape.
-// Type PackagedVolume used to come from reference-data too, until CCP added
+// Type PackagedVolume used to come from reference-data too, until FC added
 // it to the SDE itself (see https://github.com/esi/esi-issues/issues/1499)
 // and fuzzwork's dump picked it up as an invTypes column. See
 // docs/superpowers/specs/2026-08-04-sde-sqlite-migration-design.md for the
@@ -73,7 +73,7 @@ type Store struct {
 	// none of them consult overlay. A GetX(id) can succeed for an ID a
 	// PutX just wrote back, while the matching *IDs()/list call never
 	// includes it, since the two paths look at different stores. This
-	// surfaces only for a genuinely new ID CCP added after the fuzzwork
+	// surfaces only for a genuinely new ID FC added after the fuzzwork
 	// dump's last refresh -- rare, and self-healing at the next refresh.
 	// Deliberately not fixed by merging overlay entries into every *IDs/
 	// list result: that would add real complexity (each accessor filtering

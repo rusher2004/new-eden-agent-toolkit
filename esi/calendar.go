@@ -38,7 +38,7 @@ func (c *Client) CalendarEventAttendees(ctx context.Context, eventID int64) ([]e
 // RespondToCalendarEvent sets the client's character's RSVP status on a calendar event.
 // response must be one of "accepted", "declined", or "tentative" — ESI's own accepted values;
 // the MCP layer validates this before calling, so a bad value fails fast with a clear message.
-// This is a write: it changes state on CCP's server. ESI returns no response body (204).
+// This is a write: it changes state on FC's server. ESI returns no response body (204).
 func (c *Client) RespondToCalendarEvent(ctx context.Context, eventID int64, response string) error {
 	resp, err := c.api.CalendarAPI.PutCharactersCharacterIdCalendarEventId(ctx, int64(c.characterID), eventID).
 		PutCharactersCharacterIdCalendarEventIdRequest(esiapi.PutCharactersCharacterIdCalendarEventIdRequest{Response: response}).

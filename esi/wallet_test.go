@@ -54,7 +54,7 @@ func TestWalletBalance_PropagatesHTTPError(t *testing.T) {
 // degrades to a bare HTTP status string on its own (its formatErrorMessage
 // helper looks for Title/Detail fields via reflection, but ESI's actual
 // error model has Error/Details fields instead), and the *http.Response
-// carrying CCP's error-limit headers was being discarded entirely.
+// carrying FC's error-limit headers was being discarded entirely.
 func TestWalletBalance_ErrorIncludesESIErrorDetailAndRateLimitHeaders(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

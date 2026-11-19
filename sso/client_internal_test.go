@@ -64,7 +64,7 @@ func TestPersistingTokenSource_PersistsRotatedRefreshToken(t *testing.T) {
 		lastSaved:   "original-refresh",
 		base: &fakeRotatingSource{tokens: []*oauth2.Token{
 			{AccessToken: "access-1", RefreshToken: "original-refresh"}, // unchanged -- must NOT trigger a redundant save
-			{AccessToken: "access-2", RefreshToken: "rotated-refresh"},  // CCP rotated it -- must persist
+			{AccessToken: "access-2", RefreshToken: "rotated-refresh"},  // FC rotated it -- must persist
 		}},
 	}
 

@@ -149,13 +149,13 @@ func (s *session) state() string {
 }
 
 // addAnother clicks the page's "Add another character" button and returns
-// the OAuth2 state of the CCP login it redirects to.
+// the OAuth2 state of the FC login it redirects to.
 func (s *session) addAnother(token string) string {
 	s.t.Helper()
 	resp, _ := s.post("/login", token)
 	loc := resp.Header.Get("Location")
 	if resp.StatusCode != http.StatusSeeOther || !strings.HasPrefix(loc, fakeAuthURL) {
-		s.t.Fatalf("POST /login = %d to %q, want 303 to CCP", resp.StatusCode, loc)
+		s.t.Fatalf("POST /login = %d to %q, want 303 to FC", resp.StatusCode, loc)
 	}
 	return stateOf(s.t, loc)
 }
@@ -197,7 +197,7 @@ func (s *session) post(path, token string) (*http.Response, string) {
 	return resp, string(body)
 }
 
-// callback plays CCP redirecting the browser back with code and state.
+// callback plays FC redirecting the browser back with code and state.
 func (s *session) callback(code, state string) *http.Response {
 	s.t.Helper()
 	resp, _ := s.get("/callback?" + url.Values{"code": {code}, "state": {state}}.Encode())
@@ -366,7 +366,7 @@ func TestAddCharacters_PageClosedDuringLogin_KeepsWaitingForCallback(t *testing.
 	s.callback("char-998877", s.state())
 	_, token := s.page()
 
-	// "Add another" navigates the page to CCP, firing the close beacon.
+	// "Add another" navigates the page to FC, firing the close beacon.
 	second := s.addAnother(token)
 	s.post("/closed", token)
 	time.Sleep(150 * time.Millisecond)
@@ -516,7 +516,7 @@ func TestAddCharacters_InjectsUserAgentIntoExchangeContext(t *testing.T) {
 }
 
 // TestAddCharacters_ReAdd_EvictsCachedClient guards against re-adding a
-// character (e.g. after CCP revoked its refresh token) leaving
+// character (e.g. after FC revoked its refresh token) leaving
 // AuthenticatedClient's cached client -- built around the old, dead token
 // -- in place. The new token must be persisted AND the cache entry evicted,
 // so the next AuthenticatedClient call rebuilds from the new token instead

@@ -1,11 +1,11 @@
 # `sde/` Package Infrastructure — Design
 
-**Superseded by:** [`2026-08-04-sde-sqlite-migration-design.md`](2026-08-04-sde-sqlite-migration-design.md) — this plan's bbolt + CCP-jsonl-zip pipeline was replaced by a directly-queried SQLite dump. This document remains an accurate record of what was built and why at the time.
+**Superseded by:** [`2026-08-04-sde-sqlite-migration-design.md`](2026-08-04-sde-sqlite-migration-design.md) — this plan's bbolt + FC-jsonl-zip pipeline was replaced by a directly-queried SQLite dump. This document remains an accurate record of what was built and why at the time.
 
 ## Goal
 
 Build the `sde/` package the foundation design spec called for and deliberately deferred: a local
-cache of CCP's Static Data Export (SDE), backed by `go.etcd.io/bbolt`, that turns the bare IDs
+cache of FC's Static Data Export (SDE), backed by `go.etcd.io/bbolt`, that turns the bare IDs
 every ESI tool returns into actual names. This plan builds the cache **infrastructure only** —
 downloader, version tracking, typed lookups for three resource categories (types, groups,
 categories). Wiring any `mcp/` tool to actually call into `sde/` (starting with the Universe tag's
@@ -56,7 +56,7 @@ import (
 	"go.etcd.io/bbolt"
 )
 
-// Store is a local cache of CCP's Static Data Export, backed by bbolt.
+// Store is a local cache of FC's Static Data Export, backed by bbolt.
 // Opening a Store does not sync it — the first lookup call does that
 // lazily, at most once per Store's lifetime.
 type Store struct {
@@ -208,7 +208,7 @@ func loadResource(tx *bbolt.Tx, zr *zip.Reader, name, bucket string) error {
 
 `int64Key`/`fetch`/`latestZipInfo` are small helpers (big-endian encode the ID for the bbolt key;
 plain `net/http` GETs carrying `sso.UserAgent(version)`, matching every other outbound request this
-project makes to CCP — good citizenship toward EVE Ref too).
+project makes to FC — good citizenship toward EVE Ref too).
 
 ## `sde/category.go`, `sde/group.go`, `sde/type.go` (new)
 

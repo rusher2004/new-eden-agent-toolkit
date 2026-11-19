@@ -27,14 +27,14 @@ const DefaultScopeGroup = "basic"
 
 // ScopeGroups lists every group neat can request. Logins request the
 // default group plus whichever the user picks, instead of every scope at
-// once: a login requesting all of them pushed the cookies CCP's login site
+// once: a login requesting all of them pushed the cookies FC's login site
 // sets past its request-header limit after a couple of logins in a row
 // ("HTTP Error 400. The size of the request headers is too long").
 //
 // Every scope an ESI endpoint requires (esi/scopes_gen.go) must be in one
 // group; esi's tests enforce it. The new-style scopes (esi.activity.char:read,
 // esi.cosmetic.char:read) must also be enabled on the ESI application at
-// developers.eveonline.com, or CCP rejects any login requesting them.
+// developers.eveonline.com, or FC rejects any login requesting them.
 var ScopeGroups = []ScopeGroup{
 	{DefaultScopeGroup, "Basic character info: skills and skill queue, location, current ship, online status, clones and implants.", []string{
 		"publicData",
@@ -224,7 +224,7 @@ func scopeGroup(name string) (ScopeGroup, bool) {
 
 // GrantedScopes returns the scopes characterID's current access token
 // carries, read from the token's scp claim. The token was verified when
-// the character logged in and comes straight from CCP's token endpoint
+// the character logged in and comes straight from FC's token endpoint
 // over TLS, so it is decoded here without re-verifying its signature.
 func GrantedScopes(ctx context.Context, clientID string, characterID int32, userAgent string) ([]string, error) {
 	if _, err := AuthenticatedClient(ctx, clientID, characterID, userAgent); err != nil {

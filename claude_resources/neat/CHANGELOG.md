@@ -1,5 +1,10 @@
 # neat plugin — changelog
 
+## 0.8.4
+- Updated for EVE's developer rebranding as Fenris Creations (FC): neat's descriptions, instructions to Claude and documentation now use the new name. Nothing about how neat works has changed.
+- The README, the privacy notice and neat's login page now carry the proprietary notice that EVE's Developer License Agreement asks third-party apps to keep.
+- The README suggests a new thing to ask: help setting up a PI network with your characters.
+
 ## 0.8.3
 - neat no longer downloads about 134 MB from EVE Ref every time it starts. It saves the few details it uses from EVE Ref's two archives in `~/.neat/sde/everef.json` and downloads an archive again only when EVE Ref publishes a new version, so the first question about items or systems in each session no longer waits on those downloads. If EVE Ref can't be reached, neat uses the saved copy.
 
@@ -46,7 +51,7 @@
 - Targets ESI compatibility date 2026-08-18 (via `goesi-openapi` v0.0.42), up from 2026-07-21.
 
 ## 0.5.0
-- `sde/` moves from a bbolt-backed cache seeded from CCP's own SDE jsonl export to a directly
+- `sde/` moves from a bbolt-backed cache seeded from FC's own SDE jsonl export to a directly
   SQL-queried SQLite dump published by fuzzwork.co.uk (`~/.neat/sde/eve.db`, replacing
   `~/.neat/sde/sde.db`, which is left in place and orphaned by this change). No tool-facing
   behavior change other than the three field regressions below — same 24 Universe tools remain

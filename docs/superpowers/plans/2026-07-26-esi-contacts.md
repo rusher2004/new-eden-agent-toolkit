@@ -322,7 +322,7 @@ func (c *Client) AllianceContactLabels(ctx context.Context, allianceID int64) ([
 
 // AddCharacterContacts adds contactIDs to the client's character's contact list with the given
 // standing, optional label IDs, and watched flag. Returns the created contact IDs. This is a
-// write: it changes state on CCP's server.
+// write: it changes state on FC's server.
 func (c *Client) AddCharacterContacts(ctx context.Context, contactIDs []int64, standing float64, labelIDs []int64, watched bool) ([]int64, error) {
 	result, resp, err := c.api.ContactsAPI.PostCharactersCharacterIdContacts(ctx, int64(c.characterID)).
 		Standing(standing).LabelIds(labelIDs).Watched(watched).RequestBody(contactIDs).Execute()
@@ -333,7 +333,7 @@ func (c *Client) AddCharacterContacts(ctx context.Context, contactIDs []int64, s
 }
 
 // UpdateCharacterContacts updates the standing/labels/watched flag of existing contacts. This is
-// a write: it changes state on CCP's server. ESI returns no response body (204).
+// a write: it changes state on FC's server. ESI returns no response body (204).
 func (c *Client) UpdateCharacterContacts(ctx context.Context, contactIDs []int64, standing float64, labelIDs []int64, watched bool) error {
 	resp, err := c.api.ContactsAPI.PutCharactersCharacterIdContacts(ctx, int64(c.characterID)).
 		Standing(standing).LabelIds(labelIDs).Watched(watched).RequestBody(contactIDs).Execute()
@@ -345,7 +345,7 @@ func (c *Client) UpdateCharacterContacts(ctx context.Context, contactIDs []int64
 
 // RemoveCharacterContacts removes contactIDs from the client's character's contact list.
 // contactIDs is sent as a query parameter, not a request body — verified against the real
-// installed module. This is a write: it changes state on CCP's server. ESI returns no response
+// installed module. This is a write: it changes state on FC's server. ESI returns no response
 // body (204).
 func (c *Client) RemoveCharacterContacts(ctx context.Context, contactIDs []int64) error {
 	resp, err := c.api.ContactsAPI.DeleteCharactersCharacterIdContacts(ctx, int64(c.characterID)).

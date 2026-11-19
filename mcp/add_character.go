@@ -49,7 +49,7 @@ func addCharacterHandler(version, clientID string, store *config.Store) mcpsdk.T
 		}
 		var warnings []string
 		if in.CharacterID != 0 {
-			// CCP replaces a token's scopes on every login rather than
+			// FC replaces a token's scopes on every login rather than
 			// adding to them, so a re-authorization must ask again for
 			// everything the character already granted. If they can't be
 			// read (most often a revoked refresh token, which this login

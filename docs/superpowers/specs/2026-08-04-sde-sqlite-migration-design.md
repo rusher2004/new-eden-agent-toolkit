@@ -1,7 +1,7 @@
 # `sde/` SQLite Backend Migration — Design
 
 **Status:** Implemented (docs/superpowers/plans/2026-08-04-sde-sqlite-migration.md, 11/11 tasks). Amended 2026-11-19: the EVE Ref fetches in "Fetch & freshness" step 3 are no longer unconditional. By then they cost about 134 MB per launch, so `sde/everef.go` saves their values to `~/.neat/sde/everef.json` and downloads an archive again only when its etag in EVE Ref's `index.json` changes (the archives' own HTTP headers carry no usable version). Amended by the 2026-11-18 SDE/ESI audit: fuzzwork's dump dropped `invTypes.radius`, so type `Radius` is now sourced from EVE Ref's `reference-data` export (which this spec's `fetchReferenceDataTypeVolumes` used for `PackagedVolume` before PR #16 removed it), via the same best-effort, in-memory pattern; `esi-scrape` was rejected for it because it has been frozen since 2025-11-26. See CLAUDE.md's Hard rules and Known gaps.
-Update (2026-08-12): CCP added `PackagedVolume` to the SDE itself
+Update (2026-08-12): FC added `PackagedVolume` to the SDE itself
 (https://github.com/esi/esi-issues/issues/1499), and fuzzwork's dump picked it up as a plain
 `invTypes.packagedVolume` column — the "fields with no home anywhere in the dump" list below is
 now down to `AllianceID`/`SofDNA`, and the EVE Ref `reference-data` fetch this spec describes for
@@ -10,17 +10,17 @@ now down to `AllianceID`/`SofDNA`, and the EVE Ref `reference-data` fetch this s
 **Supersedes:** [`2026-07-27-sde-design.md`](2026-07-27-sde-design.md),
 [`2026-07-27-sde-everef-supplemental-sources-design.md`](2026-07-27-sde-everef-supplemental-sources-design.md),
 and [`2026-07-27-sde-universe-migration-design.md`](2026-07-27-sde-universe-migration-design.md) —
-those specs describe the bbolt + CCP-jsonl-zip + EVE-Ref-reference-data + EVE-Ref-esi-scrape
+those specs describe the bbolt + FC-jsonl-zip + EVE-Ref-reference-data + EVE-Ref-esi-scrape
 pipeline this plan replaces. They remain accurate history of what was built and why; this spec
 describes what replaces it and why that's now a better trade.
 
 ## Goal
 
-Replace `sde/`'s storage/sync pipeline — currently CCP's SDE jsonl zip parsed into `bbolt`,
+Replace `sde/`'s storage/sync pipeline — currently FC's SDE jsonl zip parsed into `bbolt`,
 augmented at sync time from two independently-versioned EVE Ref bulk exports
 (`reference-data`, `esi-scrape`) — with a single source: [fuzzwork.co.uk's SQLite SDE
 dump](https://www.fuzzwork.co.uk/dump/latest-sqlite.db.gz), a community-maintained,
-periodically-refreshed conversion of CCP's SDE into a fully-indexed, directly queryable SQLite
+periodically-refreshed conversion of FC's SDE into a fully-indexed, directly queryable SQLite
 database. `sde/`'s public `Store` API (one typed accessor per resource, `PutX` write-back for
 `mcp/`'s ESI-fallback path, nil-safe zero-value semantics) is unchanged — this is an internal
 storage/sync rewrite, not an API redesign.
@@ -34,7 +34,7 @@ for celestial bodies specifically**: `sde/` currently sources planets/moons/aste
 belts/stars/stargates from EVE Ref's `esi-scrape` mirror, a best-effort augmentation that silently
 skips a sync cycle on failure (by design — see the superseded specs). The fuzzwork dump's
 `mapDenormalize` table carries the same data (name, position, system, type, keyed by `groupID`:
-6=Sun, 7=Planet, 8=Moon, 9=Asteroid Belt, 10=Stargate) sourced from CCP's SDE itself, and
+6=Sun, 7=Planet, 8=Moon, 9=Asteroid Belt, 10=Stargate) sourced from FC's SDE itself, and
 `mapJumps` (`stargateID → destinationID`) covers stargate destinations the same way. Trading three
 independently-versioned sources for one, while *improving* reliability on the weakest link, is a
 straightforward win.
@@ -52,7 +52,7 @@ straightforward win.
   table, no per-category fetch needed. `mapJumps` confirmed to carry stargate destination pairs.
 - **`chrFactions`** already has `stationCount`/`stationSystemCount` as precomputed columns — no
   need for `sde/`'s current manual `npcStations` + `npcCorporations` join.
-- **Localization**: `trnTranslations` + `trnTranslationLanguages` carries all 8 of CCP's locales,
+- **Localization**: `trnTranslations` + `trnTranslationLanguages` carries all 8 of FC's locales,
   keyed by an *undocumented* `tcID` per source column (confirmed `tcID=8` = `invTypes.typeName` by
   cross-referencing "Tritanium"; other tables' `tcID`s are unmapped). **Moot for this migration**:
   a repo-wide grep found every current consumer (`mcp/enrich.go`, `mcp/universe.go`, 18 call
@@ -68,7 +68,7 @@ straightforward win.
   column at all (`PRAGMA table_info(mapRegions)` checked directly — `regionID`/`regionName`/`x`/
   `y`/`z`/`xMin..zMax`/`factionID`/`nebula`/`radius`, nothing else), and no other table in the dump
   carries region lore text either (`mapLandmarks` is an unrelated concept — named celestial
-  landmarks, not regions). Today's `sde/region.go` sources `Region.Description` from CCP's own
+  landmarks, not regions). Today's `sde/region.go` sources `Region.Description` from FC's own
   `mapRegions.jsonl`, which does carry it for at least some regions (confirmed via
   `sde/region_test.go`'s fixture: Derelik → "A dangerous frontier region."). This migration drops
   it — `get_universe_region`'s `Description *string` output field goes from "populated for some
@@ -138,9 +138,9 @@ Every `PutX` method (`PutType`, `PutCategory`, `PutGroup`, `PutSystem`, `PutRegi
 `PutAsteroidBelt` — 13 in total) exists so `mcp/`'s read-through path can cache an ESI-fetched
 result after a cache miss, so a subsequent lookup of that ID is fast. With bbolt this was a plain
 key-value write. `eve.db` is a bulk-downloaded artifact, though — writing arbitrary `INSERT`s into
-CCP's exact table schema, or having a write vanish under the next resync's atomic-rename (see
+FC's exact table schema, or having a write vanish under the next resync's atomic-rename (see
 "Fetch & freshness" below), is unnecessary complexity for what should be a rare path: the dump
-covers nearly every real ID, so a miss mainly means "CCP added this ID after the dump's last
+covers nearly every real ID, so a miss mainly means "FC added this ID after the dump's last
 refresh."
 
 `Store` gains a small in-process overlay (e.g. a `sync.Map` keyed by `resource kind + ID`) that

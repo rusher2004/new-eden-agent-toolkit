@@ -115,7 +115,7 @@ func collect(s spec) ([]endpoint, error) {
 					e.scope = scopes[0]
 				default:
 					// esi/ checks one scope per endpoint; fail loudly if
-					// CCP ever starts requiring more than one.
+					// FC ever starts requiring more than one.
 					return nil, fmt.Errorf("%s %s requires %d scopes %v; esi/scopes.go supports one", method, path, len(scopes), scopes)
 				}
 			}

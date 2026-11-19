@@ -6,8 +6,8 @@ This is the guide for working on neat itself. For installing and using it, see t
 
 neat is one Go binary. `neat mcp` runs an MCP server over stdio that an AI app (Claude Code, the Claude desktop app, or another MCP client) starts and talks to. Each tool call goes one of three ways:
 
-- **Character and corporation data** goes to CCP's ESI API, authenticated as a logged-in character.
-- **Static game data** (items, systems, blueprints, dogma) is read from a local SQLite copy of CCP's Static Data Export, downloaded from fuzzwork.co.uk on first use and refreshed when it changes. ESI is only a fallback for IDs newer than the dump.
+- **Character and corporation data** goes to Fenris Creations' (FC's) ESI API, authenticated as a logged-in character.
+- **Static game data** (items, systems, blueprints, dogma) is read from a local SQLite copy of FC's Static Data Export, downloaded from fuzzwork.co.uk on first use and refreshed when it changes. ESI is only a fallback for IDs newer than the dump.
 - **Industry, hauling and routing plans** are computed locally by a pure calculation package, from SDE data, ESI data and profiles the user has saved.
 
 Logins use EVE's SSO with OAuth2 PKCE, so the binary carries a public client ID and no secret. While `add_character` runs, neat serves the OAuth2 callback and a small character page on `http://127.0.0.1:48211`. Refresh tokens are stored in the OS keychain; everything else lives under `~/.neat/`.
@@ -31,7 +31,7 @@ The packages sit flat at the repo root, one per responsibility, with no `interna
 
 You need Go (see `go.mod` for the version), `jq`, and an ESI application of your own from [developers.eveonline.com](https://developers.eveonline.com/):
 
-- Callback URL: `http://127.0.0.1:48211/callback`, exactly. CCP matches it exactly, which is why the port is fixed.
+- Callback URL: `http://127.0.0.1:48211/callback`, exactly. FC matches it exactly, which is why the port is fixed.
 - Scopes: enable every scope, so a login can request any scope group.
 
 Put its client ID in `app_config.json` at the repo root (git-ignored):

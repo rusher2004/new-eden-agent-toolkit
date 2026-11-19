@@ -100,5 +100,5 @@ endpoints' query-param/body shapes (mirroring the live verification above) plus 
 
 - No client-side validation of `standing` range (-10.0 to 10.0 per ESI's own rules) — ESI enforces
   this server-side and returns a clear 4xx; adding client-side range validation would duplicate
-  logic that already exists correctly on CCP's side, unlike `respond_calendar_event`'s validation
-  (which exists because CCP's own error for an invalid `response` string is comparatively opaque).
+  logic that already exists correctly on FC's side, unlike `respond_calendar_event`'s validation
+  (which exists because FC's own error for an invalid `response` string is comparatively opaque).

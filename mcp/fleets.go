@@ -142,7 +142,7 @@ type UpdateFleetInput struct {
 	CharacterID int32   `json:"characterId" jsonschema:"the character ID to check as -- must have fleet_commander role"`
 	FleetID     int64   `json:"fleetId" jsonschema:"the fleet ID, from get_character_fleet"`
 	IsFreeMove  *bool   `json:"isFreeMove,omitempty" jsonschema:"whether free-move is enabled; omit to leave unchanged"`
-	Motd        *string `json:"motd,omitempty" jsonschema:"new fleet MOTD in CCP-flavoured HTML; omit to leave unchanged"`
+	Motd        *string `json:"motd,omitempty" jsonschema:"new fleet MOTD in FC-flavoured HTML; omit to leave unchanged"`
 }
 type UpdateFleetOutput struct {
 	CharacterID int32   `json:"characterId"`
@@ -282,7 +282,7 @@ type InviteFleetMemberOutput struct {
 	Role              string `json:"role"`
 }
 
-// inviteFleetMemberHandler is a write tool: it changes state on CCP's server, so -- like
+// inviteFleetMemberHandler is a write tool: it changes state on FC's server, so -- like
 // respond_calendar_event -- it validates its input BEFORE loading config.Store or calling ESI.
 func inviteFleetMemberHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[InviteFleetMemberInput, InviteFleetMemberOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in InviteFleetMemberInput) (*mcpsdk.CallToolResult, InviteFleetMemberOutput, error) {

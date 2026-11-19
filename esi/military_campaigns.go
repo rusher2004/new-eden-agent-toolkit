@@ -1,5 +1,5 @@
 // Package esi's military_campaigns.go covers all 6 of "Military Campaigns"'s endpoints -- the 37th
-// ESI tag, which CCP added after the original 36-tag sweep and which first became implementable
+// ESI tag, which FC added after the original 36-tag sweep and which first became implementable
 // with goesi-openapi v0.0.42. 4 are public (campaigns + their objectives); 2 are private
 // character-scoped ("my own character" -- CharacterMilitaryCampaignObjectives/
 // CharacterMilitaryCampaignObjectiveParticipation take no explicit characterID, using

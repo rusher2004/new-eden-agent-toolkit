@@ -38,7 +38,7 @@ entities for its own tools, and `enrich.go`, the shared helper itself) found:
   `.State.ImportSources[].SolarSystemID`).
 - Two fields are legitimately zero for some records depending on scope
   (`MarketOrderBookEntry.SystemID` is zero for structure orders; `IndustryJob.StationID` is zero
-  for corporation-scoped jobs) — both already carry `omitempty` JSON tags, confirming CCP's own
+  for corporation-scoped jobs) — both already carry `omitempty` JSON tags, confirming FC's own
   "0 means absent" convention. This needs **no special-case code**: looking up ID `0` against the
   SDE cache is just another cache miss under the existing silent-omit contract, so the resulting
   `*Name` field naturally stays empty for those records without extra guarding.
