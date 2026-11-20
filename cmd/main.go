@@ -18,8 +18,19 @@ var version = "dev"
 // app_config.json (git-ignored) and the Makefile's build target.
 var clientID = "dev"
 
+// aptabaseAppKey is the Aptabase app key for neat's anonymous usage ping,
+// set at build time via -ldflags "-X main.aptabaseAppKey=<key>" from
+// app_config.json's aptabaseAppKey. Empty (the default) sends nothing.
+var aptabaseAppKey = ""
+
+// analyticsDebug marks this build's analytics events as debug data, so
+// Aptabase keeps them out of its release numbers. The Makefile sets it to
+// "true" via -ldflags "-X main.analyticsDebug=true"; release builds leave
+// it empty.
+var analyticsDebug = ""
+
 func main() {
-	root := commands.Root(version, clientID)
+	root := commands.Root(version, clientID, aptabaseAppKey, analyticsDebug == "true")
 	if err := root.Run(context.Background(), os.Args); err != nil {
 		fmt.Fprintf(os.Stderr, "neat: %v\n", err)
 		os.Exit(1)

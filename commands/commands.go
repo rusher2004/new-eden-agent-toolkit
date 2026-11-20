@@ -6,14 +6,15 @@ package commands
 import "github.com/urfave/cli/v3"
 
 // Root builds the top-level neat command, wiring in every subcommand.
-func Root(version, clientID string) *cli.Command {
+func Root(version, clientID, aptabaseAppKey string, analyticsDebug bool) *cli.Command {
 	return &cli.Command{
 		Name:  "neat",
 		Usage: "New Eden Agent Toolkit",
 		Commands: []*cli.Command{
 			versionCommand(version),
 			setupCommand(),
-			mcpCommand(version, clientID),
+			mcpCommand(version, clientID, aptabaseAppKey, analyticsDebug),
+			analyticsCommand(),
 		},
 	}
 }

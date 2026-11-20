@@ -22,7 +22,7 @@ func TestSetupCommand_CreatesConfigAndVerifiesKeychain(t *testing.T) {
 	t.Setenv("USERPROFILE", tmpHome)
 
 	var out bytes.Buffer
-	root := commands.Root("dev", "test-client-id")
+	root := commands.Root("dev", "test-client-id", "", false)
 	root.Writer = &out
 
 	if err := root.Run(context.Background(), []string{"neat", "setup"}); err != nil {
@@ -53,7 +53,7 @@ func TestSetupCommand_BrokenKeychain_CreatesConfigButReportsError(t *testing.T) 
 	t.Setenv("USERPROFILE", tmpHome)
 
 	var out bytes.Buffer
-	root := commands.Root("dev", "test-client-id")
+	root := commands.Root("dev", "test-client-id", "", false)
 	root.Writer = &out
 
 	err := root.Run(context.Background(), []string{"neat", "setup"})
@@ -84,7 +84,7 @@ func TestSetupCommand_RunTwice_DoesNotClobberExistingConfig(t *testing.T) {
 	t.Setenv("HOME", tmpHome)
 	t.Setenv("USERPROFILE", tmpHome)
 
-	if err := commands.Root("dev", "test-client-id").Run(context.Background(), []string{"neat", "setup"}); err != nil {
+	if err := commands.Root("dev", "test-client-id", "", false).Run(context.Background(), []string{"neat", "setup"}); err != nil {
 		t.Fatalf("first Run returned error: %v", err)
 	}
 
@@ -95,7 +95,7 @@ func TestSetupCommand_RunTwice_DoesNotClobberExistingConfig(t *testing.T) {
 		t.Fatalf("Save returned error: %v", err)
 	}
 
-	if err := commands.Root("dev", "test-client-id").Run(context.Background(), []string{"neat", "setup"}); err != nil {
+	if err := commands.Root("dev", "test-client-id", "", false).Run(context.Background(), []string{"neat", "setup"}); err != nil {
 		t.Fatalf("second Run returned error: %v", err)
 	}
 

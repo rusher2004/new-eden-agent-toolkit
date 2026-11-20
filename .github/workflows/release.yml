@@ -64,3 +64,4 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ESI_CLIENT_ID: ${{ vars.ESI_CLIENT_ID }}
+          APTABASE_APP_KEY: ${{ vars.APTABASE_APP_KEY }}

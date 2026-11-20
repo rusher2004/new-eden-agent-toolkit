@@ -27,7 +27,7 @@ go.work.sum
 # env file
 .env
 
-# ESI app config (clientId, seeded into the binary at build time via -ldflags)
+# App config (esiClientId and aptabaseAppKey, seeded into the binary at build time via -ldflags)
 /app_config.json
 
 # Editor/IDE

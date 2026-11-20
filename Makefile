@@ -3,7 +3,7 @@
 PREFIX ?= $(HOME)/.local
 
 build:
-	go build -ldflags "-X main.version=$$(cat VERSION 2>/dev/null || echo dev) -X main.clientID=$$(jq -r .clientId app_config.json)" -o bin/neat ./cmd
+	go build -ldflags "-X main.version=$$(cat VERSION 2>/dev/null || echo dev) -X main.clientID=$$(jq -r '.esiClientId // .clientId' app_config.json) -X main.aptabaseAppKey=$$(jq -r '.aptabaseAppKey // ""' app_config.json) -X main.analyticsDebug=true" -o bin/neat ./cmd
 
 # Remove the old binary before copying rather than overwriting it in place:
 # macOS caches a binary's code signature per file, so copying a new build over
