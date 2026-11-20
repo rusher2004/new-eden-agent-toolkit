@@ -11,7 +11,7 @@ import (
 
 func TestVersionCommand_PrintsVersion(t *testing.T) {
 	var out bytes.Buffer
-	root := commands.Root("1.2.3", "test-client-id")
+	root := commands.Root("1.2.3", "test-client-id", "")
 	root.Writer = &out
 
 	if err := root.Run(context.Background(), []string{"neat", "version"}); err != nil {

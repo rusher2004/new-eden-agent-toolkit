@@ -1,10 +1,10 @@
 # Privacy
 
-This page lists everything neat connects to, everything it stores on your computer, and where your EVE data goes. neat has no server of its own, no accounts, no analytics and no telemetry. The neat developer never receives any of your data.
+This page lists everything neat connects to, everything it stores on your computer, and where your EVE data goes. neat has no server of its own and no accounts. The only thing the neat developer ever receives is an anonymous count of how many people use neat each month, and which versions and platforms they run. It contains nothing about you, your characters or your computer, and you can turn it off with one command (see [Anonymous usage count](#anonymous-usage-count)).
 
 ## The short version
 
-- neat runs on your computer and only talks to Fenris Creations (FC), the makers of EVE, to two public game-data sites (fuzzwork.co.uk and EVE Ref), and to the AI app you connect it to.
+- neat runs on your computer and only talks to Fenris Creations (FC), the makers of EVE, to two public game-data sites (fuzzwork.co.uk and EVE Ref), to the AI app you connect it to, and, unless you turn it off, to Aptabase for an anonymous usage count.
 - Your login tokens are stored in your operating system's keychain. Everything else neat saves is in the `~/.neat` folder.
 - Whatever neat looks up for you goes to your AI app, the same as anything else you share in a conversation. That app's own privacy policy covers what happens to it next.
 
@@ -29,6 +29,25 @@ neat keeps a local copy of EVE's static game data (items, ships, blueprints, sys
 | `www.fuzzwork.co.uk` | A SQLite copy of FC's Static Data Export, about 176 MB to download and about 500 MB on disk | The first time neat needs game data in each session, it checks whether a newer copy exists, and downloads it if there is one |
 | `data.everef.net` | Three details missing from the fuzzwork copy: item sizes (radius), which alliance a race belongs to, and graphic details | The first time neat needs game data in each session, it checks a small index file to see whether either archive has changed, and downloads only one that has. What it uses from them is saved in `~/.neat/sde/everef.json` |
 
+### Anonymous usage count
+
+FC's partner program asks third-party apps to show how many monthly users they have. To be able to show that, neat sends one small message to [Aptabase](https://aptabase.com), a privacy-focused analytics service, each time your AI app starts neat. It goes to `eu.aptabase.com`, whose data is stored in the EU (Germany).
+
+| What neat sends | Why |
+|---|---|
+| neat's version, for example `0.9.0` | To see which versions are in use, and when an old one can stop being supported |
+| The operating system and processor type neat was built for, for example macOS and `arm64` | To know which platforms to test and fix. This is fixed when neat is built, so it names the download you chose, not anything about your computer: no OS version, computer model or name |
+| A random ID that changes every month | To count each install once per month, however often you start neat. neat makes it from random numbers, not from anything about you or your computer, saves it in `~/.neat/analytics.json`, and replaces it with a new one at the start of each month (UTC). IDs from different months can't be linked to each other |
+| A random ID for that one launch, and the time it happened | Aptabase needs these for every message. A new one is made each time neat starts |
+
+**What neat never sends:** your characters, character IDs or names, your EVE account, anything you ask neat or anything ESI returns, your login tokens, file paths, your computer's name, username, language or hardware IDs, or which tools you use.
+
+**What Aptabase sees:** like any internet service, Aptabase sees your IP address when the message arrives. Aptabase says it uses it only to work out your country and region and a temporary hash that changes every 24 hours, and never stores the address itself. See [Aptabase's privacy information](https://aptabase.com/docs). The data is kept for up to 5 years.
+
+**What the neat developer can see:** only totals and breakdowns in Aptabase's dashboard: the number of launches and of distinct monthly IDs, and counts by version, platform and country. Nothing in it can be traced back to you, your characters or your computer, and the neat developer has no way to look anyone up. The dashboard may be shown to FC to apply for the partner program.
+
+**Turning it off:** run `neat analytics off`. neat then sends nothing to Aptabase and deletes `~/.neat/analytics.json`. `neat analytics status` shows whether it's on, and `neat analytics on` turns it back on. The setting is saved as `"analyticsDisabled": true` in `~/.neat/config.json`, so it stays off through updates. Builds you make yourself from source send nothing unless you give them an Aptabase key of your own.
+
 ### Your AI app
 
 neat is an MCP server: your AI app (Claude Code, the Claude desktop app, or another MCP app) starts it and asks it for things. Everything neat returns, such as your wallet balance, your assets, your mail or a build plan, goes to that app and is handled under the app's own privacy policy and settings. If you use Claude, see [Anthropic's privacy policy](https://www.anthropic.com/legal/privacy). neat itself doesn't send your data anywhere else.
@@ -36,18 +55,19 @@ neat is an MCP server: your AI app (Claude Code, the Claude desktop app, or anot
 ### Things neat doesn't contact
 
 - **dotlan:** route plans include evemaps.dotlan.net links so you can see a route on a map. neat only writes the links; nothing goes to dotlan unless you open one.
-- **The neat developer, GitHub, or any analytics service:** neat never contacts them. To update neat, you download new versions yourself, and the Claude Code plugin updates through Claude Code.
+- **The neat developer or GitHub:** neat never contacts them. Apart from the anonymous usage count above, which goes to Aptabase, nothing reaches the neat developer. To update neat, you download new versions yourself, and the Claude Code plugin updates through Claude Code.
 
 ### What every request carries
 
-Every request to FC, fuzzwork and EVE Ref carries a User-Agent header like `neat/0.8.2 (project contact address; +https://github.com/rusher2004/new-eden-agent-toolkit)`. It names neat's version and gives the neat project's contact address, which FC asks every third-party app to include. It contains nothing about you or your computer. As with any internet connection, these services can see your IP address.
+Every request to FC, fuzzwork, EVE Ref and Aptabase carries a User-Agent header like `neat/0.8.2 (project contact address; +https://github.com/rusher2004/new-eden-agent-toolkit)`. It names neat's version and gives the neat project's contact address, which FC asks every third-party app to include. It contains nothing about you or your computer. As with any internet connection, these services can see your IP address.
 
 ## What neat stores on your computer
 
 | Where | What | Notes |
 |---|---|---|
 | Your OS keychain (macOS Keychain, Windows Credential Manager, or the Linux Secret Service), under the service name `neat` | One entry per logged-in character, `character_refresh_token:<character ID>`, holding that character's EVE refresh token | This is the only secret neat keeps. Removing a character in neat deletes its entry. `neat setup` briefly writes and deletes a test entry (`internal:setup_canary`) to check that the keychain works. |
-| `~/.neat/config.json` | Each logged-in character's ID and name, plus any facility, haul and trade hub profiles you saved: structure names and their rigs, services and taxes, your hauling ships and pilots, and routing preferences such as areas to avoid | Contains no tokens. Only your user account can read it. |
+| `~/.neat/config.json` | Each logged-in character's ID and name, plus any facility, haul and trade hub profiles you saved: structure names and their rigs, services and taxes, your hauling ships and pilots, and routing preferences such as areas to avoid. Also whether you turned the anonymous usage count off | Contains no tokens. Only your user account can read it. |
+| `~/.neat/analytics.json` | The random monthly ID for the anonymous usage count, and which month it belongs to | Replaced with a new random ID each month. Deleted by `neat analytics off`, and never created while it's off. |
 | `~/.neat/plans/` | One file per build plan you asked for, named by date and product: costs, build-or-buy decisions, shopping lists, haul loads and job schedules, including the stock you already own that the plan uses | Only your user account can read these. Delete them whenever you like. |
 | `~/.neat/sde/eve.db`, `~/.neat/sde/meta.json` and `~/.neat/sde/everef.json` | The downloaded copy of EVE's static game data, a note of which version it is, and the details neat uses from EVE Ref's archives along with their versions | Public game data only. Temporary `eve.db.*.tmp` and `everef.json.*.tmp` files sit next to them while a new copy is saved. |
 | Memory only (gone when neat stops) | Each character's short-lived access token, and any game data neat fetched from ESI that the local copy was missing | Nothing in memory is written to disk. |
@@ -68,6 +88,7 @@ While you're adding a character, neat runs a small web page at `http://127.0.0.1
 ## Removing your data
 
 - **Log out one character:** ask Claude to remove it. neat deletes its keychain entry and its line in `config.json`. To also cancel neat's access on FC's side, revoke it on EVE's [third-party applications page](https://community.eveonline.com/support/third-party-applications/).
+- **Stop the usage count:** run `neat analytics off`. Messages already sent stay in Aptabase's totals, but nothing in them links to you, so there's nothing that could be found and deleted as yours.
 - **Remove everything:** delete the `neat` program and the `~/.neat` folder, delete any `neat` entries left in your keychain, and remove neat from your AI app (`/plugin uninstall neat@neat` in Claude Code, or its entry in the desktop app's config).
 - **Conversations:** what neat returned during a conversation stays in your AI app's history. Delete it there.
 

@@ -4,16 +4,19 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/urfave/cli/v3"
 
+	"github.com/rusher2004/new-eden-agent-toolkit/analytics"
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/mcp"
 	"github.com/rusher2004/new-eden-agent-toolkit/sde"
+	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
-func mcpCommand(version, clientID string) *cli.Command {
+func mcpCommand(version, clientID, aptabaseAppKey string) *cli.Command {
 	return &cli.Command{
 		Name:  "mcp",
 		Usage: "run the neat MCP server (stdio transport)",
@@ -22,6 +25,7 @@ func mcpCommand(version, clientID string) *cli.Command {
 			if err != nil {
 				return fmt.Errorf("resolve config store: %w", err)
 			}
+			go sendStartPing(context.WithoutCancel(ctx), store, aptabaseAppKey, version)
 
 			sdePath, err := sde.DefaultPath()
 			if err != nil {
@@ -49,5 +53,43 @@ func mcpCommand(version, clientID string) *cli.Command {
 			server := mcp.NewServer(version, clientID, store, sdeStore)
 			return server.Run(ctx, &mcpsdk.StdioTransport{})
 		},
+	}
+}
+
+// sendStartPing sends neat's one anonymous "app_started" event (see
+// analytics/), unless the user turned analytics off or the build carries no
+// app key. It runs in the background and never fails the server: every
+// problem is logged at debug level and dropped.
+func sendStartPing(ctx context.Context, store *config.Store, appKey, version string) {
+	if appKey == "" {
+		return
+	}
+	logger := slog.Default()
+	cfg, err := store.Load()
+	if err != nil {
+		logger.DebugContext(ctx, "analytics: skipped, config unreadable", "error", err)
+		return
+	}
+	if cfg.AnalyticsDisabled {
+		return
+	}
+	client, err := analytics.New(appKey, version, sso.UserAgent(version))
+	if err != nil {
+		logger.DebugContext(ctx, "analytics: skipped", "error", err)
+		return
+	}
+	idPath, err := analytics.DefaultIDPath()
+	if err != nil {
+		logger.DebugContext(ctx, "analytics: skipped", "error", err)
+		return
+	}
+	now := time.Now()
+	id, err := analytics.MonthlyID(idPath, now)
+	if err != nil {
+		logger.DebugContext(ctx, "analytics: skipped", "error", err)
+		return
+	}
+	if err := client.TrackStart(ctx, id, now); err != nil {
+		logger.DebugContext(ctx, "analytics: send failed", "error", err)
 	}
 }
