@@ -12,6 +12,7 @@ import (
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/industry"
+	"github.com/rusher2004/new-eden-agent-toolkit/market"
 	"github.com/rusher2004/new-eden-agent-toolkit/sde/sdetest"
 )
 
@@ -98,12 +99,12 @@ func fakeIndustryESI(t *testing.T) {
 	}
 	listUniverseSystemKills = func(ctx context.Context, userAgent string) ([]UniverseSystemKills, error) { return nil, nil }
 	book := map[int64]float64{34: 4, 35: 16, 36: 55, 37: 206, 38: 780, 39: 1079, 40: 2094, 2876: 2.14e6, 57457: 3466, 62555: 2000, 17889: 590, 21039: 11.88e6}
-	fetchSellOrders = func(ctx context.Context, userAgent string, regionID, typeID int64) ([]industry.Order, error) {
+	fetchSellOrders = func(ctx context.Context, userAgent string, regionID, typeID int64) ([]market.Order, error) {
 		p, ok := book[typeID]
 		if !ok {
 			return nil, nil
 		}
-		return []industry.Order{{Price: p, Volume: 1e9, LocationID: 60003760}}, nil
+		return []market.Order{{Price: p, Volume: 1e9, LocationID: 60003760}}, nil
 	}
 }
 

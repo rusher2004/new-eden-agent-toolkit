@@ -12,10 +12,9 @@ import (
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
 	"github.com/rusher2004/new-eden-agent-toolkit/industry"
+	"github.com/rusher2004/new-eden-agent-toolkit/nav"
 	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 )
-
-// --- facility profiles ---
 
 type SaveFacilityProfileInput struct {
 	Name                string   `json:"name" jsonschema:"a short name to refer to this facility by, e.g. Home Sotiyo"`
@@ -63,7 +62,7 @@ func (p *planner) describeFacility(ctx context.Context, prof config.FacilityProf
 	if err != nil {
 		return FacilityView{}, err
 	}
-	v := FacilityView{Profile: prof, SystemName: sys.Name, Band: f.Band.String(), Security: industry.DisplaySecurity(sys.Security), Warnings: f.Warnings}
+	v := FacilityView{Profile: prof, SystemName: sys.Name, Band: f.Band.String(), Security: nav.DisplaySecurity(sys.Security), Warnings: f.Warnings}
 	for _, m := range f.Modifiers {
 		applies := "everything"
 		if m.FilterID != 0 {
@@ -179,10 +178,6 @@ func saveFacilityProfileHandler(version, clientID string, store *config.Store, s
 	}
 }
 
-type ProfileNameInput struct {
-	Name string `json:"name" jsonschema:"the profile's name"`
-}
-
 type DescribeFacilityInput struct {
 	Name        string `json:"name" jsonschema:"facility profile name"`
 	ProductName string `json:"productName,omitempty" jsonschema:"optional product to show multipliers and whether each activity can run for it"`
@@ -239,28 +234,6 @@ func listFacilityProfilesHandler(store *config.Store) mcpsdk.ToolHandlerFor[stru
 		return nil, ListFacilityProfilesOutput{Profiles: cfg.FacilityProfiles}, nil
 	}
 }
-
-type DeletedOutput struct {
-	Deleted string `json:"deleted"`
-}
-
-func deleteProfileHandler(store *config.Store, del func(*config.Config, string) error) mcpsdk.ToolHandlerFor[ProfileNameInput, DeletedOutput] {
-	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ProfileNameInput) (*mcpsdk.CallToolResult, DeletedOutput, error) {
-		cfg, err := store.Load()
-		if err != nil {
-			return nil, DeletedOutput{}, err
-		}
-		if err := del(&cfg, in.Name); err != nil {
-			return nil, DeletedOutput{}, err
-		}
-		if err := store.Save(cfg); err != nil {
-			return nil, DeletedOutput{}, err
-		}
-		return nil, DeletedOutput{Deleted: in.Name}, nil
-	}
-}
-
-// --- calibration ---
 
 type CalibrateFacilityProfileInput struct {
 	Name          string `json:"name" jsonschema:"facility profile name"`
@@ -373,162 +346,4 @@ func (p *planner) findJob(ctx context.Context, characterID int32, corporationID,
 		}
 	}
 	return IndustryJob{}, fmt.Errorf("job %d not found", jobID)
-}
-
-// --- haul profiles ---
-
-type RoutePrefsInput struct {
-	AvoidSystems         []string `json:"avoidSystems,omitempty" jsonschema:"system names to never stop in or pass through"`
-	AvoidConstellations  []string `json:"avoidConstellations,omitempty"`
-	AvoidRegions         []string `json:"avoidRegions,omitempty"`
-	AvoidAlliances       []int64  `json:"avoidAlliances,omitempty" jsonschema:"alliance IDs whose sovereignty to avoid"`
-	AvoidBadStanding     bool     `json:"avoidBadStanding,omitempty" jsonschema:"avoid sovereignty of alliances the pilot, corp or alliance set below zero"`
-	PreferAlliances      []int64  `json:"preferAlliances,omitempty" jsonschema:"alliance IDs whose sovereignty to prefer"`
-	Midpoints            []string `json:"midpoints,omitempty" jsonschema:"systems where the pilot has docking, a cyno alt or a friendly POS"`
-	MidpointsRequired    bool     `json:"midpointsRequired,omitempty" jsonschema:"only land on these midpoints"`
-	PreferStationSystems bool     `json:"preferStationSystems,omitempty"`
-	AvoidIncursions      bool     `json:"avoidIncursions,omitempty"`
-	Optimize             string   `json:"optimize,omitempty" jsonschema:"fuel (default), jumps or fatigue"`
-	MaxGates             int      `json:"maxGates,omitempty"`
-	MaxRecentKills       int      `json:"maxRecentKills,omitempty" jsonschema:"skip gate systems with more ship and pod kills than this in the last hour"`
-}
-
-type SaveHaulProfileInput struct {
-	Name     string          `json:"name"`
-	Ship     string          `json:"ship" jsonschema:"hull type name, e.g. Nomad"`
-	PilotID  int64           `json:"pilotId" jsonschema:"the pilot's character ID (skills and contacts are read from ESI)"`
-	HoldM3   float64         `json:"holdM3" jsonschema:"the fitted cargo hold in m³ as shown in game"`
-	Outbound []string        `json:"outbound,omitempty" jsonschema:"optional pinned route, hub to destination, as system names"`
-	Return   []string        `json:"return,omitempty" jsonschema:"optional pinned return route as system names"`
-	Prefs    RoutePrefsInput `json:"prefs"`
-}
-
-func (p *planner) resolvePrefs(ctx context.Context, in RoutePrefsInput) (config.RoutePrefs, error) {
-	out := config.RoutePrefs{AvoidAlliances: in.AvoidAlliances, AvoidBadStanding: in.AvoidBadStanding, PreferAlliances: in.PreferAlliances,
-		MidpointsRequired: in.MidpointsRequired, PreferStationSystems: in.PreferStationSystems, AvoidIncursions: in.AvoidIncursions,
-		Optimize: in.Optimize, MaxGates: in.MaxGates, MaxRecentKills: in.MaxRecentKills}
-	switch in.Optimize {
-	case "", industry.OptimizeFuel, industry.OptimizeJumps, industry.OptimizeFatigue:
-	default:
-		return out, fmt.Errorf("optimize must be fuel, jumps or fatigue, not %q", in.Optimize)
-	}
-	var err error
-	if out.AvoidSystems, err = p.systemIDs(ctx, in.AvoidSystems); err != nil {
-		return out, err
-	}
-	if out.Midpoints, err = p.systemIDs(ctx, in.Midpoints); err != nil {
-		return out, err
-	}
-	cons, regs := map[string]int64{}, map[string]int64{}
-	for _, s := range p.systems {
-		cons[strings.ToLower(s.ConstellationName)] = s.ConstellationID
-		regs[strings.ToLower(s.RegionName)] = s.RegionID
-	}
-	for _, n := range in.AvoidConstellations {
-		id, ok := cons[strings.ToLower(n)]
-		if !ok {
-			return out, fmt.Errorf("unknown constellation %q", n)
-		}
-		out.AvoidConstellations = append(out.AvoidConstellations, id)
-	}
-	for _, n := range in.AvoidRegions {
-		id, ok := regs[strings.ToLower(n)]
-		if !ok {
-			return out, fmt.Errorf("unknown region %q", n)
-		}
-		out.AvoidRegions = append(out.AvoidRegions, id)
-	}
-	return out, nil
-}
-
-func saveHaulProfileHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[SaveHaulProfileInput, config.HaulProfile] {
-	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in SaveHaulProfileInput) (*mcpsdk.CallToolResult, config.HaulProfile, error) {
-		p := newPlanner(version, clientID, store, sdeStore)
-		if strings.TrimSpace(in.Name) == "" || in.HoldM3 <= 0 {
-			return nil, config.HaulProfile{}, fmt.Errorf("save haul profile: name and a positive holdM3 are required")
-		}
-		ids, err := sdeStore.TypesByName(ctx, p.ua(), []string{in.Ship})
-		if err != nil {
-			return nil, config.HaulProfile{}, err
-		}
-		ship, ok := ids[in.Ship]
-		if !ok {
-			return nil, config.HaulProfile{}, fmt.Errorf("save haul profile: unknown ship %q", in.Ship)
-		}
-		prefs, err := p.resolvePrefs(ctx, in.Prefs)
-		if err != nil {
-			return nil, config.HaulProfile{}, fmt.Errorf("save haul profile: %w", err)
-		}
-		prof := config.HaulProfile{Name: strings.TrimSpace(in.Name), ShipTypeID: ship, PilotID: in.PilotID, HoldM3: in.HoldM3, Prefs: prefs}
-		if prof.Outbound, err = p.systemIDs(ctx, in.Outbound); err != nil {
-			return nil, config.HaulProfile{}, fmt.Errorf("save haul profile: %w", err)
-		}
-		if prof.Return, err = p.systemIDs(ctx, in.Return); err != nil {
-			return nil, config.HaulProfile{}, fmt.Errorf("save haul profile: %w", err)
-		}
-		cfg, err := store.Load()
-		if err != nil {
-			return nil, config.HaulProfile{}, err
-		}
-		cfg.UpsertHaulProfile(prof)
-		if err := store.Save(cfg); err != nil {
-			return nil, config.HaulProfile{}, err
-		}
-		return nil, prof, nil
-	}
-}
-
-type ListHaulProfilesOutput struct {
-	Profiles []config.HaulProfile `json:"profiles"`
-}
-
-func listHaulProfilesHandler(store *config.Store) mcpsdk.ToolHandlerFor[struct{}, ListHaulProfilesOutput] {
-	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, _ struct{}) (*mcpsdk.CallToolResult, ListHaulProfilesOutput, error) {
-		cfg, err := store.Load()
-		if err != nil {
-			return nil, ListHaulProfilesOutput{}, err
-		}
-		return nil, ListHaulProfilesOutput{Profiles: cfg.HaulProfiles}, nil
-	}
-}
-
-// --- hub profiles ---
-
-type SaveHubProfileInput struct {
-	Name      string `json:"name"`
-	RegionID  int64  `json:"regionId" jsonschema:"region whose market to read, e.g. 10000002 for The Forge"`
-	StationID int64  `json:"stationId" jsonschema:"station or structure orders must be at, e.g. 60003760 for Jita 4-4"`
-}
-
-type ListHubProfilesOutput struct {
-	Profiles []config.HubProfile `json:"profiles"`
-	Default  config.HubProfile   `json:"default"`
-}
-
-func saveHubProfileHandler(store *config.Store) mcpsdk.ToolHandlerFor[SaveHubProfileInput, config.HubProfile] {
-	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in SaveHubProfileInput) (*mcpsdk.CallToolResult, config.HubProfile, error) {
-		if strings.TrimSpace(in.Name) == "" || in.RegionID == 0 || in.StationID == 0 {
-			return nil, config.HubProfile{}, fmt.Errorf("save hub profile: name, regionId and stationId are required")
-		}
-		cfg, err := store.Load()
-		if err != nil {
-			return nil, config.HubProfile{}, err
-		}
-		h := config.HubProfile{Name: strings.TrimSpace(in.Name), RegionID: in.RegionID, StationID: in.StationID}
-		cfg.UpsertHubProfile(h)
-		if err := store.Save(cfg); err != nil {
-			return nil, config.HubProfile{}, err
-		}
-		return nil, h, nil
-	}
-}
-
-func listHubProfilesHandler(store *config.Store) mcpsdk.ToolHandlerFor[struct{}, ListHubProfilesOutput] {
-	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, _ struct{}) (*mcpsdk.CallToolResult, ListHubProfilesOutput, error) {
-		cfg, err := store.Load()
-		if err != nil {
-			return nil, ListHubProfilesOutput{}, err
-		}
-		return nil, ListHubProfilesOutput{Profiles: cfg.HubProfiles, Default: config.DefaultHub}, nil
-	}
 }

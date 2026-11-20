@@ -13,8 +13,10 @@ import (
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/rusher2004/new-eden-agent-toolkit/cargo"
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/industry"
+	"github.com/rusher2004/new-eden-agent-toolkit/market"
 	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 )
 
@@ -439,7 +441,7 @@ func (p *planner) planBuild(ctx context.Context, in PlanBuildInput) (PlanBuildOu
 				continue
 			}
 			for _, m := range j.Materials {
-				q := industry.WalkBook(m.TypeID, books[m.TypeID], m.Quantity, hub.StationID)
+				q := market.WalkBook(m.TypeID, books[m.TypeID], m.Quantity, hub.StationID)
 				mb, err := p.typeBasics(ctx, []int64{m.TypeID})
 				if err != nil {
 					return out, err
@@ -449,7 +451,7 @@ func (p *planner) planBuild(ctx context.Context, in PlanBuildInput) (PlanBuildOu
 			}
 		}
 		units := n.Built
-		bq := industry.WalkBook(n.TypeID, books[n.TypeID], units, hub.StationID)
+		bq := market.WalkBook(n.TypeID, books[n.TypeID], units, hub.StationID)
 		bb := industry.CompareBuildVsBuy(industry.BuildBuyInput{TypeID: n.TypeID, Units: units, InputCost: inputCost, InputM3: inputM3,
 			JobFees: feesByProduct[n.TypeID], Buy: bq, UnitM3: basics[n.TypeID].Volume, FreightPerM3: freight, CanBuild: true})
 		out.BuildVsBuy = append(out.BuildVsBuy, BuildBuyView{Name: basics[n.TypeID].Name, BuildBuy: bb})
@@ -497,11 +499,11 @@ func (p *planner) planBuild(ctx context.Context, in PlanBuildInput) (PlanBuildOu
 
 	// Haul.
 	if in.HaulProfile != "" {
-		var cargo []industry.Cargo
+		var items []cargo.Cargo
 		destBuild := buildProf.Name
 		for _, l := range shopping {
 			b := buyBasics[l.TypeID]
-			cargo = append(cargo, industry.Cargo{TypeID: l.TypeID, Name: l.Name, Quantity: l.Quantity, UnitM3: b.Volume, Dest: destBuild})
+			items = append(items, cargo.Cargo{TypeID: l.TypeID, Name: l.Name, Quantity: l.Quantity, UnitM3: b.Volume, Dest: destBuild})
 		}
 		if out.OreMix != nil {
 			ob, err := p.typeBasics(ctx, oreIDs(out.OreMix.OreMix))
@@ -509,15 +511,15 @@ func (p *planner) planBuild(ctx context.Context, in PlanBuildInput) (PlanBuildOu
 				return out, err
 			}
 			for _, o := range out.OreMix.Ores {
-				cargo = append(cargo, industry.Cargo{TypeID: o.TypeID, Name: o.Name, Quantity: o.Quantity, UnitM3: ob[o.TypeID].Volume, Portion: portionFor(ob[o.TypeID]), Dest: in.RefineFacility})
+				items = append(items, cargo.Cargo{TypeID: o.TypeID, Name: o.Name, Quantity: o.Quantity, UnitM3: ob[o.TypeID].Volume, Portion: portionFor(ob[o.TypeID]), Dest: in.RefineFacility})
 				prices[o.TypeID] = o.Cost / float64(o.Quantity)
 			}
 			for _, m := range out.OreMix.Minerals {
-				cargo = append(cargo, industry.Cargo{TypeID: m.TypeID, Name: m.Name, Quantity: m.Quantity, UnitM3: 0.01, Dest: destBuild})
+				items = append(items, cargo.Cargo{TypeID: m.TypeID, Name: m.Name, Quantity: m.Quantity, UnitM3: 0.01, Dest: destBuild})
 				prices[m.TypeID] = m.Cost / float64(m.Quantity)
 			}
 		}
-		h, err := p.haulPlan(ctx, haulProf, hub, hubSystem, buildProf.SystemID, cargo, prices)
+		h, err := p.haulPlan(ctx, haulProf, hub, hubSystem, buildProf.SystemID, items, prices)
 		if err != nil {
 			return out, err
 		}
@@ -540,19 +542,19 @@ func (p *planner) planBuild(ctx context.Context, in PlanBuildInput) (PlanBuildOu
 	}
 
 	// Multibuy for everything bought.
-	var ml []industry.MultibuyLine
+	var ml []market.MultibuyLine
 	for _, l := range shopping {
-		ml = append(ml, industry.MultibuyLine{Name: l.Name, Quantity: l.Quantity})
+		ml = append(ml, market.MultibuyLine{Name: l.Name, Quantity: l.Quantity})
 	}
 	if out.OreMix != nil {
 		for _, o := range out.OreMix.Ores {
-			ml = append(ml, industry.MultibuyLine{Name: o.Name, Quantity: o.Quantity})
+			ml = append(ml, market.MultibuyLine{Name: o.Name, Quantity: o.Quantity})
 		}
 		for _, m := range out.OreMix.Minerals {
-			ml = append(ml, industry.MultibuyLine{Name: m.Name, Quantity: m.Quantity})
+			ml = append(ml, market.MultibuyLine{Name: m.Name, Quantity: m.Quantity})
 		}
 	}
-	out.Multibuy = industry.Multibuy(ml)
+	out.Multibuy = market.Multibuy(ml)
 
 	// Schedule: intermediates first, then the final product.
 	var inter, final []industry.TreeJob

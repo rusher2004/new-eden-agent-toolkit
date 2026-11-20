@@ -48,9 +48,19 @@ var areas = []area{
 		keywords: []string{"autopilot", "open_"},
 	},
 	{
+		title: "Navigation and hauling",
+		blurb: "Jump and gate routes with fuel, fatigue and dotlan links, and cargo packed into loads, for any move: PvP, PvE or industry. Haul profiles are saved in `~/.neat/config.json`.",
+		names: []string{"save_haul_profile", "list_haul_profiles", "delete_haul_profile", "plan_jump_route", "plan_haul"},
+	},
+	{
+		title: "Trade hubs and purchases",
+		blurb: "Trade hubs to buy at, and shopping lists priced against a hub's live order book. Hub profiles are saved in `~/.neat/config.json`.",
+		names: []string{"save_hub_profile", "list_hub_profiles", "quote_market_purchase"},
+	},
+	{
 		title:    "Industry planning",
-		blurb:    "Build plans, build-or-buy, job costs, research and invention, refining and compressed ore, jump routes and hauling. Profiles are saved in `~/.neat/config.json`.",
-		names:    []string{"describe_facility", "find_owned_blueprints", "check_build_skills", "check_material_stock", "quote_market_purchase", "solve_ore_mix"},
+		blurb:    "Build plans, build-or-buy, job costs, research and invention, and refining and compressed ore. Facility profiles are saved in `~/.neat/config.json`.",
+		names:    []string{"describe_facility", "find_owned_blueprints", "check_build_skills", "check_material_stock", "solve_ore_mix"},
 		keywords: []string{"_profile", "estimate_", "plan_"},
 	},
 	{

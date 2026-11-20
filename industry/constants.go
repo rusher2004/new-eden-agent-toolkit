@@ -1,5 +1,7 @@
 package industry
 
+import "github.com/rusher2004/new-eden-agent-toolkit/nav"
+
 // Constants not available in the SDE. Each cites its source. If one of these
 // is later found in the SDE, read it from there instead.
 
@@ -26,14 +28,6 @@ const (
 	// University, Reprocessing (Upwell reprocessing formula).
 	UpwellReprocessingBase = 50.0
 
-	// MetersPerLightYear converts SDE coordinates (meters) to light years.
-	// EVE uses a rounded 9.46e15 m, not the astronomical 9.4607e15. Verified
-	// 2026-11-18: with 9.46e15 and per-jump fuel rounded to the nearest unit,
-	// dotlan's Nomad legs match exactly at 5/4/4 (e.g. Jita → Aunenen, 28,420
-	// isotopes, and Jita → Jan → NL6V-7 → PF-QHK, 15,553, 25,148 and 28,818);
-	// 9.4607e15 misses legs by 1–2.
-	MetersPerLightYear = 9.46e15
-
 	// CopyCostFactor and ResearchCostFactor scale estimated item value in the
 	// copying and research job cost formulas. Source: EVE University,
 	// Research (job cost formulas).
@@ -52,13 +46,6 @@ const (
 	// endpoints.
 	NPCReprocessingTaxAtZero       = 0.05
 	NPCReprocessingTaxFreeStanding = 6.67
-
-	// Jump fatigue limits, in minutes: the fatigue cap, the jump activation
-	// cooldown cap, and the minimum fatigue a jump multiplies. Source: EVE
-	// University, Jump fatigue (rules from the March 2018 changes).
-	fatigueCapMinutes  = 300
-	cooldownCapMinutes = 30
-	fatigueMinBase     = 10
 )
 
 // UpwellReprocessingRigTerm is Rm in the Upwell reprocessing formula: added
@@ -68,7 +55,7 @@ var UpwellReprocessingRigTerm = map[int]float64{0: 0, 1: 1, 2: 3}
 // ReprocessingSecurityTerm is Sec in the Upwell reprocessing formula. It
 // applies only when a reprocessing rig is fitted. Source: EVE University,
 // Reprocessing.
-var ReprocessingSecurityTerm = map[Band]float64{Highsec: 0, Lowsec: 0.06, Nullsec: 0.12, Wormhole: 0.12}
+var ReprocessingSecurityTerm = map[nav.Band]float64{nav.Highsec: 0, nav.Lowsec: 0.06, nav.Nullsec: 0.12, nav.Wormhole: 0.12}
 
 // ResearchLevelBaseSeconds is the base duration for a rank 1 blueprint to
 // reach each ME/TE research level (index 1..10). Source: EVE University,
