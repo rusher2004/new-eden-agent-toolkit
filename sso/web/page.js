@@ -30,6 +30,20 @@
       }
     });
   });
+  // Rename: the form is shown without JS; with it, the Rename button
+  // toggles it.
+  document.querySelectorAll(".account").forEach(function (account) {
+    var toggle = account.querySelector("[data-rename]");
+    var form = account.querySelector("form.rename");
+    if (!toggle || !form) return;
+    form.hidden = true;
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.addEventListener("click", function () {
+      form.hidden = !form.hidden;
+      toggle.setAttribute("aria-expanded", String(!form.hidden));
+      if (!form.hidden) form.querySelector("input[name=to]").select();
+    });
+  });
   document.querySelectorAll("form[data-confirm]").forEach(function (form) {
     form.addEventListener("submit", function (e) {
       if (!window.confirm(form.dataset.confirm)) e.preventDefault();

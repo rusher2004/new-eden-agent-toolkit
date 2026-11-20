@@ -123,12 +123,12 @@ func (s *session) postForm(path string, form url.Values) *http.Response {
 // groupOf returns the heading of the account group the character's tile is
 // in on the page, or "" if it isn't on the page.
 func groupOf(body string, id string) string {
-	sections := strings.Split(body, `<section class="group">`)
-	h3 := regexp.MustCompile(`<h3[^>]*>([^<]*)</h3>`)
+	sections := strings.Split(body, `<section class="account`)
+	h2 := regexp.MustCompile(`<h2[^>]*>([^<]*)`)
 	for _, sec := range sections[1:] {
 		if strings.Contains(sec, "characters/"+id+"/portrait") {
-			if m := h3.FindStringSubmatch(sec); m != nil {
-				return m[1]
+			if m := h2.FindStringSubmatch(sec); m != nil {
+				return strings.TrimSpace(m[1])
 			}
 		}
 	}
@@ -178,7 +178,7 @@ func TestAccounts_SuggestsPreviousLoginsAccountUntilConfirmed(t *testing.T) {
 	if g := groupOf(body, "998878"); g != "Main" {
 		t.Errorf("second login is shown in %q, want the suggested Main", g)
 	}
-	if !strings.Contains(body, "Same account?") {
+	if !strings.Contains(body, ">Same account</button>") {
 		t.Error("the suggestion isn't marked")
 	}
 	if got := book.account(998878); got != "" {
@@ -189,7 +189,7 @@ func TestAccounts_SuggestsPreviousLoginsAccountUntilConfirmed(t *testing.T) {
 	if got := book.account(998878); got != "Main" {
 		t.Errorf("confirmed account = %q", got)
 	}
-	if body, _ := s.page(); strings.Contains(body, "Same account?") {
+	if body, _ := s.page(); strings.Contains(body, ">Same account</button>") {
 		t.Error("still suggesting after confirmation")
 	}
 }
@@ -205,8 +205,8 @@ func TestAccounts_DecliningSuggestionKeepsItUnassigned(t *testing.T) {
 
 	s.postForm("/account/set", url.Values{"token": {token}, "id": {"998878"}, "account": {""}})
 	body, _ := s.page()
-	if g := groupOf(body, "998878"); g != "Not assigned to an account" || strings.Contains(body, "Same account?") {
-		t.Errorf("after declining, character is in %q and suggested=%v", g, strings.Contains(body, "Same account?"))
+	if g := groupOf(body, "998878"); g != "Not assigned to an account" || strings.Contains(body, ">Same account</button>") {
+		t.Errorf("after declining, character is in %q and suggested=%v", g, strings.Contains(body, ">Same account</button>"))
 	}
 }
 

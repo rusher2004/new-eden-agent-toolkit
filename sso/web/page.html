@@ -12,121 +12,141 @@
   --ok-bg: #12261b; --ok: #3fb950; --err-bg: #2d1414; --err: #f85149;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
 body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-main { max-width: 880px; margin: 40px auto; padding: 0 16px; }
-.card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 24px; }
-.brand { font-size: 13px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 4px; }
-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin: 0 0 8px; }
-h1 { font-size: 22px; margin: 0; }
-.notice { border-radius: 8px; padding: 10px 12px; margin: 0 0 20px; }
-.notice.success { background: var(--ok-bg); color: var(--ok); }
+/* The page fills the window: the header stays put and only the character
+   list scrolls. */
+main { max-width: 1200px; height: 100dvh; margin: 0 auto; padding: 24px 16px 0; display: flex; flex-direction: column; }
+.card { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.top { padding: 20px 24px 12px; border-bottom: 1px solid var(--border); }
+.brand { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 2px; }
+header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+h1 { font-size: 20px; margin: 0; }
+.hint { color: var(--muted); font-size: 13px; margin: 6px 0 0; }
+.notice { border-radius: 8px; padding: 8px 12px; margin: 10px 0 0; font-size: 14px; }
 .notice.error { background: var(--err-bg); color: var(--err); }
-.hint { color: var(--muted); font-size: 14px; margin: 0 0 20px; }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.actions form { margin: 0; }
-button { font: inherit; font-weight: 600; border-radius: 8px; padding: 8px 14px; cursor: pointer; border: 1px solid var(--border); background: var(--tile); color: var(--text); }
+form { margin: 0; }
+button { font: inherit; font-weight: 600; border-radius: 8px; padding: 7px 14px; cursor: pointer; border: 1px solid var(--border); background: var(--tile); color: var(--text); }
 button:hover { border-color: var(--muted); }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 button.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
 button:disabled { opacity: .5; cursor: default; }
-h2 { font-size: 13px; font-weight: 600; color: var(--muted); margin: 0 0 12px; }
-.grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 12px; }
-.grid li { position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px 10px 12px; background: var(--tile); border: 1px solid var(--border); border-radius: 10px; text-align: center; }
-.grid li.new { border-color: var(--ok); }
-.grid img { width: 72px; height: 72px; border-radius: 8px; background: var(--border); }
-.grid .name { font-weight: 500; font-size: 14px; line-height: 1.3; overflow-wrap: anywhere; }
-.badge { font-size: 11px; font-weight: 600; color: var(--ok); background: var(--ok-bg); border-radius: 999px; padding: 2px 8px; }
+.scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 24px 24px; }
+.accounts { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); gap: 12px; align-items: start; }
+.account { background: var(--tile); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px 10px; min-width: 0; }
+.account.unassigned { grid-column: 1 / -1; border-style: dashed; }
+.account-head { display: flex; align-items: center; gap: 6px; min-height: 28px; }
+h2 { flex: 1; min-width: 0; font-size: 14px; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.unassigned h2 { color: var(--muted); font-weight: 500; }
+.count { color: var(--muted); font-weight: 400; }
+.icon { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 6px; background: transparent; color: var(--muted); border-color: transparent; }
+.icon:hover { color: var(--text); border-color: var(--border); }
+.icon[aria-expanded=true] { color: var(--text); border-color: var(--border); }
+.rename { display: flex; gap: 6px; margin: 4px 0 6px; }
+.rename input { flex: 1; min-width: 0; }
+input[type=text], select { font: inherit; font-size: 13px; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; min-width: 0; }
+.chars { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 4px; }
+.unassigned .chars { grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); gap: 4px 12px; }
+.char { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 2px 10px; align-items: center; padding: 4px; border: 1px solid transparent; border-radius: 8px; }
+.char.new { border-color: var(--ok); }
+.char.suggested { border: 1px dashed var(--accent); }
+.char img { grid-row: span 2; width: 48px; height: 48px; border-radius: 6px; background: var(--border); }
+.char .name { font-weight: 500; font-size: 14px; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.char .name .badge { margin-left: 4px; }
+.badge { font-size: 11px; font-weight: 600; color: var(--ok); background: var(--ok-bg); border-radius: 999px; padding: 1px 7px; vertical-align: 1px; }
+.controls { display: flex; gap: 6px; align-items: center; min-width: 0; }
+.move { display: flex; gap: 6px; flex: 1; min-width: 0; }
+.move select { flex: 1; min-width: 96px; }
+.move input { flex: 1; min-width: 0; }
+.small { font-size: 12px; padding: 3px 9px; border-radius: 6px; }
 .empty { color: var(--muted); margin: 0; }
-.group { margin: 0 0 20px; }
-.group-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 10px; }
-h3 { font-size: 15px; margin: 0 8px 0 0; }
-h3.unassigned { color: var(--muted); font-weight: 500; }
-.group-head form, .group-head details { margin: 0; }
-.group-head details[open] { flex-basis: 100%; }
-.small { font-size: 12px; font-weight: 600; padding: 4px 10px; }
-summary.small { display: inline-block; list-style: none; border: 1px solid var(--border); border-radius: 8px; background: var(--tile); cursor: pointer; }
-summary.small::-webkit-details-marker { display: none; }
-.inline { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
-input[type=text], select { font: inherit; font-size: 13px; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; max-width: 100%; }
-.grid li.suggested { border-style: dashed; border-color: var(--accent); }
-.badge.suggest { color: var(--accent-hover); background: #0f1d33; }
-.move { display: flex; flex-direction: column; gap: 6px; width: 100%; margin: 0; }
-.move select, .move input { width: 100%; }
+.legal { flex: none; padding: 8px 4px 12px; color: var(--muted); font-size: 11px; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-.legal { max-width: 880px; margin: 0 auto 32px; padding: 0 16px; color: var(--muted); font-size: 12px; }
 .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); max-width: calc(100% - 32px); background: var(--ok-bg); color: var(--ok); border: 1px solid var(--ok); border-radius: 8px; padding: 10px 16px; font-weight: 500; box-shadow: 0 8px 24px rgba(0, 0, 0, .5); transition: opacity .4s, transform .4s; }
 .toast.hide { opacity: 0; transform: translate(-50%, 12px); pointer-events: none; }
+@media (max-width: 560px) {
+  main { padding: 8px 8px 0; }
+  .top { padding: 14px 14px 10px; }
+  .scroll { padding: 12px 14px 16px; }
+  .accounts, .unassigned .chars { grid-template-columns: minmax(0, 1fr); }
+}
 </style>
 </head>
 <body{{with .Token}} data-token="{{.}}"{{end}}>
 <main>
 <div class="card">
-  <p class="brand">neat</p>
-  {{if .Finished}}
-  <header><h1>All set</h1></header>
-  <p class="hint">You can close this tab and go back to Claude.</p>
-  {{else}}
-  <header>
-    <h1>EVE Online characters</h1>
-    <div class="actions">
-      <form method="post" action="/login"><input type="hidden" name="token" value="{{.Token}}"><button class="primary" type="submit">Add another character</button></form>
-      <form method="post" action="/done"><input type="hidden" name="token" value="{{.Token}}"><button type="submit">I'm done</button></form>
-    </div>
-  </header>
-  <p class="hint">Done adding characters? You can close this tab; neat finishes up on its own.</p>
-  {{if eq .Notice.Kind "error"}}<p class="notice error" role="alert">{{.Notice.Text}}</p>{{end}}
-  <p class="notice error" id="ended" role="status" hidden>This login session has ended. To add more characters, ask Claude to add a character again.</p>
-  {{end}}
+  <div class="top">
+    <p class="brand">neat</p>
+    {{if .Finished}}
+    <header><h1>All set</h1></header>
+    <p class="hint">You can close this tab and go back to Claude.</p>
+    {{else}}
+    <header>
+      <h1>EVE Online characters</h1>
+      <div class="actions">
+        <form method="post" action="/login"><input type="hidden" name="token" value="{{.Token}}"><button class="primary" type="submit">Add another character</button></form>
+        <form method="post" action="/done"><input type="hidden" name="token" value="{{.Token}}"><button type="submit">I'm done</button></form>
+      </div>
+    </header>
+    <p class="hint">{{if .Grouping}}Group characters by EVE account: characters on one account can't be online together, which matters when a plan needs two of them at once. {{end}}Done? Close this tab; neat finishes up on its own.</p>
+    {{if eq .Notice.Kind "error"}}<p class="notice error" role="alert">{{.Notice.Text}}</p>{{end}}
+    <p class="notice error" id="ended" role="status" hidden>This login session has ended. To add more characters, ask Claude to add a character again.</p>
+    {{end}}
+  </div>
 
-  <h2>Characters neat can use</h2>
-  {{if and .Grouping (not .Finished) .Groups}}<p class="hint">Group your characters by EVE account. Characters on the same account can't be logged in at the same time, which matters when a plan needs two of them online together, such as a jump freighter pilot and their cyno alt.</p>{{end}}
-  {{range .Groups}}
-  <section class="group">
-    <div class="group-head">
-      {{if .Label}}<h3>{{.Label}}</h3>{{else}}<h3 class="unassigned">{{if $.Grouping}}Not assigned to an account{{else}}Characters{{end}}</h3>{{end}}
-      {{if and $.Grouping .Label (not $.Finished)}}
-      <details>
-        <summary class="small">Rename</summary>
-        <form class="inline" method="post" action="/account/rename"><input type="hidden" name="token" value="{{$.Token}}"><input type="hidden" name="from" value="{{.Label}}"><label><span class="sr">New name for {{.Label}}</span><input type="text" name="to" value="{{.Label}}" maxlength="40" required></label><button class="small" type="submit">Save</button></form>
-      </details>
-      <form method="post" action="/account/delete" data-confirm="Delete {{.Label}}? Its characters won't be assigned to an account."><input type="hidden" name="token" value="{{$.Token}}"><input type="hidden" name="label" value="{{.Label}}"><button class="small" type="submit">Delete group</button></form>
+  <div class="scroll">
+    {{if .Groups}}
+    <div class="accounts">
+      {{range .Groups}}
+      <section class="account{{if not .Label}} unassigned{{end}}" aria-label="{{if .Label}}{{.Label}}{{else if $.Grouping}}Not assigned to an account{{else}}Characters{{end}}">
+        <div class="account-head">
+          {{if .Label}}<h2>{{.Label}}</h2>{{else}}<h2>{{if $.Grouping}}Not assigned to an account{{else}}Characters{{end}} <span class="count">· {{len .Characters}}</span></h2>{{end}}
+          {{if and $.Grouping .Label (not $.Finished)}}
+          <button class="icon" type="button" data-rename title="Rename {{.Label}}">Rename</button>
+          <form method="post" action="/account/delete" data-confirm="Delete {{.Label}}? Its characters won't be assigned to an account."><input type="hidden" name="token" value="{{$.Token}}"><input type="hidden" name="label" value="{{.Label}}"><button class="icon" type="submit" title="Delete {{.Label}}">Delete</button></form>
+          {{end}}
+        </div>
+        {{if and $.Grouping .Label (not $.Finished)}}
+        <form class="rename" method="post" action="/account/rename"><input type="hidden" name="token" value="{{$.Token}}"><input type="hidden" name="from" value="{{.Label}}"><input type="text" name="to" value="{{.Label}}" maxlength="40" required aria-label="New name for {{.Label}}"><button class="small" type="submit">Save</button></form>
+        {{end}}
+        <ul class="chars">
+          {{range .Characters}}
+          <li class="char{{if .New}} new{{end}}{{if .Suggested}} suggested{{end}}">
+            <img src="https://images.evetech.net/characters/{{.ID}}/portrait?size=64" alt="">
+            <span class="name" title="{{.Name}}">{{.Name}}{{if .New}}<span class="badge">New</span>{{end}}</span>
+            {{if and $.Grouping (not $.Finished)}}
+            <div class="controls">
+              {{if .Suggested}}
+              <form method="post" action="/account/set"><input type="hidden" name="token" value="{{$.Token}}"><input type="hidden" name="id" value="{{.ID}}"><input type="hidden" name="account" value="{{.Suggested}}"><button class="small primary" type="submit" title="Put this character in {{.Suggested}}, the account of the character you logged in just before it">Same account</button></form>
+              {{end}}
+              {{$current := .Account}}
+              <form class="move" method="post" action="/account/set">
+                <input type="hidden" name="token" value="{{$.Token}}"><input type="hidden" name="id" value="{{.ID}}">
+                <select name="account" aria-label="Account for {{.Name}}">
+                  {{range $.Labels}}<option value="{{.}}"{{if eq . $current}} selected{{end}}>{{.}}</option>{{end}}
+                  <option value=""{{if eq $current ""}} selected{{end}}>Not assigned</option>
+                  <option value="__new__">New account…</option>
+                </select>
+                <input type="text" name="new_account" placeholder="New account name" maxlength="40" aria-label="New account name for {{.Name}}">
+                <button class="small" type="submit">Move</button>
+              </form>
+            </div>
+            {{end}}
+          </li>
+          {{end}}
+        </ul>
+      </section>
       {{end}}
     </div>
-    <ul class="grid">
-      {{range .Characters}}
-      <li class="{{if .New}}new{{end}}{{if .Suggested}} suggested{{end}}">
-        <img src="https://images.evetech.net/characters/{{.ID}}/portrait?size=128" alt="">
-        <span class="name">{{.Name}}</span>
-        {{if .New}}<span class="badge">Added just now</span>{{end}}
-        {{if and $.Grouping (not $.Finished)}}
-        {{if .Suggested}}
-        <span class="badge suggest">Same account?</span>
-        <form method="post" action="/account/set"><input type="hidden" name="token" value="{{$.Token}}"><input type="hidden" name="id" value="{{.ID}}"><input type="hidden" name="account" value="{{.Suggested}}"><button class="small primary" type="submit">Confirm</button></form>
-        {{end}}
-        {{$current := .Account}}
-        <form class="move" method="post" action="/account/set">
-          <input type="hidden" name="token" value="{{$.Token}}"><input type="hidden" name="id" value="{{.ID}}">
-          <label class="sr" for="account-{{.ID}}">Account for {{.Name}}</label>
-          <select id="account-{{.ID}}" name="account">
-            {{range $.Labels}}<option value="{{.}}"{{if eq . $current}} selected{{end}}>{{.}}</option>{{end}}
-            <option value=""{{if eq $current ""}} selected{{end}}>Not assigned</option>
-            <option value="__new__">New account…</option>
-          </select>
-          <label class="sr" for="new-account-{{.ID}}">New account name</label>
-          <input type="text" id="new-account-{{.ID}}" name="new_account" placeholder="New account name" maxlength="40">
-          <button class="small" type="submit">Move</button>
-        </form>
-        {{end}}
-      </li>
-      {{end}}
-    </ul>
-  </section>
-  {{else}}
-  <p class="empty">No characters yet.</p>
-  {{end}}
+    {{else}}
+    <p class="empty">No characters yet.</p>
+    {{end}}
+  </div>
 </div>
-</main>
 <footer class="legal">© 2014 CCP hf. All rights reserved. "EVE", "EVE Online", "CCP", and all related logos and images are trademarks or registered trademarks of CCP hf. neat is a fan project and isn't affiliated with or endorsed by Fenris Creations.</footer>
+</main>
 {{if and (not .Finished) (eq .Notice.Kind "success")}}<div class="toast" id="toast" role="status">{{.Notice.Text}}</div>{{end}}
 {{if .Token}}<script src="/page.js"></script>{{end}}
 </body>

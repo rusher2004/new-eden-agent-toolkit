@@ -271,7 +271,7 @@ func TestAddCharacters_LoginThenDone_ReturnsCharacterAndSavesToken(t *testing.T)
 	}
 
 	body, token := s.page()
-	for _, want := range []string{"Added Test Pilot.", "characters/998877/portrait", "Added just now", "Add another character", "close this tab"} {
+	for _, want := range []string{"Added Test Pilot.", "characters/998877/portrait", `<span class="badge">New</span>`, "Add another character", "Close this tab"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("page is missing %q", want)
 		}
