@@ -1,5 +1,14 @@
 # neat plugin — changelog
 
+## 0.9.1
+- Claude now always asks whether you want your corporation's data when you add characters, and suggests the `corporation`, `corporation_finance` and `corporation_industry` groups up front instead of waiting for a corporation tool to fail. It explains that these only show data for characters with the matching in-game roles, and that granting them to your other characters does no harm.
+- `structures` is now suggested whenever you want to see your assets or plan industry, so Claude can look up the names of the player structures your items, ships and jobs are in instead of showing only a number.
+- When a corporation tool is refused because a character lacks an in-game role, Claude tries one other character in the same corporation or asks you which one has it, rather than trying every character and using up ESI's error limit.
+- The `add-character` skill explains how to give a new group to several characters in one login without losing the groups they already have.
+- If no browser tab opens when you add a character, you can go to http://127.0.0.1:48211/ yourself. Claude now tells you this before the login starts, and the login now keeps waiting for you there even when neat can't start a browser at all.
+- `neat setup` no longer looks stuck while your keychain waits to be unlocked: after 5 seconds it says it's waiting and what to look for. A failed keychain check now ends with a hint for your OS, including what to do on Linux when there's no usable default keyring.
+- The README's Troubleshooting section covers a locked or missing Linux keyring, unlock prompts that open on another screen, `neat` missing from PATH in some terminals, and no browser tab opening at login.
+
 ## 0.9.0
 - neat now sends anonymous usage statistics to Aptabase, so the project can show FC's partner program how many people use it each month and see which features get used. Each launch sends neat's version, which download you're running (for example macOS on `arm64`) and a random ID that's replaced every month. Each tool call sends the tool's name and whether it worked, with no ID that links it to you or your install. Neither includes your characters, your EVE account, what you ask, what a tool was given or returned, or anything about your computer. [PRIVACY.md](../../PRIVACY.md) has the details.
 - New command `neat analytics off` turns it all off and deletes the monthly ID. `neat analytics on` and `neat analytics status` turn it back on and show whether it's on.

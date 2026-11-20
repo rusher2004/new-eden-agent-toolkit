@@ -82,16 +82,19 @@ On Windows the command looks like `"C:\\Users\\YOUR_NAME\\AppData\\Local\\Progra
 
 ### 4. Log in a character
 
-Ask Claude to "add my EVE character". It asks what you want neat to help with, then opens EVE's login page in your browser. After you log in, the browser shows a neat page where you can log in more characters with the same access, then click **I'm done** or close the tab.
+Ask Claude to "add my EVE character". It asks what you want neat to help with, and whether you want your corporation's data too, then opens EVE's login page in your browser. After you log in, the browser shows a neat page where you can log in more characters with the same access, then click **I'm done** or close the tab. If no browser tab opens, go to http://127.0.0.1:48211/ yourself while Claude waits.
 
 ## Choosing what neat can see
 
 EVE asks you to approve the access an app requests. neat groups that access by what you'll use it for, and every character gets the `basic` group: skills, location, current ship, clones and implants. You add the rest as you need them, for example:
 
 - `wallet`, `assets`, `market`, `contracts`: your ISK, your stuff and your trading
-- `industry`: blueprints, industry jobs and mining; industry planning also wants `assets` and `market`
+- `structures`: lets Claude look up the names of player structures (Upwell citadels and engineering complexes) your items, ships and jobs are in; without it they show only as a number
+- `industry`: blueprints, industry jobs and mining; industry planning also wants `assets`, `market` and `structures`
 - `mail`, `calendar`, `contacts`, `fleet`, `fittings`
-- `corporation`, `corporation_finance`, `corporation_industry`: your corporation's data, which also needs the matching in-game corporation roles
+- `corporation`, `corporation_finance`, `corporation_industry`: your corporation's members, wallets, assets, industry jobs and structures
+
+If you're in a player corporation, grant the corporation groups at your first login: Claude asks about them every time. They only show data for characters holding the matching in-game roles (Director, Accountant, Factory Manager and so on), but it does no harm to grant them to your other characters, so one login can cover them all.
 
 You don't have to get it right up front. If you ask for something a character hasn't allowed yet, Claude tells you which access it needs and asks before sending you back to EVE's login page to grant it. The character keeps everything it already allowed. Ask Claude to "list neat's scope groups" for the full list.
 
@@ -132,12 +135,17 @@ To uninstall, delete the `neat` program and the `~/.neat` folder, remove the `ne
 
 ## Troubleshooting
 
+- **`neat setup` seems stuck after "Config directory ready".** It's waiting for your keychain, which is locked and showing an unlock prompt. After 5 seconds neat says so. Look for the prompt and enter your password. On Linux, if you use a remote desktop such as VNC alongside your monitor, the prompt may have opened on the other screen.
+- **On Linux, `neat setup` fails with "Object does not exist at path /org/freedesktop/secrets/collection/login".** Your keyring service has no usable default keyring. Open **Passwords and Keys** (`seahorse`; install it with your package manager if needed), click **+**, choose **Password keyring**, name it `Login` and use your login password, then run `neat setup` again. If the new keyring doesn't appear, or the password prompt never shows, log out and back in (or run `systemctl --user restart gnome-keyring-daemon`) and try again.
+- **`neat` is "command not found" in some terminals but not others.** `~/.local/bin` was added to your PATH by a login script after that desktop session started. Log out and back in, or add `export PATH="$HOME/.local/bin:$PATH"` to `~/.bashrc`.
 - **Claude doesn't see neat's tools.** In Claude Code, check that `neat version` works in a terminal; the plugin runs `neat` from your PATH. In the desktop app, use the full path to `neat` in the config file, because the app doesn't see your terminal's PATH, then quit and reopen the app.
 - **macOS says neat can't be opened, or it quits immediately.** Run the `xattr` command from step 1. If you copied a new version over an old one, delete the old file first and copy it again.
+- **No browser tab opens when adding a character.** Go to http://127.0.0.1:48211/ in your browser while Claude is waiting, and click **Add another character**. This happens when neat opens the browser on a different screen, such as a remote desktop session, or can't start one at all.
 - **Logging in fails because port 48211 is in use.** neat briefly runs a small web page on your own computer at that port to receive EVE's login. Close whatever else is using it and try again.
 - **EVE's login page shows "HTTP Error 400. The size of the request headers is too long".** Clear your browser's cookies for `login.eveonline.com` and try again.
 - **The first question about items or systems is slow.** neat is downloading EVE's static data. It only does this once, and again when FC publishes an update.
 - **A tool says a character "hasn't granted" a scope.** Say yes when Claude offers to grant it, and log in as that same character.
+- **A corporation tool says the character "does not have required role(s)".** That character doesn't hold the in-game corporation role the data needs. Ask Claude to use a character that does, or have a director grant the role in game.
 
 ## Development
 

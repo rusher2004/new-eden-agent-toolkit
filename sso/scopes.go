@@ -60,10 +60,10 @@ var ScopeGroups = []ScopeGroup{
 	{"wallet", "Wallet balance, journal and transactions.", []string{
 		"esi-wallet.read_character_wallet.v1",
 	}},
-	{"assets", "Assets: what the character owns and where.", []string{
+	{"assets", "Assets: what the character owns and where. Add structures to look up the player structures items are in.", []string{
 		"esi-assets.read_assets.v1",
 	}},
-	{"industry", "Industry: blueprints, industry jobs and mining ledger. Industry planning also wants assets and market.", []string{
+	{"industry", "Industry: blueprints, industry jobs and mining ledger. Industry planning also wants assets, market and structures.", []string{
 		"esi-characters.read_blueprints.v1",
 		"esi-industry.read_character_jobs.v1",
 		"esi-industry.read_character_mining.v1",
