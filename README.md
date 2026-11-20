@@ -116,16 +116,16 @@ The [tool reference](docs/reference/tools.md) lists every tool.
 
 For build plans, neat needs to know things ESI can't tell it: which rigs your structure has and what taxes it charges, which ship you haul with, which areas you avoid. Claude asks you for these the first time and saves them as named profiles, so you only describe each structure or freighter once. Every number in a plan comes from neat's calculations against EVE's own data, not from Claude's guesswork, and you can check a facility against a real job in game to calibrate its fees.
 
-## Anonymous usage count
+## Anonymous usage statistics
 
-Each time it starts, neat sends Aptabase one anonymous message so the project can count its monthly users, which FC's partner program asks for. The message holds only neat's version, which download you're running (for example macOS on `arm64`), and a random ID that's replaced every month. It never includes your characters, your EVE account, what you ask, or anything about your computer. To turn it off, run `neat analytics off`. [PRIVACY.md](PRIVACY.md) lists exactly what's sent.
+neat sends Aptabase anonymous usage statistics so the project can count its monthly users, which FC's partner program asks for, and see which features people use. Each time neat starts, it sends neat's version, which download you're running (for example macOS on `arm64`) and a random ID that's replaced every month. Each time Claude uses one of neat's tools, it sends the tool's name and whether it worked, with no ID that ties it to you or your install. It never includes your characters, your EVE account, what you ask, what a tool was given or returned, or anything about your computer. To turn it off, run `neat analytics off`. [PRIVACY.md](PRIVACY.md) lists exactly what's sent.
 
 ## Where neat keeps things
 
 - `~/.neat/config.json`: which characters are logged in, plus your saved facility, haul and trade hub profiles
 - `~/.neat/sde/`: a local copy of EVE's static game data (about 500 MB), downloaded the first time it's needed and refreshed when FC publishes a new one
 - `~/.neat/plans/`: build plans you've asked for
-- `~/.neat/analytics.json`: the random monthly ID for the anonymous usage count, unless you turned it off
+- `~/.neat/analytics.json`: the random monthly ID for the anonymous usage statistics, unless you turned them off
 - Your OS keychain (macOS Keychain, Windows Credential Manager, or the Linux Secret Service), under the name `neat`: each character's login token
 
 To uninstall, delete the `neat` program and the `~/.neat` folder, remove the `neat` entries from your keychain, and uninstall the plugin (`/plugin uninstall neat@neat`) or remove neat from your desktop app config.
@@ -147,7 +147,7 @@ To build neat from source you need Go, `jq`, and your own ESI application from [
 { "esiClientId": "your-esi-client-id" }
 ```
 
-Builds without an `aptabaseAppKey` in that file send no usage count.
+Builds without an `aptabaseAppKey` in that file send no usage statistics.
 
 Then:
 

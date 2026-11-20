@@ -14,11 +14,11 @@ import (
 func analyticsCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "analytics",
-		Usage: "show or change whether neat sends its anonymous usage ping (see PRIVACY.md)",
+		Usage: "show or change whether neat sends its anonymous usage statistics (see PRIVACY.md)",
 		Commands: []*cli.Command{
 			{
 				Name:  "status",
-				Usage: "show whether the anonymous usage ping is on",
+				Usage: "show whether the anonymous usage statistics is on",
 				Action: func(_ context.Context, cmd *cli.Command) error {
 					store, err := config.NewStore()
 					if err != nil {
@@ -29,7 +29,7 @@ func analyticsCommand() *cli.Command {
 			},
 			{
 				Name:  "on",
-				Usage: "turn the anonymous usage ping on",
+				Usage: "turn the anonymous usage statistics on",
 				Action: func(_ context.Context, cmd *cli.Command) error {
 					store, idPath, err := analyticsPaths()
 					if err != nil {
@@ -40,7 +40,7 @@ func analyticsCommand() *cli.Command {
 			},
 			{
 				Name:  "off",
-				Usage: "turn the anonymous usage ping off and delete its saved monthly ID",
+				Usage: "turn the anonymous usage statistics off and delete its saved monthly ID",
 				Action: func(_ context.Context, cmd *cli.Command) error {
 					store, idPath, err := analyticsPaths()
 					if err != nil {
@@ -70,9 +70,9 @@ func runAnalyticsStatus(w io.Writer, store *config.Store) error {
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
-	msg := "Anonymous usage ping is on. Turn it off with: neat analytics off"
+	msg := "Anonymous usage statistics are on. Turn it off with: neat analytics off"
 	if cfg.AnalyticsDisabled {
-		msg = "Anonymous usage ping is off. Turn it on with: neat analytics on"
+		msg = "Anonymous usage statistics are off. Turn it on with: neat analytics on"
 	}
 	if _, err := fmt.Fprintln(w, msg); err != nil {
 		return fmt.Errorf("print analytics status: %w", err)
@@ -89,12 +89,12 @@ func runAnalyticsSet(w io.Writer, store *config.Store, idPath string, on bool) e
 	if err := store.Save(cfg); err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}
-	msg := "Anonymous usage ping turned on."
+	msg := "Anonymous usage statistics turned on."
 	if !on {
 		if err := analytics.RemoveID(idPath); err != nil {
 			return fmt.Errorf("delete monthly id: %w", err)
 		}
-		msg = "Anonymous usage ping turned off. neat will send nothing to Aptabase, and its saved monthly ID is deleted."
+		msg = "Anonymous usage statistics turned off. neat will send nothing to Aptabase, and its saved monthly ID is deleted."
 	}
 	if _, err := fmt.Fprintln(w, msg); err != nil {
 		return fmt.Errorf("print analytics status: %w", err)

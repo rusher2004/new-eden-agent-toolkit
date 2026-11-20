@@ -1,8 +1,8 @@
 # neat plugin — changelog
 
 ## 0.9.0
-- neat now sends an anonymous usage count to Aptabase, so the project can show FC's partner program how many people use it each month. Each launch sends one message with neat's version, which download you're running (for example macOS on `arm64`) and a random ID that's replaced every month. It never includes your characters, your EVE account, what you ask, or anything about your computer. [PRIVACY.md](../../PRIVACY.md) has the details.
-- New command `neat analytics off` turns it off and deletes the monthly ID. `neat analytics on` and `neat analytics status` turn it back on and show whether it's on.
+- neat now sends anonymous usage statistics to Aptabase, so the project can show FC's partner program how many people use it each month and see which features get used. Each launch sends neat's version, which download you're running (for example macOS on `arm64`) and a random ID that's replaced every month. Each tool call sends the tool's name and whether it worked, with no ID that links it to you or your install. Neither includes your characters, your EVE account, what you ask, what a tool was given or returned, or anything about your computer. [PRIVACY.md](../../PRIVACY.md) has the details.
+- New command `neat analytics off` turns it all off and deletes the monthly ID. `neat analytics on` and `neat analytics status` turn it back on and show whether it's on.
 - Building from source: `app_config.json`'s `clientId` key is now `esiClientId`, and an optional `aptabaseAppKey` sits beside it. Builds without the key send nothing.
 
 ## 0.8.4

@@ -3,6 +3,7 @@ package analytics_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -11,8 +12,11 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/analytics"
 )
@@ -77,7 +81,7 @@ func TestTrackStart_SendsOnlyExpectedFields(t *testing.T) {
 		t.Fatalf("got %d events, want 1", len(events))
 	}
 	ev := events[0]
-	if ev["eventName"] != analytics.EventName {
+	if ev["eventName"] != analytics.StartEvent {
 		t.Errorf("eventName = %v", ev["eventName"])
 	}
 	if ev["timestamp"] != "2026-11-19T12:30:45Z" {
@@ -222,5 +226,205 @@ func TestRemoveID(t *testing.T) {
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Errorf("file still exists after RemoveID: %v", err)
+	}
+}
+
+type sentEvent struct {
+	SessionID string            `json:"sessionId"`
+	EventName string            `json:"eventName"`
+	Props     map[string]string `json:"props"`
+}
+
+// recorder is a fake Aptabase that keeps every request's events.
+type recorder struct {
+	mu       sync.Mutex
+	requests [][]sentEvent
+}
+
+func (r *recorder) server(t *testing.T) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		var events []sentEvent
+		if err := json.NewDecoder(req.Body).Decode(&events); err != nil {
+			t.Errorf("decode: %v", err)
+		}
+		r.mu.Lock()
+		r.requests = append(r.requests, events)
+		r.mu.Unlock()
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func (r *recorder) events() []sentEvent {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var all []sentEvent
+	for _, req := range r.requests {
+		all = append(all, req...)
+	}
+	return all
+}
+
+func newTracker(t *testing.T, url string) *analytics.ToolTracker {
+	t.Helper()
+	c := analytics.NewWithBaseURL("A-EU-123", url, "1.0.0", "neat/1.0.0")
+	tr, err := c.NewToolTracker(time.Now)
+	if err != nil {
+		t.Fatalf("NewToolTracker: %v", err)
+	}
+	return tr
+}
+
+func TestToolTracker_FlushBatchesAndSendsOnlyToolAndOutcome(t *testing.T) {
+	var rec recorder
+	srv := rec.server(t)
+	tr := newTracker(t, srv.URL)
+
+	for i := 0; i < 30; i++ {
+		tr.Record("plan_build", i%2 == 0)
+	}
+	if err := tr.Flush(context.Background()); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+
+	if len(rec.requests) != 2 || len(rec.requests[0]) != 25 || len(rec.requests[1]) != 5 {
+		t.Fatalf("batches = %d, want 25 then 5", len(rec.requests))
+	}
+	for _, ev := range rec.events() {
+		if ev.EventName != analytics.ToolEvent {
+			t.Errorf("eventName = %q", ev.EventName)
+		}
+		if len(ev.Props) != 2 || ev.Props["tool"] != "plan_build" {
+			t.Errorf("props = %v, want exactly tool and outcome", ev.Props)
+		}
+		if o := ev.Props["outcome"]; o != "ok" && o != "error" {
+			t.Errorf("outcome = %q", o)
+		}
+	}
+
+	if err := tr.Flush(context.Background()); err != nil {
+		t.Fatalf("second Flush: %v", err)
+	}
+	if len(rec.requests) != 2 {
+		t.Errorf("an empty queue sent %d more requests", len(rec.requests)-2)
+	}
+}
+
+func TestToolTracker_SessionIsSeparateFromStart(t *testing.T) {
+	var rec recorder
+	srv := rec.server(t)
+	c := analytics.NewWithBaseURL("A-EU-123", srv.URL, "1.0.0", "neat/1.0.0")
+	tr, err := c.NewToolTracker(time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.TrackStart(context.Background(), "monthly", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	tr.Record("get_status", true)
+	if err := tr.Flush(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	evs := rec.events()
+	if len(evs) != 2 {
+		t.Fatalf("got %d events, want 2", len(evs))
+	}
+	if evs[0].SessionID == evs[1].SessionID {
+		t.Error("tool events share app_started's session id")
+	}
+	if _, ok := evs[1].Props["monthlyId"]; ok {
+		t.Error("tool event carries the monthly id")
+	}
+}
+
+func TestToolTracker_FailedFlushDropsEvents(t *testing.T) {
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		http.Error(w, "down", http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+	tr := newTracker(t, srv.URL)
+	tr.Record("get_status", true)
+	if err := tr.Flush(context.Background()); err == nil {
+		t.Fatal("Flush returned nil for a failing server")
+	}
+	if err := tr.Flush(context.Background()); err != nil {
+		t.Errorf("second Flush: %v, want nil since the failed batch was dropped", err)
+	}
+	if calls != 1 {
+		t.Errorf("server got %d requests, want 1 (no retry)", calls)
+	}
+}
+
+func TestToolTracker_NilIsNoop(t *testing.T) {
+	var tr *analytics.ToolTracker
+	tr.Record("get_status", true)
+	if err := tr.Flush(context.Background()); err != nil {
+		t.Errorf("nil Flush: %v", err)
+	}
+	tr.Run(context.Background(), time.Millisecond, func(error) {})
+}
+
+type echoIn struct {
+	Fail bool `json:"fail"`
+}
+
+type echoOut struct {
+	OK bool `json:"ok"`
+}
+
+func TestToolMiddleware_RecordsRegisteredToolsOnly(t *testing.T) {
+	var rec recorder
+	srv := rec.server(t)
+	tr := newTracker(t, srv.URL)
+
+	server := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "test", Version: "1"}, nil)
+	mcpsdk.AddTool(server, &mcpsdk.Tool{Name: "echo", Description: "echo"}, func(ctx context.Context, req *mcpsdk.CallToolRequest, in echoIn) (*mcpsdk.CallToolResult, echoOut, error) {
+		if in.Fail {
+			return nil, echoOut{}, errors.New("boom")
+		}
+		return nil, echoOut{OK: true}, nil
+	})
+	server.AddReceivingMiddleware(analytics.ToolMiddleware(tr))
+
+	ctx := context.Background()
+	serverT, clientT := mcpsdk.NewInMemoryTransports()
+	ss, err := server.Connect(ctx, serverT, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ss.Close()
+	client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "client", Version: "1"}, nil)
+	cs, err := client.Connect(ctx, clientT, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cs.Close()
+
+	if _, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{Name: "echo", Arguments: map[string]any{"fail": false}}); err != nil {
+		t.Fatalf("echo ok: %v", err)
+	}
+	if _, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{Name: "echo", Arguments: map[string]any{"fail": true}}); err != nil {
+		t.Fatalf("echo fail: %v", err)
+	}
+	if _, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{Name: "my secret character name"}); err == nil {
+		t.Fatal("unknown tool call succeeded")
+	}
+	if err := tr.Flush(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	evs := rec.events()
+	if len(evs) != 2 {
+		t.Fatalf("got %d events %v, want 2 (the unknown tool must not be recorded)", len(evs), evs)
+	}
+	if evs[0].Props["tool"] != "echo" || evs[0].Props["outcome"] != "ok" {
+		t.Errorf("first = %v", evs[0].Props)
+	}
+	if evs[1].Props["tool"] != "echo" || evs[1].Props["outcome"] != "error" {
+		t.Errorf("second = %v", evs[1].Props)
 	}
 }

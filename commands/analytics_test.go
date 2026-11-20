@@ -30,7 +30,7 @@ func TestAnalyticsCommand_OffOnStatus(t *testing.T) {
 	idPath := filepath.Join(tmpHome, ".neat", "analytics.json")
 	store := config.NewStoreAt(filepath.Join(tmpHome, ".neat", "config.json"))
 
-	if got := runAnalytics(t, "status"); !strings.Contains(got, "is on") {
+	if got := runAnalytics(t, "status"); !strings.Contains(got, "are on") {
 		t.Errorf("default status = %q, want on", got)
 	}
 
@@ -51,7 +51,7 @@ func TestAnalyticsCommand_OffOnStatus(t *testing.T) {
 	if _, err := os.Stat(idPath); !os.IsNotExist(err) {
 		t.Errorf("monthly id file still exists after `analytics off`: %v", err)
 	}
-	if got := runAnalytics(t, "status"); !strings.Contains(got, "is off") {
+	if got := runAnalytics(t, "status"); !strings.Contains(got, "are off") {
 		t.Errorf("status after off = %q", got)
 	}
 

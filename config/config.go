@@ -22,7 +22,7 @@ type Config struct {
 	FacilityProfiles []FacilityProfile `json:"facilityProfiles,omitempty"`
 	HaulProfiles     []HaulProfile     `json:"haulProfiles,omitempty"`
 	HubProfiles      []HubProfile      `json:"hubProfiles,omitempty"`
-	// AnalyticsDisabled turns off neat's anonymous usage ping (see
+	// AnalyticsDisabled turns off neat's anonymous usage statistics (see
 	// analytics/). The zero value leaves it on; `neat analytics off` sets it.
 	AnalyticsDisabled bool `json:"analyticsDisabled,omitempty"`
 }

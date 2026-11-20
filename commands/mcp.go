@@ -25,7 +25,7 @@ func mcpCommand(version, clientID, aptabaseAppKey string) *cli.Command {
 			if err != nil {
 				return fmt.Errorf("resolve config store: %w", err)
 			}
-			go sendStartPing(context.WithoutCancel(ctx), store, aptabaseAppKey, version)
+			tracker := startAnalytics(context.WithoutCancel(ctx), store, aptabaseAppKey, version)
 
 			sdePath, err := sde.DefaultPath()
 			if err != nil {
@@ -51,45 +51,73 @@ func mcpCommand(version, clientID, aptabaseAppKey string) *cli.Command {
 			}()
 
 			server := mcp.NewServer(version, clientID, store, sdeStore)
+			if tracker != nil {
+				server.AddReceivingMiddleware(analytics.ToolMiddleware(tracker))
+				flushCtx, stopFlushing := context.WithCancel(context.WithoutCancel(ctx))
+				go tracker.Run(flushCtx, time.Minute, logAnalyticsError(ctx))
+				defer func() {
+					stopFlushing()
+					finalCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
+					defer cancel()
+					if err := tracker.Flush(finalCtx); err != nil {
+						logAnalyticsError(ctx)(err)
+					}
+				}()
+			}
 			return server.Run(ctx, &mcpsdk.StdioTransport{})
 		},
 	}
 }
 
-// sendStartPing sends neat's one anonymous "app_started" event (see
-// analytics/), unless the user turned analytics off or the build carries no
-// app key. It runs in the background and never fails the server: every
-// problem is logged at debug level and dropped.
-func sendStartPing(ctx context.Context, store *config.Store, appKey, version string) {
+// startAnalytics sends neat's anonymous "app_started" event in the
+// background and returns the ToolTracker that counts tool calls, unless the
+// user turned analytics off or the build carries no app key, in which case
+// it returns nil and nothing is ever sent (see analytics/). It never fails
+// the server: every problem is logged at debug level and dropped.
+func startAnalytics(ctx context.Context, store *config.Store, appKey, version string) *analytics.ToolTracker {
 	if appKey == "" {
-		return
+		return nil
 	}
-	logger := slog.Default()
 	cfg, err := store.Load()
 	if err != nil {
-		logger.DebugContext(ctx, "analytics: skipped, config unreadable", "error", err)
-		return
+		logAnalyticsError(ctx)(fmt.Errorf("config unreadable: %w", err))
+		return nil
 	}
 	if cfg.AnalyticsDisabled {
-		return
+		return nil
 	}
 	client, err := analytics.New(appKey, version, sso.UserAgent(version))
 	if err != nil {
-		logger.DebugContext(ctx, "analytics: skipped", "error", err)
-		return
+		logAnalyticsError(ctx)(err)
+		return nil
 	}
-	idPath, err := analytics.DefaultIDPath()
+	tracker, err := client.NewToolTracker(time.Now)
 	if err != nil {
-		logger.DebugContext(ctx, "analytics: skipped", "error", err)
-		return
+		logAnalyticsError(ctx)(err)
+		return nil
 	}
-	now := time.Now()
-	id, err := analytics.MonthlyID(idPath, now)
-	if err != nil {
-		logger.DebugContext(ctx, "analytics: skipped", "error", err)
-		return
-	}
-	if err := client.TrackStart(ctx, id, now); err != nil {
-		logger.DebugContext(ctx, "analytics: send failed", "error", err)
+
+	go func() {
+		idPath, err := analytics.DefaultIDPath()
+		if err != nil {
+			logAnalyticsError(ctx)(err)
+			return
+		}
+		now := time.Now()
+		id, err := analytics.MonthlyID(idPath, now)
+		if err != nil {
+			logAnalyticsError(ctx)(err)
+			return
+		}
+		if err := client.TrackStart(ctx, id, now); err != nil {
+			logAnalyticsError(ctx)(err)
+		}
+	}()
+	return tracker
+}
+
+func logAnalyticsError(ctx context.Context) func(error) {
+	return func(err error) {
+		slog.Default().DebugContext(ctx, "analytics: not sent", "error", err)
 	}
 }

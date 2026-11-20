@@ -18,7 +18,7 @@ The packages sit flat at the repo root, one per responsibility, with no `interna
 
 - `cmd/`: the `main.go` entrypoint.
 - `commands/`: the CLI (`neat version`, `neat setup`, `neat mcp`, `neat analytics on|off|status`).
-- `analytics/`: the anonymous usage count. `neat mcp` sends one `app_started` event to Aptabase per launch, carrying only the version, `runtime.GOOS`/`runtime.GOARCH` and a random ID that rotates each calendar month. See `PRIVACY.md`.
+- `analytics/`: anonymous usage statistics via Aptabase. `neat mcp` sends one `app_started` event per launch (version, `runtime.GOOS`/`runtime.GOARCH`, and a random ID that rotates each calendar month), and a `tool_called` event per tool call (tool name and `ok`/`error` only), recorded by SDK middleware, batched about once a minute, and sent under a separate session ID with no monthly ID. See `PRIVACY.md`.
 - `mcp/`: the MCP server, every tool's definition and handler, the server's onboarding instructions (`instructions.go`), and the name enrichment that adds `TypeName`, `SystemName` and similar fields next to the bare IDs ESI returns.
 - `esi/`: a thin facade over [`goesi-openapi`](https://github.com/fnt-eve/goesi-openapi), one file per ESI tag. Every request is checked against a generated table of each endpoint's required scope before it is sent.
 - `sso/`: the login flow, the loopback callback session and its page (`sso/web/`), scope groups, the ESI User-Agent, and the cached, auto-refreshing HTTP client per character.
@@ -41,7 +41,7 @@ Put its client ID in `app_config.json` at the repo root (git-ignored):
 { "esiClientId": "your-esi-client-id", "aptabaseAppKey": "A-EU-..." }
 ```
 
-`aptabaseAppKey` is optional: without it the build sends no usage count. Keys are `A-EU-*` or `A-US-*`, and the region picks the Aptabase host. A build whose version is `dev` marks its events as debug, so they stay out of Aptabase's release numbers.
+`aptabaseAppKey` is optional: without it the build sends no usage statistics. Keys are `A-EU-*` or `A-US-*`, and the region picks the Aptabase host. A build whose version is `dev` marks its events as debug, so they stay out of Aptabase's release numbers.
 
 `make build` builds `bin/neat` with the version, client ID and Aptabase key injected through `-ldflags`. `make install` also installs it to `~/.local/bin` (override with `PREFIX=...`). It deletes the old binary before copying, because on macOS copying a new build over an existing binary in place makes the kernel kill it on launch (exit 137).
 
@@ -67,7 +67,7 @@ Run `go generate ./...` and commit the result after:
 
 `VERSION` is the single source of truth for the binary version, the plugin version and the git tag. Any pull request that changes Go code, `go.mod`, `.goreleaser.yaml` or `claude_resources/` must bump it; the `versiongate` check enforces this. Docs, tests and CI config are exempt. Add a user-facing entry to `claude_resources/neat/CHANGELOG.md` alongside the bump.
 
-Merging to `main` tags `v<VERSION>` if the tag doesn't exist yet and runs GoReleaser, which publishes binaries for macOS, Linux and Windows on amd64 and arm64. It reads the repository variables `ESI_CLIENT_ID` and `APTABASE_APP_KEY`; if `APTABASE_APP_KEY` is unset, the release sends no usage count.
+Merging to `main` tags `v<VERSION>` if the tag doesn't exist yet and runs GoReleaser, which publishes binaries for macOS, Linux and Windows on amd64 and arm64. It reads the repository variables `ESI_CLIENT_ID` and `APTABASE_APP_KEY`; if `APTABASE_APP_KEY` is unset, the release sends no usage statistics.
 
 ## Claude resources
 
