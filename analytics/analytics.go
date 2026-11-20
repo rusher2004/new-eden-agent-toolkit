@@ -371,12 +371,21 @@ func MonthlyID(path string, now time.Time) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return "", fmt.Errorf("create directory for %s: %w", path, err)
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, out, 0o600); err != nil {
-		return "", fmt.Errorf("write %s: %w", tmp, err)
+	// A unique temp file per call, so two neat processes starting at once
+	// can't write or rename each other's file.
+	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return "", fmt.Errorf("create temp file for %s: %w", path, err)
+	}
+	tmp := f.Name()
+	if _, err := f.Write(out); err != nil {
+		return "", errors.Join(fmt.Errorf("write %s: %w", tmp, err), f.Close(), os.Remove(tmp))
+	}
+	if err := f.Close(); err != nil {
+		return "", errors.Join(fmt.Errorf("close %s: %w", tmp, err), os.Remove(tmp))
 	}
 	if err := os.Rename(tmp, path); err != nil {
-		return "", fmt.Errorf("rename %s into place: %w", tmp, err)
+		return "", errors.Join(fmt.Errorf("rename %s into place: %w", tmp, err), os.Remove(tmp))
 	}
 	return st.ID, nil
 }

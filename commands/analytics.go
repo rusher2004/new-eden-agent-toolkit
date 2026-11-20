@@ -18,7 +18,7 @@ func analyticsCommand() *cli.Command {
 		Commands: []*cli.Command{
 			{
 				Name:  "status",
-				Usage: "show whether the anonymous usage statistics is on",
+				Usage: "show whether the anonymous usage statistics are on",
 				Action: func(_ context.Context, cmd *cli.Command) error {
 					store, err := config.NewStore()
 					if err != nil {
@@ -70,9 +70,9 @@ func runAnalyticsStatus(w io.Writer, store *config.Store) error {
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
-	msg := "Anonymous usage statistics are on. Turn it off with: neat analytics off"
+	msg := "Anonymous usage statistics are on. Turn them off with: neat analytics off"
 	if cfg.AnalyticsDisabled {
-		msg = "Anonymous usage statistics are off. Turn it on with: neat analytics on"
+		msg = "Anonymous usage statistics are off. Turn them on with: neat analytics on"
 	}
 	if _, err := fmt.Fprintln(w, msg); err != nil {
 		return fmt.Errorf("print analytics status: %w", err)

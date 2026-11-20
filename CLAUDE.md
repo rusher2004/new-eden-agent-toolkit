@@ -101,7 +101,7 @@ Before opening a PR, sanity-check that `README.md`, `docs/README.md` and this fi
 `clientID` (the ESI OAuth2 client ID, `esiClientId`) and `aptabaseAppKey` (optional; empty sends no analytics) are injected via `-ldflags` from the git-ignored `app_config.json` — `make build` wraps this for local development. Releases read them from the `ESI_CLIENT_ID` and `APTABASE_APP_KEY` repository variables.
 
 ```bash
-go build -ldflags "-X main.version=$(cat VERSION 2>/dev/null || echo dev) -X main.clientID=$(jq -r .esiClientId app_config.json) -X main.aptabaseAppKey=$(jq -r '.aptabaseAppKey // ""' app_config.json)" -o neat ./cmd
+go build -ldflags "-X main.version=$(cat VERSION 2>/dev/null || echo dev) -X main.clientID=$(jq -r '.esiClientId // .clientId' app_config.json) -X main.aptabaseAppKey=$(jq -r '.aptabaseAppKey // ""' app_config.json)" -o neat ./cmd
 ```
 
 `make install` builds and installs `neat` to `~/.local/bin` (override with `PREFIX=...`). It removes the old binary before copying the new one, because on macOS copying a build over an existing binary in place makes the kernel kill it on launch (exit 137); if you install by hand, `rm` first.

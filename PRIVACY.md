@@ -48,7 +48,7 @@ FC's partner program asks third-party apps to show how many monthly users they h
 |---|---|
 | The tool's name, for example `plan_build` or `list_character_wallet_journal` | To count how often each feature is used. Only the names of neat's own tools are ever sent; a name neat doesn't recognise isn't recorded |
 | Whether it worked (`ok` or `error`) | To find tools that fail often. The error itself is not sent |
-| neat's version and the operating system and processor type it was built for, as above | To tell whether a problem is tied to one version or platform |
+| neat's version and the operating system it was built for, as above | To tell whether a problem is tied to one version or platform |
 | A second random ID for that launch, and the time of the call | Aptabase needs these for every message. This ID is made separately from the one in "neat started", and these messages carry no monthly ID, so tool use can't be tied to an install, a month or a person: they only add up to totals per tool |
 
 neat collects "tool used" messages in memory and sends them in batches about once a minute, and once more when neat stops. If a batch can't be sent, it's thrown away rather than saved. Nothing about tool use is ever written to your disk.
