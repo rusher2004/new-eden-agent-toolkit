@@ -107,7 +107,11 @@ func addCharacterHandler(version, clientID string, store *config.Store) mcpsdk.T
 		if in.CharacterID != 0 && !reauthorized {
 			// Every character logged in this session was granted the
 			// target's scopes, but the target itself is unchanged.
-			warnings = append(warnings, fmt.Sprintf("character %d was not re-authorized: the user didn't log in as it on EVE's page, so it still lacks the requested scope groups. Tell the user, and if they want to try again, call add_character with characterId %d and ask them to log in as that character.", in.CharacterID, in.CharacterID))
+			if len(in.ScopeGroups) == 0 {
+				warnings = append(warnings, fmt.Sprintf("character %d was not re-authorized: the user didn't log in as it on EVE's page. It keeps the access it already had; only its login wasn't refreshed. Any character the user logged in instead was given character %d's scope groups. If they meant to refresh character %d, call add_character with characterId %d again and ask them to log in as that character.", in.CharacterID, in.CharacterID, in.CharacterID, in.CharacterID))
+			} else {
+				warnings = append(warnings, fmt.Sprintf("character %d was not re-authorized: the user didn't log in as it on EVE's page, so it still lacks %v. Tell the user, and if they want to try again, call add_character with characterId %d and ask them to log in as that character.", in.CharacterID, in.ScopeGroups, in.CharacterID))
+			}
 		}
 		cfg, err := store.Load()
 		if err != nil {

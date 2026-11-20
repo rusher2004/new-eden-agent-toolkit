@@ -502,8 +502,9 @@ func (s *loginSession) characters() []pageCharacter {
 }
 
 // groupByAccount puts characters in their account's group, or their
-// suggested account's, in the order each account first appears, with the
-// unassigned group last.
+// suggested account's, in the order each account first appears. The
+// unassigned group comes first, since it's the one the user still has to
+// sort.
 func groupByAccount(chars []pageCharacter) (labels []string, groups []pageGroup) {
 	idx := map[string]int{}
 	var unassigned []pageCharacter
@@ -529,7 +530,7 @@ func groupByAccount(chars []pageCharacter) (labels []string, groups []pageGroup)
 		groups[i].Characters = append(groups[i].Characters, c)
 	}
 	if len(unassigned) > 0 {
-		groups = append(groups, pageGroup{Characters: unassigned})
+		groups = append([]pageGroup{{Characters: unassigned}}, groups...)
 	}
 	return labels, groups
 }
