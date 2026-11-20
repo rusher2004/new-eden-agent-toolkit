@@ -26,7 +26,7 @@ neat asks EVE for access in scope groups: `basic` (skills, location, ship, clone
   | Corporation wallets, assets, contracts, orders | `corporation_finance` |
   | Corporation industry, structures, mining | `corporation_industry` |
 
-  `structures` lets neat name the player structures where items, jobs and ships are; without it they show as bare IDs.
+  Other tools show the player structures where items, jobs and ships are as bare IDs; `structures` lets you look up their names with `get_universe_structure`.
 - Corporation groups only return data for characters holding the matching in-game corporation roles (Director, Accountant, Factory Manager, Station Manager...). Say so when you pick them, and add that granting them to characters without roles does no harm, so the same login can cover all of the user's characters.
 - If they don't know or don't care, use no extra groups. `basic` is enough to start, and more can be granted later.
 
@@ -51,7 +51,7 @@ If you can tell the user is about to need several new groups (say they're starti
 
 ### Adding a group to several characters
 
-`characterId` re-authorizes one character per call. To give a new group to several logged-in characters in one browser session, call `add_character` **without** `characterId` and with every group they should end up with: their current groups (from the last `add_character` result, or the scope errors) plus the new one. A login replaces a character's access with exactly what it requested, so a group left out of the list is lost. Tell the user to log in each character in turn from neat's page.
+`characterId` re-authorizes one character per call. To give a new group to several logged-in characters in one browser session, call `add_character` **without** `characterId` and with every group they should end up with: their current groups (from the last `add_character` result, or the scope errors) plus the new one. A login replaces a character's access with exactly what it requested, so a group left out of the list is lost. Tell the user to log in each character in turn from neat's page. If you don't know every character's current groups (`list_characters` doesn't show them, so in a new conversation you usually won't), don't guess: re-authorize each character with its own `characterId` call instead, which keeps what it already had.
 
 ## Corporation tools refused for roles
 

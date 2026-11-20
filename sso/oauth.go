@@ -171,7 +171,10 @@ func addCharacters(ctx context.Context, cfg oauthConfig, userAgent string, opts 
 		return nil, err
 	}
 	if err := openBrowser(authURL); err != nil {
-		return nil, fmt.Errorf("open browser: %w", err)
+		// Keep the session open: the user can still reach its page at the
+		// base URL by hand (the add_character docs tell them to), and the
+		// callback timeout ends it if nobody does.
+		slog.Default().WarnContext(ctx, "sso: failed to open the browser; the login page is still reachable by hand", "url", "http://"+listener.Addr().String()+"/", "error", err)
 	}
 
 	waitErr := s.wait(ctx)

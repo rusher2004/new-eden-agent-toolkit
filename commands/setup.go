@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"runtime"
 	"time"
@@ -77,7 +78,9 @@ func checkKeychain(w io.Writer) error {
 	case <-timer.C:
 	}
 	if _, err := fmt.Fprintln(w, keychainWaitMessage(runtime.GOOS)); err != nil {
-		return fmt.Errorf("print keychain wait notice: %w", err)
+		// The notice is only a courtesy: still wait for the check, so its
+		// own result is what setup reports.
+		slog.Default().Warn("setup: failed to print the keychain wait notice", "error", err)
 	}
 	return <-done
 }

@@ -2,10 +2,10 @@
 
 ## 0.9.1
 - Claude now always asks whether you want your corporation's data when you add characters, and suggests the `corporation`, `corporation_finance` and `corporation_industry` groups up front instead of waiting for a corporation tool to fail. It explains that these only show data for characters with the matching in-game roles, and that granting them to your other characters does no harm.
-- `structures` is now suggested whenever you want to see your assets or plan industry, so the player structures your items, ships and jobs are in show up by name instead of as a number.
+- `structures` is now suggested whenever you want to see your assets or plan industry, so Claude can look up the names of the player structures your items, ships and jobs are in instead of showing only a number.
 - When a corporation tool is refused because a character lacks an in-game role, Claude tries one other character in the same corporation or asks you which one has it, rather than trying every character and using up ESI's error limit.
 - The `add-character` skill explains how to give a new group to several characters in one login without losing the groups they already have.
-- If no browser tab opens when you add a character, you can go to http://127.0.0.1:48211/ yourself. Claude now tells you this before the login starts.
+- If no browser tab opens when you add a character, you can go to http://127.0.0.1:48211/ yourself. Claude now tells you this before the login starts, and the login now keeps waiting for you there even when neat can't start a browser at all.
 - `neat setup` no longer looks stuck while your keychain waits to be unlocked: after 5 seconds it says it's waiting and what to look for. A failed keychain check now ends with a hint for your OS, including what to do on Linux when there's no usable default keyring.
 - The README's Troubleshooting section covers a locked or missing Linux keyring, unlock prompts that open on another screen, `neat` missing from PATH in some terminals, and no browser tab opening at login.
 

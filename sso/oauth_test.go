@@ -88,8 +88,15 @@ type session struct {
 }
 
 // startSession starts an add-characters session against fake on an
-// ephemeral port and waits for its first browser launch.
+// ephemeral port and waits until it is listening.
 func startSession(t *testing.T, ctx context.Context, fake *fakeOAuthConfig, userAgent string) *session {
+	t.Helper()
+	return startSessionWithBrowser(t, ctx, fake, userAgent, nil)
+}
+
+// startSessionWithBrowser is startSession with openBrowser as the browser
+// launcher, or one that records each launch's URL when it is nil.
+func startSessionWithBrowser(t *testing.T, ctx context.Context, fake *fakeOAuthConfig, userAgent string, openBrowser func(rawURL string) error) *session {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
 
@@ -104,10 +111,13 @@ func startSession(t *testing.T, ctx context.Context, fake *fakeOAuthConfig, user
 	baseCh := make(chan string, 1)
 	sso.SetListenForTest("127.0.0.1:0", func(base string) { baseCh <- base })
 	t.Cleanup(sso.ResetListenForTest)
-	sso.SetOpenBrowserForTest(func(rawURL string) error {
-		s.authURLs <- rawURL
-		return nil
-	})
+	if openBrowser == nil {
+		openBrowser = func(rawURL string) error {
+			s.authURLs <- rawURL
+			return nil
+		}
+	}
+	sso.SetOpenBrowserForTest(openBrowser)
 	t.Cleanup(sso.ResetOpenBrowserForTest)
 
 	// Cancel on cleanup so a test that fails mid-session can't leave it
@@ -434,6 +444,22 @@ func TestAddCharacters_SecondCallWhileFirstOpen_Fails(t *testing.T) {
 	_, token := s.page()
 	s.post("/done", token)
 	s.wait()
+}
+
+func TestAddCharacters_BrowserLaunchFails_PageStillReachable(t *testing.T) {
+	s := startSessionWithBrowser(t, context.Background(), pilots(), "test-agent", func(string) error {
+		return errors.New("no display")
+	})
+
+	_, token := s.page()
+	s.callback("char-998877", s.addAnother(token))
+	_, token = s.page()
+	s.post("/done", token)
+
+	res := s.wait()
+	if want := []sso.Character{{ID: 998877, Name: "Test Pilot"}}; res.err != nil || !reflect.DeepEqual(res.chars, want) {
+		t.Errorf("result = %+v, %v; want %+v", res.chars, res.err, want)
+	}
 }
 
 func TestAddCharacters_PortInUse_Fails(t *testing.T) {

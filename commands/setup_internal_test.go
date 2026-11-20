@@ -51,6 +51,30 @@ func TestCheckKeychain_SlowCheck_PrintsWaitNoticeThenReturnsResult(t *testing.T)
 	}
 }
 
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) {
+	return 0, errors.New("write: no space left on device")
+}
+
+func TestCheckKeychain_WaitNoticeWriteFails_StillReturnsKeychainResult(t *testing.T) {
+	release := make(chan struct{})
+	stubKeychain(t, func() error { <-release; return nil }, time.Millisecond)
+
+	result := make(chan error, 1)
+	go func() { result <- checkKeychain(failingWriter{}) }()
+
+	select {
+	case err := <-result:
+		t.Fatalf("checkKeychain returned %v before the keychain check finished", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(release)
+	if err := <-result; err != nil {
+		t.Errorf("err = %v, want the keychain check's own result (nil)", err)
+	}
+}
+
 func TestCheckKeychain_FastCheck_PrintsNothing(t *testing.T) {
 	stubKeychain(t, func() error { return nil }, time.Hour)
 

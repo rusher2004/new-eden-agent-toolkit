@@ -89,7 +89,7 @@ Ask Claude to "add my EVE character". It asks what you want neat to help with, a
 EVE asks you to approve the access an app requests. neat groups that access by what you'll use it for, and every character gets the `basic` group: skills, location, current ship, clones and implants. You add the rest as you need them, for example:
 
 - `wallet`, `assets`, `market`, `contracts`: your ISK, your stuff and your trading
-- `structures`: the names of player structures (Upwell citadels and engineering complexes) your items, ships and jobs are in; without it they show as a number
+- `structures`: lets Claude look up the names of player structures (Upwell citadels and engineering complexes) your items, ships and jobs are in; without it they show only as a number
 - `industry`: blueprints, industry jobs and mining; industry planning also wants `assets`, `market` and `structures`
 - `mail`, `calendar`, `contacts`, `fleet`, `fittings`
 - `corporation`, `corporation_finance`, `corporation_industry`: your corporation's members, wallets, assets, industry jobs and structures
@@ -140,7 +140,7 @@ To uninstall, delete the `neat` program and the `~/.neat` folder, remove the `ne
 - **`neat` is "command not found" in some terminals but not others.** `~/.local/bin` was added to your PATH by a login script after that desktop session started. Log out and back in, or add `export PATH="$HOME/.local/bin:$PATH"` to `~/.bashrc`.
 - **Claude doesn't see neat's tools.** In Claude Code, check that `neat version` works in a terminal; the plugin runs `neat` from your PATH. In the desktop app, use the full path to `neat` in the config file, because the app doesn't see your terminal's PATH, then quit and reopen the app.
 - **macOS says neat can't be opened, or it quits immediately.** Run the `xattr` command from step 1. If you copied a new version over an old one, delete the old file first and copy it again.
-- **No browser tab opens when adding a character.** Go to http://127.0.0.1:48211/ in your browser while Claude is waiting, and click **Add another character**. This happens when neat opens the browser on a different screen, such as a remote desktop session.
+- **No browser tab opens when adding a character.** Go to http://127.0.0.1:48211/ in your browser while Claude is waiting, and click **Add another character**. This happens when neat opens the browser on a different screen, such as a remote desktop session, or can't start one at all.
 - **Logging in fails because port 48211 is in use.** neat briefly runs a small web page on your own computer at that port to receive EVE's login. Close whatever else is using it and try again.
 - **EVE's login page shows "HTTP Error 400. The size of the request headers is too long".** Clear your browser's cookies for `login.eveonline.com` and try again.
 - **The first question about items or systems is slow.** neat is downloading EVE's static data. It only does this once, and again when FC publishes an update.
