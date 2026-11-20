@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -16,16 +19,23 @@ import (
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
-func mcpCommand(version, clientID, aptabaseAppKey string) *cli.Command {
+func mcpCommand(version, clientID, aptabaseAppKey string, analyticsDebug bool) *cli.Command {
 	return &cli.Command{
 		Name:  "mcp",
 		Usage: "run the neat MCP server (stdio transport)",
 		Action: func(ctx context.Context, cmd *cli.Command) error {
+			// An MCP client may stop neat with a signal instead of closing
+			// stdin. Turning SIGINT/SIGTERM into a cancelled ctx lets
+			// server.Run return, so the deferred cleanup below (the final
+			// analytics flush, closing the SDE cache) still runs.
+			ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+			defer stop()
+
 			store, err := config.NewStore()
 			if err != nil {
 				return fmt.Errorf("resolve config store: %w", err)
 			}
-			tracker := startAnalytics(context.WithoutCancel(ctx), store, aptabaseAppKey, version)
+			tracker := startAnalytics(context.WithoutCancel(ctx), store, aptabaseAppKey, version, analyticsDebug)
 
 			sdePath, err := sde.DefaultPath()
 			if err != nil {
@@ -52,11 +62,26 @@ func mcpCommand(version, clientID, aptabaseAppKey string) *cli.Command {
 
 			server := mcp.NewServer(version, clientID, store, sdeStore)
 			if tracker != nil {
-				server.AddReceivingMiddleware(analytics.ToolMiddleware(tracker))
+				registered, err := analytics.RegisteredTools(ctx, server)
+				if err != nil {
+					logAnalyticsError(ctx)(fmt.Errorf("list registered tools: %w", err))
+					tracker = nil
+				} else {
+					server.AddReceivingMiddleware(analytics.ToolMiddleware(tracker, registered))
+				}
+			}
+			if tracker != nil {
 				flushCtx, stopFlushing := context.WithCancel(context.WithoutCancel(ctx))
-				go tracker.Run(flushCtx, time.Minute, logAnalyticsError(ctx))
+				flushDone := make(chan struct{})
+				go func() {
+					defer close(flushDone)
+					tracker.Run(flushCtx, time.Minute, logAnalyticsError(ctx))
+				}()
 				defer func() {
+					// Wait for Run, and any flush it's in the middle of, so
+					// the final flush sees every event still queued.
 					stopFlushing()
+					<-flushDone
 					finalCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 3*time.Second)
 					defer cancel()
 					if err := tracker.Flush(finalCtx); err != nil {
@@ -64,7 +89,11 @@ func mcpCommand(version, clientID, aptabaseAppKey string) *cli.Command {
 					}
 				}()
 			}
-			return server.Run(ctx, &mcpsdk.StdioTransport{})
+			if err := server.Run(ctx, &mcpsdk.StdioTransport{}); err != nil && ctx.Err() == nil {
+				return err
+			}
+			// A signal (ctx cancelled) is a normal way to stop.
+			return nil
 		},
 	}
 }
@@ -74,7 +103,7 @@ func mcpCommand(version, clientID, aptabaseAppKey string) *cli.Command {
 // user turned analytics off or the build carries no app key, in which case
 // it returns nil and nothing is ever sent (see analytics/). It never fails
 // the server: every problem is logged at debug level and dropped.
-func startAnalytics(ctx context.Context, store *config.Store, appKey, version string) *analytics.ToolTracker {
+func startAnalytics(ctx context.Context, store *config.Store, appKey, version string, debug bool) *analytics.ToolTracker {
 	if appKey == "" {
 		return nil
 	}
@@ -91,6 +120,7 @@ func startAnalytics(ctx context.Context, store *config.Store, appKey, version st
 		logAnalyticsError(ctx)(err)
 		return nil
 	}
+	client.SetDebug(debug)
 	tracker, err := client.NewToolTracker(time.Now)
 	if err != nil {
 		logAnalyticsError(ctx)(err)

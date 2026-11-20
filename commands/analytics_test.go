@@ -15,7 +15,7 @@ import (
 func runAnalytics(t *testing.T, arg string) string {
 	t.Helper()
 	var out bytes.Buffer
-	root := commands.Root("dev", "test-client-id", "")
+	root := commands.Root("dev", "test-client-id", "", false)
 	root.Writer = &out
 	if err := root.Run(context.Background(), []string{"neat", "analytics", arg}); err != nil {
 		t.Fatalf("neat analytics %s: %v", arg, err)

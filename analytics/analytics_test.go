@@ -123,6 +123,30 @@ func TestTrackStart_SendsOnlyExpectedFields(t *testing.T) {
 	}
 }
 
+func TestTrackStart_SetDebugMarksReleaseVersionDebug(t *testing.T) {
+	var isDebug any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var events []struct {
+			SystemProps map[string]any `json:"systemProps"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&events); err != nil {
+			t.Errorf("decode: %v", err)
+			return
+		}
+		isDebug = events[0].SystemProps["isDebug"]
+	}))
+	defer srv.Close()
+
+	c := analytics.NewWithBaseURL("A-EU-123", srv.URL, "0.9.0", "neat/0.9.0")
+	c.SetDebug(true)
+	if err := c.TrackStart(context.Background(), "abc", time.Now()); err != nil {
+		t.Fatalf("TrackStart: %v", err)
+	}
+	if isDebug != true {
+		t.Errorf("isDebug = %v, want true for a local build marked debug", isDebug)
+	}
+}
+
 func TestTrackStart_DevBuildIsDebug(t *testing.T) {
 	var isDebug any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -388,9 +412,22 @@ func TestToolMiddleware_RecordsRegisteredToolsOnly(t *testing.T) {
 		}
 		return nil, echoOut{OK: true}, nil
 	})
-	server.AddReceivingMiddleware(analytics.ToolMiddleware(tr))
+	// A raw handler's Go error comes back as a protocol error, not an
+	// IsError result: it must still be counted as an error.
+	server.AddTool(&mcpsdk.Tool{Name: "raw_fail", Description: "fails", InputSchema: map[string]any{"type": "object"}}, func(ctx context.Context, req *mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+		return nil, errors.New("protocol-level failure")
+	})
 
 	ctx := context.Background()
+	registered, err := analytics.RegisteredTools(ctx, server)
+	if err != nil {
+		t.Fatalf("RegisteredTools: %v", err)
+	}
+	if len(registered) != 2 || !registered["echo"] || !registered["raw_fail"] {
+		t.Fatalf("registered = %v, want echo and raw_fail", registered)
+	}
+	server.AddReceivingMiddleware(analytics.ToolMiddleware(tr, registered))
+
 	serverT, clientT := mcpsdk.NewInMemoryTransports()
 	ss, err := server.Connect(ctx, serverT, nil)
 	if err != nil {
@@ -410,6 +447,9 @@ func TestToolMiddleware_RecordsRegisteredToolsOnly(t *testing.T) {
 	if _, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{Name: "echo", Arguments: map[string]any{"fail": true}}); err != nil {
 		t.Fatalf("echo fail: %v", err)
 	}
+	if _, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{Name: "raw_fail", Arguments: map[string]any{}}); err == nil {
+		t.Fatal("raw_fail call succeeded")
+	}
 	if _, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{Name: "my secret character name"}); err == nil {
 		t.Fatal("unknown tool call succeeded")
 	}
@@ -418,13 +458,16 @@ func TestToolMiddleware_RecordsRegisteredToolsOnly(t *testing.T) {
 	}
 
 	evs := rec.events()
-	if len(evs) != 2 {
-		t.Fatalf("got %d events %v, want 2 (the unknown tool must not be recorded)", len(evs), evs)
+	if len(evs) != 3 {
+		t.Fatalf("got %d events %v, want 3 (the unknown tool must not be recorded)", len(evs), evs)
 	}
 	if evs[0].Props["tool"] != "echo" || evs[0].Props["outcome"] != "ok" {
 		t.Errorf("first = %v", evs[0].Props)
 	}
 	if evs[1].Props["tool"] != "echo" || evs[1].Props["outcome"] != "error" {
 		t.Errorf("second = %v", evs[1].Props)
+	}
+	if evs[2].Props["tool"] != "raw_fail" || evs[2].Props["outcome"] != "error" {
+		t.Errorf("third = %v", evs[2].Props)
 	}
 }

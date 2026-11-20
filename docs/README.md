@@ -41,7 +41,7 @@ Put its client ID in `app_config.json` at the repo root (git-ignored):
 { "esiClientId": "your-esi-client-id", "aptabaseAppKey": "A-EU-..." }
 ```
 
-`aptabaseAppKey` is optional: without it the build sends no usage statistics. Keys are `A-EU-*` or `A-US-*`, and the region picks the Aptabase host. A build whose version is `dev` marks its events as debug, so they stay out of Aptabase's release numbers.
+`aptabaseAppKey` is optional: without it the build sends no usage statistics. Keys are `A-EU-*` or `A-US-*`, and the region picks the Aptabase host. `make build` and `make install` mark their events as debug (`-X main.analyticsDebug=true`), as does any build whose version is `dev`, so a developer's own use stays out of Aptabase's release numbers. Only GoReleaser builds send release data.
 
 `make build` builds `bin/neat` with the version, client ID and Aptabase key injected through `-ldflags`. `make install` also installs it to `~/.local/bin` (override with `PREFIX=...`). It deletes the old binary before copying, because on macOS copying a new build over an existing binary in place makes the kernel kill it on launch (exit 137).
 

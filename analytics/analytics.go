@@ -69,6 +69,7 @@ type Client struct {
 	appKey    string
 	baseURL   string
 	version   string
+	debug     bool
 	userAgent string
 	http      *http.Client
 }
@@ -139,6 +140,12 @@ func (c *Client) TrackStart(ctx context.Context, monthlyID string, now time.Time
 	return c.send(ctx, []event{ev})
 }
 
+// SetDebug marks every event this Client sends as debug data, which Aptabase
+// keeps out of its release numbers. Builds whose version is "dev" are always
+// debug; local `make build` builds set this too, so a developer's own use
+// isn't counted as a release user.
+func (c *Client) SetDebug(debug bool) { c.debug = debug }
+
 // event builds one event with neat's fixed system props.
 func (c *Client) event(sessionID, name string, now time.Time, props map[string]string) event {
 	return event{
@@ -146,7 +153,7 @@ func (c *Client) event(sessionID, name string, now time.Time, props map[string]s
 		SessionID: sessionID,
 		EventName: name,
 		SystemProps: systemProps{
-			IsDebug:    c.version == "dev",
+			IsDebug:    c.debug || c.version == "dev",
 			OSName:     osName(),
 			AppVersion: c.version,
 			SDKVersion: "neat@" + c.version,
@@ -252,25 +259,54 @@ func (t *ToolTracker) Flush(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
+// RegisteredTools returns the name of every tool server has, by listing
+// them over an in-memory session (the same way tools/gentooldocs does).
+// ToolMiddleware uses it to record only neat's own tool names.
+func RegisteredTools(ctx context.Context, server *mcpsdk.Server) (map[string]bool, error) {
+	serverTransport, clientTransport := mcpsdk.NewInMemoryTransports()
+	serverSession, err := server.Connect(ctx, serverTransport, nil)
+	if err != nil {
+		return nil, fmt.Errorf("connect server: %w", err)
+	}
+	// Close rather than Wait: if the client fails to connect, nothing ever
+	// closes the client transport, and Wait would block forever.
+	defer serverSession.Close()
+	client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "neat-analytics", Version: "0"}, nil)
+	session, err := client.Connect(ctx, clientTransport, nil)
+	if err != nil {
+		return nil, fmt.Errorf("connect client: %w", err)
+	}
+	defer session.Close()
+
+	names := map[string]bool{}
+	for tool, err := range session.Tools(ctx, nil) {
+		if err != nil {
+			return nil, fmt.Errorf("list tools: %w", err)
+		}
+		names[tool.Name] = true
+	}
+	return names, nil
+}
+
 // ToolMiddleware returns MCP server middleware that records each tools/call
-// on t. Only calls that reached a registered tool are recorded (a call the
-// SDK rejects, such as an unknown tool name, returns a protocol error and
-// is skipped), so the tool name sent is always one of neat's own, never
-// arbitrary text from the client. A tool's own failure arrives as a result
-// with IsError set and is recorded as "error".
-func ToolMiddleware(t *ToolTracker) mcpsdk.Middleware {
+// on t whose name is in registered (see RegisteredTools). A name that isn't
+// registered is never recorded, so the tool name sent is always one of
+// neat's own, never arbitrary text from the client. A call counts as
+// "error" when the tool's result has IsError set, or when the call ends in
+// a Go error (for example output that fails schema validation).
+func ToolMiddleware(t *ToolTracker, registered map[string]bool) mcpsdk.Middleware {
 	return func(next mcpsdk.MethodHandler) mcpsdk.MethodHandler {
 		return func(ctx context.Context, method string, req mcpsdk.Request) (mcpsdk.Result, error) {
 			res, err := next(ctx, method, req)
-			if method != "tools/call" || err != nil {
+			if method != "tools/call" {
 				return res, err
 			}
 			params, ok := req.GetParams().(*mcpsdk.CallToolParamsRaw)
-			if !ok {
+			if !ok || !registered[params.Name] {
 				return res, err
 			}
-			succeeded := true
-			if r, ok := res.(*mcpsdk.CallToolResult); ok && r.IsError {
+			succeeded := err == nil
+			if r, ok := res.(*mcpsdk.CallToolResult); ok && r != nil && r.IsError {
 				succeeded = false
 			}
 			t.Record(params.Name, succeeded)
@@ -279,8 +315,14 @@ func ToolMiddleware(t *ToolTracker) mcpsdk.Middleware {
 	}
 }
 
-// Run flushes every interval until ctx is done. It doesn't do the final
-// flush; call Flush once more when the server stops.
+// flushTimeout bounds each periodic flush. Periodic flushes don't use Run's
+// ctx for their requests, so stopping Run never cancels a batch mid-send
+// (Flush has already taken those events off the queue).
+const flushTimeout = 5 * time.Second
+
+// Run flushes every interval until ctx is done, then returns once any
+// flush in progress has finished. It doesn't do the final flush; call Flush
+// once more after Run returns.
 func (t *ToolTracker) Run(ctx context.Context, interval time.Duration, onErr func(error)) {
 	if t == nil {
 		return
@@ -292,7 +334,10 @@ func (t *ToolTracker) Run(ctx context.Context, interval time.Duration, onErr fun
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := t.Flush(ctx); err != nil {
+			flushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), flushTimeout)
+			err := t.Flush(flushCtx)
+			cancel()
+			if err != nil {
 				onErr(err)
 			}
 		}

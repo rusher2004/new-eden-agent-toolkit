@@ -51,7 +51,7 @@ FC's partner program asks third-party apps to show how many monthly users they h
 | neat's version and the operating system it was built for, as above | To tell whether a problem is tied to one version or platform |
 | A second random ID for that launch, and the time of the call | Aptabase needs these for every message. This ID is made separately from the one in "neat started", and these messages carry no monthly ID, so tool use can't be tied to an install, a month or a person: they only add up to totals per tool |
 
-neat collects "tool used" messages in memory and sends them in batches about once a minute, and once more when neat stops. If a batch can't be sent, it's thrown away rather than saved. Nothing about tool use is ever written to your disk.
+neat collects "tool used" messages in memory and sends them in batches about once a minute, and once more when neat stops, whether your AI app closes it or stops it with a signal. If a batch can't be sent, it's thrown away rather than saved. Nothing about tool use is ever written to your disk.
 
 **What neat never sends:** what you asked for or the details of any tool call (characters, character IDs or names, items, systems, amounts, mail or anything else you or Claude passed to a tool), anything ESI returns, error messages, how long calls took, your EVE account, your login tokens, file paths, your computer's name, your username, your language or hardware IDs.
 

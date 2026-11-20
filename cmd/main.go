@@ -23,8 +23,14 @@ var clientID = "dev"
 // app_config.json's aptabaseAppKey. Empty (the default) sends nothing.
 var aptabaseAppKey = ""
 
+// analyticsDebug marks this build's analytics events as debug data, so
+// Aptabase keeps them out of its release numbers. The Makefile sets it to
+// "true" via -ldflags "-X main.analyticsDebug=true"; release builds leave
+// it empty.
+var analyticsDebug = ""
+
 func main() {
-	root := commands.Root(version, clientID, aptabaseAppKey)
+	root := commands.Root(version, clientID, aptabaseAppKey, analyticsDebug == "true")
 	if err := root.Run(context.Background(), os.Args); err != nil {
 		fmt.Fprintf(os.Stderr, "neat: %v\n", err)
 		os.Exit(1)
