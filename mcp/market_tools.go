@@ -189,5 +189,3 @@ func quoteMarketPurchaseHandler(version, clientID string, store *config.Store, s
 		return nil, out, nil
 	}
 }
-
-// --- owned blueprints ---

@@ -249,5 +249,3 @@ func deleteProfileHandler(store *config.Store, del func(*config.Config, string) 
 		return nil, DeletedOutput{Deleted: in.Name}, nil
 	}
 }
-
-// --- calibration ---
