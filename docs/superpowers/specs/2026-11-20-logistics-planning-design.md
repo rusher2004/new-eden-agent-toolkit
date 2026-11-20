@@ -1,6 +1,6 @@
 # Logistics Planning (accounts, structures, hubs, hauling math) — Design
 
-**Status:** Proposed. Not yet planned or implemented.
+**Status:** In progress, as stacked PRs, one per phase. Phase 0 (package split): PR #23. Phase 1 (foundations): account labels and notes live in `config.json` until phase 2 moves characters to `characters.yaml`; account warnings are given only when two or more characters are logged in, since one character can't share an account with anyone; `list_location_assets` returns a flat list in tree order with `parentItemId` and `depth` rather than nested objects, because MCP output schemas can't be self-referential; route legs carry `fromSecurity`/`toSecurity` objects (status, display, color, band), while `get_universe_system` gets `securityDisplay`/`securityColor` fields.
 **Date:** 2026-11-20
 
 ## Goal
@@ -58,10 +58,10 @@ Characters move from `config.json` to `~/.neat/characters.yaml` (see "Shared YAM
 
 ### Tools
 
-- `list_characters` returns each character's `account`.
+- `list_characters` returns each character's `account` and `notes`, with the same unknown-account warning as `add_character`.
 - `update_character_details` (new) sets, renames or clears the account label for one or more characters, and sets a character's `notes`. Renaming a label renames it for every character that has it. Writes `characters.yaml` only.
 - `remove_character` drops the character with its label, as today.
-- `add_character` returns a `warnings` entry naming every logged-in character with no account label, not only the ones just added.
+- `add_character` returns a `warnings` entry naming every logged-in character with no account label, not only the ones just added, whenever two or more characters are logged in. A character neat already knows keeps its label and notes when it's logged in again.
 
 ### Login page
 

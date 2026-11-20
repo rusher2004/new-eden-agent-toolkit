@@ -9,6 +9,7 @@ import (
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
+	"github.com/rusher2004/new-eden-agent-toolkit/nav"
 	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
@@ -825,6 +826,8 @@ type UniverseSystem struct {
 	Name            string                 `json:"name"`
 	Position        Position               `json:"position"`
 	SecurityStatus  float64                `json:"securityStatus"`
+	SecurityDisplay string                 `json:"securityDisplay" jsonschema:"the security value the game shows, rounded to one decimal; quote this one to the user, e.g. Aunenen 0.4"`
+	SecurityColor   string                 `json:"securityColor" jsonschema:"the in-game color for the displayed security, as #RRGGBB, for formatted output"`
 	SecurityClass   *string                `json:"securityClass,omitempty"`
 	StarID          *int64                 `json:"starId,omitempty"`
 	StargateIDs     []int64                `json:"stargateIds,omitempty"`
@@ -872,6 +875,7 @@ var getUniverseSystem = func(ctx context.Context, sdeStore systemCache, userAgen
 		SystemID: sys.ID, ConstellationID: sys.ConstellationID, Name: sys.Name,
 		Position:       Position{X: sys.Position.X, Y: sys.Position.Y, Z: sys.Position.Z},
 		SecurityStatus: sys.SecurityStatus, SecurityClass: sys.SecurityClass, StarID: sys.StarID,
+		SecurityDisplay: nav.SecurityLabel(sys.SecurityStatus), SecurityColor: nav.SecurityColor(sys.SecurityStatus),
 		StargateIDs: sys.StargateIDs, StationIDs: sys.StationIDs, Planets: planets,
 	}, nil
 }

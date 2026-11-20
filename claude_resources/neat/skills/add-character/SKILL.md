@@ -1,6 +1,6 @@
 ---
 name: add-character
-description: Log EVE Online characters in to neat, or grant a logged-in character more ESI access, choosing scope groups from what the user wants to do. Use when the user wants to add, log in or re-authorize a character, when no character is logged in yet, when a neat tool fails because a character hasn't granted a scope, or when a corporation tool is refused because a character lacks in-game roles.
+description: Log EVE Online characters in to neat, or grant a logged-in character more ESI access, choosing scope groups from what the user wants to do, and record which EVE account each character is on. Use when the user wants to add, log in or re-authorize a character, when no character is logged in yet, when a neat tool fails because a character hasn't granted a scope, when a corporation tool is refused because a character lacks in-game roles, or when list_characters warns that a character's account is unknown.
 ---
 
 # Adding characters
@@ -35,6 +35,7 @@ neat asks EVE for access in scope groups: `basic` (skills, location, ship, clone
 - Call `add_character` with the chosen `scopeGroups`. Before the call, tell the user their browser will open at EVE's login page, and that if no tab opens they can open http://127.0.0.1:48211/ in their browser while neat waits (for example when the browser runs on another display or remote desktop session).
 - After they log in, the browser shows neat's page, where they can add more characters with the same access, then click "I'm done" or close the tab. The tool returns once they do.
 - Report who was added and which scope groups each one granted.
+- **Accounts.** neat's page groups characters by EVE account, and the user can sort them there. If the result's `warnings` say a character's account is unknown, ask the user which of their characters share an account (characters on one account can't be logged in at the same time, which matters when a plan needs two of them online together, like a jump pilot and their cyno alt). Save the answer with `update_character_details`, one call per account with every character on it in `characterIds`, using a short label the user recognizes (their name for the account, or "Account 1", "Account 2"). If they're not sure, leave it unknown; tools treat unknown as "possibly the same account". Save anything they tell you about a character (what it's for, what it flies) as its `notes` the same way, and say what you saved.
 - If the login fails because port 48211 is in use, tell the user another program on their computer holds it and to close it and try again. If EVE's page says the request headers are too long, have them clear their browser's cookies for `login.eveonline.com`.
 - If this was their first character, suggest two or three things to ask that fit the access they just granted, such as their wallet balance, their skill queue, or where their ships are.
 

@@ -2,18 +2,18 @@
 
 # neat tool reference
 
-neat gives Claude 259 tools. You don't call them yourself: ask Claude in plain language and it picks the tools it needs. This page is for when you want to know exactly what neat can do. Tools that need a character's permission list the scope group they need in their error when it's missing; see the main [README](../../README.md#choosing-what-neat-can-see).
+neat gives Claude 261 tools. You don't call them yourself: ask Claude in plain language and it picks the tools it needs. This page is for when you want to know exactly what neat can do. Tools that need a character's permission list the scope group they need in their error when it's missing; see the main [README](../../README.md#choosing-what-neat-can-see).
 
 ## Areas
 
-- [Characters and login](#characters-and-login) (4)
+- [Characters and login](#characters-and-login) (5)
 - [Game client](#game-client) (5)
 - [Navigation and hauling](#navigation-and-hauling) (5)
 - [Trade hubs and purchases](#trade-hubs-and-purchases) (3)
 - [Industry planning](#industry-planning) (14)
 - [Universe and static data](#universe-and-static-data) (36)
 - [Wallet](#wallet) (6)
-- [Assets](#assets) (6)
+- [Assets](#assets) (7)
 - [Market, contracts and loyalty points](#market-contracts-and-loyalty-points) (23)
 - [Killmails and warfare](#killmails-and-warfare) (23)
 - [Mail, calendar, contacts and notifications](#mail-calendar-contacts-and-notifications) (24)
@@ -26,12 +26,13 @@ neat gives Claude 259 tools. You don't call them yourself: ask Claude in plain l
 
 ## Characters and login
 
-Log characters in, choose what each one lets neat see, and log them out.
+Log characters in, choose what each one lets neat see, record which EVE account each is on and notes about it, and log them out.
 
 - `add_character`: Log in EVE Online characters via ESI OAuth2. Opens the user's browser at EVE's login page; afterwards the browser shows a neat page listing their characters, where they can log in more characters before clicking Done or closing the tab. Blocks until then and returns every character added, with the scope groups each granted. Every login grants the basic scope group plus scopeGroups: before calling, ask the user what they'll use neat for, including whether they want their corporation's data, and pick groups from list_scope_groups (or use only basic if they don't know). A login replaces each character's access with exactly what it requested, so to add a group to characters already logged in, either pass characterId or list every group they should end up with; list_characters doesn't show a character's current groups, so if you don't know them, pass characterId. If no browser tab opens, the user can open http://127.0.0.1:48211/ themselves while the tool waits. To grant more groups to a character later (e.g. after a tool fails because a scope is missing), pass its characterId: its existing scopes are kept. Check the result's warnings: they say when the user logged in as a different character, or when the character's earlier scope groups couldn't be read and may need granting again. Re-adding a known character refreshes its login.
-- `list_characters`: List EVE Online characters currently logged in to neat.
+- `list_characters`: List EVE Online characters currently logged in to neat, with the account label and notes the user gave each. Characters with the same account label are on the same EVE account and can't be logged in at the same time. Its warnings name characters whose account is unknown: ask the user and save the answer with update_character_details.
 - `list_scope_groups`: List the scope groups add_character can grant a character: each group's name, what it lets neat do, and its ESI scopes. The basic group is always granted.
 - `remove_character`: Remove a logged-in EVE Online character, deleting its stored credentials.
+- `update_character_details`: Record what the user tells you about their characters: which EVE account each is on (an account label shared by the characters on that account), and notes on what a character is for. Also renames an account label for every character that has it. Ask about accounts whenever list_characters or add_character warns that one is unknown, and save notes the user gives you. Returns every value changed, old and new, so you can tell the user what was saved. Writes to ~/.neat/config.json only.
 
 ## Game client
 
@@ -142,6 +143,7 @@ What characters and corporations own, and where.
 - `get_corporation_asset_names`: Resolve a set of a corporation's asset item IDs into their player-assigned custom names.
 - `list_assets`: List a logged-in EVE Online character's assets.
 - `list_corporation_assets`: List a corporation's assets, using a logged-in character's roles to authorize.
+- `list_location_assets`: List everything the user owns at one NPC station or Upwell structure, across every logged-in character (and a corporation's hangars, through a character with the roles), in one call instead of paging list_assets. Items are listed in tree order with what's inside each container and ship, and every volume comes worked out: each stack's volume as it is now, assembled ships' assembled and repackaged volumes, what comes out of each ship to repackage it, and the rigs that repackaging destroys. Totals give the volume to move with ships repackaged or carried assembled. Use it whenever a plan moves things out of a station or structure.
 
 ## Market, contracts and loyalty points
 

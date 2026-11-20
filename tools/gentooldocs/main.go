@@ -39,8 +39,8 @@ type area struct {
 var areas = []area{
 	{
 		title: "Characters and login",
-		blurb: "Log characters in, choose what each one lets neat see, and log them out.",
-		names: []string{"add_character", "list_scope_groups", "list_characters", "remove_character"},
+		blurb: "Log characters in, choose what each one lets neat see, record which EVE account each is on and notes about it, and log them out.",
+		names: []string{"add_character", "list_scope_groups", "list_characters", "update_character_details", "remove_character"},
 	},
 	{
 		title:    "Game client",

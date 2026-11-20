@@ -1099,6 +1099,9 @@ func TestGetUniverseSystem_CacheHit_MapsFieldsIncludingPlanets(t *testing.T) {
 	if len(got.Planets) != 1 || got.Planets[0].PlanetID != 40000002 || len(got.Planets[0].MoonIDs) != 1 || len(got.Planets[0].AsteroidBeltIDs) != 1 {
 		t.Errorf("Planets = %+v, want one entry PlanetID=40000002 with 1 moon and 1 belt (from a cache hit, not only a cache miss)", got.Planets)
 	}
+	if got.SecurityDisplay != "0.9" || got.SecurityColor != "#399AEB" {
+		t.Errorf("security = %q %q, want the displayed 0.9 and its in-game color", got.SecurityDisplay, got.SecurityColor)
+	}
 	if len(cache.putCalls) != 0 {
 		t.Errorf("PutSystem called %d times on a cache hit, want 0", len(cache.putCalls))
 	}

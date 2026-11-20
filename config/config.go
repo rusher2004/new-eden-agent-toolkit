@@ -10,10 +10,19 @@ import (
 	"path/filepath"
 )
 
-// Character identifies a known EVE character by ID and display name.
+// Character identifies a known EVE character by ID and display name, with
+// what the user has told neat about it.
 type Character struct {
 	ID   int32  `json:"id"`
 	Name string `json:"name"`
+	// Account is a label the user chose for the EVE account the character
+	// is on: characters with the same label share an account, so they can't
+	// be logged in at the same time. Empty means unknown, not "on an
+	// account of its own". ESI has no way to tell, so only the user can set it.
+	Account string `json:"account,omitempty"`
+	// Notes is free text about the character: what it's for, what it's
+	// trained in, anything a plan should know.
+	Notes string `json:"notes,omitempty"`
 }
 
 // Config is neat's persisted, non-secret state.

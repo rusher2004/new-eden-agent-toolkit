@@ -11,6 +11,31 @@
   var token = document.body.dataset.token;
   if (!token) return;
 
+  // Account controls: picking an account moves the character straight
+  // away; "New account…" shows a name field and the Move button instead.
+  document.querySelectorAll("form.move").forEach(function (form) {
+    var select = form.querySelector("select");
+    var name = form.querySelector("input[name=new_account]");
+    var button = form.querySelector("button");
+    name.hidden = true;
+    button.hidden = true;
+    select.addEventListener("change", function () {
+      if (select.value === "__new__") {
+        name.hidden = false;
+        button.hidden = false;
+        name.required = true;
+        name.focus();
+      } else {
+        form.submit();
+      }
+    });
+  });
+  document.querySelectorAll("form[data-confirm]").forEach(function (form) {
+    form.addEventListener("submit", function (e) {
+      if (!window.confirm(form.dataset.confirm)) e.preventDefault();
+    });
+  });
+
   function body() {
     return new URLSearchParams({ token: token });
   }

@@ -125,11 +125,13 @@ type RouteRequest struct {
 type Leg struct {
 	From, To         int64
 	FromName, ToName string
-	Kind             string  // "jump" or "gate"
-	LY               float64 `json:"ly,omitempty"`
-	Fuel             int64   `json:"fuel,omitempty"`
-	FatigueAfter     float64 `json:"fatigueAfterMinutes,omitempty"`
-	CooldownMinutes  float64 `json:"cooldownMinutes,omitempty"`
+	FromSecurity     Security `json:"fromSecurity"`
+	ToSecurity       Security `json:"toSecurity"`
+	Kind             string   // "jump" or "gate"
+	LY               float64  `json:"ly,omitempty"`
+	Fuel             int64    `json:"fuel,omitempty"`
+	FatigueAfter     float64  `json:"fatigueAfterMinutes,omitempty"`
+	CooldownMinutes  float64  `json:"cooldownMinutes,omitempty"`
 }
 
 // DotlanLink is a labelled dotlan URL for one segment of a route.
@@ -454,7 +456,8 @@ func (g *RouteGraph) describe(req RouteRequest, path []int64, kinds []string) Ro
 	fatigue := 0.0
 	for i := 1; i < len(path); i++ {
 		a, b := g.Systems[path[i-1]], g.Systems[path[i]]
-		leg := Leg{From: a.ID, To: b.ID, FromName: a.Name, ToName: b.Name}
+		leg := Leg{From: a.ID, To: b.ID, FromName: a.Name, ToName: b.Name,
+			FromSecurity: SecurityOf(a.Security, a.RegionID), ToSecurity: SecurityOf(b.Security, b.RegionID)}
 		if kinds[i-1] == "gate" {
 			leg.Kind = "gate"
 			rt.Gates++

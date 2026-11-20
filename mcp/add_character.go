@@ -30,6 +30,7 @@ type AddedCharacter struct {
 	CharacterID   int32    `json:"characterId"`
 	CharacterName string   `json:"characterName"`
 	ScopeGroups   []string `json:"scopeGroups"`
+	Account       string   `json:"account,omitempty" jsonschema:"the account label the user gave this character, if any"`
 }
 
 // AddCharacterOutput is add_character's tool result: every character the
@@ -72,7 +73,7 @@ func addCharacterHandler(version, clientID string, store *config.Store) mcpsdk.T
 				if err != nil {
 					return fmt.Errorf("load config: %w", err)
 				}
-				upsertCharacter(&cfg, config.Character{ID: c.ID, Name: c.Name})
+				cfg.UpsertCharacter(config.Character{ID: c.ID, Name: c.Name})
 				if err := store.Save(cfg); err != nil {
 					return fmt.Errorf("save config: %w", err)
 				}
@@ -85,10 +86,11 @@ func addCharacterHandler(version, clientID string, store *config.Store) mcpsdk.T
 				}
 				out := make([]sso.Character, len(cfg.Characters))
 				for i, c := range cfg.Characters {
-					out[i] = sso.Character{ID: c.ID, Name: c.Name}
+					out[i] = sso.Character{ID: c.ID, Name: c.Name, Account: c.Account}
 				}
 				return out, nil
 			},
+			Accounts: accountEditor(store),
 		})
 		if err != nil {
 			return nil, AddCharacterOutput{}, fmt.Errorf("add character: %w", err)
@@ -107,8 +109,45 @@ func addCharacterHandler(version, clientID string, store *config.Store) mcpsdk.T
 			// target's scopes, but the target itself is unchanged.
 			warnings = append(warnings, fmt.Sprintf("character %d was not re-authorized: the user didn't log in as it on EVE's page, so it still lacks the requested scope groups. Tell the user, and if they want to try again, call add_character with characterId %d and ask them to log in as that character.", in.CharacterID, in.CharacterID))
 		}
-		out.Warnings = warnings
+		cfg, err := store.Load()
+		if err != nil {
+			return nil, AddCharacterOutput{}, fmt.Errorf("load config: %w", err)
+		}
+		for i := range out.Characters {
+			if c, ok := cfg.Character(out.Characters[i].CharacterID); ok {
+				out.Characters[i].Account = c.Account
+			}
+		}
+		out.Warnings = append(warnings, accountWarnings(cfg)...)
 		return nil, out, nil
+	}
+}
+
+// accountEditor saves the account grouping the user sets on the login page.
+func accountEditor(store *config.Store) *sso.AccountEditor {
+	edit := func(change func(*config.Config) error) error {
+		cfg, err := store.Load()
+		if err != nil {
+			return fmt.Errorf("load config: %w", err)
+		}
+		if err := change(&cfg); err != nil {
+			return err
+		}
+		if err := store.Save(cfg); err != nil {
+			return fmt.Errorf("save config: %w", err)
+		}
+		return nil
+	}
+	return &sso.AccountEditor{
+		Set: func(id int32, label string) error {
+			return edit(func(c *config.Config) error { _, err := c.SetCharacterAccount(id, label); return err })
+		},
+		Rename: func(from, to string) error {
+			return edit(func(c *config.Config) error { _, err := c.RenameAccount(from, to); return err })
+		},
+		Delete: func(label string) error {
+			return edit(func(c *config.Config) error { _, err := c.DeleteAccount(label); return err })
+		},
 	}
 }
 
@@ -127,18 +166,6 @@ func union(a, b []string) []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-// upsertCharacter replaces the entry in cfg.Characters matching c.ID, or
-// appends c if no existing entry matches.
-func upsertCharacter(cfg *config.Config, c config.Character) {
-	for i, existing := range cfg.Characters {
-		if existing.ID == c.ID {
-			cfg.Characters[i] = c
-			return
-		}
-	}
-	cfg.Characters = append(cfg.Characters, c)
 }
 
 // ScopeGroupInfo describes one scope group for list_scope_groups.
