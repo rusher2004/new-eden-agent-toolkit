@@ -279,8 +279,11 @@ type TypeBasic struct {
 	CategoryID    int64
 	MarketGroupID *int64
 	Volume        float64 // packaged volume when the SDE has one, otherwise volume
-	PortionSize   int64
-	Published     bool
+	// AssembledVolume is the type's volume when assembled (invTypes.volume),
+	// which differs from Volume for ships and containers.
+	AssembledVolume float64
+	PortionSize     int64
+	Published       bool
 }
 
 // TypeBasics loads TypeBasic for many types at once. Unknown IDs are absent
@@ -299,11 +302,11 @@ func (s *Store) TypeBasics(ctx context.Context, userAgent string, ids []int64) (
 			args[i] = id
 		}
 		err := s.eachRow(ctx, `SELECT t.typeID, t.typeName, t.groupID, COALESCE(g.groupName, ''), COALESCE(g.categoryID, 0), t.marketGroupID,
-				COALESCE(t.packagedVolume, t.volume, 0), COALESCE(t.portionSize, 1), COALESCE(t.published, 0)
+				COALESCE(t.packagedVolume, t.volume, 0), COALESCE(t.volume, 0), COALESCE(t.portionSize, 1), COALESCE(t.published, 0)
 			FROM invTypes t LEFT JOIN invGroups g ON g.groupID = t.groupID WHERE t.typeID IN (`+ph+`)`, args, func(r *sql.Rows) error {
 			var b TypeBasic
 			var mg sql.NullInt64
-			if err := r.Scan(&b.TypeID, &b.Name, &b.GroupID, &b.GroupName, &b.CategoryID, &mg, &b.Volume, &b.PortionSize, &b.Published); err != nil {
+			if err := r.Scan(&b.TypeID, &b.Name, &b.GroupID, &b.GroupName, &b.CategoryID, &mg, &b.Volume, &b.AssembledVolume, &b.PortionSize, &b.Published); err != nil {
 				return err
 			}
 			b.MarketGroupID = nullInt(mg)

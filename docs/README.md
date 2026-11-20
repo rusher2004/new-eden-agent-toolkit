@@ -21,15 +21,15 @@ The packages sit flat at the repo root, one per responsibility, with no `interna
 - `analytics/`: anonymous usage statistics via Aptabase. `neat mcp` sends one `app_started` event per launch (version, `runtime.GOOS`/`runtime.GOARCH`, and a random ID that rotates each calendar month), and a `tool_called` event per tool call (tool name and `ok`/`error` only), recorded by SDK middleware, batched about once a minute, and sent under a separate session ID with no monthly ID. See `PRIVACY.md`.
 - `mcp/`: the MCP server, every tool's definition and handler, the server's onboarding instructions (`instructions.go`), and the name enrichment that adds `TypeName`, `SystemName` and similar fields next to the bare IDs ESI returns.
 - `esi/`: a thin facade over [`goesi-openapi`](https://github.com/fnt-eve/goesi-openapi), one file per ESI tag. Every request is checked against a generated table of each endpoint's required scope before it is sent.
-- `sso/`: the login flow, the loopback callback session and its page (`sso/web/`), scope groups, the ESI User-Agent, and the cached, auto-refreshing HTTP client per character.
+- `sso/`: the login flow, the loopback callback session and its page (`sso/web/`, which also groups characters by account), scope groups, the ESI User-Agent, and the cached, auto-refreshing HTTP client per character.
 - `sde/`: the local Static Data Export: syncing, and SQL lookups for universe data, industry data and routing.
-- `nav/`: pure calculations for moving ships and characters, for any activity: security bands and displayed security, jump fuel, range and fatigue, and jump/gate route search with dotlan links.
-- `cargo/`: pure calculations for what fits where: packing cargo into loads.
+- `nav/`: pure calculations for moving ships and characters, for any activity: security bands, displayed security and its in-game color, jump fuel, range and fatigue, and jump/gate route search with dotlan links.
+- `cargo/`: pure calculations for what fits where: item volumes, everything at a station laid out with ship repackaging volumes and lost rigs, and packing cargo into loads.
 - `market/`: pure buying calculations: walking order books and in-game Multibuy lists.
 - `industry/`: pure industry calculations (facilities, jobs, research, invention, the blueprint tree, build-vs-buy, reprocessing, ore mixes, scheduling). It uses `nav/`, `cargo/` and `market/`; none of them use it.
 
 The pure packages have no network, disk or clock access. Every number the SDE doesn't carry is a sourced constant in that package's `constants.go`.
-- `config/`: `~/.neat/config.json`, holding logged-in characters, saved facility, haul and hub profiles, and the analytics opt-out.
+- `config/`: `~/.neat/config.json`, holding logged-in characters with their account labels and notes, saved facility, haul and hub profiles, and the analytics opt-out.
 - `creds/`: the OS keychain wrapper (service name `neat`).
 - `tools/`: code generators and CI checks (`genscopes`, `gentooldocs`, `genversion`, `versiongate`).
 

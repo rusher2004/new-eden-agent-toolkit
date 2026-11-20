@@ -108,8 +108,13 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_characters",
-		Description: "List EVE Online characters currently logged in to neat.",
+		Description: "List EVE Online characters currently logged in to neat, with the account label and notes the user gave each. Characters with the same account label are on the same EVE account and can't be logged in at the same time. Its warnings name characters whose account is unknown: ask the user and save the answer with update_character_details.",
 	}, listCharactersHandler(store))
+
+	mcpsdk.AddTool(server, &mcpsdk.Tool{
+		Name:        "update_character_details",
+		Description: "Record what the user tells you about their characters: which EVE account each is on (an account label shared by the characters on that account), and notes on what a character is for. Also renames an account label for every character that has it. Ask about accounts whenever list_characters or add_character warns that one is unknown, and save notes the user gives you. Returns every value changed, old and new, so you can tell the user what was saved. Writes to ~/.neat/config.json only.",
+	}, updateCharacterDetailsHandler(store))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "remove_character",
@@ -210,6 +215,11 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 		Name:        "list_corporation_assets",
 		Description: "List a corporation's assets, using a logged-in character's roles to authorize.",
 	}, listCorporationAssetsHandler(version, clientID, store, sdeStore))
+
+	mcpsdk.AddTool(server, &mcpsdk.Tool{
+		Name:        "list_location_assets",
+		Description: "List everything the user owns at one NPC station or Upwell structure, across every logged-in character (and a corporation's hangars, through a character with the roles), in one call instead of paging list_assets. Items are listed in tree order with what's inside each container and ship, and every volume comes worked out: each stack's volume as it is now, assembled ships' assembled and repackaged volumes, what comes out of each ship to repackage it, and the rigs that repackaging destroys. Totals give the volume to move with ships repackaged or carried assembled. Use it whenever a plan moves things out of a station or structure.",
+	}, listLocationAssetsHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_corporation_asset_locations",

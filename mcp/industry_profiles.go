@@ -41,12 +41,13 @@ type FacilityModifierView struct {
 }
 
 type FacilityView struct {
-	Profile    config.FacilityProfile `json:"profile"`
-	SystemName string                 `json:"systemName"`
-	Band       string                 `json:"securityBand"`
-	Security   float64                `json:"displaySecurity"`
-	Modifiers  []FacilityModifierView `json:"modifiers"`
-	Warnings   []string               `json:"warnings,omitempty"`
+	Profile       config.FacilityProfile `json:"profile"`
+	SystemName    string                 `json:"systemName"`
+	Band          string                 `json:"securityBand"`
+	Security      float64                `json:"displaySecurity"`
+	SecurityColor string                 `json:"securityColor"`
+	Modifiers     []FacilityModifierView `json:"modifiers"`
+	Warnings      []string               `json:"warnings,omitempty"`
 	// Product-specific view, when a product was given.
 	Product     string                `json:"product,omitempty"`
 	Multipliers *industry.Multipliers `json:"multipliers,omitempty"`
@@ -62,7 +63,7 @@ func (p *planner) describeFacility(ctx context.Context, prof config.FacilityProf
 	if err != nil {
 		return FacilityView{}, err
 	}
-	v := FacilityView{Profile: prof, SystemName: sys.Name, Band: f.Band.String(), Security: nav.DisplaySecurity(sys.Security), Warnings: f.Warnings}
+	v := FacilityView{Profile: prof, SystemName: sys.Name, Band: f.Band.String(), Security: nav.DisplaySecurity(sys.Security), SecurityColor: nav.SecurityColor(sys.Security), Warnings: f.Warnings}
 	for _, m := range f.Modifiers {
 		applies := "everything"
 		if m.FilterID != 0 {

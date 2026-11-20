@@ -10,6 +10,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -40,9 +42,12 @@ type loginSession struct {
 
 	wake chan struct{} // signalled whenever expires or finished changes
 
-	mu       sync.Mutex
-	pending  string // state of the login in flight; "" when none is
-	added    []Character
+	mu      sync.Mutex
+	pending string // state of the login in flight; "" when none is
+	added   []Character
+	// decided holds characters whose account the user set on this page, so
+	// they're no longer offered a suggested account.
+	decided  map[int32]bool
 	notice   notice
 	lastErr  error
 	expires  time.Time
@@ -66,6 +71,7 @@ func newLoginSession(ctx context.Context, cfg oauthConfig, opts AddOptions, host
 		token:      token,
 		authOrigin: authURL.Scheme + "://" + authURL.Host,
 		wake:       make(chan struct{}, 1),
+		decided:    map[int32]bool{},
 	}, nil
 }
 
@@ -146,6 +152,9 @@ func (s *loginSession) handler() http.Handler {
 	mux.HandleFunc("POST /done", s.requireToken(s.handleDone))
 	mux.HandleFunc("POST /ping", s.requireToken(s.handlePing))
 	mux.HandleFunc("POST /closed", s.requireToken(s.handleClosed))
+	mux.HandleFunc("POST /account/set", s.requireToken(s.handleAccountSet))
+	mux.HandleFunc("POST /account/rename", s.requireToken(s.handleAccountRename))
+	mux.HandleFunc("POST /account/delete", s.requireToken(s.handleAccountDelete))
 
 	csp := "default-src 'none'; img-src https://images.evetech.net; style-src 'unsafe-inline'; " +
 		"script-src 'self'; connect-src 'self'; form-action 'self' " + s.authOrigin +
@@ -323,24 +332,130 @@ func (s *loginSession) handleScript(w http.ResponseWriter, _ *http.Request) {
 	}
 }
 
+// newAccountOption is the account select's value for "New account…", whose
+// label comes from the form's new_account field instead.
+const newAccountOption = "__new__"
+
+// accountChanged records the outcome of an account change and sends the
+// browser back to the page, so a reload doesn't repeat the POST.
+func (s *loginSession) accountChanged(w http.ResponseWriter, r *http.Request, ok string, err error) {
+	s.mu.Lock()
+	if err != nil {
+		s.notice = notice{Kind: "error", Text: err.Error()}
+	} else {
+		s.notice = notice{Kind: "success", Text: ok}
+	}
+	s.extendBy(pageIdleTimeout)
+	s.mu.Unlock()
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (s *loginSession) handleAccountSet(w http.ResponseWriter, r *http.Request) {
+	if s.opts.Accounts == nil {
+		http.NotFound(w, r)
+		return
+	}
+	id64, err := strconv.ParseInt(r.PostFormValue("id"), 10, 32)
+	if err != nil {
+		http.Error(w, "invalid character ID", http.StatusBadRequest)
+		return
+	}
+	id := int32(id64)
+	var name string
+	for _, c := range s.characters() {
+		if c.ID == id {
+			name = c.Name
+		}
+	}
+	if name == "" {
+		http.Error(w, "unknown character", http.StatusBadRequest)
+		return
+	}
+	label := r.PostFormValue("account")
+	if label == newAccountOption {
+		label = r.PostFormValue("new_account")
+		if strings.TrimSpace(label) == "" {
+			s.accountChanged(w, r, "", errors.New("Type a name for the new account."))
+			return
+		}
+	}
+	if err := s.opts.Accounts.Set(id, label); err != nil {
+		s.accountChanged(w, r, "", fmt.Errorf("couldn't save %s's account: %w", name, err))
+		return
+	}
+	s.mu.Lock()
+	s.decided[id] = true
+	s.mu.Unlock()
+	if strings.TrimSpace(label) == "" {
+		s.accountChanged(w, r, name+" isn't assigned to an account.", nil)
+		return
+	}
+	s.accountChanged(w, r, "Moved "+name+" to "+strings.Join(strings.Fields(label), " ")+".", nil)
+}
+
+func (s *loginSession) handleAccountRename(w http.ResponseWriter, r *http.Request) {
+	if s.opts.Accounts == nil {
+		http.NotFound(w, r)
+		return
+	}
+	from, to := r.PostFormValue("from"), r.PostFormValue("to")
+	if err := s.opts.Accounts.Rename(from, to); err != nil {
+		s.accountChanged(w, r, "", fmt.Errorf("couldn't rename %s: %w", from, err))
+		return
+	}
+	s.accountChanged(w, r, "Renamed "+from+" to "+strings.Join(strings.Fields(to), " ")+".", nil)
+}
+
+func (s *loginSession) handleAccountDelete(w http.ResponseWriter, r *http.Request) {
+	if s.opts.Accounts == nil {
+		http.NotFound(w, r)
+		return
+	}
+	label := r.PostFormValue("label")
+	if err := s.opts.Accounts.Delete(label); err != nil {
+		s.accountChanged(w, r, "", fmt.Errorf("couldn't delete %s: %w", label, err))
+		return
+	}
+	s.accountChanged(w, r, "Deleted "+label+". Its characters aren't assigned to an account now.", nil)
+}
+
 type pageCharacter struct {
-	ID   int32
-	Name string
-	New  bool
+	ID      int32
+	Name    string
+	New     bool
+	Account string
+	// Suggested is the account this character is shown in until the user
+	// confirms or changes it: the account of the character logged in just
+	// before it in this session, since FC's login site usually stays signed
+	// in to the same account between back-to-back logins. It isn't saved.
+	Suggested string
+}
+
+// pageGroup is one account's characters; Label "" is the unassigned group.
+type pageGroup struct {
+	Label      string
+	Characters []pageCharacter
 }
 
 type pageData struct {
-	Token      string
-	Notice     notice
-	Characters []pageCharacter
-	Finished   bool
+	Token    string
+	Notice   notice
+	Grouping bool
+	Labels   []string
+	Groups   []pageGroup
+	Finished bool
 }
 
 // characters lists the saved characters, marking those added in this
-// session, plus any added character the saved list doesn't have yet.
+// session, plus any added character the saved list doesn't have yet, and
+// suggests an account for each new, unassigned one.
 func (s *loginSession) characters() []pageCharacter {
 	s.mu.Lock()
 	added := append([]Character(nil), s.added...)
+	decided := make(map[int32]bool, len(s.decided))
+	for id := range s.decided {
+		decided[id] = true
+	}
 	s.mu.Unlock()
 
 	var saved []Character
@@ -353,26 +468,75 @@ func (s *loginSession) characters() []pageCharacter {
 		}
 	}
 
+	account := make(map[int32]string, len(saved))
+	for _, c := range saved {
+		account[c.ID] = c.Account
+	}
 	isNew := make(map[int32]bool, len(added))
+	suggested := map[int32]string{}
+	prev := ""
 	for _, c := range added {
 		isNew[c.ID] = true
+		switch a := account[c.ID]; {
+		case a != "":
+			prev = a
+		case decided[c.ID]:
+			prev = ""
+		case prev != "":
+			suggested[c.ID] = prev
+		}
 	}
+
 	seen := make(map[int32]bool, len(saved))
 	out := make([]pageCharacter, 0, len(saved)+len(added))
 	for _, c := range saved {
 		seen[c.ID] = true
-		out = append(out, pageCharacter{ID: c.ID, Name: c.Name, New: isNew[c.ID]})
+		out = append(out, pageCharacter{ID: c.ID, Name: c.Name, New: isNew[c.ID], Account: c.Account, Suggested: suggested[c.ID]})
 	}
 	for _, c := range added {
 		if !seen[c.ID] {
-			out = append(out, pageCharacter{ID: c.ID, Name: c.Name, New: true})
+			out = append(out, pageCharacter{ID: c.ID, Name: c.Name, New: true, Suggested: suggested[c.ID]})
 		}
 	}
 	return out
 }
 
+// groupByAccount puts characters in their account's group, or their
+// suggested account's, in the order each account first appears, with the
+// unassigned group last.
+func groupByAccount(chars []pageCharacter) (labels []string, groups []pageGroup) {
+	idx := map[string]int{}
+	var unassigned []pageCharacter
+	for _, c := range chars {
+		if c.Account != "" {
+			if _, ok := idx[c.Account]; !ok {
+				idx[c.Account] = len(groups)
+				labels = append(labels, c.Account)
+				groups = append(groups, pageGroup{Label: c.Account})
+			}
+		}
+	}
+	for _, c := range chars {
+		label := c.Account
+		if label == "" {
+			label = c.Suggested
+		}
+		i, ok := idx[label]
+		if label == "" || !ok {
+			unassigned = append(unassigned, c)
+			continue
+		}
+		groups[i].Characters = append(groups[i].Characters, c)
+	}
+	if len(unassigned) > 0 {
+		groups = append(groups, pageGroup{Characters: unassigned})
+	}
+	return labels, groups
+}
+
 func (s *loginSession) render(w http.ResponseWriter, status int, n notice, finished bool) {
-	data := pageData{Notice: n, Characters: s.characters(), Finished: finished}
+	data := pageData{Notice: n, Finished: finished, Grouping: s.opts.Accounts != nil}
+	data.Labels, data.Groups = groupByAccount(s.characters())
 	if !finished {
 		data.Token = s.token
 	}

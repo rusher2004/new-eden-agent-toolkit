@@ -1,5 +1,12 @@
 # neat plugin — changelog
 
+## 0.10.0
+- neat now knows which of your characters share an EVE account. Characters on one account can't be logged in at the same time, which matters when a plan needs two of them online together, such as a jump freighter pilot and their cyno alt. neat's login page groups your characters by account: pick one for each character or start a new one, and rename or delete groups. When you log in several characters in a row, neat suggests putting each in the same account as the one before, and saves it only when you confirm. EVE doesn't tell neat this, so Claude also asks you when an account is unknown.
+- Claude can save notes about each character, such as what it's for or what it flies, with the new `update_character_details` tool, which also sets and renames account labels. `list_characters` now shows each character's account and notes.
+- New `list_location_assets` lists everything you and your other characters (and your corporation, through a character with the roles) own at one station or structure, in one call, with everything inside each container and ship. It works out every volume for you: each stack as it is now, each assembled ship's assembled and repackaged size, what comes out of a ship to repackage it, and which rigs repackaging would destroy (strategic cruisers keep theirs), with totals for moving the lot.
+- `list_assets` and `list_corporation_assets` now give each item's volume.
+- Systems now come with their security as the game shows it (Aunenen is "0.4", not 0.448) and its in-game color, in `get_universe_system`, on every leg of a jump route, and in `describe_facility`. Claude quotes the displayed value and never guesses security from a system's name.
+
 ## 0.9.2
 - Jump routes, hauling, trade hubs and purchase pricing are no longer filed under industry planning. They now have their own sections in neat's tool reference, because moving ships and buying supplies matter for PvP and PvE as much as for building. No tool was renamed and nothing about how they work has changed; this prepares for upcoming logistics features.
 
