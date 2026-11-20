@@ -6,12 +6,14 @@ import (
 	"testing"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/industry"
+	"github.com/rusher2004/new-eden-agent-toolkit/market"
+	"github.com/rusher2004/new-eden-agent-toolkit/nav"
 )
 
 var allFive = industry.ReprocessSkills{Reprocessing: 5, ReprocessingEfficiency: 5}
 
 func TestUpwellYield_AllFiveAtTatara(t *testing.T) {
-	tatara := industry.UpwellYieldInput{RigTier: 1, Band: industry.Nullsec, StructureBonusPct: 5.5}
+	tatara := industry.UpwellYieldInput{RigTier: 1, Band: nav.Nullsec, StructureBonusPct: 5.5}
 	// Confirmed in game 2026-11-18: 82.3% without an implant.
 	if got := industry.UpwellYield(tatara, allFive, 4); math.Abs(got-0.82333) > 0.0001 {
 		t.Errorf("no implant = %.5f, want 0.8233", got)
@@ -23,11 +25,11 @@ func TestUpwellYield_AllFiveAtTatara(t *testing.T) {
 	}
 	// EVE University's worked example: T2 rig, max skills, RX-804 = 90.6%.
 	max := industry.ReprocessSkills{Reprocessing: 5, ReprocessingEfficiency: 5, Implant: 0.04}
-	if got := industry.UpwellYield(industry.UpwellYieldInput{RigTier: 2, Band: industry.Nullsec, StructureBonusPct: 5.5}, max, 5); math.Abs(got-0.90628) > 0.0001 {
+	if got := industry.UpwellYield(industry.UpwellYieldInput{RigTier: 2, Band: nav.Nullsec, StructureBonusPct: 5.5}, max, 5); math.Abs(got-0.90628) > 0.0001 {
 		t.Errorf("wiki example = %.5f, want 0.9063", got)
 	}
 	// No rig: the security term doesn't apply.
-	if got := industry.UpwellYield(industry.UpwellYieldInput{Band: industry.Nullsec}, industry.ReprocessSkills{}, 0); got != 0.5 {
+	if got := industry.UpwellYield(industry.UpwellYieldInput{Band: nav.Nullsec}, industry.ReprocessSkills{}, 0); got != 0.5 {
 		t.Errorf("bare citadel = %v, want 0.5", got)
 	}
 }
@@ -62,10 +64,10 @@ func TestSolveOreMix_PicksCheaperPerMineral(t *testing.T) {
 	// both at 10 per A-equivalent, so the optimum is 100 X = 10,000 ISK.
 	req := industry.OreMixRequest{
 		Needs: map[int64]int64{1: 1000, 2: 500},
-		Ores:  []industry.OreOption{{TypeID: 10, Name: "X", Portion: 1, M3: 0.1, PerPortion: []industry.TypeQty{{1, 10}, {2, 5}}, Yield: 1, Book: []industry.Order{{Price: 100, Volume: 1000}}}},
+		Ores:  []industry.OreOption{{TypeID: 10, Name: "X", Portion: 1, M3: 0.1, PerPortion: []industry.TypeQty{{1, 10}, {2, 5}}, Yield: 1, Book: []market.Order{{Price: 100, Volume: 1000}}}},
 		Minerals: []industry.MineralOption{
-			{TypeID: 1, Name: "A", M3: 0.01, Book: []industry.Order{{Price: 15, Volume: 1e6}}},
-			{TypeID: 2, Name: "B", M3: 0.01, Book: []industry.Order{{Price: 15, Volume: 1e6}}},
+			{TypeID: 1, Name: "A", M3: 0.01, Book: []market.Order{{Price: 15, Volume: 1e6}}},
+			{TypeID: 2, Name: "B", M3: 0.01, Book: []market.Order{{Price: 15, Volume: 1e6}}},
 		},
 	}
 	mix, err := industry.SolveOreMix(req)
@@ -82,8 +84,8 @@ func TestSolveOreMix_FreightTipsToMinerals(t *testing.T) {
 	// makes X cost 300 per unit against 225 for its minerals, so direct minerals win.
 	req := industry.OreMixRequest{
 		Needs:        map[int64]int64{1: 1000, 2: 500},
-		Ores:         []industry.OreOption{{TypeID: 10, Name: "X", Portion: 1, M3: 200, PerPortion: []industry.TypeQty{{1, 10}, {2, 5}}, Yield: 1, Book: []industry.Order{{Price: 100, Volume: 1000}}}},
-		Minerals:     []industry.MineralOption{{TypeID: 1, M3: 0.01, Book: []industry.Order{{Price: 15, Volume: 1e6}}}, {TypeID: 2, M3: 0.01, Book: []industry.Order{{Price: 15, Volume: 1e6}}}},
+		Ores:         []industry.OreOption{{TypeID: 10, Name: "X", Portion: 1, M3: 200, PerPortion: []industry.TypeQty{{1, 10}, {2, 5}}, Yield: 1, Book: []market.Order{{Price: 100, Volume: 1000}}}},
+		Minerals:     []industry.MineralOption{{TypeID: 1, M3: 0.01, Book: []market.Order{{Price: 15, Volume: 1e6}}}, {TypeID: 2, M3: 0.01, Book: []market.Order{{Price: 15, Volume: 1e6}}}},
 		FreightPerM3: 1,
 	}
 	mix, err := industry.SolveOreMix(req)
@@ -98,8 +100,8 @@ func TestSolveOreMix_FreightTipsToMinerals(t *testing.T) {
 func TestSolveOreMix_PortionsAndByproducts(t *testing.T) {
 	req := industry.OreMixRequest{
 		Needs:    map[int64]int64{1: 950},
-		Ores:     []industry.OreOption{{TypeID: 10, Name: "X", Portion: 100, M3: 0.01, PerPortion: []industry.TypeQty{{1, 1000}, {3, 50}}, Yield: 1, Book: []industry.Order{{Price: 1, Volume: 1000}}}},
-		Minerals: []industry.MineralOption{{TypeID: 1, M3: 0.01, Book: []industry.Order{{Price: 100, Volume: 1e6}}}},
+		Ores:     []industry.OreOption{{TypeID: 10, Name: "X", Portion: 100, M3: 0.01, PerPortion: []industry.TypeQty{{1, 1000}, {3, 50}}, Yield: 1, Book: []market.Order{{Price: 1, Volume: 1000}}}},
+		Minerals: []industry.MineralOption{{TypeID: 1, M3: 0.01, Book: []market.Order{{Price: 100, Volume: 1e6}}}},
 	}
 	mix, err := industry.SolveOreMix(req)
 	if err != nil {
@@ -113,7 +115,7 @@ func TestSolveOreMix_PortionsAndByproducts(t *testing.T) {
 func TestSolveOreMix_Infeasible(t *testing.T) {
 	_, err := industry.SolveOreMix(industry.OreMixRequest{
 		Needs:    map[int64]int64{40: 1000},
-		Minerals: []industry.MineralOption{{TypeID: 40, Name: "Megacyte", M3: 0.01, Book: []industry.Order{{Price: 2000, Volume: 10}}}},
+		Minerals: []industry.MineralOption{{TypeID: 40, Name: "Megacyte", M3: 0.01, Book: []market.Order{{Price: 2000, Volume: 10}}}},
 	})
 	if err == nil || !strings.Contains(err.Error(), "type 40") {
 		t.Errorf("err = %v, want a shortfall naming type 40", err)

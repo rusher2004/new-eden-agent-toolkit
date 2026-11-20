@@ -1,6 +1,6 @@
 # Industry Planning (`industry/` + planning tools + skills) — Design
 
-**Status:** Implemented (docs/superpowers/plans/2026-11-18-industry-planning.md). Rig coverage turned out to be in the SDE itself (`indModifierSources`/`indTargetFilter*`), so no coverage table is kept in code. Jump distances use EVE's 9.46e15 m light year with fuel rounded per jump, which matches dotlan to the unit. Unverified, and labelled so in tool output: the research and invention job fee bases, and the linear shape of the NPC reprocessing standings curve between its two documented endpoints. Still open: whether dotlan's gate route URL takes a safety-mode prefix.
+**Status:** Implemented (docs/superpowers/plans/2026-11-18-industry-planning.md). Rig coverage turned out to be in the SDE itself (`indModifierSources`/`indTargetFilter*`), so no coverage table is kept in code. Jump distances use EVE's 9.46e15 m light year with fuel rounded per jump, which matches dotlan to the unit. Unverified, and labelled so in tool output: the research and invention job fee bases, and the linear shape of the NPC reprocessing standings curve between its two documented endpoints. Still open: whether dotlan's gate route URL takes a safety-mode prefix. Since 2026-11-20, the movement, cargo and market calculations described here live in `nav/`, `cargo/` and `market/` rather than `industry/` (see `2026-11-20-logistics-planning-design.md`).
 **Date:** 2026-11-18
 
 ## Goal

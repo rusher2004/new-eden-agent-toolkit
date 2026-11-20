@@ -1287,6 +1287,8 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 		Description: "Browse the Paragon Hub SKINR listings visible to a logged-in character (listings other sellers targeted at it), cursor-paginated.",
 	}, listParagonHubSkinrListingsForCharacterHandler(version, clientID, store))
 
+	registerNavigationTools(server, version, clientID, store, sdeStore)
+	registerMarketPlanningTools(server, version, clientID, store, sdeStore)
 	registerIndustryPlanningTools(server, version, clientID, store, sdeStore)
 
 	return server

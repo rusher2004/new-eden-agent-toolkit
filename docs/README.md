@@ -23,7 +23,12 @@ The packages sit flat at the repo root, one per responsibility, with no `interna
 - `esi/`: a thin facade over [`goesi-openapi`](https://github.com/fnt-eve/goesi-openapi), one file per ESI tag. Every request is checked against a generated table of each endpoint's required scope before it is sent.
 - `sso/`: the login flow, the loopback callback session and its page (`sso/web/`), scope groups, the ESI User-Agent, and the cached, auto-refreshing HTTP client per character.
 - `sde/`: the local Static Data Export: syncing, and SQL lookups for universe data, industry data and routing.
-- `industry/`: pure industry, hauling and routing calculations with no network, disk or clock access. Every number the SDE doesn't carry is a sourced constant in `industry/constants.go`.
+- `nav/`: pure calculations for moving ships and characters, for any activity: security bands and displayed security, jump fuel, range and fatigue, and jump/gate route search with dotlan links.
+- `cargo/`: pure calculations for what fits where: packing cargo into loads.
+- `market/`: pure buying calculations: walking order books and in-game Multibuy lists.
+- `industry/`: pure industry calculations (facilities, jobs, research, invention, the blueprint tree, build-vs-buy, reprocessing, ore mixes, scheduling). It uses `nav/`, `cargo/` and `market/`; none of them use it.
+
+The pure packages have no network, disk or clock access. Every number the SDE doesn't carry is a sourced constant in that package's `constants.go`.
 - `config/`: `~/.neat/config.json`, holding logged-in characters, saved facility, haul and hub profiles, and the analytics opt-out.
 - `creds/`: the OS keychain wrapper (service name `neat`).
 - `tools/`: code generators and CI checks (`genscopes`, `gentooldocs`, `genversion`, `versiongate`).
