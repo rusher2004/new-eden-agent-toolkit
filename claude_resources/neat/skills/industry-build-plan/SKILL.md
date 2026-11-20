@@ -17,7 +17,7 @@ You run the discovery and the decisions. neat's tools do every calculation: quan
 
 - Ask which character owns the blueprints (or which corporation), who will install jobs (`builderIds`), and, if minerals will come from ore, who refines (`refinerId`).
 - Call `check_build_skills` for the candidate builders. Report who can build each part and what's missing. Don't guess skills.
-- Planning reads blueprints, jobs, assets and market orders, which need the `industry`, `assets` and `market` scope groups (`corporation_industry` and `corporation_finance` for corp blueprints and hangars). If a tool reports a missing scope, use the **add-character** skill to grant all the groups the plan needs in one login.
+- Planning reads blueprints, jobs, assets and market orders, which need the `industry`, `assets`, `market` and `structures` scope groups (`structures` names the player structures blueprints and stock sit in; `corporation_industry` and `corporation_finance` for corp blueprints and hangars). If a tool reports a missing scope, use the **add-character** skill to grant all the groups the plan needs in one login.
 
 ## 3. Where, and the profiles
 

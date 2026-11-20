@@ -96,7 +96,8 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name: "add_character",
 		Description: "Log in EVE Online characters via ESI OAuth2. Opens the user's browser at EVE's login page; afterwards the browser shows a neat page listing their characters, where they can log in more characters before clicking Done or closing the tab. Blocks until then and returns every character added, with the scope groups each granted. " +
-			"Every login grants the basic scope group plus scopeGroups: before calling, ask the user what they'll use neat for and pick groups from list_scope_groups (or use only basic if they don't know). " +
+			"Every login grants the basic scope group plus scopeGroups: before calling, ask the user what they'll use neat for, including whether they want their corporation's data, and pick groups from list_scope_groups (or use only basic if they don't know). A login replaces each character's access with exactly what it requested, so to add a group to characters already logged in, either pass characterId or list every group they should end up with. " +
+			"If no browser tab opens, the user can open http://127.0.0.1:48211/ themselves while the tool waits. " +
 			"To grant more groups to a character later (e.g. after a tool fails because a scope is missing), pass its characterId: its existing scopes are kept. Check the result's warnings: they say when the user logged in as a different character, or when the character's earlier scope groups couldn't be read and may need granting again. Re-adding a known character refreshes its login.",
 	}, addCharacterHandler(version, clientID, store))
 
