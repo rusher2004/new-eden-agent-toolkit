@@ -113,7 +113,7 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "update_character_details",
-		Description: "Record what the user tells you about their characters: which EVE account each is on (an account label shared by the characters on that account), and notes on what a character is for. Also renames an account label for every character that has it. Ask about accounts whenever list_characters or add_character warns that one is unknown, and save notes the user gives you. Returns every value changed, old and new, so you can tell the user what was saved. Writes to ~/.neat/config.json only.",
+		Description: "Record what the user tells you about their characters: which EVE account each is on (an account label shared by the characters on that account), and notes on what a character is for. Also renames an account label for every character that has it. Ask about accounts whenever list_characters or add_character warns that one is unknown, and save notes the user gives you. Returns every value changed, old and new, so you can tell the user what was saved. Writes to ~/.neat/characters.yaml only.",
 	}, updateCharacterDetailsHandler(store))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{

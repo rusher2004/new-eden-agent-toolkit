@@ -71,11 +71,11 @@ func addCharacterHandler(version, clientID string, store *config.Store) mcpsdk.T
 			// session ends, so the session page lists it and an abandoned
 			// session doesn't lose it.
 			OnAdded: func(c sso.Character) error {
-				if err := store.Update(func(cfg *config.Config) error {
+				if _, err := store.Update(func(cfg *config.Config) error {
 					cfg.UpsertCharacter(config.Character{ID: c.ID, Name: c.Name})
 					return nil
 				}); err != nil {
-					return fmt.Errorf("save character to config: %w", err)
+					return fmt.Errorf("save character: %w", err)
 				}
 				return nil
 			},
@@ -135,9 +135,10 @@ func addCharacterHandler(version, clientID string, store *config.Store) mcpsdk.T
 
 // accountEditor saves the account grouping the user sets on the login page.
 func accountEditor(store *config.Store) *sso.AccountEditor {
-	// Update holds the store's lock across the load and save, so a change
-	// made here can't race a login callback's save in another request.
-	edit := store.Update
+	edit := func(change func(*config.Config) error) error {
+		_, err := store.Update(change)
+		return err
+	}
 	return &sso.AccountEditor{
 		Set: func(id int32, label string) error {
 			return edit(func(c *config.Config) error { _, err := c.SetCharacterAccount(id, label); return err })

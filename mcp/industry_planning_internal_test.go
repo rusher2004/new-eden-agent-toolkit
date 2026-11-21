@@ -114,7 +114,8 @@ func TestPlanBuild_EndToEnd(t *testing.T) {
 	cfg, _ := store.Load()
 	cfg.UpsertFacilityProfile(config.FacilityProfile{Name: "Home Sotiyo", Kind: industry.KindUpwell, StructureType: 35827, SystemID: 30001324, RigTypeIDs: []int64{37180, 43704}, Services: []string{"manufacturing", "capital_shipyard"}})
 	cfg.UpsertFacilityProfile(config.FacilityProfile{Name: "Home Tatara", Kind: industry.KindUpwell, StructureType: 35836, SystemID: 30001324, Services: []string{"reprocessing"}, ReprocessingRigTier: 1})
-	cfg.UpsertHaulProfile(config.HaulProfile{Name: "JF Nomad", ShipTypeID: 28846, PilotID: int64(testPilot), HoldM3: 158400, Outbound: []int64{30000142, 30001448, 30000855, 30001324}})
+	cfg.UpsertRoute(config.Route{Name: "JF Nomad outbound", Waypoints: []config.RouteWaypoint{{ID: 30000142}, {ID: 30001448}, {ID: 30000855}, {ID: 30001324}}})
+	cfg.UpsertHaulProfile(config.HaulProfile{Name: "JF Nomad", ShipTypeID: 28846, PilotID: int64(testPilot), HoldM3: 158400, OutboundRoute: "JF Nomad outbound"})
 	if err := store.Save(cfg); err != nil {
 		t.Fatal(err)
 	}

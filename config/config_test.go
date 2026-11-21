@@ -18,7 +18,7 @@ func TestStore_Update_ConcurrentChangesAreAllKept(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := store.Update(func(c *config.Config) error {
+			if _, err := store.Update(func(c *config.Config) error {
 				c.UpsertCharacter(config.Character{ID: int32(i + 1), Name: "c"})
 				return nil
 			}); err != nil {
@@ -38,7 +38,7 @@ func TestStore_Update_ConcurrentChangesAreAllKept(t *testing.T) {
 
 func TestStore_Update_ErrorSavesNothing(t *testing.T) {
 	store := config.NewStoreAt(filepath.Join(t.TempDir(), "config.json"))
-	if err := store.Update(func(c *config.Config) error {
+	if _, err := store.Update(func(c *config.Config) error {
 		c.UpsertCharacter(config.Character{ID: 1, Name: "c"})
 		return errors.New("refused")
 	}); err == nil {

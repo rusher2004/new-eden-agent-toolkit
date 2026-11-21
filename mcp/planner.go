@@ -236,14 +236,7 @@ type DeletedOutput struct {
 
 func deleteProfileHandler(store *config.Store, del func(*config.Config, string) error) mcpsdk.ToolHandlerFor[ProfileNameInput, DeletedOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ProfileNameInput) (*mcpsdk.CallToolResult, DeletedOutput, error) {
-		cfg, err := store.Load()
-		if err != nil {
-			return nil, DeletedOutput{}, err
-		}
-		if err := del(&cfg, in.Name); err != nil {
-			return nil, DeletedOutput{}, err
-		}
-		if err := store.Save(cfg); err != nil {
+		if _, err := store.Update(func(cfg *config.Config) error { return del(cfg, in.Name) }); err != nil {
 			return nil, DeletedOutput{}, err
 		}
 		return nil, DeletedOutput{Deleted: in.Name}, nil
