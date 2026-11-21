@@ -181,40 +181,47 @@ func saveHubProfileHandler(version, clientID string, store *config.Store, sdeSto
 			}
 		}
 		p := newPlanner(version, clientID, store, sdeStore)
-		h, saved := cfg.HubProfile(fmt.Sprint(in.ID))
+		facts, factsErr := p.hubFacts(ctx, in.ID, in.CharacterID)
+		// The lookup above goes over the network, so the hub is merged into
+		// whatever is saved now, under Update's lock, rather than saved over
+		// anything written meanwhile.
+		var h config.HubProfile
 		var warnings []string
-		facts, err := p.hubFacts(ctx, in.ID, in.CharacterID)
-		switch {
-		case err == nil:
-			name := h.Name
-			h.StationID, h.Kind, h.System, h.Region = facts.StationID, facts.Kind, facts.System, facts.Region
-			h.Name = name
-			if h.Name == "" {
-				h.Name = facts.Name
+		changes, err := store.Update(func(cfg *config.Config) error {
+			var saved bool
+			h, saved = cfg.HubProfile(fmt.Sprint(in.ID))
+			switch {
+			case factsErr == nil:
+				name := h.Name
+				h.StationID, h.Kind, h.System, h.Region = facts.StationID, facts.Kind, facts.System, facts.Region
+				h.Name = name
+				if h.Name == "" {
+					h.Name = facts.Name
+				}
+				if facts.Kind == config.HubStructure {
+					c, _ := cfg.Character(in.CharacterID)
+					h.ReadVia = &config.NamedID{ID: int64(c.ID), Name: c.Name}
+				}
+			case !saved:
+				return fmt.Errorf("save hub profile: %w", factsErr)
+			default:
+				warnings = append(warnings, "kept the saved name, system and region, since they couldn't be read from the game: "+factsErr.Error())
 			}
-			if facts.Kind == config.HubStructure {
-				c, _ := cfg.Character(in.CharacterID)
-				h.ReadVia = &config.NamedID{ID: int64(c.ID), Name: c.Name}
+			if n := strings.TrimSpace(in.Name); n != "" {
+				h.Name = n
 			}
-		case !saved:
-			return nil, SaveHubProfileOutput{}, fmt.Errorf("save hub profile: %w", err)
-		default:
-			warnings = append(warnings, "kept the saved name, system and region, since they couldn't be read from the game: "+err.Error())
-		}
-		if n := strings.TrimSpace(in.Name); n != "" {
-			h.Name = n
-		}
-		if in.Tier != "" {
-			h.Tier = in.Tier
-		}
-		if in.Traits != nil {
-			h.Traits = in.Traits
-		}
-		if in.Notes != nil {
-			h.Notes = strings.TrimSpace(*in.Notes)
-		}
-		cfg.UpsertHubProfile(h)
-		changes, err := store.SaveChanges(cfg)
+			if in.Tier != "" {
+				h.Tier = in.Tier
+			}
+			if in.Traits != nil {
+				h.Traits = in.Traits
+			}
+			if in.Notes != nil {
+				h.Notes = strings.TrimSpace(*in.Notes)
+			}
+			cfg.UpsertHubProfile(h)
+			return nil
+		})
 		if err != nil {
 			return nil, SaveHubProfileOutput{}, err
 		}
@@ -232,25 +239,22 @@ type DeleteHubProfileInput struct {
 
 func deleteHubProfileHandler(store *config.Store) mcpsdk.ToolHandlerFor[DeleteHubProfileInput, DeletedOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in DeleteHubProfileInput) (*mcpsdk.CallToolResult, DeletedOutput, error) {
-		cfg, err := store.Load()
-		if err != nil {
-			return nil, DeletedOutput{}, err
-		}
 		if strings.TrimSpace(in.Hub) == "" {
 			return nil, DeletedOutput{}, fmt.Errorf("no hub named %q", in.Hub)
 		}
-		h, ok := cfg.HubProfile(in.Hub)
-		if !ok {
-			// Says whether the name matched nothing or several hubs.
-			return nil, DeletedOutput{}, cfg.DeleteHubProfile(in.Hub)
-		}
-		if err := cfg.DeleteHubProfile(fmt.Sprint(h.StationID)); err != nil {
+		var name string
+		if _, err := store.Update(func(cfg *config.Config) error {
+			h, ok := cfg.HubProfile(in.Hub)
+			if !ok {
+				// Says whether the name matched nothing or several hubs.
+				return cfg.DeleteHubProfile(in.Hub)
+			}
+			name = h.Name
+			return cfg.DeleteHubProfile(fmt.Sprint(h.StationID))
+		}); err != nil {
 			return nil, DeletedOutput{}, err
 		}
-		if err := store.Save(cfg); err != nil {
-			return nil, DeletedOutput{}, err
-		}
-		return nil, DeletedOutput{Deleted: h.Name}, nil
+		return nil, DeletedOutput{Deleted: name}, nil
 	}
 }
 
@@ -329,22 +333,34 @@ func validateTradeHubHandler(version, clientID string, store *config.Store, sdeS
 				return nil, ValidateTradeHubOutput{}, err
 			}
 		}
-		hub.Validation = v
+		var readVia *config.NamedID
 		if hub.IsStructure() {
 			char, err := p.hubCharacter(hub)
 			if err != nil {
 				return nil, ValidateTradeHubOutput{}, err
 			}
-			readVia := config.NamedID{ID: int64(char)}
+			rv := config.NamedID{ID: int64(char)}
 			if c, ok := cfg.Character(char); ok {
-				readVia.Name = c.Name
+				rv.Name = c.Name
 			} else if hub.ReadVia != nil && hub.ReadVia.ID == int64(char) {
-				readVia.Name = hub.ReadVia.Name
+				rv.Name = hub.ReadVia.Name
 			}
-			hub.ReadVia = &readVia
+			readVia = &rv
 		}
-		cfg.UpsertHubProfile(hub)
-		changes, err := store.SaveChanges(cfg)
+		// The measuring above goes over the network, so the result is
+		// recorded on the hub as saved now, under Update's lock, rather than
+		// saved over anything written meanwhile.
+		changes, err := store.Update(func(c *config.Config) error {
+			if latest, ok := c.HubProfile(fmt.Sprint(hub.StationID)); ok {
+				hub = latest
+			}
+			hub.Validation = v
+			if readVia != nil {
+				hub.ReadVia = readVia
+			}
+			c.UpsertHubProfile(hub)
+			return nil
+		})
 		if err != nil {
 			return nil, ValidateTradeHubOutput{}, err
 		}
