@@ -167,21 +167,19 @@ func saveFacilityProfileHandler(version, clientID string, store *config.Store, s
 		if err != nil {
 			return nil, FacilityView{}, err
 		}
-		cfg, err := store.Load()
-		if err != nil {
-			return nil, FacilityView{}, err
-		}
 		if sys, err := p.system(ctx, prof.SystemID); err == nil {
 			prof.SystemName = sys.Name
 		}
-		if old, ok := cfg.FacilityProfile(prof.Name); ok {
-			prof.Name, prof.Notes = old.Name, old.Notes
-		}
-		if in.Notes != nil {
-			prof.Notes = strings.TrimSpace(*in.Notes)
-		}
-		cfg.UpsertFacilityProfile(prof)
-		if err := store.Save(cfg); err != nil {
+		if _, err := store.Update(func(cfg *config.Config) error {
+			if old, ok := cfg.FacilityProfile(prof.Name); ok {
+				prof.Name, prof.Notes = old.Name, old.Notes
+			}
+			if in.Notes != nil {
+				prof.Notes = strings.TrimSpace(*in.Notes)
+			}
+			cfg.UpsertFacilityProfile(prof)
+			return nil
+		}); err != nil {
 			return nil, FacilityView{}, err
 		}
 		return nil, view, nil
@@ -311,12 +309,18 @@ func calibrateFacilityProfileHandler(version, clientID string, store *config.Sto
 		m := f.Multipliers(activity, 0, 0)
 		out.EstimatedRate = industry.JobFee(industry.FeeInput{BaseValue: 1, CostIndex: ci, StructureCostBonus: m.Cost, FacilityTax: f.FacilityTax})
 		prof.Calibration = &config.Calibration{FeeRate: rate, FromJobID: in.JobID, ObservedAt: time.Now().UTC().Format(time.RFC3339)}
-		cfg, err := store.Load()
-		if err != nil {
-			return nil, CalibrateFacilityProfileOutput{}, err
-		}
-		cfg.UpsertFacilityProfile(prof)
-		if err := store.Save(cfg); err != nil {
+		// Set only the calibration on the profile as it is now, so an edit
+		// saved while the job was being looked up isn't undone.
+		if _, err := store.Update(func(cfg *config.Config) error {
+			cur, ok := cfg.FacilityProfile(prof.Name)
+			if !ok {
+				return fmt.Errorf("no facility profile named %q", prof.Name)
+			}
+			cur.Calibration = prof.Calibration
+			prof = cur
+			cfg.UpsertFacilityProfile(cur)
+			return nil
+		}); err != nil {
 			return nil, CalibrateFacilityProfileOutput{}, err
 		}
 		out.Profile = prof

@@ -28,13 +28,8 @@ func saveHubProfileHandler(store *config.Store) mcpsdk.ToolHandlerFor[SaveHubPro
 		if strings.TrimSpace(in.Name) == "" || in.RegionID == 0 || in.StationID == 0 {
 			return nil, config.HubProfile{}, fmt.Errorf("save hub profile: name, regionId and stationId are required")
 		}
-		cfg, err := store.Load()
-		if err != nil {
-			return nil, config.HubProfile{}, err
-		}
 		h := config.HubProfile{Name: strings.TrimSpace(in.Name), RegionID: in.RegionID, StationID: in.StationID}
-		cfg.UpsertHubProfile(h)
-		if err := store.Save(cfg); err != nil {
+		if _, err := store.Update(func(cfg *config.Config) error { cfg.UpsertHubProfile(h); return nil }); err != nil {
 			return nil, config.HubProfile{}, err
 		}
 		return nil, h, nil

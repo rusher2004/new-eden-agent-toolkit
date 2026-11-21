@@ -69,13 +69,11 @@ func addCharacterHandler(version, clientID string, store *config.Store) mcpsdk.T
 			// session ends, so the session page lists it and an abandoned
 			// session doesn't lose it.
 			OnAdded: func(c sso.Character) error {
-				cfg, err := store.Load()
-				if err != nil {
-					return fmt.Errorf("load config: %w", err)
-				}
-				cfg.UpsertCharacter(config.Character{ID: c.ID, Name: c.Name})
-				if err := store.Save(cfg); err != nil {
-					return fmt.Errorf("save config: %w", err)
+				if _, err := store.Update(func(cfg *config.Config) error {
+					cfg.UpsertCharacter(config.Character{ID: c.ID, Name: c.Name})
+					return nil
+				}); err != nil {
+					return fmt.Errorf("save character: %w", err)
 				}
 				return nil
 			},
@@ -130,17 +128,8 @@ func addCharacterHandler(version, clientID string, store *config.Store) mcpsdk.T
 // accountEditor saves the account grouping the user sets on the login page.
 func accountEditor(store *config.Store) *sso.AccountEditor {
 	edit := func(change func(*config.Config) error) error {
-		cfg, err := store.Load()
-		if err != nil {
-			return fmt.Errorf("load config: %w", err)
-		}
-		if err := change(&cfg); err != nil {
-			return err
-		}
-		if err := store.Save(cfg); err != nil {
-			return fmt.Errorf("save config: %w", err)
-		}
-		return nil
+		_, err := store.Update(change)
+		return err
 	}
 	return &sso.AccountEditor{
 		Set: func(id int32, label string) error {
