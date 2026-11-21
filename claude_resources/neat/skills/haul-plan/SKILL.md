@@ -7,6 +7,8 @@ description: Plan moving cargo, ships or characters in EVE Online with neat — 
 
 Plan a move of the user's cargo, ships and characters. neat works out every number and checks every game rule: holds, volumes, fuel, fatigue, ranges, cyno fuel, docking, highsec entry, clone jump timing and who can fly or light what. Your job is to find out what the user wants, put the right tools in order, and help them make the choices that are theirs. Never calculate a number yourself; if one looks wrong, find the input that's off (a profile, a saved structure, a character).
 
+When another skill (such as **industry-build-plan**) sends you here only for a missing haul profile, do steps 5 and 6 for that ship and pilot, then go back to it.
+
 ## 1. Start from the overview
 
 - Call `get_logistics_overview`. It gives every character's account, whether they're online, where they are, their ship, what they can light, bridge, conduit and fly, their next clone jump and their jump fatigue.
@@ -37,31 +39,31 @@ Drop whatever the user will handle themselves from the rest of the plan.
 ## 5. Ships and pilots
 
 - Use `compare_haul_hulls` (with `pilotId` for each candidate) to compare holds, align, cloak and nullification, highsec entry, docking and jump drives.
-- For the actual ships, use `estimate_ship_hold` with `shipItemId`: it reads the real fit and the cargo already aboard. Never ask the user for their hold.
+- For the actual ships, use `estimate_ship_hold` with `shipItemId`: it reads the real fit and the cargo already aboard. For a ship the user doesn't own yet, or one neat can't find, give `shipType` and `modules` instead. Never ask the user for their hold.
 - Consider more than one ship. Holds add up, so two jump freighters, or a JF and a carrier, can make one trip instead of several. Weigh the extra pilots, fuel and fatigue against the trips saved, and say which you chose and why.
 - Check each pilot's jump fatigue in the overview.
 
 ## 6. Route and preferences
 
-- Check `list_routes` for a saved route between the same places, and read its notes: it usually reflects choices the user made on purpose.
-- Ask in plain terms, and save what they say on a haul profile with `save_haul_profile`, giving `shipItemId` so neat works out the hold:
+- Check `list_routes` for a saved route between the same places, and read its notes: it usually reflects choices the user made on purpose. Cost it with `plan_jump_route` and `route` set to its name. To check a route the pilot already flies, pass it as `waypoints` instead.
+- Ask in plain terms, and save what they say on a haul profile with `save_haul_profile`, giving `shipItemId` so neat works out the hold. Save one profile per ship: `plan_haul`'s `with` takes the other ships' haul profile names. Saved routes and profiles live in `~/.neat/routes.yaml` and `haul_profiles.yaml`, which the user can also edit by hand.
   - **Areas to stay out of:** systems, constellations or regions.
   - **Whose space:** alliances to avoid, avoiding sovereignty held by anyone at negative standing, and blue alliances to prefer.
   - **Midpoints:** systems where they can dock, have a cyno alt or a friendly POS, and whether jumps must land only there.
   - **dotlan-style options:** prefer station systems, avoid incursions.
   - **What to optimise:** fuel (the default), number of jumps, or fatigue.
   - **Gates:** a cap on gate count, and whether to skip gate systems with recent kills.
-- Call `plan_jump_route`, or `plan_haul` for cargo (with `with` for more ships flying together). Read each route's `checks`:
+- Call `plan_jump_route`, or `plan_haul` for cargo (with the other ships' haul profiles in `with` when several fly together). Read each route's `checks`:
   - a landing with `noDock` has nowhere known to dock: ask whether the user has a structure there, and save it if so;
   - `fuel` says whether the fuel fits the fuel bay or needs cargo space;
   - `cynoTypes` (or `sharedCynoTypes` for several ships) is what the lighters must light.
 - Show the routes side by side with their dotlan links and the `dotlanSuggestion`. Sovereignty and standings preferences can't go in a dotlan link; the tool says so in the link's label.
-- When they pick a route, save it with `save_route` and their reasons as `notes`, and pin it on the haul profile.
+- When they pick a route, save it with `save_route` and their reasons as `notes`, and pin it on the haul profile with `save_haul_profile`'s `outboundRoute` (and `returnRoute`). A pinned route is used only for trips with the same start and end systems; for any other trip the planner searches a route and says so in its notes, so save a separate haul profile for each regular run.
 
 ## 7. Cynos
 
 - **Lighters:** characters whose `list_character_capabilities` include the cyno type needed, on a different account from the pilots jumping to them.
-- **Fuel:** `estimate_cyno` with the lighter, their ship and the number of lights (one per jump leg) gives Liquid Ozone per light, lights per hold and refills, whether the generator fits, and any skills they're missing.
+- **Fuel:** `estimate_cyno` with the lighter, their ship, the cyno type the route needs and the number of lights (one per jump leg) gives Liquid Ozone per light, lights per hold and refills, whether the generator fits, and any skills they're missing.
 - **Ship:** compare sources before choosing: a cyno ship already near the cyno point or the lighter's location or jump clones (`list_location_assets`), one fitted from assets, or one bought (`compare_trade_hubs` for the nearest hub that stocks the fit, `quote_market_purchase` for the list).
 - **Implants:** a lit cyno is an easy target. `list_jump_clones` shows each clone's implants; prefer one with none or cheap ones.
 - **One lighter or several:** with one lighter, the hauler waits while the lighter gates to each next cyno point. The route's `lighterGatesFromPreviousLanding` says how far that is. Weigh it against getting another lighter in place, and say which you chose and why. Don't bring in a character only so two parts of the job run at once.

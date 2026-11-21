@@ -26,7 +26,7 @@ The skills:
 
 Skills hold discovery and decision steps only. Every number comes from a neat tool, so skills never contain formulas or arithmetic. When a tool a skill drives changes its inputs, outputs or behavior, update the skill in the same change.
 
-Clients that don't load plugin skills, such as the Claude desktop app, still get the essentials (how to onboard a new user, scope errors, confirming before write tools, never computing industry numbers) from the MCP server's instructions in `mcp/instructions.go`. Keep the two consistent.
+Clients that don't load plugin skills, such as the Claude desktop app, still get the essentials (how to onboard a new user, scope errors, confirming before write tools, never computing industry numbers, the order for planning a move) from the MCP server's instructions in `mcp/instructions.go`. Keep the two consistent.
 
 ## Install
 
