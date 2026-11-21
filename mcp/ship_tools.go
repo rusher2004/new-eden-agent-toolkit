@@ -43,6 +43,9 @@ func (p *planner) resolveShip(ctx context.Context, s ShipSpec, pilot int32) (res
 		if owner == 0 {
 			owner = pilot
 		}
+		if owner == 0 {
+			return out, fmt.Errorf("shipItemId needs ownerId or a pilot: the logged-in character who owns it")
+		}
 		if err := p.requireCharacter(owner); err != nil {
 			return out, err
 		}
@@ -76,7 +79,9 @@ func (p *planner) resolveShip(ctx context.Context, s ShipSpec, pilot int32) (res
 				continue
 			}
 			switch {
-			case isFittedFlag(a.LocationFlag):
+			case isFittedFlag(a.LocationFlag) && basics[a.TypeID].CategoryID != chargeCategoryID:
+				// A charge loaded in a module shares its slot flag; it isn't
+				// a fitted module.
 				out.modules = append(out.modules, a.TypeID)
 				out.moduleNames = append(out.moduleNames, basics[a.TypeID].Name)
 			case a.LocationFlag == "Cargo":
@@ -239,7 +244,7 @@ type EstimateCynoOutput struct {
 	FuelPerLight     float64  `json:"fuelPerLight" jsonschema:"units of fuel one cyno uses, with the lighter's skills and the hull's bonuses"`
 	FuelM3PerLight   float64  `json:"fuelM3PerLight"`
 	CycleSeconds     float64  `json:"cycleSeconds" jsonschema:"how long the cyno stays up"`
-	CargoM3          float64  `json:"cargoM3" jsonschema:"the fitted cargo hold"`
+	CargoM3          float64  `json:"cargoM3" jsonschema:"free space in the fitted cargo hold, after what's already in it (owned ships only)"`
 	LightsPerHold    int      `json:"lightsPerHold" jsonschema:"cynos one full hold of fuel covers"`
 	Lights           int      `json:"lights,omitempty"`
 	FuelForLights    float64  `json:"fuelForLights,omitempty"`

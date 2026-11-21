@@ -20,6 +20,12 @@ func isFittedFlag(flag string) bool {
 	return false
 }
 
+// Inventory categories a fitted slot can hold besides modules and rigs.
+const (
+	chargeCategoryID    = 8
+	subsystemCategoryID = 32
+)
+
 func dogmaItem(kind dogma.Kind, t sde.DogmaType) dogma.Item {
 	it := dogma.Item{Kind: kind, TypeID: t.TypeID, GroupID: t.GroupID, Attrs: t.Attrs}
 	for _, r := range requiredSkills(t.Attrs) {
@@ -61,12 +67,19 @@ func (p *planner) fit(ctx context.Context, hull int64, modules []int64, skills m
 	for id, a := range info {
 		f.Attrs[id] = dogma.AttrInfo{Default: a.Default, Stackable: a.Stackable}
 	}
+	basics, err := p.typeBasics(ctx, modules)
+	if err != nil {
+		return nil, err
+	}
 	for _, m := range modules {
 		t, ok := types[m]
 		if !ok {
 			return nil, fmt.Errorf("unknown module type %d", m)
 		}
-		f.Modules = append(f.Modules, dogmaItem(dogma.Module, t))
+		it := dogmaItem(dogma.Module, t)
+		// The game exempts subsystems from stacking penalties.
+		it.Unpenalized = basics[m].CategoryID == subsystemCategoryID
+		f.Modules = append(f.Modules, it)
 	}
 	for id, lvl := range skills {
 		if t, ok := types[id]; ok && lvl > 0 {

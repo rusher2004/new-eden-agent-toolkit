@@ -255,13 +255,15 @@ func saveHaulProfileHandler(version, clientID string, store *config.Store, sdeSt
 			}
 			if in.Ship == "" {
 				in.Ship = resolved.hullName
+			} else if !strings.EqualFold(strings.TrimSpace(in.Ship), resolved.hullName) {
+				return nil, config.HaulProfile{}, fmt.Errorf("save haul profile: ship %q doesn't match shipItemId %d, which is a %s", in.Ship, in.ShipItemID, resolved.hullName)
 			}
 			if in.HoldM3 <= 0 {
-				hold, _, err := p.shipHold(ctx, resolved, int32(in.PilotID))
+				_, f, err := p.shipHold(ctx, resolved, int32(in.PilotID))
 				if err != nil {
 					return nil, config.HaulProfile{}, fmt.Errorf("save haul profile: %w", err)
 				}
-				in.HoldM3 = hold.Holds[0].FittedM3
+				in.HoldM3 = f.ShipAttr(sde.AttrCapacity)
 			}
 		}
 		if in.HoldM3 <= 0 || in.Ship == "" {
