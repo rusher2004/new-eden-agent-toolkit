@@ -23,7 +23,7 @@ The packages sit flat at the repo root, one per responsibility, with no `interna
 - `esi/`: a thin facade over [`goesi-openapi`](https://github.com/fnt-eve/goesi-openapi), one file per ESI tag. Every request is checked against a generated table of each endpoint's required scope before it is sent.
 - `sso/`: the login flow, the loopback callback session and its page (`sso/web/`, which also groups characters by account), scope groups, the ESI User-Agent, and the cached, auto-refreshing HTTP client per character.
 - `sde/`: the local Static Data Export: syncing, and SQL lookups for universe data, industry data and routing.
-- `nav/`: pure calculations for moving ships and characters, for any activity: security bands, displayed security and its in-game color, jump fuel, range and fatigue, and jump/gate route search with dotlan links.
+- `nav/`: pure calculations for moving ships and characters, for any activity: what a character's skills let them use (cynos, bridges, conduits, hulls) from SDE requirements, clone jump timing, security bands, displayed security and its in-game color, jump fuel, range and fatigue, and jump/gate route search with dotlan links.
 - `cargo/`: pure calculations for what fits where: item volumes, everything at a station laid out with ship repackaging volumes and lost rigs, and packing cargo into loads.
 - `market/`: pure buying calculations: walking order books, in-game Multibuy lists, scoring a trade hub on a basket of goods and its contracts, and ranking hubs for a shopping list.
 - `industry/`: pure industry calculations (facilities, jobs, research, invention, the blueprint tree, build-vs-buy, reprocessing, ore mixes, scheduling). It uses `nav/`, `cargo/` and `market/`; none of them use it.
