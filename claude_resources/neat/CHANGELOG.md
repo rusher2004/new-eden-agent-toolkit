@@ -1,5 +1,10 @@
 # neat plugin — changelog
 
+## 0.17.0
+- Jump routes now come with checks for the ship flying them: which cyno types it can jump to, where it can dock at each landing (NPC stations it's allowed in and your saved structures it fits, flagging any landing with nowhere to dock, such as a carrier landing next to only an Astrahus), how many gates one cyno alt has to travel between landings, and whether the route's fuel fits the fuel bay.
+- Whether a ship can travel into highsec now comes from the game's own data for that hull.
+- `plan_haul` can plan several ships flying together with `with`: their holds add up, each load is split between them, every ship is checked against the same route, and it tells you which cyno types they can all share, so one cyno serves the group.
+
 ## 0.16.0
 - Claude no longer asks you for your cargo hold. New `estimate_ship_hold` works out every hold of a ship the way the game does, from its real fitted modules and rigs and the pilot's skills (an Ark with Amarr Freighter IV and two Expanded Cargohold IIs comes out at 263,351.25 m³), along with what's already in the hold, warp speed, align time and jump range. `save_haul_profile` does the same when given the ship.
 - New `estimate_cyno` works out what lighting cynos takes: Liquid Ozone per light and cycle length with the lighter's Cynosural Field Theory and the hull's bonuses, how many lights a full hold covers, and for a whole jump chain the ozone needed and how many refills. It also says whether the generator fits the ship and what skills the lighter still needs.
