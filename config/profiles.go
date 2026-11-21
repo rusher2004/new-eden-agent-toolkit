@@ -74,16 +74,6 @@ type RoutePrefs struct {
 	MaxRecentKills       int     `json:"maxRecentKills,omitempty" yaml:"max_recent_kills,omitempty"`
 }
 
-// HubProfile is a trade hub to buy at.
-type HubProfile struct {
-	Name      string `json:"name"`
-	RegionID  int64  `json:"regionId"`
-	StationID int64  `json:"stationId"`
-}
-
-// DefaultHub is Jita 4-4, used when no hub profile exists.
-var DefaultHub = HubProfile{Name: "Jita 4-4", RegionID: 10000002, StationID: 60003760}
-
 func sameName(a, b string) bool { return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b)) }
 
 func upsert[T any](list []T, item T, name func(T) string) []T {
@@ -116,7 +106,6 @@ func find[T any](list []T, n string, name func(T) string) (T, bool) {
 
 func facName(p FacilityProfile) string { return p.Name }
 func haulName(p HaulProfile) string    { return p.Name }
-func hubName(p HubProfile) string      { return p.Name }
 
 // UpsertFacilityProfile adds or replaces (by case-insensitive name) a profile.
 func (c *Config) UpsertFacilityProfile(p FacilityProfile) {
@@ -150,32 +139,4 @@ func (c *Config) DeleteHaulProfile(name string) error {
 // HaulProfile looks up a haul profile by name.
 func (c Config) HaulProfile(name string) (HaulProfile, bool) {
 	return find(c.HaulProfiles, name, haulName)
-}
-
-// UpsertHubProfile adds or replaces a hub profile.
-func (c *Config) UpsertHubProfile(p HubProfile) { c.HubProfiles = upsert(c.HubProfiles, p, hubName) }
-
-// DeleteHubProfile removes a hub profile by name.
-func (c *Config) DeleteHubProfile(name string) error {
-	var err error
-	c.HubProfiles, err = remove(c.HubProfiles, name, hubName)
-	return err
-}
-
-// HubProfile looks up a hub profile by name; an empty name returns the first
-// saved hub, or DefaultHub when none is saved.
-func (c Config) HubProfile(name string) (HubProfile, bool) {
-	if strings.TrimSpace(name) == "" {
-		if len(c.HubProfiles) > 0 {
-			return c.HubProfiles[0], true
-		}
-		return DefaultHub, true
-	}
-	if sameName(name, DefaultHub.Name) {
-		if h, ok := find(c.HubProfiles, name, hubName); ok {
-			return h, true
-		}
-		return DefaultHub, true
-	}
-	return find(c.HubProfiles, name, hubName)
 }

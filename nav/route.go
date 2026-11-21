@@ -607,3 +607,13 @@ func DotlanGateURL(systems []string) string {
 	}
 	return "https://evemaps.dotlan.net/route/" + strings.Join(parts, ":")
 }
+
+// GateJumps is the fewest stargate jumps from one system to another, or -1
+// when no gate path joins them (wormhole space, Pochven and the like).
+func (g *RouteGraph) GateJumps(from, to int64) int {
+	p := g.gatePath(from, to, true)
+	if p == nil {
+		return -1
+	}
+	return len(p) - 1
+}

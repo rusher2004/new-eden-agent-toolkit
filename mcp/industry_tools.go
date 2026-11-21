@@ -942,7 +942,7 @@ func (p *planner) solveOreMix(ctx context.Context, needs map[int64]int64, refine
 	for t := range needs {
 		typeIDs = append(typeIDs, t)
 	}
-	books, err := p.sellBooks(ctx, hub.RegionID, typeIDs)
+	books, err := p.hubBooks(ctx, hub, typeIDs)
 	if err != nil {
 		return SolveOreMixOutput{}, err
 	}
@@ -996,6 +996,7 @@ func (p *planner) solveOreMix(ctx context.Context, needs map[int64]int64, refine
 func solveOreMixHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[SolveOreMixInput, SolveOreMixOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in SolveOreMixInput) (*mcpsdk.CallToolResult, SolveOreMixOutput, error) {
 		p := newPlanner(version, clientID, store, sdeStore)
+		p.marketCharacter = in.RefinerID
 		items, err := p.resolveItems(ctx, in.Minerals)
 		if err != nil {
 			return nil, SolveOreMixOutput{}, err

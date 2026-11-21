@@ -59,8 +59,8 @@ var areas = []area{
 	},
 	{
 		title: "Trade hubs and purchases",
-		blurb: "Trade hubs to buy at, and shopping lists priced against a hub's live order book. Hub profiles are saved in `~/.neat/config.json`.",
-		names: []string{"save_hub_profile", "list_hub_profiles", "quote_market_purchase"},
+		blurb: "Trade hubs to buy and sell at, starting with the main NPC hubs, the player markets near Jita and the Amamake Keepstar; checks of how well a hub stocks everyday goods and capitals; and shopping lists priced and compared across hubs on their live order books. Saved in `~/.neat/hubs.yaml`, which you can also edit.",
+		names: []string{"list_hub_profiles", "save_hub_profile", "delete_hub_profile", "validate_trade_hub", "compare_trade_hubs", "quote_market_purchase"},
 	},
 	{
 		title:    "Industry planning",

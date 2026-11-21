@@ -51,6 +51,9 @@ type planner struct {
 	adjusted map[int64]float64
 	indices  map[int64]map[string]float64
 	skillsBy map[int32]map[int64]int
+	// marketCharacter reads a structure hub's market when set; otherwise
+	// the hub's saved read_via character does.
+	marketCharacter int32
 }
 
 func newPlanner(version, clientID string, store *config.Store, sdeStore *sde.Store) *planner {
