@@ -94,7 +94,7 @@ treat it as part of "done," not a follow-up:
 - **Hard rules** (SDE-vs-ESI routing, no client secret, no env vars for storage) → keep these
   listed here exactly as they're enforced in code; if a rule is relaxed or tightened, this file
   changes in the same commit as the code that changes it.
-- **Plugin skills** (`claude_resources/neat/skills/*/SKILL.md`: `add-character`, `industry-build-plan`, `industry-profile-setup`, `haul-route-setup`) → when `add_character`'s or an industry, hauling or routing tool's inputs, outputs or behavior change, or a scope group changes, update the skill that drives it in the same commit. Skills hold discovery and decision steps only — never formulas or arithmetic.
+- **Plugin skills** (`claude_resources/neat/skills/*/SKILL.md`: `add-character`, `industry-build-plan`, `industry-profile-setup`, `haul-plan`) → when `add_character`'s or an industry, hauling or routing tool's inputs, outputs or behavior change, or a scope group changes, update the skill that drives it in the same commit. Skills hold discovery and decision steps only — never formulas or arithmetic.
 - **Plugin packaging** → `claude_resources/README.md` (developer-facing: contents, skills, testing a local build), `claude_resources/neat/CHANGELOG.md` (user-facing release notes, one entry per `VERSION`), and the descriptions in `claude_resources/neat/.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json`.
 - **Agent-facing surfaces that don't exist yet** — once built in a later plan, add them to this list: a packaged Claude Desktop extension (`extension/manifest.json`), which would replace the README's manual desktop config. Don't leave a plan's own doc updates (e.g. its plan file, or a spec status line) as a "follow-up" task.
 
