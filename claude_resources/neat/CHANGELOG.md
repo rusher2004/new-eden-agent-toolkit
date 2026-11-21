@@ -1,5 +1,10 @@
 # neat plugin — changelog
 
+## 0.11.0
+- Your characters, facility profiles and haul profiles now live in YAML files in `~/.neat/` (`characters.yaml`, `facilities.yaml`, `haul_profiles.yaml`) that you can open and edit yourself: fix a value, add notes, or add your own comments and keys. neat keeps them up to date too, but only changes the fields it has a reason to, so your comments, notes and anything else you added stay put. If a file's YAML gets broken, neat tells you which line and won't touch it until it's fixed. Everything moves out of `config.json` automatically the first time this version runs.
+- Jump routes can be saved by name with your notes on why they go the way they do, in `~/.neat/routes.yaml`. New tools `save_route`, `list_routes` and `delete_route`; `plan_jump_route` can cost a saved route by name, and haul profiles pin saved routes for their regular runs. Routes pinned on your existing haul profiles become saved routes named after the profile.
+- Saving a facility or haul profile again no longer wipes the notes on it.
+
 ## 0.10.0
 - neat now knows which of your characters share an EVE account. Characters on one account can't be logged in at the same time, which matters when a plan needs two of them online together, such as a jump freighter pilot and their cyno alt. neat's login page groups your characters by account: pick one for each character or start a new one, and rename or delete groups. When you log in several characters in a row, neat suggests putting each in the same account as the one before, and saves it only when you confirm. EVE doesn't tell neat this, so Claude also asks you when an account is unknown.
 - Claude can save notes about each character, such as what it's for or what it flies, with the new `update_character_details` tool, which also sets and renames account labels. `list_characters` now shows each character's account and notes.

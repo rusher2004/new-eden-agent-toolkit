@@ -12,12 +12,12 @@ import (
 func registerIndustryPlanningTools(server *mcpsdk.Server, version, clientID string, store *config.Store, sdeStore *sde.Store) {
 	add := func(name, desc string) *mcpsdk.Tool { return &mcpsdk.Tool{Name: name, Description: desc} }
 
-	// Facility profiles (the only tools here that write anything, and only to ~/.neat/config.json).
-	mcpsdk.AddTool(server, add("save_facility_profile", "Save (or replace) a named industry or reprocessing facility profile in neat's local config: NPC station, Upwell structure or starbase, its system, fitted rigs and services, and owner-set taxes. Rig and structure bonuses are read from the SDE; the response shows every resolved multiplier. Writes to ~/.neat/config.json only."), saveFacilityProfileHandler(version, clientID, store, sdeStore))
+	// Facility profiles (the only tools here that write anything, and only to ~/.neat/facilities.yaml).
+	mcpsdk.AddTool(server, add("save_facility_profile", "Save (or replace) a named industry or reprocessing facility profile in neat's local config: NPC station, Upwell structure or starbase, its system, fitted rigs and services, and owner-set taxes. Rig and structure bonuses are read from the SDE; the response shows every resolved multiplier. Writes to ~/.neat/facilities.yaml only; omit notes to keep the notes it has."), saveFacilityProfileHandler(version, clientID, store, sdeStore))
 	mcpsdk.AddTool(server, add("list_facility_profiles", "List saved facility profiles."), listFacilityProfilesHandler(store))
 	mcpsdk.AddTool(server, add("delete_facility_profile", "Delete a saved facility profile from neat's local config."), deleteProfileHandler(store, (*config.Config).DeleteFacilityProfile))
 	mcpsdk.AddTool(server, add("describe_facility", "Show a facility profile's security band and every material, time and cost multiplier with its source, and optionally, for a product, the combined multipliers and whether each activity can run there."), describeFacilityHandler(version, clientID, store, sdeStore))
-	mcpsdk.AddTool(server, add("calibrate_facility_profile", "Read a real industry job's charged fee, back out the effective fee rate, and save it on a facility profile so later estimates use it. Writes to ~/.neat/config.json only."), calibrateFacilityProfileHandler(version, clientID, store, sdeStore))
+	mcpsdk.AddTool(server, add("calibrate_facility_profile", "Read a real industry job's charged fee, back out the effective fee rate, and save it on a facility profile so later estimates use it. Writes to ~/.neat/facilities.yaml only."), calibrateFacilityProfileHandler(version, clientID, store, sdeStore))
 
 	// Calculation primitives (read-only).
 	mcpsdk.AddTool(server, add("find_owned_blueprints", "Find a character's or corporation's blueprints by product or name, with ME, TE, runs, whether each is tied up in an active job, the station or structure it's in and any named container, plus per-blueprint totals."), findOwnedBlueprintsHandler(version, clientID, store, sdeStore))

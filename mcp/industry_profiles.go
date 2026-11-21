@@ -29,7 +29,7 @@ type SaveFacilityProfileInput struct {
 	ReprocessingTax     float64  `json:"reprocessingTax,omitempty" jsonschema:"owner-set reprocessing tax as a fraction"`
 	ReprocessingRigTier int      `json:"reprocessingRigTier,omitempty" jsonschema:"reprocessing rig: 0 none, 1 T1 (e.g. Reprocessing Monitor I), 2 T2"`
 	Standing            float64  `json:"standing,omitempty" jsonschema:"NPC stations only: the higher of personal and corporation standing with the station owner"`
-	Notes               string   `json:"notes,omitempty"`
+	Notes               *string  `json:"notes,omitempty" jsonschema:"what the user says about this facility, such as how a tax was measured; omit to keep the notes it has"`
 }
 
 type FacilityModifierView struct {
@@ -105,7 +105,7 @@ func saveFacilityProfileHandler(version, clientID string, store *config.Store, s
 		p := newPlanner(version, clientID, store, sdeStore)
 		prof := config.FacilityProfile{Name: strings.TrimSpace(in.Name), Kind: in.Kind, StationID: in.StationID, Services: in.Services,
 			SupercapUpgrade: in.SupercapUpgrade, FacilityTax: in.FacilityTax, ReprocessingTax: in.ReprocessingTax,
-			ReprocessingRigTier: in.ReprocessingRigTier, Standing: in.Standing, Notes: in.Notes}
+			ReprocessingRigTier: in.ReprocessingRigTier, Standing: in.Standing}
 		if prof.Name == "" {
 			return nil, FacilityView{}, fmt.Errorf("save facility profile: name is required")
 		}
@@ -170,6 +170,15 @@ func saveFacilityProfileHandler(version, clientID string, store *config.Store, s
 		cfg, err := store.Load()
 		if err != nil {
 			return nil, FacilityView{}, err
+		}
+		if sys, err := p.system(ctx, prof.SystemID); err == nil {
+			prof.SystemName = sys.Name
+		}
+		if old, ok := cfg.FacilityProfile(prof.Name); ok {
+			prof.Name, prof.Notes = old.Name, old.Notes
+		}
+		if in.Notes != nil {
+			prof.Notes = strings.TrimSpace(*in.Notes)
 		}
 		cfg.UpsertFacilityProfile(prof)
 		if err := store.Save(cfg); err != nil {

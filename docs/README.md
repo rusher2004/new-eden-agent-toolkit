@@ -29,7 +29,7 @@ The packages sit flat at the repo root, one per responsibility, with no `interna
 - `industry/`: pure industry calculations (facilities, jobs, research, invention, the blueprint tree, build-vs-buy, reprocessing, ore mixes, scheduling). It uses `nav/`, `cargo/` and `market/`; none of them use it.
 
 The pure packages have no network, disk or clock access. Every number the SDE doesn't carry is a sourced constant in that package's `constants.go`.
-- `config/`: `~/.neat/config.json`, holding logged-in characters with their account labels and notes, saved facility, haul and hub profiles, and the analytics opt-out.
+- `config/`: neat's saved state under `~/.neat/`: YAML files the user can also edit (`characters.yaml`, `facilities.yaml`, `haul_profiles.yaml`, `routes.yaml`), written by patching only the fields that changed so comments and the user's own keys survive, and `config.json` for hub profiles and the analytics opt-out.
 - `creds/`: the OS keychain wrapper (service name `neat`).
 - `tools/`: code generators and CI checks (`genscopes`, `gentooldocs`, `genversion`, `versiongate`).
 

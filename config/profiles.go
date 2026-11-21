@@ -10,62 +10,68 @@ import (
 // reprocessing facility: its rigs, fitted services and owner-set taxes.
 // Bonuses themselves are read from the SDE at use time.
 type FacilityProfile struct {
-	Name            string   `json:"name"`
-	Kind            string   `json:"kind"` // npc_station, upwell or starbase
-	StationID       int64    `json:"stationId,omitempty"`
-	StructureType   int64    `json:"structureType,omitempty"`
-	SystemID        int64    `json:"systemId"`
-	RigTypeIDs      []int64  `json:"rigTypeIds,omitempty"`
-	Services        []string `json:"services,omitempty"`
-	SupercapUpgrade bool     `json:"supercapUpgrade,omitempty"`
-	FacilityTax     float64  `json:"facilityTax,omitempty"`
-	ReprocessingTax float64  `json:"reprocessingTax,omitempty"`
+	Name            string   `json:"name" yaml:"name"`
+	Kind            string   `json:"kind" yaml:"kind"` // npc_station, upwell or starbase
+	StationID       int64    `json:"stationId,omitempty" yaml:"station_id,omitempty"`
+	StructureType   int64    `json:"structureType,omitempty" yaml:"structure_type,omitempty"`
+	SystemID        int64    `json:"systemId" yaml:"system_id"`
+	SystemName      string   `json:"systemName,omitempty" yaml:"system_name,omitempty"`
+	RigTypeIDs      []int64  `json:"rigTypeIds,omitempty" yaml:"rig_type_ids,omitempty"`
+	Services        []string `json:"services,omitempty" yaml:"services,omitempty"`
+	SupercapUpgrade bool     `json:"supercapUpgrade,omitempty" yaml:"supercap_upgrade,omitempty"`
+	FacilityTax     float64  `json:"facilityTax,omitempty" yaml:"facility_tax,omitempty"`
+	ReprocessingTax float64  `json:"reprocessingTax,omitempty" yaml:"reprocessing_tax,omitempty"`
 	// ReprocessingRigTier is 0 (none), 1 (T1) or 2 (T2) for the structure's
 	// reprocessing rig, if any.
-	ReprocessingRigTier int `json:"reprocessingRigTier,omitempty"`
+	ReprocessingRigTier int `json:"reprocessingRigTier,omitempty" yaml:"reprocessing_rig_tier,omitempty"`
 	// Standing is the higher of personal and corporation standing with an NPC
 	// station's owner, for its reprocessing tax.
-	Standing    float64      `json:"standing,omitempty"`
-	Calibration *Calibration `json:"calibration,omitempty"`
-	Notes       string       `json:"notes,omitempty"`
+	Standing    float64      `json:"standing,omitempty" yaml:"standing,omitempty"`
+	Calibration *Calibration `json:"calibration,omitempty" yaml:"calibration,omitempty"`
+	Notes       string       `json:"notes,omitempty" yaml:"notes,omitempty"`
 }
 
 // Calibration holds rates observed from real jobs at a facility, which take
 // precedence over estimates.
 type Calibration struct {
-	FeeRate        float64 `json:"feeRate,omitempty"` // fee ÷ estimated item value
-	FromJobID      int64   `json:"fromJobId,omitempty"`
-	ObservedAt     string  `json:"observedAt,omitempty"`     // RFC 3339
-	TimeMultiplier float64 `json:"timeMultiplier,omitempty"` // observed duration ÷ base duration after TE and skills
+	FeeRate        float64 `json:"feeRate,omitempty" yaml:"fee_rate,omitempty"` // fee ÷ estimated item value
+	FromJobID      int64   `json:"fromJobId,omitempty" yaml:"from_job_id,omitempty"`
+	ObservedAt     string  `json:"observedAt,omitempty" yaml:"observed_at,omitempty"`         // RFC 3339
+	TimeMultiplier float64 `json:"timeMultiplier,omitempty" yaml:"time_multiplier,omitempty"` // observed duration ÷ base duration after TE and skills
 }
 
 // HaulProfile is a hauling ship, its pilot, and their routing preferences.
 type HaulProfile struct {
-	Name       string     `json:"name"`
-	ShipTypeID int64      `json:"shipTypeId"`
-	PilotID    int64      `json:"pilotId"`
-	HoldM3     float64    `json:"holdM3"`
-	Outbound   []int64    `json:"outbound,omitempty"` // pinned route waypoints, hub → destination
-	Return     []int64    `json:"return,omitempty"`
-	Prefs      RoutePrefs `json:"prefs"`
+	Name       string  `json:"name" yaml:"name"`
+	ShipTypeID int64   `json:"shipTypeId" yaml:"ship_type_id"`
+	ShipName   string  `json:"shipName,omitempty" yaml:"ship_name,omitempty"`
+	PilotID    int64   `json:"pilotId" yaml:"pilot_id"`
+	PilotName  string  `json:"pilotName,omitempty" yaml:"pilot_name,omitempty"`
+	HoldM3     float64 `json:"holdM3"`
+	// OutboundRoute and ReturnRoute name saved routes (routes.yaml) pinned
+	// for this profile's regular run, hub → destination and back.
+	OutboundRoute string     `json:"outboundRoute,omitempty" yaml:"outbound_route,omitempty"`
+	ReturnRoute   string     `json:"returnRoute,omitempty" yaml:"return_route,omitempty"`
+	Prefs         RoutePrefs `json:"prefs" yaml:"prefs"`
+	Notes         string     `json:"notes,omitempty" yaml:"notes,omitempty"`
 }
 
 // RoutePrefs are saved routing preferences. IDs are systems, constellations,
 // regions or alliances as named.
 type RoutePrefs struct {
-	AvoidSystems         []int64 `json:"avoidSystems,omitempty"`
-	AvoidConstellations  []int64 `json:"avoidConstellations,omitempty"`
-	AvoidRegions         []int64 `json:"avoidRegions,omitempty"`
-	AvoidAlliances       []int64 `json:"avoidAlliances,omitempty"`
-	AvoidBadStanding     bool    `json:"avoidBadStanding,omitempty"`
-	PreferAlliances      []int64 `json:"preferAlliances,omitempty"`
-	Midpoints            []int64 `json:"midpoints,omitempty"`
-	MidpointsRequired    bool    `json:"midpointsRequired,omitempty"`
-	PreferStationSystems bool    `json:"preferStationSystems,omitempty"`
-	AvoidIncursions      bool    `json:"avoidIncursions,omitempty"`
-	Optimize             string  `json:"optimize,omitempty"` // fuel, jumps or fatigue
-	MaxGates             int     `json:"maxGates,omitempty"`
-	MaxRecentKills       int     `json:"maxRecentKills,omitempty"`
+	AvoidSystems         []int64 `json:"avoidSystems,omitempty" yaml:"avoid_systems,omitempty"`
+	AvoidConstellations  []int64 `json:"avoidConstellations,omitempty" yaml:"avoid_constellations,omitempty"`
+	AvoidRegions         []int64 `json:"avoidRegions,omitempty" yaml:"avoid_regions,omitempty"`
+	AvoidAlliances       []int64 `json:"avoidAlliances,omitempty" yaml:"avoid_alliances,omitempty"`
+	AvoidBadStanding     bool    `json:"avoidBadStanding,omitempty" yaml:"avoid_bad_standing,omitempty"`
+	PreferAlliances      []int64 `json:"preferAlliances,omitempty" yaml:"prefer_alliances,omitempty"`
+	Midpoints            []int64 `json:"midpoints,omitempty" yaml:"midpoints,omitempty"`
+	MidpointsRequired    bool    `json:"midpointsRequired,omitempty" yaml:"midpoints_required,omitempty"`
+	PreferStationSystems bool    `json:"preferStationSystems,omitempty" yaml:"prefer_station_systems,omitempty"`
+	AvoidIncursions      bool    `json:"avoidIncursions,omitempty" yaml:"avoid_incursions,omitempty"`
+	Optimize             string  `json:"optimize,omitempty" yaml:"optimize,omitempty"` // fuel, jumps or fatigue
+	MaxGates             int     `json:"maxGates,omitempty" yaml:"max_gates,omitempty"`
+	MaxRecentKills       int     `json:"maxRecentKills,omitempty" yaml:"max_recent_kills,omitempty"`
 }
 
 // HubProfile is a trade hub to buy at.
