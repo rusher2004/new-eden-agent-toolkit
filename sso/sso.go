@@ -16,6 +16,9 @@ import (
 type Character struct {
 	ID   int32
 	Name string
+	// Account is the user's label for the EVE account the character is on,
+	// for characters neat already knows; empty means unknown.
+	Account string
 	// Scopes are the ESI scopes FC granted in this login, from the
 	// token's scp claim.
 	Scopes []string

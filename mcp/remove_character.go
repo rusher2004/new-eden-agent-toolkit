@@ -53,6 +53,6 @@ func removeCharacterHandler(store *config.Store) mcpsdk.ToolHandlerFor[RemoveCha
 			return nil, CharacterInfo{}, fmt.Errorf("save config (character's credentials were already removed): %w", err)
 		}
 
-		return nil, CharacterInfo{CharacterID: removed.ID, CharacterName: removed.Name}, nil
+		return nil, characterInfo(removed), nil
 	}
 }

@@ -98,6 +98,13 @@ func startSession(t *testing.T, ctx context.Context, fake *fakeOAuthConfig, user
 // launcher, or one that records each launch's URL when it is nil.
 func startSessionWithBrowser(t *testing.T, ctx context.Context, fake *fakeOAuthConfig, userAgent string, openBrowser func(rawURL string) error) *session {
 	t.Helper()
+	return startSessionWith(t, ctx, fake, userAgent, openBrowser, nil)
+}
+
+// startSessionWith is startSessionWithBrowser with a hook to change the
+// session's options before it starts.
+func startSessionWith(t *testing.T, ctx context.Context, fake *fakeOAuthConfig, userAgent string, openBrowser func(rawURL string) error, configure func(*sso.AddOptions)) *session {
+	t.Helper()
 	t.Setenv("HOME", t.TempDir())
 
 	s := &session{
@@ -128,13 +135,17 @@ func startSessionWithBrowser(t *testing.T, ctx context.Context, fake *fakeOAuthC
 
 	go func() {
 		defer close(done)
-		chars, err := sso.ExportedAddCharacters(ctx, fake, userAgent, sso.AddOptions{
+		opts := sso.AddOptions{
 			Scopes: []string{"publicData"},
 			OnAdded: func(c sso.Character) error {
 				s.added <- c
 				return nil
 			},
-		})
+		}
+		if configure != nil {
+			configure(&opts)
+		}
+		chars, err := sso.ExportedAddCharacters(ctx, fake, userAgent, opts)
 		s.result <- addResult{chars, err}
 	}()
 
@@ -260,7 +271,7 @@ func TestAddCharacters_LoginThenDone_ReturnsCharacterAndSavesToken(t *testing.T)
 	}
 
 	body, token := s.page()
-	for _, want := range []string{"Added Test Pilot.", "characters/998877/portrait", "Added just now", "Add another character", "close this tab"} {
+	for _, want := range []string{"Added Test Pilot.", "characters/998877/portrait", `<span class="badge">New</span>`, "Add another character", "Close this tab"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("page is missing %q", want)
 		}

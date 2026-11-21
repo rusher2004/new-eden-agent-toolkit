@@ -19,3 +19,13 @@ const (
 	cooldownCapMinutes = 30
 	fatigueMinBase     = 10
 )
+
+// securityColors are the in-game colors for each displayed security value
+// from 0.1 to 1.0 (index 1 to 10), and securityColorNull is the color for
+// 0.0 and below. Source: FC developer guide, System security
+// (https://developers.eveonline.com/docs/guides/system-security/).
+var securityColors = [11]string{
+	"", "#731F1F", "#BB1116", "#CE440F", "#DC6C06", "#F5FF83", "#71E754", "#60DBA3", "#4ECEF8", "#399AEB", "#2C75E1",
+}
+
+const securityColorNull = "#8D3163"

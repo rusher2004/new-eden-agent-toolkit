@@ -84,6 +84,8 @@ On Windows the command looks like `"C:\\Users\\YOUR_NAME\\AppData\\Local\\Progra
 
 Ask Claude to "add my EVE character". It asks what you want neat to help with, and whether you want your corporation's data too, then opens EVE's login page in your browser. After you log in, the browser shows a neat page where you can log in more characters with the same access, then click **I'm done** or close the tab. If no browser tab opens, go to http://127.0.0.1:48211/ yourself while Claude waits.
 
+The same page groups your characters by EVE account. Pick an account for each character, or start a new one, and rename or delete groups as you like. When you log in several characters one after another, neat suggests putting each in the same account as the one before it, and saves that only when you confirm. It matters because characters on one account can't be logged in at the same time, so plans that need two of them online together (a jump freighter pilot and their cyno alt, for example) need to know. EVE doesn't tell neat which characters share an account, so Claude may also ask you, and it saves anything you tell it about a character as notes.
+
 ## Choosing what neat can see
 
 EVE asks you to approve the access an app requests. neat groups that access by what you'll use it for, and every character gets the `basic` group: skills, location, current ship, clones and implants. You add the rest as you need them, for example:
@@ -125,7 +127,7 @@ neat sends Aptabase anonymous usage statistics so the project can count its mont
 
 ## Where neat keeps things
 
-- `~/.neat/config.json`: which characters are logged in, plus your saved facility, haul and trade hub profiles
+- `~/.neat/config.json`: which characters are logged in, the account labels and notes you gave them, plus your saved facility, haul and trade hub profiles
 - `~/.neat/sde/`: a local copy of EVE's static game data (about 500 MB), downloaded the first time it's needed and refreshed when FC publishes a new one
 - `~/.neat/plans/`: build plans you've asked for
 - `~/.neat/analytics.json`: the random monthly ID for the anonymous usage statistics, unless you turned them off

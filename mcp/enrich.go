@@ -374,3 +374,31 @@ var resolveSkinrSlotNames = func(ctx context.Context, sdeStore skinrSlotNameCach
 	}
 	return names
 }
+
+// typeBasicsCache is the minimal read-only view of sde.Store.TypeBasics()
+// that resolveTypeBasics needs.
+type typeBasicsCache interface {
+	TypeBasics(ctx context.Context, userAgent string, ids []int64) (map[int64]sde.TypeBasic, error)
+}
+
+// resolveTypeBasics looks up group, category and volumes for a set of type
+// IDs in one batch, deduplicated. Like resolveTypeNames it's additive: a
+// failed lookup returns nothing rather than failing the tool call.
+var resolveTypeBasics = func(ctx context.Context, sdeStore typeBasicsCache, userAgent string, ids []int64) map[int64]sde.TypeBasic {
+	if len(ids) == 0 {
+		return nil
+	}
+	seen := make(map[int64]bool, len(ids))
+	uniq := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		if !seen[id] {
+			seen[id] = true
+			uniq = append(uniq, id)
+		}
+	}
+	basics, err := sdeStore.TypeBasics(ctx, userAgent, uniq)
+	if err != nil {
+		return nil
+	}
+	return basics
+}
