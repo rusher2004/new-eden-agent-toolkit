@@ -58,7 +58,7 @@ func TestListLocationAssets_CombinesCharactersPagesAndTotals(t *testing.T) {
 
 func TestListLocationAssets_OneOwnerFailingIsAWarning(t *testing.T) {
 	store := characterStore(t, config.Character{ID: 1, Name: "Hauler"}, config.Character{ID: 2, Name: "Alt"})
-	stubTypeBasics(t, nil)
+	stubTypeBasics(t, map[int64]sde.TypeBasic{34: {TypeID: 34, Volume: 0.01, AssembledVolume: 0.01}})
 	orig := listAssets
 	t.Cleanup(func() { listAssets = orig })
 	listAssets = func(_ context.Context, _ string, characterID int32, _ string, _ int32) ([]AssetItem, int32, error) {
@@ -70,6 +70,62 @@ func TestListLocationAssets_OneOwnerFailingIsAWarning(t *testing.T) {
 	_, out, err := listLocationAssetsHandler("v1", "client-id", store, nil)(context.Background(), nil, ListLocationAssetsInput{LocationID: 60003760})
 	if err != nil || len(out.Warnings) != 1 || !strings.Contains(out.Warnings[0], "Alt") || len(out.Items) != 1 {
 		t.Errorf("out = %+v, err %v", out, err)
+	}
+}
+
+func TestListLocationAssets_WarnsWhenPagesAreCapped(t *testing.T) {
+	store := characterStore(t, config.Character{ID: 1, Name: "Hauler"})
+	stubTypeBasics(t, map[int64]sde.TypeBasic{34: {TypeID: 34, Volume: 0.01, AssembledVolume: 0.01}})
+	orig := listAssets
+	t.Cleanup(func() { listAssets = orig })
+	calls := 0
+	listAssets = func(_ context.Context, _ string, _ int32, _ string, page int32) ([]AssetItem, int32, error) {
+		calls++
+		return []AssetItem{{ItemID: int64(page), TypeID: 34, LocationID: 60003760, LocationFlag: "Hangar", Quantity: 1}}, maxAssetPages + 10, nil
+	}
+	_, out, err := listLocationAssetsHandler("v1", "client-id", store, nil)(context.Background(), nil, ListLocationAssetsInput{LocationID: 60003760})
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if calls != maxAssetPages || len(out.Warnings) != 1 || !strings.Contains(out.Warnings[0], "Hauler") {
+		t.Errorf("calls = %d, warnings = %q, want %d calls and one warning naming the owner", calls, out.Warnings, maxAssetPages)
+	}
+}
+
+func TestListLocationAssets_DuplicateCharacterCountedOnce(t *testing.T) {
+	store := characterStore(t, config.Character{ID: 1, Name: "Hauler"})
+	stubTypeBasics(t, map[int64]sde.TypeBasic{34: {TypeID: 34, Volume: 0.01, AssembledVolume: 0.01}})
+	orig := listAssets
+	t.Cleanup(func() { listAssets = orig })
+	listAssets = func(context.Context, string, int32, string, int32) ([]AssetItem, int32, error) {
+		return []AssetItem{{ItemID: 10, TypeID: 34, LocationID: 60003760, LocationFlag: "Hangar", Quantity: 100}}, 1, nil
+	}
+	_, out, err := listLocationAssetsHandler("v1", "client-id", store, nil)(context.Background(), nil, ListLocationAssetsInput{LocationID: 60003760, CharacterIDs: []int32{1, 1}})
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if len(out.Items) != 1 || !near(out.Totals.ItemsM3, 1) {
+		t.Errorf("items = %+v totals = %+v, want the character's one stack counted once", out.Items, out.Totals)
+	}
+}
+
+func TestListLocationAssets_WarnsAboutTypesMissingFromSDE(t *testing.T) {
+	store := characterStore(t, config.Character{ID: 1, Name: "Hauler"})
+	stubTypeBasics(t, nil)
+	orig := listAssets
+	t.Cleanup(func() { listAssets = orig })
+	listAssets = func(context.Context, string, int32, string, int32) ([]AssetItem, int32, error) {
+		return []AssetItem{
+			{ItemID: 10, TypeID: 99999, LocationID: 60003760, LocationFlag: "Hangar", Quantity: 1},
+			{ItemID: 11, TypeID: 88888, LocationID: 60008494, LocationFlag: "Hangar", Quantity: 1},
+		}, 1, nil
+	}
+	_, out, err := listLocationAssetsHandler("v1", "client-id", store, nil)(context.Background(), nil, ListLocationAssetsInput{LocationID: 60003760})
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if len(out.Warnings) != 1 || !strings.Contains(out.Warnings[0], "99999") || strings.Contains(out.Warnings[0], "88888") {
+		t.Errorf("warnings = %q, want one naming only the type at this location", out.Warnings)
 	}
 }
 

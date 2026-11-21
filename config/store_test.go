@@ -2,9 +2,13 @@ package config_test
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
@@ -187,5 +191,114 @@ func TestStore_BuiltinHubsSeededOnceAndDeletionsStick(t *testing.T) {
 	}
 	if h, ok := again.HubProfile("amarr"); !ok || h.StationID != 60008494 {
 		t.Errorf("lookup by system name = %+v, %v", h, ok)
+	}
+}
+
+func TestStore_LegacyBuiltinHubKeepsItsSystem(t *testing.T) {
+	store, _ := legacyStore(t)
+	cfg, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, ok := cfg.HubProfile("Jita")
+	if !ok || h.Name != "Jita 4-4" || h.System == nil || h.System.ID != 30000142 || h.Region.Name != "The Forge" || h.Tier != "major" {
+		t.Errorf("migrated Jita 4-4 = %+v, %v; want the user's name with the built-in hub's system, region and tier", h, ok)
+	}
+}
+
+func TestConfig_HubBySharedSystemNameIsAmbiguous(t *testing.T) {
+	cfg := config.Config{HubProfiles: slices.Clone(config.BuiltinHubs)}
+	if h, ok := cfg.HubProfile("Perimeter"); ok {
+		t.Errorf("Perimeter found %s, though two hubs are there", h.Name)
+	}
+	if err := cfg.DeleteHubProfile("Perimeter"); err == nil || !strings.Contains(err.Error(), "name one") {
+		t.Errorf("delete Perimeter = %v, want an ambiguity error", err)
+	}
+	if len(cfg.HubProfiles) != len(config.BuiltinHubs) {
+		t.Errorf("an ambiguous delete removed a hub")
+	}
+}
+
+func TestStore_FillingEmptyPrefsWritesBlockYAML(t *testing.T) {
+	dir := t.TempDir()
+	store := config.NewStoreAt(filepath.Join(dir, "config.json"))
+	cfg := config.Config{HaulProfiles: []config.HaulProfile{{Name: "JF", ShipTypeID: 28846, PilotID: 1, HoldM3: 100}}}
+	if err := store.Save(cfg); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(t, filepath.Join(dir, "haul_profiles.yaml")); !strings.Contains(got, "  prefs: {}\n") {
+		t.Fatalf("empty prefs aren't written as {}:\n%s", got)
+	}
+	cfg.HaulProfiles[0].Prefs.AvoidSystems = []int64{30000142, 30001324}
+	cfg.HaulProfiles[0].Prefs.Optimize = "fuel"
+	if err := store.Save(cfg); err != nil {
+		t.Fatal(err)
+	}
+	// A block list merged into the flow mapping {} isn't valid YAML, even
+	// where a lenient parser reads it back, so the mapping is re-added whole.
+	got := read(t, filepath.Join(dir, "haul_profiles.yaml"))
+	if !strings.Contains(got, "  prefs:\n") || strings.Contains(got, "{") {
+		t.Errorf("prefs aren't written as a block mapping:\n%s", got)
+	}
+	loaded, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := loaded.HaulProfiles[0].Prefs; len(p.AvoidSystems) != 2 || p.Optimize != "fuel" {
+		t.Errorf("prefs = %+v", p)
+	}
+}
+
+func TestStore_ConcurrentUpdatesKeepEveryChange(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	const n = 20
+	var wg sync.WaitGroup
+	errs := make(chan error, n)
+	for i := range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// A Store per writer, as separate tool handlers would hold.
+			_, err := config.NewStoreAt(path).Update(func(c *config.Config) error {
+				c.UpsertCharacter(config.Character{ID: int32(i + 1), Name: fmt.Sprintf("Pilot %d", i+1)})
+				return nil
+			})
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfg, err := config.NewStoreAt(path).Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Characters) != n {
+		t.Fatalf("got %d characters after %d concurrent updates, want %d", len(cfg.Characters), n, n)
+	}
+}
+
+func TestStore_UpdateErrorSavesNothing(t *testing.T) {
+	store := config.NewStoreAt(filepath.Join(t.TempDir(), "config.json"))
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 1, Name: "Main"}}}); err != nil {
+		t.Fatal(err)
+	}
+	want := errors.New("refused")
+	if _, err := store.Update(func(c *config.Config) error {
+		c.Characters = nil
+		return want
+	}); !errors.Is(err, want) {
+		t.Fatalf("Update error = %v, want %v", err, want)
+	}
+	cfg, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Characters) != 1 {
+		t.Fatalf("got %d characters, want the 1 saved before the failed update", len(cfg.Characters))
 	}
 }

@@ -20,7 +20,7 @@
     name.hidden = true;
     button.hidden = true;
     select.addEventListener("change", function () {
-      if (select.value === "__new__") {
+      if (select.value === "new") {
         name.hidden = false;
         button.hidden = false;
         name.required = true;

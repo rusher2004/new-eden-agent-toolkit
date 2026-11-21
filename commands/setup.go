@@ -43,7 +43,9 @@ func setupCommand() *cli.Command {
 
 func runSetup(w io.Writer, store *config.Store) error {
 	if _, err := os.Stat(store.Path()); errors.Is(err, os.ErrNotExist) {
-		if err := store.Save(config.Config{}); err != nil {
+		// Update, not Save of an empty Config: the YAML files may already
+		// hold characters and profiles, which an empty save would delete.
+		if _, err := store.Update(func(*config.Config) error { return nil }); err != nil {
 			return fmt.Errorf("initialize config file: %w", err)
 		}
 	} else if err != nil {
