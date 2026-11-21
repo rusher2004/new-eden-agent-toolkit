@@ -77,7 +77,7 @@ type AccountGroup struct {
 type GetLogisticsOverviewOutput struct {
 	Characters []OverviewCharacter `json:"characters"`
 	Accounts   []AccountGroup      `json:"accounts" jsonschema:"characters by account: characters in one account can't be online together"`
-	Conflicts  []string            `json:"conflicts,omitempty" jsonschema:"account labels the game contradicts: two characters with the same label are online at once, so they can't share an account"`
+	Conflicts  []string            `json:"conflicts,omitempty" jsonschema:"account labels the game contradicts: two characters with the same label are online at once, so they can't share an account; a recent login is checked again after ESI's cache expires before it's flagged"`
 	Warnings   []string            `json:"warnings,omitempty"`
 }
 
@@ -169,7 +169,7 @@ func getLogisticsOverviewHandler(version, clientID string, store *config.Store, 
 		}
 
 		out := GetLogisticsOverviewOutput{Characters: []OverviewCharacter{}, Accounts: []AccountGroup{}, Warnings: accountWarnings(cfg)}
-		online := map[int32]bool{}
+		online := map[int32]*esi.CharacterOnlineStatus{} // characters reported online
 		for _, c := range chars {
 			r := readOverview(ctx, clientID, p.ua(), c.ID)
 			oc := OverviewCharacter{CharacterID: c.ID, CharacterName: c.Name, Account: c.Account, Abilities: []string{}, Hulls: []HullClass{}}
@@ -180,7 +180,9 @@ func getLogisticsOverviewHandler(version, clientID string, store *config.Store, 
 			} else if r.online != nil {
 				o := r.online.Online
 				oc.Online = &o
-				online[c.ID] = o
+				if o {
+					online[c.ID] = r.online
+				}
 			}
 			if r.locErr != nil {
 				unread("location", r.locErr)
@@ -261,21 +263,105 @@ func getLogisticsOverviewHandler(version, clientID string, store *config.Store, 
 			}
 			byAccount[c.Account] = append(byAccount[c.Account], c)
 		}
+		suspect := map[string][]config.Character{}
 		for _, l := range labels {
 			g := AccountGroup{Account: l}
-			var on []string
+			var on []config.Character
 			for _, c := range byAccount[l] {
 				g.Characters = append(g.Characters, c.Name)
-				if online[c.ID] {
-					on = append(on, c.Name)
+				if online[c.ID] != nil {
+					on = append(on, c)
 				}
 			}
 			out.Accounts = append(out.Accounts, g)
 			if len(on) > 1 {
+				suspect[l] = on
+			}
+		}
+		confirmed, err := confirmOnlineConflicts(ctx, clientID, p.ua(), suspect, online)
+		if err != nil {
+			return nil, GetLogisticsOverviewOutput{}, err
+		}
+		for _, l := range labels {
+			if on := confirmed[l]; len(on) > 1 {
 				sort.Strings(on)
 				out.Conflicts = append(out.Conflicts, fmt.Sprintf("%s are all labelled %q but are online at the same time, so they aren't all on one account. Ask the user which account each is on and fix the labels with update_character_details.", strings.Join(on, " and "), l))
 			}
 		}
 		return nil, out, nil
 	}
+}
+
+// onlineCacheWindow is how long ESI caches a character's online status
+// (the Expires header on GET /characters/{id}/online is 60 seconds), plus
+// a few seconds' margin. A character who logged off within it can still
+// read as online, so two characters on one account can both look online
+// right after a switch.
+const onlineCacheWindow = 65 * time.Second
+
+// sleepCtx waits for d or until ctx is done. Tests replace it.
+var sleepCtx = func(ctx context.Context, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// confirmOnlineConflicts returns, for each account label, the names of its
+// characters that really are online together, leaving out labels with
+// fewer than two. A suspected conflict whose
+// newest login is older than onlineCacheWindow stands: every cached status
+// was read after that login, so the characters were online at once. A
+// newer one may be a character switch the cache hasn't caught up with, so
+// it waits until the cache has expired and checks those characters again,
+// keeping only the ones still online. A character whose re-check fails is
+// left out, since a conflict it can't confirm isn't reported.
+func confirmOnlineConflicts(ctx context.Context, clientID, ua string, suspect map[string][]config.Character, online map[int32]*esi.CharacterOnlineStatus) (map[string][]string, error) {
+	confirmed := map[string][]string{}
+	recheck := map[string][]config.Character{}
+	var wait time.Duration
+	for l, chars := range suspect {
+		var newest *time.Time
+		for _, c := range chars {
+			if ll := online[c.ID].LastLogin; ll == nil {
+				newest = nil
+				break
+			} else if newest == nil || ll.After(*newest) {
+				newest = ll
+			}
+		}
+		if newest != nil && now().Sub(*newest) >= onlineCacheWindow {
+			for _, c := range chars {
+				confirmed[l] = append(confirmed[l], c.Name)
+			}
+			continue
+		}
+		recheck[l] = chars
+		left := onlineCacheWindow // an unknown login time waits the full window
+		if newest != nil {
+			left -= max(now().Sub(*newest), 0)
+		}
+		wait = max(wait, left)
+	}
+	if len(recheck) == 0 {
+		return confirmed, nil
+	}
+	if err := sleepCtx(ctx, wait); err != nil {
+		return nil, fmt.Errorf("wait to re-check online status: %w", err)
+	}
+	for l, chars := range recheck {
+		for _, c := range chars {
+			if st, err := getCharacterOnline(ctx, clientID, c.ID, ua); err == nil && st != nil && st.Online {
+				confirmed[l] = append(confirmed[l], c.Name)
+			}
+		}
+		if len(confirmed[l]) < 2 {
+			delete(confirmed, l)
+		}
+	}
+	return confirmed, nil
 }
