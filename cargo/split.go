@@ -56,7 +56,7 @@ func SplitLoad(load Load, holds []float64, portions map[int64]int64) ([]Load, er
 			to := int64(math.Round(float64(units) * cum / total))
 			q := (to - from) * p
 			if out[i].M3+float64(q)*unit > holds[i]+1e-6 {
-				q = int64(math.Floor((holds[i]-out[i].M3)/(unit*float64(p))+1e-9)) * p
+				q = max(int64(math.Floor((holds[i]-out[i].M3)/(unit*float64(p))+1e-9)), 0) * p
 			}
 			add(i, it, q, unit)
 			given += q

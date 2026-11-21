@@ -551,14 +551,23 @@ type PlanHaulOutput struct {
 	Route           nav.Route      `json:"outboundRoute"`
 	ReturnRoute     *nav.Route     `json:"returnRoute,omitempty"`
 	FuelName        string         `json:"fuelName"`
-	FuelPerTrip     int64          `json:"fuelPerTrip"`
-	FuelM3PerTrip   float64        `json:"fuelM3PerTrip"`
-	FuelCostTrip    float64        `json:"fuelCostPerTrip"`
+	FuelPerTrip     int64          `json:"fuelPerTrip" jsonschema:"the first ship's fuel for a round trip; with several ships, hulls gives each one's"`
+	FuelM3PerTrip   float64        `json:"fuelM3PerTrip" jsonschema:"volume of every ship's round-trip fuel together"`
+	FuelCostTrip    float64        `json:"fuelCostPerTrip" jsonschema:"cost of every ship's round-trip fuel together"`
 	TotalM3         float64        `json:"totalM3"`
 	FreightPerM3    float64        `json:"freightPerM3" jsonschema:"fuel cost of one full round trip divided by the hold"`
 	Hulls           []HaulHullTrip `json:"hulls,omitempty" jsonschema:"every ship flying the trip, when there's more than one"`
 	SharedCynoTypes []string       `json:"sharedCynoTypes,omitempty" jsonschema:"cyno types every ship flying together can use, so one cyno serves them all"`
 	Notes           []string       `json:"notes,omitempty"`
+}
+
+// prefixNotes labels another ship's notes with its haul profile's name.
+func prefixNotes(profile string, notes []string) []string {
+	out := make([]string, 0, len(notes))
+	for _, n := range notes {
+		out = append(out, profile+": "+n)
+	}
+	return out
 }
 
 // haulPlan routes a round trip and packs cargo for one ship.
@@ -670,7 +679,10 @@ func (p *planner) haulPlanWith(ctx context.Context, profs []config.HaulProfile, 
 			fname := ob[oreq.Drive.FuelTypeID].Name
 			out.Hulls = append(out.Hulls, HaulHullTrip{HaulProfile: other.Name, Ship: sb[other.ShipTypeID].Name, HoldM3: other.HoldM3, FuelName: fname, FuelPerTrip: fuel})
 			out.FuelM3PerTrip += float64(fuel) * ob[oreq.Drive.FuelTypeID].Volume
-			if l, err := p.quote(ctx, hub, []industry.TypeQty{{TypeID: oreq.Drive.FuelTypeID, Quantity: max(fuel, 1)}}, nil); err == nil && len(l) == 1 {
+			out.Notes = append(out.Notes, prefixNotes(other.Name, o.Notes)...)
+			if l, err := p.quote(ctx, hub, []industry.TypeQty{{TypeID: oreq.Drive.FuelTypeID, Quantity: max(fuel, 1)}}, nil); err != nil {
+				out.Notes = append(out.Notes, fmt.Sprintf("%s's fuel price unavailable, so its fuel is left out of fuel cost and freight: %v", other.Name, err))
+			} else if len(l) == 1 {
 				out.FuelCostTrip += l[0].Average * float64(fuel)
 			}
 			fuelLines = append(fuelLines, market.MultibuyLine{Name: fname, Quantity: fuel})
@@ -729,11 +741,16 @@ func planHaulHandler(version, clientID string, store *config.Store, sdeStore *sd
 			return nil, PlanHaulOutput{}, fmt.Errorf("no haul profile named %q", in.HaulProfile)
 		}
 		profs := []config.HaulProfile{prof}
+		pilots := map[int64]string{prof.PilotID: prof.Name}
 		for _, n := range in.With {
 			o, ok := cfg.HaulProfile(n)
 			if !ok {
 				return nil, PlanHaulOutput{}, fmt.Errorf("no haul profile named %q", n)
 			}
+			if other, dup := pilots[o.PilotID]; dup {
+				return nil, PlanHaulOutput{}, fmt.Errorf("haul profiles %q and %q have the same pilot, who can't fly two ships at once", other, o.Name)
+			}
+			pilots[o.PilotID] = o.Name
 			profs = append(profs, o)
 		}
 		hub, err := p.hub(in.Hub)
