@@ -70,3 +70,34 @@ const (
 	IndustrialPortalGen     int64 = 63140 // Industrial Jump Portal Generator I
 	TitanPortalGenerator    int64 = 23953 // Jump Portal Generator I
 )
+
+// allUpwell is every Upwell structure base type a ship can dock in.
+var allUpwell = []string{"Astrahus", "Fortizar", "Keepstar", "Raitaru", "Azbel", "Sotiyo", "Athanor", "Tatara"}
+
+// capitalDocking is where each capital class can dock, by ship group ID.
+// Every other ship can dock anywhere. Source: EVE University, Capital
+// ships (Docking table). Black Ops and command carriers aren't in that
+// table: Black Ops are taken to dock anywhere a battleship can, and command
+// carriers like carriers, and both are marked assumed.
+var capitalDocking = map[int64]Docking{
+	30:   {Upwell: []string{"Keepstar"}, BuildOnly: []string{"Sotiyo"}},                                                        // Titan
+	659:  {Upwell: []string{"Keepstar"}, BuildOnly: []string{"Sotiyo"}},                                                        // Supercarrier
+	485:  {NPCStations: true, Upwell: []string{"Fortizar", "Keepstar", "Sotiyo"}, BuildOnly: []string{"Azbel"}},                // Dreadnought
+	4594: {NPCStations: true, Upwell: []string{"Fortizar", "Keepstar", "Sotiyo"}, BuildOnly: []string{"Azbel"}},                // Lancer Dreadnought
+	547:  {NPCStations: true, Upwell: []string{"Fortizar", "Keepstar", "Sotiyo"}, BuildOnly: []string{"Azbel"}},                // Carrier
+	1538: {NPCStations: true, Upwell: []string{"Fortizar", "Keepstar", "Sotiyo"}, BuildOnly: []string{"Azbel"}},                // Force Auxiliary
+	883:  {NPCStations: true, Upwell: []string{"Fortizar", "Keepstar", "Sotiyo", "Tatara"}, BuildOnly: []string{"Azbel"}},      // Capital Industrial Ship
+	5120: {NPCStations: true, Upwell: []string{"Fortizar", "Keepstar", "Sotiyo"}, BuildOnly: []string{"Azbel"}, Assumed: true}, // Command Carrier
+	898:  {NPCStations: true, Upwell: allUpwell, Assumed: true},                                                                // Black Ops
+}
+
+// Which jump drives can use industrial and covert cynos, by ship group;
+// every jump drive can use a standard cyno. Source: the cyno generators'
+// own SDE descriptions ("Industrial Cynosural Fields are specifically
+// attuned to support the jump drives of Jump Freighters and the Rorqual";
+// a covert field "only Black Ops jump drives can lock on to"), and EVE
+// University, Cynosural field, which adds Black Ops for industrial cynos.
+var (
+	industrialCynoGroups = []int64{902, 883, 898} // Jump Freighter, Capital Industrial Ship, Black Ops
+	covertCynoGroups     = []int64{898}           // Black Ops
+)
