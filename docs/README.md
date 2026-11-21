@@ -26,6 +26,7 @@ The packages sit flat at the repo root, one per responsibility, with no `interna
 - `nav/`: pure calculations for moving ships and characters, for any activity: what a character's skills let them use (cynos, bridges, conduits, hulls) from SDE requirements, clone jump timing, hull movement facts (warp, align, docking, highsec entry, cyno types, which bridges a hull can ride), security bands, displayed security and its in-game color, jump fuel, range and fatigue, and jump/gate route search with dotlan links.
 - `cargo/`: pure calculations for what fits where: item volumes, everything at a station laid out with ship repackaging volumes and lost rigs, and packing cargo into loads.
 - `market/`: pure buying calculations: walking order books, in-game Multibuy lists, scoring a trade hub on a basket of goods and its contracts, and ranking hubs for a shopping list.
+- `dogma/`: a pure dogma evaluator: a ship's attributes after its fitted modules, rigs and pilot's skills, the way the game computes them (fitted holds, cyno fuel per light).
 - `industry/`: pure industry calculations (facilities, jobs, research, invention, the blueprint tree, build-vs-buy, reprocessing, ore mixes, scheduling). It uses `nav/`, `cargo/` and `market/`; none of them use it.
 
 The pure packages have no network, disk or clock access. Every number the SDE doesn't carry is a sourced constant in that package's `constants.go`.

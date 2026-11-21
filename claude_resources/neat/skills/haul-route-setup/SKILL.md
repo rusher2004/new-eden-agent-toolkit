@@ -10,7 +10,7 @@ neat plans jump and gate routes itself and returns dotlan links for each one. Yo
 ## 1. Ship and pilot
 
 - Ask which hull and which pilot. The pilot must be logged in to neat. Skills and contacts come from ESI.
-- Ask for the fitted cargo hold in m³ as the game shows it. Don't assume an unfitted value.
+- Don't ask for the fitted cargo hold. Find the actual ship (`get_logistics_overview` or `list_location_assets` give its item ID) and pass it as `shipItemId` to `save_haul_profile`: neat works out the fitted hold from its real modules, rigs and the pilot's skills. `estimate_ship_hold` shows the same for any ship, owned or described by hull and modules. Ask the user only if the ship can't be found.
 
 ## 2. Preferences
 
