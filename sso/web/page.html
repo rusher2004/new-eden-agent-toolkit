@@ -119,15 +119,15 @@ input[type=text], select { font: inherit; font-size: 13px; color: var(--text); b
             {{if and $.Grouping (not $.Finished)}}
             <div class="controls">
               {{if .Suggested}}
-              <form method="post" action="/account/set"><input type="hidden" name="token" value="{{$.Token}}"><input type="hidden" name="id" value="{{.ID}}"><input type="hidden" name="account" value="{{.Suggested}}"><button class="small primary" type="submit" title="Put this character in {{.Suggested}}, the account of the character you logged in just before it">Same account</button></form>
+              <form method="post" action="/account/set"><input type="hidden" name="token" value="{{$.Token}}"><input type="hidden" name="id" value="{{.ID}}"><input type="hidden" name="account" value="existing:{{.Suggested}}"><button class="small primary" type="submit" title="Put this character in {{.Suggested}}, the account of the character you logged in just before it">Same account</button></form>
               {{end}}
               {{$current := .Account}}
               <form class="move" method="post" action="/account/set">
                 <input type="hidden" name="token" value="{{$.Token}}"><input type="hidden" name="id" value="{{.ID}}">
                 <select name="account" aria-label="Account for {{.Name}}">
-                  {{range $.Labels}}<option value="{{.}}"{{if eq . $current}} selected{{end}}>{{.}}</option>{{end}}
-                  <option value=""{{if eq $current ""}} selected{{end}}>Not assigned</option>
-                  <option value="__new__">New account…</option>
+                  {{range $.Labels}}<option value="existing:{{.}}"{{if eq . $current}} selected{{end}}>{{.}}</option>{{end}}
+                  <option value="none"{{if eq $current ""}} selected{{end}}>Not assigned</option>
+                  <option value="new">New account…</option>
                 </select>
                 <input type="text" name="new_account" placeholder="New account name" maxlength="40" aria-label="New account name for {{.Name}}">
                 <button class="small" type="submit">Move</button>

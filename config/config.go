@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // Character identifies a known EVE character by ID and display name, with
@@ -236,15 +237,56 @@ func moveTo[T any](l yamlList[T], entries []T) error {
 	return nil
 }
 
-// Save writes cfg, changing only what differs from what's on disk.
+// updateLocks holds one lock per config.json path, so an Update's load and
+// save can't interleave with another Update or Save in this process, through
+// any Store for the same path.
+var updateLocks sync.Map
+
+func (s *Store) lockUpdates() func() {
+	m, _ := updateLocks.LoadOrStore(s.path, &sync.Mutex{})
+	mu := m.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
+}
+
+// Update loads neat's state, applies change to it and saves the result,
+// holding one lock from the load to the save. Every writer goes through
+// Update: a Save of a Config loaded earlier writes back that whole Config,
+// undoing whatever another writer saved in between (the login page and
+// parallel tool calls can both write). If change returns an error, nothing
+// is saved. Update returns every value it changed in the YAML files.
+func (s *Store) Update(change func(*Config) error) ([]Change, error) {
+	unlock := s.lockUpdates()
+	defer unlock()
+	cfg, err := s.Load()
+	if err != nil {
+		return nil, err
+	}
+	if err := change(&cfg); err != nil {
+		return nil, err
+	}
+	return s.saveChanges(cfg)
+}
+
+// Save writes cfg, changing only what differs from what's on disk. It
+// replaces everything with cfg, so use Update to change state that's
+// already saved.
 func (s *Store) Save(cfg Config) error {
-	_, err := s.SaveChanges(cfg)
+	unlock := s.lockUpdates()
+	defer unlock()
+	_, err := s.saveChanges(cfg)
 	return err
 }
 
 // SaveChanges writes cfg like Save and returns every value it changed in the
-// YAML files, for a tool to report to the user.
+// YAML files.
 func (s *Store) SaveChanges(cfg Config) ([]Change, error) {
+	unlock := s.lockUpdates()
+	defer unlock()
+	return s.saveChanges(cfg)
+}
+
+func (s *Store) saveChanges(cfg Config) ([]Change, error) {
 	if err := s.saveFile(cfg); err != nil {
 		return nil, err
 	}

@@ -296,7 +296,9 @@ func patchMapping(f *ast.File, path, field string, old map[string]any, now yaml.
 		case had:
 			om, oIsMap := o.(map[string]any)
 			nm, nIsMap := item.Value.(yaml.MapSlice)
-			if oIsMap && nIsMap && !removesKeys(om, nm) {
+			// A flow mapping ({...}) can't take block-style keys merged
+			// into it, so it's re-added whole too.
+			if oIsMap && nIsMap && !removesKeys(om, nm) && !isFlowMapping(f, sub) {
 				if err := patchMapping(f, sub, fieldName, om, nm, report); err != nil {
 					return err
 				}
@@ -368,6 +370,17 @@ func filterPath(f *ast.File, path string) (ast.Node, error) {
 		return nil, err
 	}
 	return p.FilterFile(f)
+}
+
+// isFlowMapping reports whether the node at path is a flow-style mapping,
+// such as the {} an empty struct is written as.
+func isFlowMapping(f *ast.File, path string) bool {
+	node, err := filterPath(f, path)
+	if err != nil {
+		return false
+	}
+	m, ok := node.(*ast.MappingNode)
+	return ok && m.IsFlowStyle
 }
 
 func mappingValues(n ast.Node) []*ast.MappingValueNode {

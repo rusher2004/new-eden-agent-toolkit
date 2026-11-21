@@ -26,12 +26,12 @@ The packages sit flat at the repo root, one per responsibility, with no `interna
 - `nav/`: pure calculations for moving ships and characters, for any activity: security bands, displayed security and its in-game color, jump fuel, range and fatigue, and jump/gate route search with dotlan links.
 - `cargo/`: pure calculations for what fits where: item volumes, everything at a station laid out with ship repackaging volumes and lost rigs, and packing cargo into loads.
 - `market/`: pure buying calculations: walking order books and in-game Multibuy lists.
-- `industry/`: pure industry calculations (facilities, jobs, research, invention, the blueprint tree, build-vs-buy, reprocessing, ore mixes, scheduling). It uses `nav/`, `cargo/` and `market/`; none of them use it.
-
-The pure packages have no network, disk or clock access. Every number the SDE doesn't carry is a sourced constant in that package's `constants.go`.
+- `industry/`: pure industry calculations (facilities, jobs, research, invention, the blueprint tree, build-vs-buy, reprocessing, ore mixes, scheduling). It uses `nav/` and `market/`; neither uses it, nor does `cargo/`.
 - `config/`: neat's saved state under `~/.neat/`: YAML files the user can also edit (`characters.yaml`, `facilities.yaml`, `haul_profiles.yaml`, `routes.yaml`, `structures.yaml`), written by patching only the fields that changed so comments and the user's own keys survive, and `config.json` for hub profiles and the analytics opt-out.
 - `creds/`: the OS keychain wrapper (service name `neat`).
 - `tools/`: code generators and CI checks (`genscopes`, `gentooldocs`, `genversion`, `versiongate`).
+
+The pure packages (`nav/`, `cargo/`, `market/`, `industry/`) have no network, disk or clock access. Every number the SDE doesn't carry is a sourced constant in that package's `constants.go`.
 
 ## Building
 
