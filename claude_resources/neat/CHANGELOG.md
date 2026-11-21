@@ -1,5 +1,9 @@
 # neat plugin — changelog
 
+## 0.18.0
+- New `haul-plan` skill guides Claude through any move of cargo, ships or characters, for a PvP deployment, a staging move, a PvE relocation or a build: it starts from your characters' overview, takes stock of what's at the origin, asks what to do with assembled ships, picks ships and pilots, plans and checks the route with your routing preferences, picks cyno alts on other accounts and works out their Liquid Ozone, uses jump clones to get characters in place, and writes the steps in order. It replaces the `haul-route-setup` skill, whose route and preference steps it includes. Every number and rule comes from neat's tools, so Claude asks you only for the decisions that are yours.
+- Claude in apps without skills, such as the Claude desktop app, gets the same planning order in neat's instructions.
+
 ## 0.17.0
 - Jump routes now come with checks for the ship flying them: which cyno types it can jump to, where it can dock at each landing (NPC stations it's allowed in and your saved structures it fits, flagging any landing with nowhere to dock, such as a carrier landing next to only an Astrahus), how many gates one cyno alt has to travel between landings, and whether the route's fuel fits the fuel bay.
 - Whether a ship can travel into highsec now comes from the game's own data for that hull.

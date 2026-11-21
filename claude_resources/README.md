@@ -22,11 +22,11 @@ The skills:
 - `add-character`: log characters in, picking scope groups from what the user wants to do (always offering the corporation groups), grant more access when a tool reports a missing scope, add a group to several characters in one login, and handle corporation tools refused for in-game roles.
 - `industry-build-plan`: plan a build end to end, from blueprints and builders through build-or-buy, refining and hauling to a shareable plan page.
 - `industry-profile-setup`: save and calibrate facility profiles (NPC stations, Upwell structures, starbases) with their rigs, services and taxes.
-- `haul-route-setup`: save haul profiles and routing preferences, and compare jump routes.
+- `haul-plan`: plan any move of cargo, ships or characters: haulers and cyno lighters, assembled ships, routes and routing preferences, jump clones, and the order of operations.
 
 Skills hold discovery and decision steps only. Every number comes from a neat tool, so skills never contain formulas or arithmetic. When a tool a skill drives changes its inputs, outputs or behavior, update the skill in the same change.
 
-Clients that don't load plugin skills, such as the Claude desktop app, still get the essentials (how to onboard a new user, scope errors, confirming before write tools, never computing industry numbers) from the MCP server's instructions in `mcp/instructions.go`. Keep the two consistent.
+Clients that don't load plugin skills, such as the Claude desktop app, still get the essentials (how to onboard a new user, scope errors, confirming before write tools, never computing industry numbers, the order for planning a move) from the MCP server's instructions in `mcp/instructions.go`. Keep the two consistent.
 
 ## Install
 
