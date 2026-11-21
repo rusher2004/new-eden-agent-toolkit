@@ -78,6 +78,9 @@ type modifierInfo struct {
 	Func                 string `json:"func"`
 	ModifiedAttributeID  int64  `json:"modifiedAttributeID"`
 	ModifyingAttributeID int64  `json:"modifyingAttributeID"`
+	Operation            int    `json:"operation"`
+	SkillTypeID          int64  `json:"skillTypeID"`
+	GroupID              int64  `json:"groupID"`
 }
 
 // RigInfo loads a rig's structure modifiers (from its dogma effects) and its

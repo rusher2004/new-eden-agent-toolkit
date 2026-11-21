@@ -1,5 +1,9 @@
 # neat plugin — changelog
 
+## 0.16.0
+- Claude no longer asks you for your cargo hold. New `estimate_ship_hold` works out every hold of a ship the way the game does, from its real fitted modules and rigs and the pilot's skills (an Ark with Amarr Freighter IV and two Expanded Cargohold IIs comes out at 263,351.25 m³), along with what's already in the hold, warp speed, align time and jump range. `save_haul_profile` does the same when given the ship.
+- New `estimate_cyno` works out what lighting cynos takes: Liquid Ozone per light and cycle length with the lighter's Cynosural Field Theory and the hull's bonuses, how many lights a full hold covers, and for a whole jump chain the ozone needed and how many refills. It also says whether the generator fits the ship and what skills the lighter still needs.
+
 ## 0.15.0
 - New `get_logistics_overview` is where Claude starts any move of ships, cargo or characters: for each of your characters in one call, their account, whether they're online, where they are, their ship, what cynos, bridges and conduits they can use, which haulers and capitals they can fly, when they can next clone jump, and their jump fatigue. It also groups your characters by account and points out a label the game contradicts, such as two characters you said share an account being online at once.
 - New `compare_haul_hulls` compares ships for hauling from the game's own data: every hold, warp speed and align time, warp core strength, whether it can cloak or nullify bubbles, whether it can enter highsec, where it can dock (a carrier can't dock in an Astrahus; a supercarrier only in a Keepstar), its jump drive and which cynos it can use, and which bridges and conduits it can ride. Name a pilot to see which they can fly and their jump range and fuel.
