@@ -135,6 +135,7 @@ func DescribeHull(in HullInput) HullFacts {
 // anywhere for every other ship.
 func DockingFor(groupID int64) Docking {
 	if d, ok := capitalDocking[groupID]; ok {
+		d.Upwell, d.BuildOnly = slices.Clone(d.Upwell), slices.Clone(d.BuildOnly)
 		return d
 	}
 	return Docking{NPCStations: true, Upwell: slices.Clone(allUpwell)}

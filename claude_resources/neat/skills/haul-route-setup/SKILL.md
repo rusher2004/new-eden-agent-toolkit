@@ -10,6 +10,7 @@ neat plans jump and gate routes itself and returns dotlan links for each one. Yo
 ## 1. Ship and pilot
 
 - Ask which hull and which pilot. The pilot must be logged in to neat. Skills and contacts come from ESI.
+- If they haven't settled on a hull, call `compare_haul_hulls` with the classes they're considering and the pilot's `pilotId`: it says which hulls the pilot can fly, their holds, jump range, fuel and cyno types, and where each can dock. Let the user choose from that rather than comparing hulls yourself.
 - Ask for the fitted cargo hold in m³ as the game shows it. Don't assume an unfitted value.
 
 ## 2. Preferences

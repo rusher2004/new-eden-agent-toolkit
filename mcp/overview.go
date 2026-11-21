@@ -144,7 +144,7 @@ func getLogisticsOverviewHandler(version, clientID string, store *config.Store, 
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetLogisticsOverviewInput) (*mcpsdk.CallToolResult, GetLogisticsOverviewOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
-			return nil, GetLogisticsOverviewOutput{}, err
+			return nil, GetLogisticsOverviewOutput{}, fmt.Errorf("load config: %w", err)
 		}
 		chars, err := targetCharacters(cfg, in.CharacterIDs)
 		if err != nil {
@@ -157,7 +157,7 @@ func getLogisticsOverviewHandler(version, clientID string, store *config.Store, 
 		}
 		classTypes, err := sdeStore.PublishedTypesInGroups(ctx, p.ua(), hullClassGroups)
 		if err != nil {
-			return nil, GetLogisticsOverviewOutput{}, err
+			return nil, GetLogisticsOverviewOutput{}, fmt.Errorf("hull classes: %w", err)
 		}
 		classHulls, err := p.hulls(ctx, classTypes)
 		if err != nil {
@@ -186,7 +186,10 @@ func getLogisticsOverviewHandler(version, clientID string, store *config.Store, 
 				unread("location", r.locErr)
 			} else {
 				loc := &OverviewLocation{}
-				if sys, err := p.system(ctx, r.systemID); err == nil {
+				if sys, err := p.system(ctx, r.systemID); err != nil {
+					loc.System = fmt.Sprintf("system %d", r.systemID)
+					unread("location's system", err)
+				} else {
 					loc.System = sys.Name
 					loc.SecurityDisplay, loc.SecurityColor = nav.SecurityLabel(sys.Security), nav.SecurityColor(sys.Security)
 				}

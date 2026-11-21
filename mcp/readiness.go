@@ -12,8 +12,9 @@ import (
 	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 )
 
-// hullClassGroups are the ship groups list_character_capabilities reports
-// flyable hulls for: the ones that matter when moving cargo, capitals and
+// hullClassGroups are the ship groups list_character_capabilities and
+// get_logistics_overview report flyable hulls for, and compare_haul_hulls
+// compares by default: the ones that matter when moving cargo, capitals and
 // fleets. This picks what to show, not a game rule.
 var hullClassGroups = []int64{
 	28,   // Hauler
