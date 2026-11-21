@@ -1,5 +1,7 @@
 package config
 
+import "fmt"
+
 // Route is a saved jump route, by name: the systems in order, from origin to
 // destination, with the user's notes on why it goes that way.
 type Route struct {
@@ -34,6 +36,9 @@ func (c *Config) UpsertRoute(r Route) { c.Routes = upsert(c.Routes, r, routeName
 
 // DeleteRoute removes a route by name.
 func (c *Config) DeleteRoute(name string) error {
+	if _, ok := c.Route(name); !ok {
+		return fmt.Errorf("no saved route named %q", name)
+	}
 	var err error
 	c.Routes, err = remove(c.Routes, name, routeName)
 	return err

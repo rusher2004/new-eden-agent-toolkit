@@ -69,20 +69,25 @@ func (p *planner) moduleAbility(ctx context.Context, kind, variant string, modul
 	groups, types := fitList(attrs)
 	inGroups, err := p.sde.PublishedTypesInGroups(ctx, p.ua(), groups)
 	if err != nil {
-		return nav.Ability{}, err
+		return nav.Ability{}, fmt.Errorf("hulls that module %d fits by group: %w", moduleID, err)
 	}
 	extra, err := p.typeBasics(ctx, types)
 	if err != nil {
-		return nav.Ability{}, err
+		return nav.Ability{}, fmt.Errorf("hulls that module %d fits by type: %w", moduleID, err)
+	}
+	seen := make(map[int64]bool, len(inGroups))
+	for _, b := range inGroups {
+		seen[b.TypeID] = true
 	}
 	for _, id := range types {
-		if b, ok := extra[id]; ok && b.Published {
+		if b, ok := extra[id]; ok && b.Published && !seen[id] {
+			seen[id] = true
 			inGroups = append(inGroups, b)
 		}
 	}
 	hulls, err := p.hulls(ctx, inGroups)
 	if err != nil {
-		return nav.Ability{}, err
+		return nav.Ability{}, fmt.Errorf("hulls for module %d: %w", moduleID, err)
 	}
 	return nav.Ability{Kind: kind, Variant: variant, Module: p.typeName(ctx, moduleID), Requires: requiredSkills(attrs), Hulls: hulls}, nil
 }
@@ -107,17 +112,17 @@ func (p *planner) abilityCatalog(ctx context.Context) ([]nav.Ability, error) {
 	for _, s := range specs {
 		a, err := p.moduleAbility(ctx, s.kind, s.variant, s.module)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%s %s ability: %w", s.variant, s.kind, err)
 		}
 		out = append(out, a)
 	}
 	carriers, err := p.sde.PublishedTypesWithEffect(ctx, p.ua(), nav.CapitalConduitEffect)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("carrier conduit hulls: %w", err)
 	}
 	hulls, err := p.hulls(ctx, carriers)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("carrier conduit hulls: %w", err)
 	}
 	out = append(out, nav.Ability{Kind: "conduit", Variant: "carrier", Module: "built into the hull", Requires: []nav.SkillReq{{SkillID: nav.SkillCapitalJumpPortalGeneration, Level: 1}}, Hulls: hulls})
 	return out, nil
@@ -142,7 +147,12 @@ func targetCharacters(cfg config.Config, ids []int32) ([]config.Character, error
 		return cfg.Characters, nil
 	}
 	out := make([]config.Character, 0, len(ids))
+	seen := make(map[int32]bool, len(ids))
 	for _, id := range ids {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
 		c, ok := cfg.Character(id)
 		if !ok {
 			return nil, fmt.Errorf("character %d: %w", id, ErrCharacterNotFound)
@@ -204,15 +214,15 @@ func listCharacterCapabilitiesHandler(version, clientID string, store *config.St
 		p := newPlanner(version, clientID, store, sdeStore)
 		catalog, err := p.abilityCatalog(ctx)
 		if err != nil {
-			return nil, ListCharacterCapabilitiesOutput{}, err
+			return nil, ListCharacterCapabilitiesOutput{}, fmt.Errorf("ability catalog: %w", err)
 		}
 		classTypes, err := sdeStore.PublishedTypesInGroups(ctx, p.ua(), hullClassGroups)
 		if err != nil {
-			return nil, ListCharacterCapabilitiesOutput{}, err
+			return nil, ListCharacterCapabilitiesOutput{}, fmt.Errorf("hull classes: %w", err)
 		}
 		classHulls, err := p.hulls(ctx, classTypes)
 		if err != nil {
-			return nil, ListCharacterCapabilitiesOutput{}, err
+			return nil, ListCharacterCapabilitiesOutput{}, fmt.Errorf("hull class requirements: %w", err)
 		}
 		groupName := map[int64]string{}
 		for _, t := range classTypes {

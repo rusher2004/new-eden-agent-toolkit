@@ -89,6 +89,9 @@ func TestListCharacterCapabilities_FromSDERequirements(t *testing.T) {
 		t.Fatalf("%s has no %s %s entry", cc.CharacterName, variant, kind)
 		return AbilityView{}
 	}
+	if len(out.Characters) != 2 {
+		t.Fatalf("characters = %+v, want 2", out.Characters)
+	}
 	recon, carrier := out.Characters[0], out.Characters[1]
 	if a := find(recon, "cyno", "standard"); !a.Can || !slices.Equal(a.Hulls, []string{"Falcon"}) {
 		t.Errorf("standard cyno = %+v", a)
@@ -109,7 +112,10 @@ func TestListCharacterCapabilities_FromSDERequirements(t *testing.T) {
 		t.Errorf("carrier hulls = %+v", carrier.Hulls)
 	}
 
-	_, only, _ := listCharacterCapabilitiesHandler("test", "client", store, p.sde)(context.Background(), nil, ListCharacterCapabilitiesInput{CharacterIDs: []int32{reconPilot}})
+	_, only, err := listCharacterCapabilitiesHandler("test", "client", store, p.sde)(context.Background(), nil, ListCharacterCapabilitiesInput{CharacterIDs: []int32{reconPilot}})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(only.Characters) != 1 || len(only.Characters[0].Abilities) != 1 {
 		t.Errorf("without includeMissing = %+v, want only the standard cyno", only.Characters)
 	}
@@ -126,7 +132,10 @@ func TestListCharacterCapabilities_UnreadableSkillsAreAWarning(t *testing.T) {
 
 func TestListJumpClones_CooldownCapacityAndNames(t *testing.T) {
 	store, p := readinessEnv(t)
-	cfg, _ := store.Load()
+	cfg, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
 	cfg.UpsertStructure(config.Structure{ID: 1049345291823, Name: "CX7-70 Sotiyo", Kind: config.StructureUpwell})
 	if err := store.Save(cfg); err != nil {
 		t.Fatal(err)
