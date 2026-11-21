@@ -1,5 +1,10 @@
 # neat plugin — changelog
 
+## 0.12.0
+- neat now keeps a list of the stations and structures you work from, in `~/.neat/structures.yaml`, with what the game won't tell it: what you use each for (manufacturing, reactions, market, staging...), its facility profile, whether it has a working clone bay, and your notes. New tools `list_structures`, `save_structure` and `delete_structure`. Names, systems and owners are filled in from the game.
+- Clone bays: neat records one as confirmed whenever one of your characters has a jump clone there, and checks again each time it lists your structures. Anywhere else it stays unknown until you check in game and tell Claude, since the game only shows a structure's services to its owners. Claude asks rather than guessing either way.
+- `list_structures` can also check, live, which of your characters can dock at each Upwell structure.
+
 ## 0.11.0
 - Your characters, facility profiles and haul profiles now live in YAML files in `~/.neat/` (`characters.yaml`, `facilities.yaml`, `haul_profiles.yaml`) that you can open and edit yourself: fix a value, add notes, or add your own comments and keys. neat keeps them up to date too, but only changes the fields it has a reason to, so your comments, notes and anything else you added stay put. If a file's YAML gets broken, neat tells you which line and won't touch it until it's fixed. Everything moves out of `config.json` automatically the first time this version runs.
 - Jump routes can be saved by name with your notes on why they go the way they do, in `~/.neat/routes.yaml`. New tools `save_route`, `list_routes` and `delete_route`; `plan_jump_route` can cost a saved route by name, and haul profiles pin saved routes for their regular runs. Routes pinned on your existing haul profiles become saved routes named after the profile.

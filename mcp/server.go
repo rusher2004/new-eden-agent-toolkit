@@ -1298,6 +1298,7 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	}, listParagonHubSkinrListingsForCharacterHandler(version, clientID, store))
 
 	registerNavigationTools(server, version, clientID, store, sdeStore)
+	registerStructureTools(server, version, clientID, store, sdeStore)
 	registerMarketPlanningTools(server, version, clientID, store, sdeStore)
 	registerIndustryPlanningTools(server, version, clientID, store, sdeStore)
 

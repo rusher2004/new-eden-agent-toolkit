@@ -232,4 +232,4 @@ INSERT INTO mapRegions (regionID, regionName) VALUES (10000002, 'The Forge');
 INSERT INTO mapRegions (regionID, regionName) VALUES (10000016, 'Lonetrek');
 INSERT INTO mapRegions (regionID, regionName) VALUES (10000010, 'Tribute');
 INSERT INTO mapRegions (regionID, regionName) VALUES (10000015, 'Venal');
-INSERT INTO staStations (stationID, stationName, solarSystemID, corporationID, operationID, reprocessingEfficiency, reprocessingStationsTake) VALUES (60003760, 'Jita 4 - Moon 4 - Caldari Navy Assembly Plant', 30000142, 1000035, 14, 0.5, 0.05);
+INSERT INTO staStations (stationID, stationName, solarSystemID, stationTypeID, corporationID, operationID, reprocessingEfficiency, reprocessingStationsTake) VALUES (60003760, 'Jita 4 - Moon 4 - Caldari Navy Assembly Plant', 30000142, 1531, 1000035, 14, 0.5, 0.05);
