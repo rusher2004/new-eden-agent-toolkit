@@ -361,5 +361,3 @@ func (p *planner) findJob(ctx context.Context, characterID int32, corporationID,
 	}
 	return IndustryJob{}, fmt.Errorf("job %d not found", jobID)
 }
-
-// --- haul profiles ---

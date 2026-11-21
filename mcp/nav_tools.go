@@ -322,7 +322,7 @@ func listHaulProfilesHandler(store *config.Store) mcpsdk.ToolHandlerFor[struct{}
 	}
 }
 
-// --- hub profiles ---
+// --- routing ---
 
 type PlanJumpRouteInput struct {
 	HaulProfile string           `json:"haulProfile" jsonschema:"haul profile name (ship, pilot and saved preferences)"`

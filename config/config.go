@@ -261,7 +261,9 @@ func (s *Store) Update(change func(*Config) error) ([]Change, error) {
 // replaces everything with cfg, so use Update to change state that's
 // already saved.
 func (s *Store) Save(cfg Config) error {
-	_, err := s.SaveChanges(cfg)
+	unlock := s.lockUpdates()
+	defer unlock()
+	_, err := s.saveChanges(cfg)
 	return err
 }
 

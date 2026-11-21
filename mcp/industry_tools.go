@@ -1016,5 +1016,3 @@ func solveOreMixHandler(version, clientID string, store *config.Store, sdeStore 
 		return nil, out, err
 	}
 }
-
-// --- routing ---

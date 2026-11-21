@@ -49,6 +49,7 @@ func addCharacterHandler(version, clientID string, store *config.Store) mcpsdk.T
 			return nil, AddCharacterOutput{}, err
 		}
 		var warnings []string
+		scopesKept := true
 		if in.CharacterID != 0 {
 			// FC replaces a token's scopes on every login rather than
 			// adding to them, so a re-authorization must ask again for
@@ -58,6 +59,7 @@ func addCharacterHandler(version, clientID string, store *config.Store) mcpsdk.T
 			kept, err := grantedScopes(ctx, clientID, in.CharacterID, userAgent)
 			if err != nil {
 				slog.Default().WarnContext(ctx, "add_character: can't read the character's current scopes; requesting only the chosen groups", "characterId", in.CharacterID, "error", err)
+				scopesKept = false
 				warnings = append(warnings, fmt.Sprintf("couldn't read the scope groups character %d had already granted (%v), so this login requested only %v. Any other group it had before is no longer granted: ask the user whether it needs any back, and if so call add_character again with characterId %d and those groups.", in.CharacterID, err, sso.GrantedGroups(scopes), in.CharacterID))
 			}
 			scopes = union(scopes, kept)
@@ -106,7 +108,13 @@ func addCharacterHandler(version, clientID string, store *config.Store) mcpsdk.T
 			// Every character logged in this session was granted the
 			// target's scopes, but the target itself is unchanged.
 			if len(in.ScopeGroups) == 0 {
-				warnings = append(warnings, fmt.Sprintf("character %d was not re-authorized: the user didn't log in as it on EVE's page. It keeps the access it already had; only its login wasn't refreshed. Any character the user logged in instead was given character %d's scope groups. If they meant to refresh character %d, call add_character with characterId %d again and ask them to log in as that character.", in.CharacterID, in.CharacterID, in.CharacterID, in.CharacterID))
+				// Only say the other logins got the target's groups when
+				// those groups were read and requested.
+				given := ""
+				if scopesKept {
+					given = fmt.Sprintf(" Any character the user logged in instead was given character %d's scope groups.", in.CharacterID)
+				}
+				warnings = append(warnings, fmt.Sprintf("character %d was not re-authorized: the user didn't log in as it on EVE's page. It keeps the access it already had; only its login wasn't refreshed.%s If they meant to refresh character %d, call add_character with characterId %d again and ask them to log in as that character.", in.CharacterID, given, in.CharacterID, in.CharacterID))
 			} else {
 				warnings = append(warnings, fmt.Sprintf("character %d was not re-authorized: the user didn't log in as it on EVE's page, so it still lacks %v. Tell the user, and if they want to try again, call add_character with characterId %d and ask them to log in as that character.", in.CharacterID, in.ScopeGroups, in.CharacterID))
 			}

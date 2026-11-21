@@ -135,11 +135,16 @@ func listLocationAssetsHandler(version, clientID string, store *config.Store, sd
 
 		var items []cargo.Item
 		out := ListLocationAssetsOutput{LocationID: in.LocationID, Warnings: warnings}
+		unknown := map[int64]bool{}
 		for _, o := range owners {
 			basics := enrichAssets(ctx, sdeStore, ua, o.assets)
 			before := len(items)
 			for _, a := range o.assets {
-				items = append(items, cargoItem(a, basics[a.TypeID], o.owner))
+				b, ok := basics[a.TypeID]
+				if !ok {
+					unknown[a.TypeID] = true
+				}
+				items = append(items, cargoItem(a, b, o.owner))
 			}
 			lines, _ := cargo.Inventory(items[before:], in.LocationID)
 			out.Sources = append(out.Sources, AssetSource{Owner: o.owner, Items: len(lines)})
@@ -147,6 +152,18 @@ func listLocationAssetsHandler(version, clientID string, store *config.Store, sd
 		out.Items, out.Totals = cargo.Inventory(items, in.LocationID)
 		if out.Items == nil {
 			out.Items = []cargo.InventoryLine{}
+		}
+		// A type the local SDE doesn't have has no volume, so it counts as
+		// 0 m³; say so rather than under-report the totals silently.
+		var missing []int64
+		for _, l := range out.Items {
+			if unknown[l.TypeID] {
+				missing = append(missing, l.TypeID)
+				delete(unknown, l.TypeID)
+			}
+		}
+		if len(missing) > 0 {
+			out.Warnings = append(out.Warnings, fmt.Sprintf("type IDs %v aren't in the local static data, so their volumes count as 0 m³ in these totals", missing))
 		}
 		if names := resolveStationNames(ctx, sdeStore, ua, []int64{in.LocationID}); names != nil {
 			out.LocationName = names[in.LocationID]

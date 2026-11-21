@@ -20,3 +20,9 @@ const officeFlag = "OfficeFolder"
 // fittingFlagPrefixes are the location flags of items fitted to a ship,
 // rather than carried in one of its holds.
 var fittingFlagPrefixes = []string{"HiSlot", "MedSlot", "LoSlot", "RigSlot", "SubSystemSlot"}
+
+// structureFittingFlagPrefixes are the location flags of items fitted to an
+// Upwell structure itself (its modules, service modules, quantum core and
+// deed), which ESI lists with the structure as their location. They aren't
+// hangar contents, so they're no part of moving out of it.
+var structureFittingFlagPrefixes = []string{"HiSlot", "MedSlot", "LoSlot", "RigSlot", "ServiceSlot", "QuantumCoreRoom", "StructureDeedFlag"}
