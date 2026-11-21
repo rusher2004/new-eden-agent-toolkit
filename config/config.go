@@ -37,6 +37,7 @@ type Config struct {
 	FacilityProfiles []FacilityProfile
 	HaulProfiles     []HaulProfile
 	Routes           []Route
+	Structures       []Structure
 	HubProfiles      []HubProfile
 	// AnalyticsDisabled turns off neat's anonymous usage statistics (see
 	// analytics/). The zero value leaves it on; `neat analytics off` sets it.
@@ -109,6 +110,13 @@ func (s *Store) haulProfiles() yamlList[HaulProfile] {
 outbound_route and return_route name routes in routes.yaml.`}
 }
 
+func (s *Store) structures() yamlList[Structure] {
+	return yamlList[Structure]{path: s.file("structures.yaml"), key: structureKey, header: `NPC stations and Upwell structures you work from. neat keeps this file up to date, and you can edit it too.
+Names, types, systems and owners come from the game. The rest is what the game won't tell neat:
+uses: what you use it for. clone_bay: yes, no or unknown, and how that's known (jump_clone: a character has a
+  jump clone there; user: you checked in game). notes: anything else worth knowing when planning.`}
+}
+
 func (s *Store) routes() yamlList[Route] {
 	return yamlList[Route]{path: s.file("routes.yaml"), key: func(r Route) string { return strings.ToLower(r.Name) }, header: `Saved jump routes, by name: the systems in order. neat keeps this file up to date, and you can edit it too.
 notes: why the route goes the way it does, for whoever plans with it next.`}
@@ -139,6 +147,9 @@ func (s *Store) Load() (Config, error) {
 		return Config{}, err
 	}
 	if cfg.Routes, err = s.routes().load(); err != nil {
+		return Config{}, err
+	}
+	if cfg.Structures, err = s.structures().load(); err != nil {
 		return Config{}, err
 	}
 	return cfg, nil
@@ -243,6 +254,7 @@ func (s *Store) SaveChanges(cfg Config) ([]Change, error) {
 		func() ([]Change, error) { return s.facilities().sync(cfg.FacilityProfiles) },
 		func() ([]Change, error) { return s.haulProfiles().sync(cfg.HaulProfiles) },
 		func() ([]Change, error) { return s.routes().sync(cfg.Routes) },
+		func() ([]Change, error) { return s.structures().sync(cfg.Structures) },
 	} {
 		c, err := sync()
 		if err != nil {
