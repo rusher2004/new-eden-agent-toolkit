@@ -3,7 +3,9 @@ package mcp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
@@ -251,5 +253,36 @@ func TestListStructures_StopsDockingChecksAfterRefusals(t *testing.T) {
 	}
 	if unknown != maxDockingRefusals || notChecked != 5 {
 		t.Errorf("unknown = %d, not_checked = %d, want %d and 5", unknown, notChecked, maxDockingRefusals)
+	}
+}
+
+func TestSaveStructure_ConcurrentSavesKeepEveryStructure(t *testing.T) {
+	store, p := industryTestEnv(t)
+	stubStructureESI(t, map[int32]bool{testPilot: true}, nil)
+	save := saveStructureHandler("test", "client", store, p.sde)
+	const n = 10
+	var wg sync.WaitGroup
+	errs := make(chan error, n)
+	for i := range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _, err := save(context.Background(), nil, SaveStructureInput{ID: sotiyo + int64(i), CharacterID: testPilot, Notes: ptr(fmt.Sprintf("structure %d", i))})
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfg, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Structures) != n {
+		t.Errorf("saved %d structures after %d concurrent saves, want %d", len(cfg.Structures), n, n)
 	}
 }

@@ -132,47 +132,48 @@ func saveStructureHandler(version, clientID string, store *config.Store, sdeStor
 		if factsErr == nil {
 			nameStructure(ctx, newPlanner(version, clientID, store, sdeStore), &facts)
 		}
-		// The lookups above go over the network, so read the files again
-		// rather than saving over anything written meanwhile.
-		if cfg, err = store.Load(); err != nil {
-			return nil, SaveStructureOutput{}, err
-		}
-		s, saved := cfg.Structure(in.ID)
-		err = factsErr
-		switch {
-		case err == nil:
-			keepNames(&facts, s)
-			s.ID, s.Name, s.Kind, s.Type, s.System, s.Owner = facts.ID, facts.Name, facts.Kind, facts.Type, facts.System, facts.Owner
-		case saved:
-			warnings = append(warnings, "kept the saved name, type, system and owner: "+err.Error())
-		default:
-			return nil, SaveStructureOutput{}, fmt.Errorf("save structure: %w", err)
-		}
-		if in.Uses != nil {
-			s.Uses = nil
-			for _, u := range in.Uses {
-				if u = strings.TrimSpace(u); u != "" {
-					s.Uses = append(s.Uses, u)
+		// The lookups above go over the network, so the entry is merged into
+		// whatever is saved now, under Update's lock, rather than saved over
+		// anything written meanwhile.
+		var s config.Structure
+		changes, err := store.Update(func(cfg *config.Config) error {
+			var saved bool
+			s, saved = cfg.Structure(in.ID)
+			switch {
+			case factsErr == nil:
+				keepNames(&facts, s)
+				s.ID, s.Name, s.Kind, s.Type, s.System, s.Owner = facts.ID, facts.Name, facts.Kind, facts.Type, facts.System, facts.Owner
+			case saved:
+				warnings = append(warnings, "kept the saved name, type, system and owner: "+factsErr.Error())
+			default:
+				return fmt.Errorf("save structure: %w", factsErr)
+			}
+			if in.Uses != nil {
+				s.Uses = nil
+				for _, u := range in.Uses {
+					if u = strings.TrimSpace(u); u != "" {
+						s.Uses = append(s.Uses, u)
+					}
 				}
 			}
-		}
-		if in.FacilityProfile != nil {
-			s.FacilityProfile = strings.TrimSpace(*in.FacilityProfile)
-			if p, ok := cfg.FacilityProfile(s.FacilityProfile); ok {
-				s.FacilityProfile = p.Name
+			if in.FacilityProfile != nil {
+				s.FacilityProfile = strings.TrimSpace(*in.FacilityProfile)
+				if p, ok := cfg.FacilityProfile(s.FacilityProfile); ok {
+					s.FacilityProfile = p.Name
+				}
 			}
-		}
-		if in.CloneBay != "" {
-			s.CloneBay = &config.CloneBay{Status: in.CloneBay, Source: config.CloneBayFromUser, Checked: today()}
-			if in.CloneBay == config.CloneBayUnknown {
-				s.CloneBay = nil
+			if in.CloneBay != "" {
+				s.CloneBay = &config.CloneBay{Status: in.CloneBay, Source: config.CloneBayFromUser, Checked: today()}
+				if in.CloneBay == config.CloneBayUnknown {
+					s.CloneBay = nil
+				}
 			}
-		}
-		if in.Notes != nil {
-			s.Notes = strings.TrimSpace(*in.Notes)
-		}
-		cfg.UpsertStructure(s)
-		changes, err := store.SaveChanges(cfg)
+			if in.Notes != nil {
+				s.Notes = strings.TrimSpace(*in.Notes)
+			}
+			cfg.UpsertStructure(s)
+			return nil
+		})
 		if err != nil {
 			return nil, SaveStructureOutput{}, err
 		}
@@ -243,20 +244,21 @@ func listStructuresHandler(version, clientID string, store *config.Store, sdeSto
 				}
 			}
 		}
-		// The clone lookups above go over the network, so read the files
-		// again rather than saving over anything written meanwhile.
-		if cfg, err = store.Load(); err != nil {
-			return nil, ListStructuresOutput{}, err
-		}
-		for i, s := range cfg.Structures {
-			if _, ok := proved[s.ID]; ok {
-				bay := &config.CloneBay{Status: config.CloneBayYes, Source: config.CloneBayFromJumpClone, Checked: today()}
-				if s.CloneBay == nil || *s.CloneBay != *bay {
-					cfg.Structures[i].CloneBay = bay
+		// The clone lookups above go over the network, so proved clone bays
+		// are recorded on whatever is saved now, under Update's lock, rather
+		// than saved over anything written meanwhile.
+		changes, err := store.Update(func(c *config.Config) error {
+			for i, s := range c.Structures {
+				if _, ok := proved[s.ID]; ok {
+					bay := &config.CloneBay{Status: config.CloneBayYes, Source: config.CloneBayFromJumpClone, Checked: today()}
+					if s.CloneBay == nil || *s.CloneBay != *bay {
+						c.Structures[i].CloneBay = bay
+					}
 				}
 			}
-		}
-		changes, err := store.SaveChanges(cfg)
+			cfg = *c
+			return nil
+		})
 		if err != nil {
 			return nil, ListStructuresOutput{}, err
 		}
@@ -302,17 +304,14 @@ type DeleteStructureInput struct {
 
 func deleteStructureHandler(store *config.Store) mcpsdk.ToolHandlerFor[DeleteStructureInput, DeletedOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in DeleteStructureInput) (*mcpsdk.CallToolResult, DeletedOutput, error) {
-		cfg, err := store.Load()
-		if err != nil {
+		var name string
+		if _, err := store.Update(func(cfg *config.Config) error {
+			s, _ := cfg.Structure(in.ID)
+			name = s.Name
+			return cfg.DeleteStructure(in.ID)
+		}); err != nil {
 			return nil, DeletedOutput{}, err
 		}
-		s, _ := cfg.Structure(in.ID)
-		if err := cfg.DeleteStructure(in.ID); err != nil {
-			return nil, DeletedOutput{}, err
-		}
-		if err := store.Save(cfg); err != nil {
-			return nil, DeletedOutput{}, err
-		}
-		return nil, DeletedOutput{Deleted: s.Name}, nil
+		return nil, DeletedOutput{Deleted: name}, nil
 	}
 }
