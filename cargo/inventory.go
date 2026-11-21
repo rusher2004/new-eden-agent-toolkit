@@ -48,8 +48,10 @@ func (it Item) packagedUnitVolume() float64 {
 	return it.Volume
 }
 
-func isFitted(flag string) bool {
-	for _, p := range fittingFlagPrefixes {
+func isFitted(flag string) bool { return hasFlagPrefix(flag, fittingFlagPrefixes) }
+
+func hasFlagPrefix(flag string, prefixes []string) bool {
+	for _, p := range prefixes {
 		if strings.HasPrefix(flag, p) {
 			return true
 		}
@@ -121,6 +123,9 @@ func Inventory(items []Item, locationID int64) ([]InventoryLine, InventoryTotals
 	// Offices are transparent: their contents are top-level hangar items.
 	var top []Item
 	for _, it := range children[locationID] {
+		if hasFlagPrefix(it.Flag, structureFittingFlagPrefixes) {
+			continue // fitted to the structure, not in a hangar
+		}
 		if it.Flag == officeFlag {
 			top = append(top, children[it.ItemID]...)
 			continue

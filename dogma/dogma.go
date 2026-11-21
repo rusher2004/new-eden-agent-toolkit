@@ -76,6 +76,9 @@ type Item struct {
 	// RequiredSkills are the skills the type requires (from its
 	// requiredSkillN attributes), for LocationRequiredSkillModifier.
 	RequiredSkills []int64
+	// Unpenalized exempts a module's modifiers from stacking penalties, as
+	// the game does for subsystems.
+	Unpenalized bool
 }
 
 // AttrInfo is what the SDE says about an attribute.
@@ -165,7 +168,7 @@ func (f *Fit) value(r ref) float64 {
 		// An attribute missing from Attrs counts as stackable: stacking
 		// penalties are the exception, marked in the SDE.
 		info, known := f.Attrs[r.attr]
-		penalized := src.kind == Module && known && !info.Stackable && r.kind == Ship
+		penalized := src.kind == Module && !f.Modules[src.index].Unpenalized && known && !info.Stackable && r.kind == Ship
 		mods = append(mods, applied{op: m.Operation, value: v, penalized: penalized})
 	})
 	v := apply(base, mods)

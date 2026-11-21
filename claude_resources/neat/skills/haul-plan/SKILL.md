@@ -47,12 +47,12 @@ Drop whatever the user will handle themselves from the rest of the plan.
 
 - Check `list_routes` for a saved route between the same places, and read its notes: it usually reflects choices the user made on purpose. Cost it with `plan_jump_route` and `route` set to its name. To check a route the pilot already flies, pass it as `waypoints` instead.
 - Ask in plain terms, and save what they say on a haul profile with `save_haul_profile`, giving `shipItemId` so neat works out the hold. Save one profile per ship: `plan_haul`'s `with` takes the other ships' haul profile names. Saved routes and profiles live in `~/.neat/routes.yaml` and `haul_profiles.yaml`, which the user can also edit by hand.
-  - **Areas to stay out of:** systems, constellations or regions.
-  - **Whose space:** alliances to avoid, avoiding sovereignty held by anyone at negative standing, and blue alliances to prefer.
-  - **Midpoints:** systems where they can dock, have a cyno alt or a friendly POS, and whether jumps must land only there.
-  - **dotlan-style options:** prefer station systems, avoid incursions.
-  - **What to optimise:** fuel (the default), number of jumps, or fatigue.
-  - **Gates:** a cap on gate count, and whether to skip gate systems with recent kills.
+  - **Areas to stay out of:** systems, constellations or regions (`avoidSystems`, `avoidConstellations`, `avoidRegions`).
+  - **Whose space:** alliances to avoid (`avoidAlliances`), avoiding sovereignty held by anyone at negative standing (`avoidBadStanding`), and blue alliances to prefer (`preferAlliances`).
+  - **Midpoints:** systems where they can dock, have a cyno alt or a friendly POS (`midpoints`), and whether jumps must land only there (`midpointsRequired`).
+  - **dotlan-style options:** prefer station systems (`preferStationSystems`), avoid incursions (`avoidIncursions`).
+  - **What to optimise:** fuel (the default), number of jumps, or fatigue (`optimize`).
+  - **Gates:** a cap on gate count (`maxGates`), and whether to skip gate systems with recent kills (`maxRecentKills`).
 - Call `plan_jump_route`, or `plan_haul` for cargo (with the other ships' haul profiles in `with` when several fly together). Read each route's `checks`:
   - a landing with `noDock` has nowhere known to dock: ask whether the user has a structure there, and save it if so;
   - `fuel` says whether the fuel fits the fuel bay or needs cargo space;

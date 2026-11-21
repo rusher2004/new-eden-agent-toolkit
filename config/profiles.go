@@ -47,7 +47,7 @@ type HaulProfile struct {
 	ShipName   string  `json:"shipName,omitempty" yaml:"ship_name,omitempty"`
 	PilotID    int64   `json:"pilotId" yaml:"pilot_id"`
 	PilotName  string  `json:"pilotName,omitempty" yaml:"pilot_name,omitempty"`
-	HoldM3     float64 `json:"holdM3"`
+	HoldM3     float64 `json:"holdM3" yaml:"hold_m3"`
 	// OutboundRoute and ReturnRoute name saved routes (routes.yaml) pinned
 	// for this profile's regular run, hub → destination and back.
 	OutboundRoute string     `json:"outboundRoute,omitempty" yaml:"outbound_route,omitempty"`

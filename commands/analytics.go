@@ -81,12 +81,7 @@ func runAnalyticsStatus(w io.Writer, store *config.Store) error {
 }
 
 func runAnalyticsSet(w io.Writer, store *config.Store, idPath string, on bool) error {
-	cfg, err := store.Load()
-	if err != nil {
-		return fmt.Errorf("load config: %w", err)
-	}
-	cfg.AnalyticsDisabled = !on
-	if err := store.Save(cfg); err != nil {
+	if _, err := store.Update(func(cfg *config.Config) error { cfg.AnalyticsDisabled = !on; return nil }); err != nil {
 		return fmt.Errorf("save config: %w", err)
 	}
 	msg := "Anonymous usage statistics turned on."

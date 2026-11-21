@@ -50,7 +50,7 @@ var areas = []area{
 	{
 		title: "Navigation and hauling",
 		blurb: "Jump and gate routes with fuel, fatigue and dotlan links, saved routes with your notes, and cargo packed into loads, for any move: PvP, PvE or industry. Haul profiles and routes are saved in `~/.neat/haul_profiles.yaml` and `~/.neat/routes.yaml`, which you can also edit.",
-		names: []string{"get_logistics_overview", "list_character_capabilities", "list_jump_clones", "compare_haul_hulls", "estimate_ship_hold", "estimate_cyno", "estimate_ship_hold", "estimate_cyno", "save_haul_profile", "list_haul_profiles", "delete_haul_profile", "save_route", "list_routes", "delete_route", "plan_jump_route", "plan_haul"},
+		names: []string{"get_logistics_overview", "list_character_capabilities", "list_jump_clones", "compare_haul_hulls", "estimate_ship_hold", "estimate_cyno", "save_haul_profile", "list_haul_profiles", "delete_haul_profile", "save_route", "list_routes", "delete_route", "plan_jump_route", "plan_haul"},
 	},
 	{
 		title: "Stations and structures you use",

@@ -1,7 +1,8 @@
 -- Real dogma rows copied from the fuzzwork SDE dump on 2026-11-20 for estimate_ship_hold and estimate_cyno: the Venture, the Ark,
 -- Expanded Cargohold II, Small Cargohold Optimization I, the Industrial Cynosural Field Generator, Cynosural Field Theory, Amarr Freighter
--- and Liquid Ozone, with every attribute, effect and modifier they carry. INSERT OR IGNORE lets it load alongside the other fixtures.
+-- and Liquid Ozone (plus Antimatter Charge S, a loaded charge that must not count as a module), with every attribute, effect and modifier they carry. INSERT OR IGNORE lets it load alongside the other fixtures.
 INSERT OR IGNORE INTO invGroups (groupID, categoryID, groupName, published) VALUES (25,6,'Frigate',1);
+INSERT OR IGNORE INTO invGroups (groupID, categoryID, groupName, published) VALUES (85,8,'Hybrid Charge',1);
 INSERT OR IGNORE INTO invGroups (groupID, categoryID, groupName, published) VALUES (257,16,'Spaceship Command',1);
 INSERT OR IGNORE INTO invGroups (groupID, categoryID, groupName, published) VALUES (275,16,'Navigation',1);
 INSERT OR IGNORE INTO invGroups (groupID, categoryID, groupName, published) VALUES (423,4,'Ice Product',1);
@@ -9,6 +10,7 @@ INSERT OR IGNORE INTO invGroups (groupID, categoryID, groupName, published) VALU
 INSERT OR IGNORE INTO invGroups (groupID, categoryID, groupName, published) VALUES (765,7,'Expanded Cargohold',1);
 INSERT OR IGNORE INTO invGroups (groupID, categoryID, groupName, published) VALUES (782,7,'Rig Navigation',1);
 INSERT OR IGNORE INTO invGroups (groupID, categoryID, groupName, published) VALUES (902,6,'Jump Freighter',1);
+INSERT OR IGNORE INTO invTypes (typeID, groupID, typeName, published, volume, packagedVolume, capacity, mass) VALUES (222,85,'Antimatter Charge S',1,0.0025,0.0025,0.0,1.0);
 INSERT OR IGNORE INTO invTypes (typeID, groupID, typeName, published, volume, packagedVolume, capacity, mass) VALUES (1319,765,'Expanded Cargohold II',1,5.0,5.0,0.0,50.0);
 INSERT OR IGNORE INTO invTypes (typeID, groupID, typeName, published, volume, packagedVolume, capacity, mass) VALUES (16273,423,'Liquid Ozone',1,0.4,0.4,0.0,0.0);
 INSERT OR IGNORE INTO invTypes (typeID, groupID, typeName, published, volume, packagedVolume, capacity, mass) VALUES (20524,257,'Amarr Freighter',1,0.01,0.01,0.0,0.0);

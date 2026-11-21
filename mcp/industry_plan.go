@@ -126,8 +126,8 @@ func planBuildHandler(version, clientID string, store *config.Store, sdeStore *s
 
 func (p *planner) planBuild(ctx context.Context, in PlanBuildInput) (PlanBuildOutput, error) {
 	var out PlanBuildOutput
-	if p.marketCharacter == 0 {
-		p.marketCharacter = in.CharacterID
+	if p.fallbackMarketCharacter == 0 {
+		p.fallbackMarketCharacter = in.CharacterID
 	}
 	pid, err := p.resolveType(ctx, in.Product)
 	if err != nil {

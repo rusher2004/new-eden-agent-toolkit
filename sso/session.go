@@ -332,9 +332,34 @@ func (s *loginSession) handleScript(w http.ResponseWriter, _ *http.Request) {
 	}
 }
 
-// newAccountOption is the account select's value for "New account…", whose
-// label comes from the form's new_account field instead.
-const newAccountOption = "__new__"
+// The account field of /account/set names its choice by kind, so no account
+// label, whatever the user calls it, can be mistaken for another choice:
+// accountNone leaves the character unassigned, accountNew takes the label
+// from the new_account field, and accountExisting followed by a label picks
+// that account.
+const (
+	accountNone     = "none"
+	accountNew      = "new"
+	accountExisting = "existing:"
+)
+
+// accountChoice reads the account label an /account/set form chose.
+func accountChoice(r *http.Request) (string, error) {
+	switch v := r.PostFormValue("account"); {
+	case v == accountNone:
+		return "", nil
+	case v == accountNew:
+		label := r.PostFormValue("new_account")
+		if strings.TrimSpace(label) == "" {
+			return "", errors.New("Type a name for the new account.")
+		}
+		return label, nil
+	case strings.HasPrefix(v, accountExisting):
+		return strings.TrimPrefix(v, accountExisting), nil
+	default:
+		return "", fmt.Errorf("unrecognized account choice %q", v)
+	}
+}
 
 // accountChanged records the outcome of an account change and sends the
 // browser back to the page, so a reload doesn't repeat the POST.
@@ -371,13 +396,10 @@ func (s *loginSession) handleAccountSet(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "unknown character", http.StatusBadRequest)
 		return
 	}
-	label := r.PostFormValue("account")
-	if label == newAccountOption {
-		label = r.PostFormValue("new_account")
-		if strings.TrimSpace(label) == "" {
-			s.accountChanged(w, r, "", errors.New("Type a name for the new account."))
-			return
-		}
+	label, err := accountChoice(r)
+	if err != nil {
+		s.accountChanged(w, r, "", err)
+		return
 	}
 	if err := s.opts.Accounts.Set(id, label); err != nil {
 		s.accountChanged(w, r, "", fmt.Errorf("couldn't save %s's account: %w", name, err))
