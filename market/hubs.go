@@ -118,6 +118,7 @@ func BandContracts(contracts []PublicContract, locationID int64, top int) Contra
 // HubQuote is one hub's walked order book for a shopping list.
 type HubQuote struct {
 	Hub    string
+	ID     int64 // the hub's station or structure ID, carried to its HubRank
 	Quotes []Quote
 	// Jumps is the gate jumps from the reference system, or -1 when unknown.
 	Jumps int
@@ -126,6 +127,7 @@ type HubQuote struct {
 // HubRank is a hub's place for a shopping list.
 type HubRank struct {
 	Hub       string  `json:"hub"`
+	ID        int64   `json:"-"`
 	Covered   int     `json:"covered" jsonschema:"items the hub can supply in full"`
 	Of        int     `json:"of"`
 	Total     float64 `json:"total" jsonschema:"ISK for everything the hub can supply, walking its order book"`
@@ -139,7 +141,7 @@ type HubRank struct {
 func RankHubs(quotes []HubQuote) []HubRank {
 	ranks := make([]HubRank, 0, len(quotes))
 	for _, hq := range quotes {
-		r := HubRank{Hub: hq.Hub, Of: len(hq.Quotes), Jumps: hq.Jumps}
+		r := HubRank{Hub: hq.Hub, ID: hq.ID, Of: len(hq.Quotes), Jumps: hq.Jumps}
 		for _, q := range hq.Quotes {
 			r.Total += q.Total
 			if q.Shortfall == 0 && q.Filled > 0 {

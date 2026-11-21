@@ -54,6 +54,11 @@ type planner struct {
 	// marketCharacter reads a structure hub's market when set; otherwise
 	// the hub's saved read_via character does.
 	marketCharacter int32
+	// fallbackMarketCharacter reads a structure hub's market only when
+	// neither marketCharacter nor the hub's read_via is set: a character
+	// the call names for another job (builder, refiner), who may lack
+	// docking access where read_via has it.
+	fallbackMarketCharacter int32
 }
 
 func newPlanner(version, clientID string, store *config.Store, sdeStore *sde.Store) *planner {

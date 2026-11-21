@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -187,5 +188,30 @@ func TestStore_BuiltinHubsSeededOnceAndDeletionsStick(t *testing.T) {
 	}
 	if h, ok := again.HubProfile("amarr"); !ok || h.StationID != 60008494 {
 		t.Errorf("lookup by system name = %+v, %v", h, ok)
+	}
+}
+
+func TestStore_LegacyBuiltinHubKeepsItsSystem(t *testing.T) {
+	store, _ := legacyStore(t)
+	cfg, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, ok := cfg.HubProfile("Jita")
+	if !ok || h.Name != "Jita 4-4" || h.System == nil || h.System.ID != 30000142 || h.Region.Name != "The Forge" || h.Tier != "major" {
+		t.Errorf("migrated Jita 4-4 = %+v, %v; want the user's name with the built-in hub's system, region and tier", h, ok)
+	}
+}
+
+func TestConfig_HubBySharedSystemNameIsAmbiguous(t *testing.T) {
+	cfg := config.Config{HubProfiles: slices.Clone(config.BuiltinHubs)}
+	if h, ok := cfg.HubProfile("Perimeter"); ok {
+		t.Errorf("Perimeter found %s, though two hubs are there", h.Name)
+	}
+	if err := cfg.DeleteHubProfile("Perimeter"); err == nil || !strings.Contains(err.Error(), "name one") {
+		t.Errorf("delete Perimeter = %v, want an ambiguity error", err)
+	}
+	if len(cfg.HubProfiles) != len(config.BuiltinHubs) {
+		t.Errorf("an ambiguous delete removed a hub")
 	}
 }

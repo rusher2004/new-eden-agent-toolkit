@@ -27,7 +27,8 @@ const staleValidationDays = 30
 const priciestContractsToOpen = 15
 
 // hubCharacter picks the character that reads a structure hub's market: the
-// one the caller named, else the one that last read it. It never guesses,
+// one the caller named for the market, else the one that last read it, else
+// a character the call named for another job. It never guesses,
 // since each refused lookup counts against ESI's error limit.
 func (p *planner) hubCharacter(hub config.HubProfile) (int32, error) {
 	if p.marketCharacter != 0 {
@@ -35,6 +36,9 @@ func (p *planner) hubCharacter(hub config.HubProfile) (int32, error) {
 	}
 	if hub.ReadVia != nil && hub.ReadVia.ID != 0 {
 		return int32(hub.ReadVia.ID), nil
+	}
+	if p.fallbackMarketCharacter != 0 {
+		return p.fallbackMarketCharacter, nil
 	}
 	return 0, fmt.Errorf("%s is a player structure, so its market can only be read through a character with docking access: pass characterId, or run validate_trade_hub with one so neat remembers it", hub.Name)
 }
@@ -130,8 +134,9 @@ type SaveHubProfileInput struct {
 
 // SaveHubProfileOutput is the saved hub and every value the save changed.
 type SaveHubProfileOutput struct {
-	Hub     config.HubProfile `json:"hub"`
-	Changes []config.Change   `json:"changes"`
+	Hub      config.HubProfile `json:"hub"`
+	Changes  []config.Change   `json:"changes"`
+	Warnings []string          `json:"warnings,omitempty"`
 }
 
 // hubFacts reads a hub's name, kind, system and region from the game.
@@ -177,6 +182,7 @@ func saveHubProfileHandler(version, clientID string, store *config.Store, sdeSto
 		}
 		p := newPlanner(version, clientID, store, sdeStore)
 		h, saved := cfg.HubProfile(fmt.Sprint(in.ID))
+		var warnings []string
 		facts, err := p.hubFacts(ctx, in.ID, in.CharacterID)
 		switch {
 		case err == nil:
@@ -192,6 +198,8 @@ func saveHubProfileHandler(version, clientID string, store *config.Store, sdeSto
 			}
 		case !saved:
 			return nil, SaveHubProfileOutput{}, fmt.Errorf("save hub profile: %w", err)
+		default:
+			warnings = append(warnings, "kept the saved name, system and region, since they couldn't be read from the game: "+err.Error())
 		}
 		if n := strings.TrimSpace(in.Name); n != "" {
 			h.Name = n
@@ -213,7 +221,7 @@ func saveHubProfileHandler(version, clientID string, store *config.Store, sdeSto
 		if changes == nil {
 			changes = []config.Change{}
 		}
-		return nil, SaveHubProfileOutput{Hub: h, Changes: changes}, nil
+		return nil, SaveHubProfileOutput{Hub: h, Changes: changes, Warnings: warnings}, nil
 	}
 }
 
@@ -228,9 +236,13 @@ func deleteHubProfileHandler(store *config.Store) mcpsdk.ToolHandlerFor[DeleteHu
 		if err != nil {
 			return nil, DeletedOutput{}, err
 		}
-		h, ok := cfg.HubProfile(in.Hub)
-		if !ok || strings.TrimSpace(in.Hub) == "" {
+		if strings.TrimSpace(in.Hub) == "" {
 			return nil, DeletedOutput{}, fmt.Errorf("no hub named %q", in.Hub)
+		}
+		h, ok := cfg.HubProfile(in.Hub)
+		if !ok {
+			// Says whether the name matched nothing or several hubs.
+			return nil, DeletedOutput{}, cfg.DeleteHubProfile(in.Hub)
 		}
 		if err := cfg.DeleteHubProfile(fmt.Sprint(h.StationID)); err != nil {
 			return nil, DeletedOutput{}, err
@@ -300,9 +312,16 @@ func validateTradeHubHandler(version, clientID string, store *config.Store, sdeS
 		score := market.ScoreBasket(orders, hub.StationID, basket)
 		v := &config.HubValidation{Date: today(), Basket: &config.BasketCheck{Stocked: score.Stocked, Of: score.Of, SellOrders: score.SellOrders, BuyOrders: score.BuyOrders}}
 		if len(score.Missing) > 0 {
-			basics, _ := p.typeBasics(ctx, score.Missing)
+			basics, err := p.typeBasics(ctx, score.Missing)
+			if err != nil {
+				return nil, ValidateTradeHubOutput{}, fmt.Errorf("name the missing basket items: %w", err)
+			}
 			for _, id := range score.Missing {
-				v.Basket.Missing = append(v.Basket.Missing, basics[id].Name)
+				name := basics[id].Name
+				if name == "" {
+					name = fmt.Sprintf("type %d", id)
+				}
+				v.Basket.Missing = append(v.Basket.Missing, name)
 			}
 		}
 		if in.Contracts {
@@ -312,9 +331,17 @@ func validateTradeHubHandler(version, clientID string, store *config.Store, sdeS
 		}
 		hub.Validation = v
 		if hub.IsStructure() {
-			char, _ := p.hubCharacter(hub)
-			c, _ := cfg.Character(char)
-			hub.ReadVia = &config.NamedID{ID: int64(char), Name: c.Name}
+			char, err := p.hubCharacter(hub)
+			if err != nil {
+				return nil, ValidateTradeHubOutput{}, err
+			}
+			readVia := config.NamedID{ID: int64(char)}
+			if c, ok := cfg.Character(char); ok {
+				readVia.Name = c.Name
+			} else if hub.ReadVia != nil && hub.ReadVia.ID == int64(char) {
+				readVia.Name = hub.ReadVia.Name
+			}
+			hub.ReadVia = &readVia
 		}
 		cfg.UpsertHubProfile(hub)
 		changes, err := store.SaveChanges(cfg)
@@ -387,6 +414,9 @@ func (p *planner) contractCheck(ctx context.Context, hub config.HubProfile) (*co
 			return listPublicContractItems(ctx, p.ua(), id, page)
 		})
 		if err != nil {
+			if ctx.Err() != nil {
+				return nil, fmt.Errorf("items of contract %d: %w", id, ctx.Err())
+			}
 			continue // a contract can expire between the listing and this read
 		}
 		for _, it := range items {
@@ -447,7 +477,9 @@ func compareTradeHubsHandler(version, clientID string, store *config.Store, sdeS
 			return nil, CompareTradeHubsOutput{}, err
 		}
 		p := newPlanner(version, clientID, store, sdeStore)
-		p.marketCharacter = in.CharacterID
+		// characterId is for structure hubs no character has read yet; a
+		// hub's own read_via still wins.
+		p.fallbackMarketCharacter = in.CharacterID
 		hubs := cfg.HubProfiles
 		if len(in.Hubs) > 0 {
 			hubs = nil
@@ -481,14 +513,14 @@ func compareTradeHubsHandler(version, clientID string, store *config.Store, sdeS
 		}
 		var out CompareTradeHubsOutput
 		var quotes []market.HubQuote
-		byName := map[string]config.HubProfile{}
+		byID := map[int64]config.HubProfile{}
 		for _, h := range hubs {
 			books, err := p.hubBooks(ctx, h, ids)
 			if err != nil {
 				out.Warnings = append(out.Warnings, "skipped "+h.Name+": "+err.Error())
 				continue
 			}
-			hq := market.HubQuote{Hub: h.Name, Jumps: -1}
+			hq := market.HubQuote{Hub: h.Name, ID: h.StationID, Jumps: -1}
 			for _, it := range items {
 				hq.Quotes = append(hq.Quotes, market.WalkBook(it.TypeID, books[it.TypeID], it.Quantity, h.StationID))
 			}
@@ -496,11 +528,11 @@ func compareTradeHubsHandler(version, clientID string, store *config.Store, sdeS
 				hq.Jumps = g.GateJumps(from, h.System.ID)
 			}
 			quotes = append(quotes, hq)
-			byName[h.Name] = h
+			byID[h.StationID] = h
 		}
 		out.Hubs = []HubComparison{}
 		for _, r := range market.RankHubs(quotes) {
-			h := byName[r.Hub]
+			h := byID[r.ID]
 			c := HubComparison{HubRank: r, HubID: h.StationID, ValidationStale: hubView(h, now()).ValidationStale}
 			if h.System != nil {
 				c.System = h.System.Name

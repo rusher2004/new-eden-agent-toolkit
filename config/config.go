@@ -292,10 +292,11 @@ func (s *Store) saveFile(cfg Config) error {
 		return err
 	}
 	if _, err := os.Stat(s.path); err == nil && fc.AnalyticsDisabled == cfg.AnalyticsDisabled &&
-		len(fc.Characters)+len(fc.FacilityProfiles)+len(fc.HaulProfiles)+len(fc.HubProfiles) == 0 {
+		len(fc.Characters)+len(fc.FacilityProfiles)+len(fc.HaulProfiles) == 0 {
 		return nil
 	}
-	return s.writeFile(fileConfig{AnalyticsDisabled: cfg.AnalyticsDisabled, OfferedHubIDs: fc.OfferedHubIDs})
+	// Legacy hub profiles stay until seedHubs has written them to hubs.yaml.
+	return s.writeFile(fileConfig{AnalyticsDisabled: cfg.AnalyticsDisabled, OfferedHubIDs: fc.OfferedHubIDs, HubProfiles: fc.HubProfiles})
 }
 
 // seedHubs starts hubs.yaml with the built-in hubs and any hub profiles
@@ -321,6 +322,25 @@ func (s *Store) seedHubs(fc fileConfig) ([]HubProfile, error) {
 	}
 	unlock := lockFile(s.path)
 	defer unlock()
+	// Re-read under the lock, so another load or save since fc was read
+	// (a deleted hub recorded as offered, the analytics setting) isn't undone.
+	fc, err := s.loadFile()
+	if err != nil {
+		return nil, err
+	}
+	fresh = fresh[:0]
+	offered = map[int64]bool{}
+	for _, id := range fc.OfferedHubIDs {
+		offered[id] = true
+	}
+	for _, h := range BuiltinHubs {
+		if !offered[h.StationID] {
+			fresh = append(fresh, h)
+		}
+	}
+	if len(fresh) == 0 && len(fc.HubProfiles) == 0 {
+		return nil, nil
+	}
 	l := s.hubs()
 	hubs, err := l.load()
 	if err != nil {
