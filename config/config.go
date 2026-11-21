@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 )
 
 // Character identifies a known EVE character by ID and display name, with
@@ -39,6 +40,10 @@ type Config struct {
 // Store reads and writes a Config to a fixed path on disk.
 type Store struct {
 	path string
+	// mu serializes writes, and Update's whole read-modify-write, so two
+	// writers in one process (a login page request and a tool call, say)
+	// neither lose each other's change nor share the temp file at once.
+	mu sync.Mutex
 }
 
 // NewStore resolves the default config path, ~/.neat/config.json.
@@ -82,6 +87,28 @@ func (s *Store) Load() (Config, error) {
 // Save writes cfg to disk atomically (temp file + rename), creating parent
 // directories as needed.
 func (s *Store) Save(cfg Config) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.save(cfg)
+}
+
+// Update loads the Config, applies change, and saves the result, holding
+// the Store's lock throughout so no other Update or Save interleaves. When
+// change returns an error, nothing is saved.
+func (s *Store) Update(change func(*Config) error) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cfg, err := s.Load()
+	if err != nil {
+		return err
+	}
+	if err := change(&cfg); err != nil {
+		return err
+	}
+	return s.save(cfg)
+}
+
+func (s *Store) save(cfg Config) error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
 		return fmt.Errorf("create config directory: %w", err)
 	}

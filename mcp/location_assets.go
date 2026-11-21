@@ -40,19 +40,28 @@ type ListLocationAssetsOutput struct {
 	Warnings     []string              `json:"warnings,omitempty"`
 }
 
-// allAssetPages walks every page of an owner's assets.
-func allAssetPages(fetch func(page int32) ([]AssetItem, int32, error)) ([]AssetItem, error) {
-	var all []AssetItem
+// allAssetPages walks every page of an owner's assets, up to maxAssetPages.
+// truncated reports that the owner has more pages than were read.
+func allAssetPages(fetch func(page int32) ([]AssetItem, int32, error)) (all []AssetItem, truncated bool, err error) {
 	for page := int32(1); ; page++ {
 		items, total, err := fetch(page)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		all = append(all, items...)
-		if page >= total || page >= maxAssetPages {
-			return all, nil
+		if page >= total {
+			return all, false, nil
+		}
+		if page >= maxAssetPages {
+			return all, true, nil
 		}
 	}
+}
+
+// truncatedWarning says an owner's listing stopped at maxAssetPages, so the
+// location's items and totals may be missing some of theirs.
+func truncatedWarning(owner string) string {
+	return fmt.Sprintf("%s has more than %d pages of assets; only the first %d were read, so items and totals here may be missing some of theirs", owner, maxAssetPages, maxAssetPages)
 }
 
 func listLocationAssetsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListLocationAssetsInput, ListLocationAssetsOutput] {
@@ -67,7 +76,15 @@ func listLocationAssetsHandler(version, clientID string, store *config.Store, sd
 		if err != nil {
 			return nil, ListLocationAssetsOutput{}, fmt.Errorf("load config: %w", err)
 		}
-		chars := in.CharacterIDs
+		// A character listed twice would have its assets read and counted twice.
+		var chars []int32
+		seenChar := map[int32]bool{}
+		for _, id := range in.CharacterIDs {
+			if !seenChar[id] {
+				seenChar[id] = true
+				chars = append(chars, id)
+			}
+		}
 		if len(chars) == 0 {
 			for _, c := range cfg.Characters {
 				chars = append(chars, c.ID)
@@ -88,23 +105,30 @@ func listLocationAssetsHandler(version, clientID string, store *config.Store, sd
 		var warnings []string
 		for _, id := range chars {
 			c, _ := cfg.Character(id)
-			assets, err := allAssetPages(func(page int32) ([]AssetItem, int32, error) {
+			assets, truncated, err := allAssetPages(func(page int32) ([]AssetItem, int32, error) {
 				return listAssets(ctx, clientID, id, ua, page)
 			})
 			if err != nil {
 				warnings = append(warnings, fmt.Sprintf("couldn't read %s's assets: %v", c.Name, err))
 				continue
 			}
+			if truncated {
+				warnings = append(warnings, truncatedWarning(c.Name))
+			}
 			owners = append(owners, owned{c.Name, assets})
 		}
 		if in.CorporationID != 0 {
-			assets, err := allAssetPages(func(page int32) ([]AssetItem, int32, error) {
+			assets, truncated, err := allAssetPages(func(page int32) ([]AssetItem, int32, error) {
 				return listCorporationAssets(ctx, clientID, in.CorporationCharacterID, ua, in.CorporationID, page)
 			})
 			if err != nil {
 				warnings = append(warnings, fmt.Sprintf("couldn't read corporation %d's assets: %v", in.CorporationID, err))
 			} else {
-				owners = append(owners, owned{fmt.Sprintf("corporation %d", in.CorporationID), assets})
+				owner := fmt.Sprintf("corporation %d", in.CorporationID)
+				if truncated {
+					warnings = append(warnings, truncatedWarning(owner))
+				}
+				owners = append(owners, owned{owner, assets})
 			}
 		}
 		if len(owners) == 0 {
@@ -113,11 +137,16 @@ func listLocationAssetsHandler(version, clientID string, store *config.Store, sd
 
 		var items []cargo.Item
 		out := ListLocationAssetsOutput{LocationID: in.LocationID, Warnings: warnings}
+		unknown := map[int64]bool{}
 		for _, o := range owners {
 			basics := enrichAssets(ctx, sdeStore, ua, o.assets)
 			before := len(items)
 			for _, a := range o.assets {
-				items = append(items, cargoItem(a, basics[a.TypeID], o.owner))
+				b, ok := basics[a.TypeID]
+				if !ok {
+					unknown[a.TypeID] = true
+				}
+				items = append(items, cargoItem(a, b, o.owner))
 			}
 			lines, _ := cargo.Inventory(items[before:], in.LocationID)
 			out.Sources = append(out.Sources, AssetSource{Owner: o.owner, Items: len(lines)})
@@ -125,6 +154,18 @@ func listLocationAssetsHandler(version, clientID string, store *config.Store, sd
 		out.Items, out.Totals = cargo.Inventory(items, in.LocationID)
 		if out.Items == nil {
 			out.Items = []cargo.InventoryLine{}
+		}
+		// A type the local SDE doesn't have has no volume, so it counts as
+		// 0 m³; say so rather than under-report the totals silently.
+		var missing []int64
+		for _, l := range out.Items {
+			if unknown[l.TypeID] {
+				missing = append(missing, l.TypeID)
+				delete(unknown, l.TypeID)
+			}
+		}
+		if len(missing) > 0 {
+			out.Warnings = append(out.Warnings, fmt.Sprintf("type IDs %v aren't in the local static data, so their volumes count as 0 m³ in these totals", missing))
 		}
 		if names := resolveStationNames(ctx, sdeStore, ua, []int64{in.LocationID}); names != nil {
 			out.LocationName = names[in.LocationID]

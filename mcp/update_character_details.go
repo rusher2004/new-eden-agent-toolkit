@@ -51,39 +51,41 @@ func updateCharacterDetailsHandler(store *config.Store) mcpsdk.ToolHandlerFor[Up
 		if in.Notes != nil && len(in.CharacterIDs) != 1 {
 			return nil, UpdateCharacterDetailsOutput{}, fmt.Errorf("update character details: notes belong to one character, but %d were given", len(in.CharacterIDs))
 		}
-		cfg, err := store.Load()
+		// Update holds the store's lock from load to save, so this can't
+		// race a login page's account change or a login being saved.
+		var cfg config.Config
+		before := map[int32]config.Character{}
+		err := store.Update(func(c *config.Config) error {
+			for _, ch := range c.Characters {
+				before[ch.ID] = ch
+			}
+			for _, id := range in.CharacterIDs {
+				if _, ok := before[id]; !ok {
+					return fmt.Errorf("update character %d: %w", id, ErrCharacterNotFound)
+				}
+			}
+			if r := in.RenameAccount; r != nil {
+				if _, err := c.RenameAccount(r.From, r.To); err != nil {
+					return fmt.Errorf("rename account: %w", err)
+				}
+			}
+			for _, id := range in.CharacterIDs {
+				if in.Account != nil {
+					if _, err := c.SetCharacterAccount(id, *in.Account); err != nil {
+						return fmt.Errorf("set account: %w", err)
+					}
+				}
+				if in.Notes != nil {
+					if _, err := c.SetCharacterNotes(id, *in.Notes); err != nil {
+						return fmt.Errorf("set notes: %w", err)
+					}
+				}
+			}
+			cfg = *c
+			return nil
+		})
 		if err != nil {
-			return nil, UpdateCharacterDetailsOutput{}, fmt.Errorf("load config: %w", err)
-		}
-		before := make(map[int32]config.Character, len(cfg.Characters))
-		for _, c := range cfg.Characters {
-			before[c.ID] = c
-		}
-		for _, id := range in.CharacterIDs {
-			if _, ok := before[id]; !ok {
-				return nil, UpdateCharacterDetailsOutput{}, fmt.Errorf("update character %d: %w", id, ErrCharacterNotFound)
-			}
-		}
-
-		if r := in.RenameAccount; r != nil {
-			if _, err := cfg.RenameAccount(r.From, r.To); err != nil {
-				return nil, UpdateCharacterDetailsOutput{}, fmt.Errorf("rename account: %w", err)
-			}
-		}
-		for _, id := range in.CharacterIDs {
-			if in.Account != nil {
-				if _, err := cfg.SetCharacterAccount(id, *in.Account); err != nil {
-					return nil, UpdateCharacterDetailsOutput{}, fmt.Errorf("set account: %w", err)
-				}
-			}
-			if in.Notes != nil {
-				if _, err := cfg.SetCharacterNotes(id, *in.Notes); err != nil {
-					return nil, UpdateCharacterDetailsOutput{}, fmt.Errorf("set notes: %w", err)
-				}
-			}
-		}
-		if err := store.Save(cfg); err != nil {
-			return nil, UpdateCharacterDetailsOutput{}, fmt.Errorf("save config: %w", err)
+			return nil, UpdateCharacterDetailsOutput{}, fmt.Errorf("update character details: %w", err)
 		}
 
 		out := UpdateCharacterDetailsOutput{Changes: []FieldChange{}, Characters: make([]CharacterInfo, 0, len(cfg.Characters)), Warnings: accountWarnings(cfg)}

@@ -148,7 +148,7 @@ func TestAccounts_PageGroupsCharactersAndMovesThem(t *testing.T) {
 		t.Errorf("new character is in %q, want unassigned (the character before it was saved earlier, not logged in this session)", g)
 	}
 
-	resp := s.postForm("/account/set", url.Values{"token": {token}, "id": {"998877"}, "account": {"__new__"}, "new_account": {"  Alt   account "}})
+	resp := s.postForm("/account/set", url.Values{"token": {token}, "id": {"998877"}, "account": {"new"}, "new_account": {"  Alt   account "}})
 	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/" {
 		t.Fatalf("POST /account/set = %d to %q", resp.StatusCode, resp.Header.Get("Location"))
 	}
@@ -160,7 +160,7 @@ func TestAccounts_PageGroupsCharactersAndMovesThem(t *testing.T) {
 		t.Error("page doesn't confirm the move")
 	}
 
-	s.postForm("/account/set", url.Values{"token": {token}, "id": {"998877"}, "account": {"Main account"}})
+	s.postForm("/account/set", url.Values{"token": {token}, "id": {"998877"}, "account": {"existing:Main account"}})
 	if got := book.account(998877); got != "Main account" {
 		t.Errorf("after moving to an existing account = %q", got)
 	}
@@ -171,7 +171,7 @@ func TestAccounts_SuggestsPreviousLoginsAccountUntilConfirmed(t *testing.T) {
 	s := startAccountSession(t, book)
 	s.callback("char-998877", s.state())
 	_, token := s.page()
-	s.postForm("/account/set", url.Values{"token": {token}, "id": {"998877"}, "account": {"__new__"}, "new_account": {"Main"}})
+	s.postForm("/account/set", url.Values{"token": {token}, "id": {"998877"}, "account": {"new"}, "new_account": {"Main"}})
 
 	s.callback("char-998878", s.addAnother(token))
 	body, token := s.page()
@@ -185,7 +185,7 @@ func TestAccounts_SuggestsPreviousLoginsAccountUntilConfirmed(t *testing.T) {
 		t.Errorf("a suggestion was saved before it was confirmed: %q", got)
 	}
 
-	s.postForm("/account/set", url.Values{"token": {token}, "id": {"998878"}, "account": {"Main"}})
+	s.postForm("/account/set", url.Values{"token": {token}, "id": {"998878"}, "account": {"existing:Main"}})
 	if got := book.account(998878); got != "Main" {
 		t.Errorf("confirmed account = %q", got)
 	}
@@ -199,11 +199,11 @@ func TestAccounts_DecliningSuggestionKeepsItUnassigned(t *testing.T) {
 	s := startAccountSession(t, book)
 	s.callback("char-998877", s.state())
 	_, token := s.page()
-	s.postForm("/account/set", url.Values{"token": {token}, "id": {"998877"}, "account": {"__new__"}, "new_account": {"Main"}})
+	s.postForm("/account/set", url.Values{"token": {token}, "id": {"998877"}, "account": {"new"}, "new_account": {"Main"}})
 	s.callback("char-998878", s.addAnother(token))
 	_, token = s.page()
 
-	s.postForm("/account/set", url.Values{"token": {token}, "id": {"998878"}, "account": {""}})
+	s.postForm("/account/set", url.Values{"token": {token}, "id": {"998878"}, "account": {"none"}})
 	body, _ := s.page()
 	if g := groupOf(body, "998878"); g != "Not assigned to an account" || strings.Contains(body, ">Same account</button>") {
 		t.Errorf("after declining, character is in %q and suggested=%v", g, strings.Contains(body, ">Same account</button>"))
@@ -234,7 +234,7 @@ func TestAccounts_ErrorsShownOnPage(t *testing.T) {
 	s := startAccountSession(t, book)
 	_, token := s.page()
 
-	s.postForm("/account/set", url.Values{"token": {token}, "id": {"1"}, "account": {"__new__"}, "new_account": {"  "}})
+	s.postForm("/account/set", url.Values{"token": {token}, "id": {"1"}, "account": {"new"}, "new_account": {"  "}})
 	if body, _ := s.page(); !strings.Contains(body, "Type a name for the new account.") {
 		t.Error("an empty new account name isn't reported")
 	}
@@ -242,7 +242,7 @@ func TestAccounts_ErrorsShownOnPage(t *testing.T) {
 	if body, _ := s.page(); !strings.Contains(body, "couldn&#39;t rename Nobody") {
 		t.Error("a failed rename isn't reported")
 	}
-	if resp := s.postForm("/account/set", url.Values{"token": {token}, "id": {"424242"}, "account": {"X"}}); resp.StatusCode != http.StatusBadRequest {
+	if resp := s.postForm("/account/set", url.Values{"token": {token}, "id": {"424242"}, "account": {"existing:X"}}); resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("a character not on the page = %d, want 400", resp.StatusCode)
 	}
 }
@@ -260,6 +260,20 @@ func TestAccounts_RequireToken(t *testing.T) {
 	}
 }
 
+func TestAccounts_LabelNamedLikeAChoiceIsAnOrdinaryAccount(t *testing.T) {
+	for _, label := range []string{"new", "none", "__new__", "existing:x"} {
+		t.Run(label, func(t *testing.T) {
+			book := &accountBook{chars: []sso.Character{{ID: 1, Name: "Main", Account: label}, {ID: 2, Name: "Alt"}}}
+			s := startAccountSession(t, book)
+			_, token := s.page()
+			s.postForm("/account/set", url.Values{"token": {token}, "id": {"2"}, "account": {"existing:" + label}})
+			if got := book.account(2); got != label {
+				t.Errorf("Alt's account = %q, want %q", got, label)
+			}
+		})
+	}
+}
+
 func TestAccounts_NoControlsWithoutEditor(t *testing.T) {
 	s := startSession(t, context.Background(), pilots(), "test-agent")
 	s.callback("char-998877", s.state())
@@ -267,7 +281,7 @@ func TestAccounts_NoControlsWithoutEditor(t *testing.T) {
 	if strings.Contains(body, `action="/account/set"`) || strings.Contains(body, "Not assigned to an account") {
 		t.Error("account controls shown without an AccountEditor")
 	}
-	if resp := s.postForm("/account/set", url.Values{"token": {token}, "id": {"998877"}, "account": {"X"}}); resp.StatusCode != http.StatusNotFound {
+	if resp := s.postForm("/account/set", url.Values{"token": {token}, "id": {"998877"}, "account": {"existing:X"}}); resp.StatusCode != http.StatusNotFound {
 		t.Errorf("POST /account/set without an editor = %d, want 404", resp.StatusCode)
 	}
 }
