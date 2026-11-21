@@ -29,3 +29,44 @@ var securityColors = [11]string{
 }
 
 const securityColorNull = "#8D3163"
+
+// Clone jump cooldown: 24 hours, less one hour per level of Infomorph
+// Synchronizing. Source: EVE University, Jump clones; the skill's own
+// description gives the hour per level ("Reduced time between clone jumps
+// by 1 hour per level").
+const (
+	cloneJumpBaseHours     = 24
+	cloneJumpHoursPerLevel = 1
+)
+
+// Skills behind clone jumps, cynos and conduits. Type IDs checked against
+// the SDE 2026-11-20.
+const (
+	SkillInfomorphSynchronizing      int64 = 33399
+	SkillInfomorphPsychology         int64 = 24242
+	SkillAdvancedInfomorphPsychology int64 = 33407
+	SkillEliteInfomorphPsychology    int64 = 73910
+	// SkillCapitalJumpPortalGeneration lets a carrier, supercarrier or
+	// command carrier make a conduit jump. The SDE ties it to those hulls
+	// only through their jumpPortalPassengerBonusModAddSkill effect, not as
+	// a required skill. Source: the skill's description ("the number of ships
+	// that can be moved with a capital ship conduit jump").
+	SkillCapitalJumpPortalGeneration int64 = 83094
+)
+
+// CapitalConduitEffect is the dogma effect that marks hulls with a built-in
+// conduit jump.
+const CapitalConduitEffect = "jumpPortalPassengerBonusModAddSkill"
+
+// Generators behind cynos, bridges and conduits. The covert and industrial
+// jump portal generators do both bridges and conduit jumps; the titan's
+// does bridges only. Source: EVE University, Jump portal generators and
+// Conduit jumps. Type IDs checked against the SDE 2026-11-20.
+const (
+	StandardCynoGenerator   int64 = 21096 // Cynosural Field Generator I
+	IndustrialCynoGenerator int64 = 52694 // Industrial Cynosural Field Generator
+	CovertCynoGenerator     int64 = 28646 // Covert Cynosural Field Generator I
+	CovertPortalGenerator   int64 = 28652 // Covert Jump Portal Generator I
+	IndustrialPortalGen     int64 = 63140 // Industrial Jump Portal Generator I
+	TitanPortalGenerator    int64 = 23953 // Jump Portal Generator I
+)

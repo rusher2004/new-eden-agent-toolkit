@@ -1,5 +1,9 @@
 # neat plugin — changelog
 
+## 0.14.0
+- New `list_character_capabilities` shows what each of your characters can do in moving ships and cargo, worked out from their skills and the game's own data: which cynos they can light (standard, industrial, covert) and on which ships they can fly, which jump bridges and conduit jumps they can open, and which haulers, jump freighters and capitals they can fly. Claude uses it to pick pilots and cyno alts instead of guessing from skill lists.
+- New `list_jump_clones` shows every character's jump clones and their implants, their home station, how many jump clones their skills allow, and when each can next clone jump.
+
 ## 0.13.0
 - Trade hubs now live in `~/.neat/hubs.yaml`, which you can edit, and neat starts it with the five NPC hubs (Jita, Amarr, Dodixie, Hek, Rens), the two player markets in Perimeter and the Amamake Keepstar, the lowsec hub where capitals trade. Delete any you don't use and they stay deleted. Hubs you saved before come first, so your default doesn't change.
 - New `validate_trade_hub` measures a hub on live data and records the result with its date: how many of 24 everyday goods it has for sale, its sell and buy order counts, and optionally its public contracts by value with the capital ships on offer. Hubs not checked in the last 30 days are marked stale.
