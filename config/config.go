@@ -7,9 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 )
@@ -50,8 +50,11 @@ type fileConfig struct {
 	Characters        []Character         `json:"characters,omitempty"`
 	FacilityProfiles  []FacilityProfile   `json:"facilityProfiles,omitempty"`
 	HaulProfiles      []legacyHaulProfile `json:"haulProfiles,omitempty"`
-	HubProfiles       []HubProfile        `json:"hubProfiles,omitempty"`
+	HubProfiles       []legacyHub         `json:"hubProfiles,omitempty"`
 	AnalyticsDisabled bool                `json:"analyticsDisabled,omitempty"`
+	// OfferedHubIDs are the built-in hubs already added to hubs.yaml, so a
+	// hub the user deleted isn't added back.
+	OfferedHubIDs []int64 `json:"offeredHubIds,omitempty"`
 }
 
 // legacyHaulProfile is a haul profile as config.json held it, with its
@@ -117,6 +120,12 @@ uses: what you use it for. clone_bay: yes, no or unknown, and how that's known (
   jump clone there; user: you checked in game). notes: anything else worth knowing when planning.`}
 }
 
+func (s *Store) hubs() yamlList[HubProfile] {
+	return yamlList[HubProfile]{path: s.file("hubs.yaml"), key: hubKey, header: `Trade hubs to buy and sell at. neat keeps this file up to date, and you can edit it too.
+neat starts it with the main hubs; delete any you don't use and they stay deleted. The first hub is the default.
+validation is measured by neat on ESI data (validate_trade_hub). Structure hubs need a character with docking access (read_via).`}
+}
+
 func (s *Store) routes() yamlList[Route] {
 	return yamlList[Route]{path: s.file("routes.yaml"), key: func(r Route) string { return strings.ToLower(r.Name) }, header: `Saved jump routes, by name: the systems in order. neat keeps this file up to date, and you can edit it too.
 notes: why the route goes the way it does, for whoever plans with it next.`}
@@ -136,7 +145,11 @@ func (s *Store) Load() (Config, error) {
 			return Config{}, err
 		}
 	}
-	cfg := Config{HubProfiles: fc.HubProfiles, AnalyticsDisabled: fc.AnalyticsDisabled}
+	seeded, err := s.seedHubs(fc)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg := Config{AnalyticsDisabled: fc.AnalyticsDisabled}
 	if cfg.Characters, err = s.characters().load(); err != nil {
 		return Config{}, err
 	}
@@ -150,6 +163,11 @@ func (s *Store) Load() (Config, error) {
 		return Config{}, err
 	}
 	if cfg.Structures, err = s.structures().load(); err != nil {
+		return Config{}, err
+	}
+	if seeded != nil {
+		cfg.HubProfiles = seeded
+	} else if cfg.HubProfiles, err = s.hubs().load(); err != nil {
 		return Config{}, err
 	}
 	return cfg, nil
@@ -255,6 +273,7 @@ func (s *Store) SaveChanges(cfg Config) ([]Change, error) {
 		func() ([]Change, error) { return s.haulProfiles().sync(cfg.HaulProfiles) },
 		func() ([]Change, error) { return s.routes().sync(cfg.Routes) },
 		func() ([]Change, error) { return s.structures().sync(cfg.Structures) },
+		func() ([]Change, error) { return s.hubs().sync(cfg.HubProfiles) },
 	} {
 		c, err := sync()
 		if err != nil {
@@ -272,13 +291,66 @@ func (s *Store) saveFile(cfg Config) error {
 	if err != nil {
 		return err
 	}
-	if fc.AnalyticsDisabled == cfg.AnalyticsDisabled && slices.Equal(fc.HubProfiles, cfg.HubProfiles) && len(fc.Characters)+len(fc.FacilityProfiles)+len(fc.HaulProfiles) == 0 {
-		if _, err := os.Stat(s.path); err == nil {
-			return nil
+	if _, err := os.Stat(s.path); err == nil && fc.AnalyticsDisabled == cfg.AnalyticsDisabled &&
+		len(fc.Characters)+len(fc.FacilityProfiles)+len(fc.HaulProfiles)+len(fc.HubProfiles) == 0 {
+		return nil
+	}
+	return s.writeFile(fileConfig{AnalyticsDisabled: cfg.AnalyticsDisabled, OfferedHubIDs: fc.OfferedHubIDs})
+}
+
+// seedHubs starts hubs.yaml with the built-in hubs and any hub profiles
+// config.json had, and adds built-in hubs a later neat release introduced.
+// A built-in hub is offered once: if the user deletes it, it stays deleted.
+// It returns the hubs when it changed them, or nil when there was nothing
+// to do. Failing to write is not an error, since loading must work even
+// where neat can't write: the hubs are returned anyway, and the next load
+// tries again.
+func (s *Store) seedHubs(fc fileConfig) ([]HubProfile, error) {
+	offered := map[int64]bool{}
+	for _, id := range fc.OfferedHubIDs {
+		offered[id] = true
+	}
+	var fresh []HubProfile
+	for _, h := range BuiltinHubs {
+		if !offered[h.StationID] {
+			fresh = append(fresh, h)
 		}
 	}
-	fc = fileConfig{HubProfiles: cfg.HubProfiles, AnalyticsDisabled: cfg.AnalyticsDisabled}
-	return s.writeFile(fc)
+	if len(fresh) == 0 && len(fc.HubProfiles) == 0 {
+		return nil, nil
+	}
+	unlock := lockFile(s.path)
+	defer unlock()
+	l := s.hubs()
+	hubs, err := l.load()
+	if err != nil {
+		return nil, err
+	}
+	if _, err := os.Stat(l.path); errors.Is(err, os.ErrNotExist) {
+		// Hubs the user saved before come first, so the default stays theirs.
+		for _, lh := range fc.HubProfiles {
+			hubs = append(hubs, lh.hub())
+		}
+	}
+	have := map[int64]bool{}
+	for _, h := range hubs {
+		have[h.StationID] = true
+	}
+	for _, h := range fresh {
+		if !have[h.StationID] {
+			hubs = append(hubs, h)
+		}
+		fc.OfferedHubIDs = append(fc.OfferedHubIDs, h.StationID)
+	}
+	if _, err := l.sync(hubs); err != nil {
+		slog.Default().Warn("config: couldn't write hubs.yaml; using the built-in hubs in memory and trying again next time", "error", err)
+		return hubs, nil
+	}
+	fc.HubProfiles = nil
+	if err := s.writeFile(fc); err != nil {
+		slog.Default().Warn("config: couldn't record the built-in hubs added to hubs.yaml in config.json", "error", err)
+	}
+	return hubs, nil
 }
 
 // writeFile writes config.json atomically (temp file + rename), creating

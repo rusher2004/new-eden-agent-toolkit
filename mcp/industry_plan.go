@@ -126,6 +126,9 @@ func planBuildHandler(version, clientID string, store *config.Store, sdeStore *s
 
 func (p *planner) planBuild(ctx context.Context, in PlanBuildInput) (PlanBuildOutput, error) {
 	var out PlanBuildOutput
+	if p.marketCharacter == 0 {
+		p.marketCharacter = in.CharacterID
+	}
 	pid, err := p.resolveType(ctx, in.Product)
 	if err != nil {
 		return out, err
@@ -360,7 +363,7 @@ func (p *planner) planBuild(ctx context.Context, in PlanBuildInput) (PlanBuildOu
 			bookIDs = append(bookIDs, m.TypeID)
 		}
 	}
-	books, err := p.sellBooks(ctx, hub.RegionID, bookIDs)
+	books, err := p.hubBooks(ctx, hub, bookIDs)
 	if err != nil {
 		return out, err
 	}

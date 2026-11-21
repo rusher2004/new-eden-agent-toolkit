@@ -3,7 +3,6 @@ package mcp
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
@@ -11,45 +10,6 @@ import (
 	"github.com/rusher2004/new-eden-agent-toolkit/market"
 	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 )
-
-type SaveHubProfileInput struct {
-	Name      string `json:"name"`
-	RegionID  int64  `json:"regionId" jsonschema:"region whose market to read, e.g. 10000002 for The Forge"`
-	StationID int64  `json:"stationId" jsonschema:"station or structure orders must be at, e.g. 60003760 for Jita 4-4"`
-}
-
-type ListHubProfilesOutput struct {
-	Profiles []config.HubProfile `json:"profiles"`
-	Default  config.HubProfile   `json:"default"`
-}
-
-func saveHubProfileHandler(store *config.Store) mcpsdk.ToolHandlerFor[SaveHubProfileInput, config.HubProfile] {
-	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in SaveHubProfileInput) (*mcpsdk.CallToolResult, config.HubProfile, error) {
-		if strings.TrimSpace(in.Name) == "" || in.RegionID == 0 || in.StationID == 0 {
-			return nil, config.HubProfile{}, fmt.Errorf("save hub profile: name, regionId and stationId are required")
-		}
-		cfg, err := store.Load()
-		if err != nil {
-			return nil, config.HubProfile{}, err
-		}
-		h := config.HubProfile{Name: strings.TrimSpace(in.Name), RegionID: in.RegionID, StationID: in.StationID}
-		cfg.UpsertHubProfile(h)
-		if err := store.Save(cfg); err != nil {
-			return nil, config.HubProfile{}, err
-		}
-		return nil, h, nil
-	}
-}
-
-func listHubProfilesHandler(store *config.Store) mcpsdk.ToolHandlerFor[struct{}, ListHubProfilesOutput] {
-	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, _ struct{}) (*mcpsdk.CallToolResult, ListHubProfilesOutput, error) {
-		cfg, err := store.Load()
-		if err != nil {
-			return nil, ListHubProfilesOutput{}, err
-		}
-		return nil, ListHubProfilesOutput{Profiles: cfg.HubProfiles, Default: config.DefaultHub}, nil
-	}
-}
 
 // ItemInput names an item by name or type ID, with a quantity.
 type ItemInput struct {
@@ -127,7 +87,7 @@ func (p *planner) quote(ctx context.Context, hub config.HubProfile, items []indu
 	}
 	if books == nil {
 		var err error
-		if books, err = p.sellBooks(ctx, hub.RegionID, ids); err != nil {
+		if books, err = p.hubBooks(ctx, hub, ids); err != nil {
 			return nil, err
 		}
 	}
@@ -154,8 +114,9 @@ func multibuyOf(lines []QuoteLine) string {
 }
 
 type QuoteMarketPurchaseInput struct {
-	Items []ItemInput `json:"items"`
-	Hub   string      `json:"hub,omitempty" jsonschema:"hub profile name; default Jita 4-4"`
+	Items       []ItemInput `json:"items"`
+	Hub         string      `json:"hub,omitempty" jsonschema:"hub name or ID from list_hub_profiles; default the first hub, normally Jita 4-4"`
+	CharacterID int32       `json:"characterId,omitempty" jsonschema:"for a structure hub: a logged-in character with docking access to read its market; defaults to the character that last read it"`
 }
 
 type QuoteMarketPurchaseOutput struct {
@@ -169,6 +130,7 @@ type QuoteMarketPurchaseOutput struct {
 func quoteMarketPurchaseHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[QuoteMarketPurchaseInput, QuoteMarketPurchaseOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in QuoteMarketPurchaseInput) (*mcpsdk.CallToolResult, QuoteMarketPurchaseOutput, error) {
 		p := newPlanner(version, clientID, store, sdeStore)
+		p.marketCharacter = in.CharacterID
 		hub, err := p.hub(in.Hub)
 		if err != nil {
 			return nil, QuoteMarketPurchaseOutput{}, err

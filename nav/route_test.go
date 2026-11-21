@@ -190,3 +190,16 @@ func TestSuggestion_ExpandsConstellations(t *testing.T) {
 		t.Errorf("label doesn't flag sov preferences: %s", link.Label)
 	}
 }
+
+func TestGateJumps(t *testing.T) {
+	g := nav.NewRouteGraph(realSystems(), gatesToJita)
+	if got := g.GateJumps(30000163, 30000142); got != 2 {
+		t.Errorf("Akora to Jita = %d, want 2", got)
+	}
+	if got := g.GateJumps(30000142, 30000142); got != 0 {
+		t.Errorf("Jita to Jita = %d, want 0", got)
+	}
+	if got := g.GateJumps(30000142, 30001324); got != -1 {
+		t.Errorf("Jita to PF-QHK with no gates = %d, want -1", got)
+	}
+}

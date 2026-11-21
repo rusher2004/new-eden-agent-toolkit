@@ -127,8 +127,8 @@ neat sends Aptabase anonymous usage statistics so the project can count its mont
 
 ## Where neat keeps things
 
-- `~/.neat/characters.yaml`, `facilities.yaml`, `haul_profiles.yaml`, `routes.yaml` and `structures.yaml`: your logged-in characters (with the account labels and notes you gave them), saved facilities, haul profiles, jump routes, and the stations and structures you work from (what you use each for, whether it has a clone bay, and your notes). neat keeps these up to date, and you can open and edit them too: change a value, add notes, or add comments with `#`. neat changes only the fields it has a reason to and leaves the rest of the file, including your comments, alone. If you break a file's YAML, neat says which line and won't touch it until it's fixed.
-- `~/.neat/config.json`: neat's own settings, such as whether you turned the usage statistics off, and your trade hub profiles
+- `~/.neat/characters.yaml`, `facilities.yaml`, `haul_profiles.yaml`, `routes.yaml`, `structures.yaml` and `hubs.yaml`: your logged-in characters (with the account labels and notes you gave them), saved facilities, haul profiles, jump routes, the stations and structures you work from (what you use each for, whether it has a clone bay, and your notes), and the trade hubs you buy at. `hubs.yaml` starts with the main hubs; delete any you don't use and they stay deleted. neat keeps these up to date, and you can open and edit them too: change a value, add notes, or add comments with `#`. neat changes only the fields it has a reason to and leaves the rest of the file, including your comments, alone. If you break a file's YAML, neat says which line and won't touch it until it's fixed.
+- `~/.neat/config.json`: neat's own settings, such as whether you turned the usage statistics off
 - `~/.neat/sde/`: a local copy of EVE's static game data (about 500 MB), downloaded the first time it's needed and refreshed when FC publishes a new one
 - `~/.neat/plans/`: build plans you've asked for
 - `~/.neat/analytics.json`: the random monthly ID for the anonymous usage statistics, unless you turned them off

@@ -12,7 +12,7 @@ func TestProfiles_RoundTripKeepsCharacters(t *testing.T) {
 	cfg := config.Config{Characters: []config.Character{{ID: 1, Name: "Test Pilot"}}}
 	cfg.UpsertFacilityProfile(config.FacilityProfile{Name: "Home Sotiyo", Kind: "upwell", StructureType: 35827, SystemID: 30001324, RigTypeIDs: []int64{37180, 43704}, Services: []string{"manufacturing", "capital_shipyard"}})
 	cfg.UpsertHaulProfile(config.HaulProfile{Name: "JF Nomad", ShipTypeID: 28846, PilotID: 90000001, HoldM3: 158400, Prefs: config.RoutePrefs{Optimize: "fuel", AvoidSystems: []int64{30005196}}})
-	cfg.UpsertHubProfile(config.HubProfile{Name: "Jita 4-4", RegionID: 10000002, StationID: 60003760})
+	cfg.UpsertHubProfile(config.HubProfile{Name: "My Jita", Region: config.NamedID{ID: 10000002}, StationID: 60003760})
 	if err := store.Save(cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -20,7 +20,7 @@ func TestProfiles_RoundTripKeepsCharacters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got.Characters) != 1 || len(got.FacilityProfiles) != 1 || len(got.HaulProfiles) != 1 || len(got.HubProfiles) != 1 {
+	if len(got.Characters) != 1 || len(got.FacilityProfiles) != 1 || len(got.HaulProfiles) != 1 || len(got.HubProfiles) != len(config.BuiltinHubs) || got.HubProfiles[0].Name != "My Jita" {
 		t.Fatalf("loaded = %+v", got)
 	}
 	p, ok := got.FacilityProfile("home sotiyo")
