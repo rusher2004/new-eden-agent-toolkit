@@ -251,13 +251,15 @@ func saveHaulProfileHandler(version, clientID string, store *config.Store, sdeSt
 			}
 			if in.Ship == "" {
 				in.Ship = resolved.hullName
+			} else if !strings.EqualFold(strings.TrimSpace(in.Ship), resolved.hullName) {
+				return nil, config.HaulProfile{}, fmt.Errorf("save haul profile: ship %q doesn't match shipItemId %d, which is a %s", in.Ship, in.ShipItemID, resolved.hullName)
 			}
 			if in.HoldM3 <= 0 {
-				hold, _, err := p.shipHold(ctx, resolved, int32(in.PilotID))
+				_, f, err := p.shipHold(ctx, resolved, int32(in.PilotID))
 				if err != nil {
 					return nil, config.HaulProfile{}, fmt.Errorf("save haul profile: %w", err)
 				}
-				in.HoldM3 = hold.Holds[0].FittedM3
+				in.HoldM3 = f.ShipAttr(sde.AttrCapacity)
 			}
 		}
 		if in.HoldM3 <= 0 || in.Ship == "" {
@@ -276,48 +278,50 @@ func saveHaulProfileHandler(version, clientID string, store *config.Store, sdeSt
 			return nil, config.HaulProfile{}, fmt.Errorf("save haul profile: %w", err)
 		}
 		prof := config.HaulProfile{Name: strings.TrimSpace(in.Name), ShipTypeID: ship, ShipName: p.typeName(ctx, ship), PilotID: in.PilotID, HoldM3: in.HoldM3, Prefs: prefs}
-		cfg, err := store.Load()
-		if err != nil {
-			return nil, config.HaulProfile{}, err
-		}
-		if c, ok := cfg.Character(int32(in.PilotID)); ok {
-			prof.PilotName = c.Name
-		}
-		if old, ok := cfg.HaulProfile(prof.Name); ok {
-			prof.Name, prof.Notes = old.Name, old.Notes
-		}
-		if in.Notes != nil {
-			prof.Notes = strings.TrimSpace(*in.Notes)
-		}
-		pin := func(systems []string, named, suffix string) (string, error) {
-			if len(systems) > 0 {
-				r, err := p.namedRoute(ctx, prof.Name+" "+suffix, systems)
-				if err != nil {
-					return "", err
+		if _, err := store.Update(func(cfg *config.Config) error {
+			if c, ok := cfg.Character(int32(in.PilotID)); ok {
+				prof.PilotName = c.Name
+			}
+			if old, ok := cfg.HaulProfile(prof.Name); ok {
+				prof.Name, prof.Notes = old.Name, old.Notes
+			}
+			if in.Notes != nil {
+				prof.Notes = strings.TrimSpace(*in.Notes)
+			}
+			pin := func(systems []string, named, suffix string) (string, error) {
+				if len(systems) > 0 && named != "" {
+					return "", fmt.Errorf("give %s systems or a saved %s route by name, not both", suffix, suffix)
 				}
-				if old, ok := cfg.Route(r.Name); ok {
-					r.ShipClass, r.Notes = old.ShipClass, old.Notes
+				if len(systems) > 0 {
+					r, err := p.namedRoute(ctx, prof.Name+" "+suffix, systems)
+					if err != nil {
+						return "", err
+					}
+					if old, ok := cfg.Route(r.Name); ok {
+						r.ShipClass, r.Notes = old.ShipClass, old.Notes
+					}
+					cfg.UpsertRoute(r)
+					return r.Name, nil
 				}
-				cfg.UpsertRoute(r)
+				if named == "" {
+					return "", nil
+				}
+				r, ok := cfg.Route(named)
+				if !ok {
+					return "", fmt.Errorf("no saved route named %q; save it with save_route first", named)
+				}
 				return r.Name, nil
 			}
-			if named == "" {
-				return "", nil
+			var err error
+			if prof.OutboundRoute, err = pin(in.Outbound, in.OutboundRoute, "outbound"); err != nil {
+				return fmt.Errorf("save haul profile: %w", err)
 			}
-			r, ok := cfg.Route(named)
-			if !ok {
-				return "", fmt.Errorf("no saved route named %q; save it with save_route first", named)
+			if prof.ReturnRoute, err = pin(in.Return, in.ReturnRoute, "return"); err != nil {
+				return fmt.Errorf("save haul profile: %w", err)
 			}
-			return r.Name, nil
-		}
-		if prof.OutboundRoute, err = pin(in.Outbound, in.OutboundRoute, "outbound"); err != nil {
-			return nil, config.HaulProfile{}, fmt.Errorf("save haul profile: %w", err)
-		}
-		if prof.ReturnRoute, err = pin(in.Return, in.ReturnRoute, "return"); err != nil {
-			return nil, config.HaulProfile{}, fmt.Errorf("save haul profile: %w", err)
-		}
-		cfg.UpsertHaulProfile(prof)
-		if err := store.Save(cfg); err != nil {
+			cfg.UpsertHaulProfile(prof)
+			return nil
+		}); err != nil {
 			return nil, config.HaulProfile{}, err
 		}
 		return nil, prof, nil
@@ -338,7 +342,7 @@ func listHaulProfilesHandler(store *config.Store) mcpsdk.ToolHandlerFor[struct{}
 	}
 }
 
-// --- hub profiles ---
+// --- routing ---
 
 type PlanJumpRouteInput struct {
 	HaulProfile string           `json:"haulProfile" jsonschema:"haul profile name (ship, pilot and saved preferences)"`
@@ -586,18 +590,27 @@ func (p *planner) haulPlanWith(ctx context.Context, profs []config.HaulProfile, 
 		return out, err
 	}
 	var pinnedOut, pinnedBack []int64
-	if r, ok := cfg.Route(prof.OutboundRoute); ok && prof.OutboundRoute != "" {
-		pinnedOut = r.SystemIDs()
+	var missing []string
+	savedRoute := func(name string) []int64 {
+		if name == "" {
+			return nil
+		}
+		r, ok := cfg.Route(name)
+		if !ok {
+			// Deleted with delete_route, or renamed in routes.yaml.
+			missing = append(missing, fmt.Sprintf("haul profile %q pins the route %q, which isn't saved any more, so a route was searched instead", prof.Name, name))
+			return nil
+		}
+		return r.SystemIDs()
 	}
-	if r, ok := cfg.Route(prof.ReturnRoute); ok && prof.ReturnRoute != "" {
-		pinnedBack = r.SystemIDs()
-	}
+	pinnedOut = savedRoute(prof.OutboundRoute)
+	pinnedBack = savedRoute(prof.ReturnRoute)
 	outbound := pinnedRoute(pinnedOut, from, to)
 	outR, g, req, err := p.planRoute(ctx, prof, from, to, outbound, nil)
 	if err != nil {
 		return out, fmt.Errorf("outbound route: %w", err)
 	}
-	out.Route, out.Notes = outR.Routes[0], outR.Notes
+	out.Route, out.Notes = outR.Routes[0], append(outR.Notes, missing...)
 	if len(pinnedOut) > 0 && outbound == nil {
 		out.Notes = append(out.Notes, fmt.Sprintf("haul profile %q's pinned outbound route doesn't run from %s to %s, so a route was searched instead", prof.Name, g.Systems[from].Name, g.Systems[to].Name))
 	}
@@ -852,21 +865,19 @@ func saveRouteHandler(version, clientID string, store *config.Store, sdeStore *s
 			return nil, SaveRouteOutput{}, fmt.Errorf("save route: %w", err)
 		}
 		r.ShipClass = strings.TrimSpace(in.ShipClass)
-		cfg, err := store.Load()
-		if err != nil {
-			return nil, SaveRouteOutput{}, err
-		}
-		if old, ok := cfg.Route(r.Name); ok {
-			r.Name, r.Notes = old.Name, old.Notes
-			if r.ShipClass == "" {
-				r.ShipClass = old.ShipClass
+		changes, err := store.Update(func(cfg *config.Config) error {
+			if old, ok := cfg.Route(r.Name); ok {
+				r.Name, r.Notes = old.Name, old.Notes
+				if r.ShipClass == "" {
+					r.ShipClass = old.ShipClass
+				}
 			}
-		}
-		if in.Notes != nil {
-			r.Notes = strings.TrimSpace(*in.Notes)
-		}
-		cfg.UpsertRoute(r)
-		changes, err := store.SaveChanges(cfg)
+			if in.Notes != nil {
+				r.Notes = strings.TrimSpace(*in.Notes)
+			}
+			cfg.UpsertRoute(r)
+			return nil
+		})
 		if err != nil {
 			return nil, SaveRouteOutput{}, err
 		}

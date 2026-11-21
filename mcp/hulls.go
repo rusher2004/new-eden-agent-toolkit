@@ -83,7 +83,7 @@ func compareHaulHullsHandler(version, clientID string, store *config.Store, sdeS
 		p := newPlanner(version, clientID, store, sdeStore)
 		classTypes, err := sdeStore.PublishedTypesInGroups(ctx, p.ua(), hullClassGroups)
 		if err != nil {
-			return nil, CompareHaulHullsOutput{}, err
+			return nil, CompareHaulHullsOutput{}, fmt.Errorf("hull classes: %w", err)
 		}
 		var types []sde.TypeBasic
 		if len(in.Classes) == 0 && len(in.Hulls) == 0 {
@@ -107,12 +107,16 @@ func compareHaulHullsHandler(version, clientID string, store *config.Store, sdeS
 			}
 		}
 		if len(in.Hulls) > 0 {
-			ids, err := sdeStore.TypesByName(ctx, p.ua(), in.Hulls)
+			names := make([]string, len(in.Hulls))
+			for i, h := range in.Hulls {
+				names[i] = strings.TrimSpace(h)
+			}
+			ids, err := sdeStore.TypesByName(ctx, p.ua(), names)
 			if err != nil {
-				return nil, CompareHaulHullsOutput{}, err
+				return nil, CompareHaulHullsOutput{}, fmt.Errorf("hulls by name: %w", err)
 			}
 			var want []int64
-			for _, h := range in.Hulls {
+			for _, h := range names {
 				id, ok := ids[h]
 				if !ok {
 					return nil, CompareHaulHullsOutput{}, fmt.Errorf("unknown hull %q", h)
@@ -121,7 +125,7 @@ func compareHaulHullsHandler(version, clientID string, store *config.Store, sdeS
 			}
 			basics, err := p.typeBasics(ctx, want)
 			if err != nil {
-				return nil, CompareHaulHullsOutput{}, err
+				return nil, CompareHaulHullsOutput{}, fmt.Errorf("hull types: %w", err)
 			}
 			for _, id := range want {
 				if b := basics[id]; b.CategoryID != shipCategoryID {
@@ -131,6 +135,15 @@ func compareHaulHullsHandler(version, clientID string, store *config.Store, sdeS
 				}
 			}
 		}
+
+		// A hull named twice, or both by name and in a named class, is
+		// compared once.
+		seen := map[int64]bool{}
+		types = slices.DeleteFunc(types, func(t sde.TypeBasic) bool {
+			dup := seen[t.TypeID]
+			seen[t.TypeID] = true
+			return dup
+		})
 
 		var skills map[int64]int
 		if in.PilotID != 0 {

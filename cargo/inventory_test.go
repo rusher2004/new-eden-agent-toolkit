@@ -126,3 +126,18 @@ func TestInventory_ShipInMaintenanceBay(t *testing.T) {
 		t.Errorf("totals = %+v, want only the carrier counted, with the Rifter as its assembled contents", totals)
 	}
 }
+
+func TestInventory_SkipsModulesFittedToTheStructure(t *testing.T) {
+	const structure = 1022167642188
+	items := []cargo.Item{
+		{ItemID: 1, Name: "Standup Manufacturing Plant I", LocationID: structure, Flag: "ServiceSlot0", Quantity: 1, Singleton: true, Volume: 4000},
+		{ItemID: 2, Name: "Standup Point Defense Battery I", LocationID: structure, Flag: "HiSlot0", Quantity: 1, Singleton: true, Volume: 4000},
+		{ItemID: 3, Name: "Standup M-Set Equipment Manufacturing Efficiency I", LocationID: structure, Flag: "RigSlot0", Quantity: 1, Singleton: true, Volume: 10},
+		{ItemID: 4, Name: "Raitaru Upwell Quantum Core", LocationID: structure, Flag: "QuantumCoreRoom", Quantity: 1, Singleton: true, Volume: 1000},
+		{ItemID: 5, Name: "Tritanium", LocationID: structure, Flag: "Hangar", Quantity: 100, Volume: 0.01},
+	}
+	lines, totals := cargo.Inventory(items, structure)
+	if len(lines) != 1 || lines[0].ItemID != 5 || !near(totals.ItemsM3, 1) {
+		t.Errorf("lines = %+v totals = %+v, want only the hangar item", lines, totals)
+	}
+}

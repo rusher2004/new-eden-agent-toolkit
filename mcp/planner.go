@@ -54,6 +54,11 @@ type planner struct {
 	// marketCharacter reads a structure hub's market when set; otherwise
 	// the hub's saved read_via character does.
 	marketCharacter int32
+	// fallbackMarketCharacter reads a structure hub's market only when
+	// neither marketCharacter nor the hub's read_via is set: a character
+	// the call names for another job (builder, refiner), who may lack
+	// docking access where read_via has it.
+	fallbackMarketCharacter int32
 }
 
 func newPlanner(version, clientID string, store *config.Store, sdeStore *sde.Store) *planner {
@@ -239,18 +244,9 @@ type DeletedOutput struct {
 
 func deleteProfileHandler(store *config.Store, del func(*config.Config, string) error) mcpsdk.ToolHandlerFor[ProfileNameInput, DeletedOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ProfileNameInput) (*mcpsdk.CallToolResult, DeletedOutput, error) {
-		cfg, err := store.Load()
-		if err != nil {
-			return nil, DeletedOutput{}, err
-		}
-		if err := del(&cfg, in.Name); err != nil {
-			return nil, DeletedOutput{}, err
-		}
-		if err := store.Save(cfg); err != nil {
+		if _, err := store.Update(func(cfg *config.Config) error { return del(cfg, in.Name) }); err != nil {
 			return nil, DeletedOutput{}, err
 		}
 		return nil, DeletedOutput{Deleted: in.Name}, nil
 	}
 }
-
-// --- calibration ---

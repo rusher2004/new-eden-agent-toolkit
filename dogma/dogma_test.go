@@ -96,6 +96,20 @@ func TestStackingPenalty(t *testing.T) {
 	}
 }
 
+func TestUnpenalizedModulesSkipStacking(t *testing.T) {
+	// Subsystems are exempt from stacking penalties: two exempt +10%
+	// modules and one penalized one give 1.10³, since the penalized one is
+	// alone, and so first, in its penalty chain.
+	mod := dogma.Item{Kind: dogma.Module, Attrs: map[int64]float64{9999: 10},
+		Effects: []dogma.Effect{{Category: dogma.CategoryPassive, Modifiers: []dogma.Modifier{{Domain: "shipID", Func: "ItemModifier", ModifiedAttr: 5, ModifyingAttr: 9999, Operation: dogma.OpPostPercent}}}}}
+	sub := mod
+	sub.Unpenalized = true
+	f := dogma.Fit{Ship: dogma.Item{Kind: dogma.Ship, Attrs: map[int64]float64{5: 100}}, Modules: []dogma.Item{sub, sub, mod}, Attrs: map[int64]dogma.AttrInfo{5: {Stackable: false}}}
+	if got, want := f.ShipAttr(5), 100*1.1*1.1*1.1; !near(got, want) {
+		t.Errorf("with exempt modules = %v, want %v", got, want)
+	}
+}
+
 func TestActiveEffectsDontApply(t *testing.T) {
 	active := dogma.Item{Kind: dogma.Module, Attrs: map[int64]float64{1: 2},
 		Effects: []dogma.Effect{{Category: dogma.CategoryActive, Modifiers: []dogma.Modifier{{Domain: "shipID", Func: "ItemModifier", ModifiedAttr: 38, ModifyingAttr: 1, Operation: dogma.OpPostMul}}}}}

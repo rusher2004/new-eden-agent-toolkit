@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/zalando/go-keyring"
@@ -114,5 +115,46 @@ func TestSaveHaulProfile_HoldFromShipItem(t *testing.T) {
 	}
 	if prof.ShipTypeID != 28850 || math.Abs(prof.HoldM3-263351.25) > 1e-6 {
 		t.Errorf("profile = %+v", prof)
+	}
+}
+
+func TestEstimateShipHold_LoadedChargeIsNotAModule(t *testing.T) {
+	store, p := shipToolsEnv(t)
+	stubOwnedArk(t)
+	base := listAssets
+	listAssets = func(ctx context.Context, v string, c int32, cl string, page int32) ([]AssetItem, int32, error) {
+		items, pages, err := base(ctx, v, c, cl, page)
+		// A charge loaded in a module carries the module's slot flag.
+		return append(items, AssetItem{ItemID: 504, TypeID: 222, LocationID: 500, LocationFlag: "LoSlot0", Quantity: 100}), pages, err
+	}
+	stubSkills(t, map[int32][]CharacterSkill{reconPilot: {{SkillID: 20524, ActiveSkillLevel: 4}}})
+	_, out, err := estimateShipHoldHandler("test", "client", store, p.sde)(context.Background(), nil, EstimateShipHoldInput{ShipSpec: ShipSpec{ShipItemID: 500}, PilotID: reconPilot})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(out.Modules, "Antimatter Charge S") || len(out.Modules) != 2 {
+		t.Errorf("modules = %v, want only the two Expanded Cargohold IIs", out.Modules)
+	}
+}
+
+func TestEstimateShipHold_ShipItemNeedsOwner(t *testing.T) {
+	store, p := shipToolsEnv(t)
+	stubOwnedArk(t)
+	_, _, err := estimateShipHoldHandler("test", "client", store, p.sde)(context.Background(), nil, EstimateShipHoldInput{ShipSpec: ShipSpec{ShipItemID: 500}})
+	if err == nil || !strings.Contains(err.Error(), "ownerId") {
+		t.Errorf("err = %v, want one asking for ownerId or a pilot", err)
+	}
+}
+
+func TestSaveHaulProfile_ShipMustMatchShipItem(t *testing.T) {
+	store, p := shipToolsEnv(t)
+	stubOwnedArk(t)
+	stubSkills(t, map[int32][]CharacterSkill{reconPilot: {{SkillID: 20524, ActiveSkillLevel: 4}}})
+	save := saveHaulProfileHandler("test", "client", store, p.sde)
+	if _, _, err := save(context.Background(), nil, SaveHaulProfileInput{Name: "Wrong hull", Ship: "Rhea", PilotID: int64(reconPilot), ShipItemID: 500}); err == nil || !strings.Contains(err.Error(), "Ark") {
+		t.Errorf("Rhea named for an Ark: err = %v, want a mismatch error", err)
+	}
+	if _, prof, err := save(context.Background(), nil, SaveHaulProfileInput{Name: "Right hull", Ship: "ark", PilotID: int64(reconPilot), ShipItemID: 500}); err != nil || prof.ShipTypeID != 28850 {
+		t.Errorf("matching name in other case: prof %+v err %v", prof, err)
 	}
 }
