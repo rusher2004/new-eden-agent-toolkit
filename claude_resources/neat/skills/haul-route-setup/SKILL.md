@@ -10,6 +10,9 @@ neat plans jump and gate routes itself and returns dotlan links for each one. Yo
 ## 1. Ship and pilot
 
 - Ask which hull and which pilot. The pilot must be logged in to neat. Skills and contacts come from ESI.
+- If they haven't settled on a hull, call `compare_haul_hulls` with the classes they're considering and the pilot's `pilotId`: it says which hulls the pilot can fly, their holds, jump range, fuel and cyno types, and where each can dock. Let the user choose from that rather than comparing hulls yourself.
+- Call `list_character_capabilities` to see which characters can fly the hull and which can light the cyno it needs, rather than reading skill lists yourself. Offer those characters as the pilot and the cyno alts. A pilot and a cyno alt must be on different accounts (their account labels) to be online together.
+- If the pilot isn't where the trip starts, call `list_jump_clones` before planning gate travel: a jump clone near the start may be quicker, and it says when each character can next clone jump.
 - Don't ask for the fitted cargo hold. Find the actual ship (`get_logistics_overview` or `list_location_assets` give its item ID) and pass it as `shipItemId` to `save_haul_profile`: neat works out the fitted hold from its real modules, rigs and the pilot's skills. `estimate_ship_hold` shows the same for any ship, owned or described by hull and modules. Ask the user only if the ship can't be found.
 
 ## 2. Preferences

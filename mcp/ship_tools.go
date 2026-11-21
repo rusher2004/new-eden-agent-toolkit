@@ -49,7 +49,7 @@ func (p *planner) resolveShip(ctx context.Context, s ShipSpec, pilot int32) (res
 		if err := p.requireCharacter(owner); err != nil {
 			return out, err
 		}
-		assets, err := allAssetPages(func(page int32) ([]AssetItem, int32, error) { return listAssets(ctx, p.clientID, owner, p.ua(), page) })
+		assets, truncated, err := allAssetPages(func(page int32) ([]AssetItem, int32, error) { return listAssets(ctx, p.clientID, owner, p.ua(), page) })
 		if err != nil {
 			return out, fmt.Errorf("read the owner's assets: %w", err)
 		}
@@ -60,6 +60,9 @@ func (p *planner) resolveShip(ctx context.Context, s ShipSpec, pilot int32) (res
 			if a.ItemID == s.ShipItemID {
 				found, out.hull = true, a.TypeID
 			}
+		}
+		if !found && truncated {
+			return out, fmt.Errorf("character %d has more than %d pages of assets and item %d isn't in the first %d; give the ship as shipType and modules instead", owner, maxAssetPages, s.ShipItemID, maxAssetPages)
 		}
 		if !found {
 			return out, fmt.Errorf("character %d has no asset with item ID %d", owner, s.ShipItemID)

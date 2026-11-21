@@ -3,7 +3,9 @@ package mcp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
@@ -108,7 +110,10 @@ func TestSaveStructure_RejectsBadInput(t *testing.T) {
 
 func TestListStructures_ProvesCloneBaysAndChecksDocking(t *testing.T) {
 	store, p := industryTestEnv(t)
-	cfg, _ := store.Load()
+	cfg, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
 	cfg.Characters = append(cfg.Characters, config.Character{ID: 7, Name: "No Scope"})
 	cfg.UpsertStructure(config.Structure{ID: sotiyo, Name: "Sotiyo", Kind: config.StructureUpwell, CloneBay: &config.CloneBay{Status: "no", Source: "user", Checked: "2026-10-01"}})
 	cfg.UpsertStructure(config.Structure{ID: 60003760, Name: "Jita 4-4", Kind: config.StructureNPCStation})
@@ -140,7 +145,10 @@ func TestListStructures_ProvesCloneBaysAndChecksDocking(t *testing.T) {
 		t.Errorf("warnings = %v", out.Warnings)
 	}
 
-	_, again, _ := listStructuresHandler("test", "client", store, p.sde)(context.Background(), nil, ListStructuresInput{})
+	_, again, err := listStructuresHandler("test", "client", store, p.sde)(context.Background(), nil, ListStructuresInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(again.Changes) != 0 {
 		t.Errorf("a second call changed things again: %+v", again.Changes)
 	}
@@ -148,14 +156,133 @@ func TestListStructures_ProvesCloneBaysAndChecksDocking(t *testing.T) {
 
 func TestDeleteStructure(t *testing.T) {
 	store, _ := industryTestEnv(t)
-	cfg, _ := store.Load()
+	cfg, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
 	cfg.UpsertStructure(config.Structure{ID: sotiyo, Name: "Sotiyo", Kind: config.StructureUpwell})
-	_ = store.Save(cfg)
+	if err := store.Save(cfg); err != nil {
+		t.Fatal(err)
+	}
 	_, out, err := deleteStructureHandler(store)(context.Background(), nil, DeleteStructureInput{ID: sotiyo})
 	if err != nil || out.Deleted != "Sotiyo" {
 		t.Errorf("out = %+v, %v", out, err)
 	}
 	if _, _, err := deleteStructureHandler(store)(context.Background(), nil, DeleteStructureInput{ID: sotiyo}); err == nil {
 		t.Error("deleting twice: want an error")
+	}
+}
+
+func TestListStructures_KeepsWritesMadeDuringLookups(t *testing.T) {
+	store, p := industryTestEnv(t)
+	cfg, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.UpsertStructure(config.Structure{ID: sotiyo, Name: "Sotiyo", Kind: config.StructureUpwell})
+	if err := store.Save(cfg); err != nil {
+		t.Fatal(err)
+	}
+	stubStructureESI(t, nil, map[int32][]int64{testPilot: {sotiyo}})
+	clones := getCharacterClones
+	getCharacterClones = func(ctx context.Context, clientID string, characterID int32, ua string) (GetCharacterClonesOutput, error) {
+		// Another tool saves a structure while this call waits on ESI.
+		c, err := store.Load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		c.UpsertStructure(config.Structure{ID: 60003760, Name: "Jita 4-4", Kind: config.StructureNPCStation})
+		if err := store.Save(c); err != nil {
+			t.Fatal(err)
+		}
+		return clones(ctx, clientID, characterID, ua)
+	}
+	if _, _, err := listStructuresHandler("test", "client", store, p.sde)(context.Background(), nil, ListStructuresInput{}); err != nil {
+		t.Fatal(err)
+	}
+	after, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := after.Structure(60003760); !ok {
+		t.Error("list_structures saved over a structure added while it read jump clones")
+	}
+	if s, _ := after.Structure(sotiyo); s.CloneBayStatus() != config.CloneBayYes {
+		t.Errorf("clone bay = %q, want yes", s.CloneBayStatus())
+	}
+}
+
+func TestListStructures_StopsDockingChecksAfterRefusals(t *testing.T) {
+	store, p := industryTestEnv(t)
+	cfg, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range maxDockingRefusals + 5 {
+		cfg.UpsertStructure(config.Structure{ID: sotiyo + int64(i), Name: "Upwell", Kind: config.StructureUpwell})
+	}
+	if err := store.Save(cfg); err != nil {
+		t.Fatal(err)
+	}
+	stubStructureESI(t, nil, map[int32][]int64{testPilot: nil})
+	calls := 0
+	getUniverseStructure = func(context.Context, string, int32, string, int64) (UniverseStructure, error) {
+		calls++
+		return UniverseStructure{}, errors.New("403 Forbidden")
+	}
+	_, out, err := listStructuresHandler("test", "client", store, p.sde)(context.Background(), nil, ListStructuresInput{CharacterIDs: []int32{testPilot}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != maxDockingRefusals {
+		t.Errorf("ESI calls = %d, want %d", calls, maxDockingRefusals)
+	}
+	if len(out.Warnings) != 1 || !strings.Contains(out.Warnings[0], "error limit") {
+		t.Errorf("warnings = %v", out.Warnings)
+	}
+	var unknown, notChecked int
+	for _, v := range out.Structures {
+		for _, d := range v.Docking {
+			switch d.Access {
+			case "unknown":
+				unknown++
+			case "not_checked":
+				notChecked++
+			}
+		}
+	}
+	if unknown != maxDockingRefusals || notChecked != 5 {
+		t.Errorf("unknown = %d, not_checked = %d, want %d and 5", unknown, notChecked, maxDockingRefusals)
+	}
+}
+
+func TestSaveStructure_ConcurrentSavesKeepEveryStructure(t *testing.T) {
+	store, p := industryTestEnv(t)
+	stubStructureESI(t, map[int32]bool{testPilot: true}, nil)
+	save := saveStructureHandler("test", "client", store, p.sde)
+	const n = 10
+	var wg sync.WaitGroup
+	errs := make(chan error, n)
+	for i := range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _, err := save(context.Background(), nil, SaveStructureInput{ID: sotiyo + int64(i), CharacterID: testPilot, Notes: ptr(fmt.Sprintf("structure %d", i))})
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfg, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Structures) != n {
+		t.Errorf("saved %d structures after %d concurrent saves, want %d", len(cfg.Structures), n, n)
 	}
 }

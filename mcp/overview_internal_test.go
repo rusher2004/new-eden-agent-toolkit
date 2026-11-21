@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
 )
 
@@ -79,9 +80,11 @@ func TestGetLogisticsOverview(t *testing.T) {
 	getCharacterShip = func(_ context.Context, _ string, id int32, _ string) (int64, string, int64, error) {
 		return 1000 + int64(id), "Cyno Falcon", 11957, nil
 	}
+	loggedIn := time.Date(2026, 11, 20, 11, 0, 0, 0, time.UTC) // well before the cache window, so no re-check
 	getCharacterOnline = func(_ context.Context, _ string, id int32, _ string) (*esi.CharacterOnlineStatus, error) {
-		return &esi.CharacterOnlineStatus{Online: true}, nil
+		return &esi.CharacterOnlineStatus{Online: true, LastLogin: &loggedIn}, nil
 	}
+	stubSleep(t, func(time.Duration) { t.Error("re-checked online status for logins older than the cache window") })
 	expires := time.Date(2026, 11, 20, 13, 0, 0, 0, time.UTC)
 	getCharacterFatigue = func(_ context.Context, _ string, id int32, _ string) (GetCharacterFatigueOutput, error) {
 		return GetCharacterFatigueOutput{CharacterID: id, JumpFatigueExpireDate: &expires}, nil
@@ -109,5 +112,71 @@ func TestGetLogisticsOverview(t *testing.T) {
 	}
 	if len(out.Accounts) != 1 || len(out.Accounts[0].Characters) != 2 || len(out.Conflicts) != 1 || !strings.Contains(out.Conflicts[0], "online at the same time") {
 		t.Errorf("accounts %+v conflicts %v", out.Accounts, out.Conflicts)
+	}
+}
+
+// stubSleep replaces sleepCtx so tests never wait, calling f with each wait.
+func stubSleep(t *testing.T, f func(time.Duration)) {
+	t.Helper()
+	orig := sleepCtx
+	t.Cleanup(func() { sleepCtx = orig })
+	sleepCtx = func(_ context.Context, d time.Duration) error { f(d); return nil }
+}
+
+func TestConfirmOnlineConflicts(t *testing.T) {
+	origO, origN := getCharacterOnline, now
+	t.Cleanup(func() { getCharacterOnline, now = origO, origN })
+	at := time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)
+	now = func() time.Time { return at }
+	old, recent := at.Add(-10*time.Minute), at.Add(-20*time.Second)
+	a, b := config.Character{ID: 1, Name: "Alt A"}, config.Character{ID: 2, Name: "Alt B"}
+	suspect := map[string][]config.Character{"Main": {a, b}}
+
+	tests := []struct {
+		name      string
+		logins    [2]*time.Time
+		recheck   map[int32]bool // online on the re-check; absent fails it
+		wantWait  time.Duration
+		wantNames []string
+	}{
+		{name: "old logins stand without a re-check", logins: [2]*time.Time{&old, &old}, wantNames: []string{"Alt A", "Alt B"}},
+		{name: "recent switch cleared by the re-check", logins: [2]*time.Time{&old, &recent}, recheck: map[int32]bool{1: false, 2: true}, wantWait: onlineCacheWindow - 20*time.Second},
+		{name: "recent login still online together", logins: [2]*time.Time{&old, &recent}, recheck: map[int32]bool{1: true, 2: true}, wantWait: onlineCacheWindow - 20*time.Second, wantNames: []string{"Alt A", "Alt B"}},
+		{name: "unknown login time waits the full window", logins: [2]*time.Time{nil, &old}, recheck: map[int32]bool{1: true, 2: true}, wantWait: onlineCacheWindow, wantNames: []string{"Alt A", "Alt B"}},
+		{name: "a failed re-check isn't reported", logins: [2]*time.Time{&recent, &recent}, recheck: map[int32]bool{2: true}, wantWait: onlineCacheWindow - 20*time.Second},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			online := map[int32]*esi.CharacterOnlineStatus{1: {Online: true, LastLogin: tt.logins[0]}, 2: {Online: true, LastLogin: tt.logins[1]}}
+			var waited time.Duration
+			stubSleep(t, func(d time.Duration) { waited = d })
+			getCharacterOnline = func(_ context.Context, _ string, id int32, _ string) (*esi.CharacterOnlineStatus, error) {
+				on, ok := tt.recheck[id]
+				if !ok {
+					return nil, errors.New("ESI unavailable")
+				}
+				return &esi.CharacterOnlineStatus{Online: on}, nil
+			}
+			got, err := confirmOnlineConflicts(context.Background(), "client", "ua", suspect, online)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if waited != tt.wantWait {
+				t.Errorf("waited %v, want %v", waited, tt.wantWait)
+			}
+			if !slices.Equal(got["Main"], tt.wantNames) {
+				t.Errorf("confirmed = %v, want %v", got["Main"], tt.wantNames)
+			}
+		})
+	}
+}
+
+func TestConfirmOnlineConflicts_Cancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	online := map[int32]*esi.CharacterOnlineStatus{1: {Online: true}, 2: {Online: true}}
+	suspect := map[string][]config.Character{"Main": {{ID: 1}, {ID: 2}}}
+	if _, err := confirmOnlineConflicts(ctx, "client", "ua", suspect, online); !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v, want context.Canceled", err)
 	}
 }

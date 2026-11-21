@@ -27,30 +27,31 @@ type RemoveCharacterInput struct {
 
 func removeCharacterHandler(store *config.Store) mcpsdk.ToolHandlerFor[RemoveCharacterInput, CharacterInfo] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in RemoveCharacterInput) (*mcpsdk.CallToolResult, CharacterInfo, error) {
-		cfg, err := store.Load()
-		if err != nil {
-			return nil, CharacterInfo{}, fmt.Errorf("load config: %w", err)
-		}
-
-		idx := -1
-		for i, c := range cfg.Characters {
-			if c.ID == in.CharacterID {
-				idx = i
-				break
+		var removed config.Character
+		credsRemoved := false
+		if _, err := store.Update(func(cfg *config.Config) error {
+			idx := -1
+			for i, c := range cfg.Characters {
+				if c.ID == in.CharacterID {
+					idx = i
+					break
+				}
 			}
-		}
-		if idx == -1 {
-			return nil, CharacterInfo{}, fmt.Errorf("remove character %d: %w", in.CharacterID, ErrCharacterNotFound)
-		}
-		removed := cfg.Characters[idx]
-
-		if err := removeCharacterCreds(removed.ID); err != nil {
-			return nil, CharacterInfo{}, fmt.Errorf("remove character credentials: %w", err)
-		}
-
-		cfg.Characters = append(cfg.Characters[:idx], cfg.Characters[idx+1:]...)
-		if err := store.Save(cfg); err != nil {
-			return nil, CharacterInfo{}, fmt.Errorf("save config (character's credentials were already removed): %w", err)
+			if idx == -1 {
+				return fmt.Errorf("remove character %d: %w", in.CharacterID, ErrCharacterNotFound)
+			}
+			removed = cfg.Characters[idx]
+			if err := removeCharacterCreds(removed.ID); err != nil {
+				return fmt.Errorf("remove character credentials: %w", err)
+			}
+			credsRemoved = true
+			cfg.Characters = append(cfg.Characters[:idx], cfg.Characters[idx+1:]...)
+			return nil
+		}); err != nil {
+			if credsRemoved {
+				return nil, CharacterInfo{}, fmt.Errorf("save config (character's credentials were already removed): %w", err)
+			}
+			return nil, CharacterInfo{}, err
 		}
 
 		return nil, characterInfo(removed), nil

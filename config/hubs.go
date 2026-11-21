@@ -112,25 +112,47 @@ func (c *Config) UpsertHubProfile(h HubProfile) {
 	c.HubProfiles = append(c.HubProfiles, h)
 }
 
-// DeleteHubProfile removes a hub by name or ID.
+// DeleteHubProfile removes a hub by name, ID or system name. A system name
+// shared by several hubs (Perimeter has two) deletes nothing.
 func (c *Config) DeleteHubProfile(nameOrID string) error {
-	i := slices.IndexFunc(c.HubProfiles, func(h HubProfile) bool { return hubMatches(h, nameOrID) })
-	if i < 0 {
-		return fmt.Errorf("no hub named %q", nameOrID)
+	i, err := c.hubIndex(nameOrID)
+	if err != nil {
+		return err
 	}
 	c.HubProfiles = slices.Delete(c.HubProfiles, i, i+1)
 	return nil
 }
 
-func hubMatches(h HubProfile, nameOrID string) bool {
-	if sameName(h.Name, nameOrID) || strconv.FormatInt(h.StationID, 10) == strings.TrimSpace(nameOrID) {
-		return true
+// hubIndex finds a saved hub by name or ID, else by its system's name when
+// exactly one saved hub is in that system ("Amarr" finds Amarr VIII).
+func (c Config) hubIndex(nameOrID string) (int, error) {
+	if i := slices.IndexFunc(c.HubProfiles, func(h HubProfile) bool {
+		return sameName(h.Name, nameOrID) || strconv.FormatInt(h.StationID, 10) == strings.TrimSpace(nameOrID)
+	}); i >= 0 {
+		return i, nil
 	}
-	// "Jita 4-4" and similar short names still find the hub.
-	return h.System != nil && sameName(h.System.Name, nameOrID)
+	var in []int
+	for i, h := range c.HubProfiles {
+		if h.System != nil && sameName(h.System.Name, nameOrID) {
+			in = append(in, i)
+		}
+	}
+	switch len(in) {
+	case 1:
+		return in[0], nil
+	case 0:
+		return -1, fmt.Errorf("no hub named %q", nameOrID)
+	default:
+		var names []string
+		for _, i := range in {
+			names = append(names, c.HubProfiles[i].Name)
+		}
+		return -1, fmt.Errorf("%d hubs are in %s (%s): name one", len(in), strings.TrimSpace(nameOrID), strings.Join(names, "; "))
+	}
 }
 
-// HubProfile looks up a hub by name, ID or system name; an empty name
+// HubProfile looks up a hub by name, ID or system name (when only one saved
+// hub is in that system); an empty name
 // returns the first saved hub, or DefaultHub when none is saved.
 func (c Config) HubProfile(nameOrID string) (HubProfile, bool) {
 	if strings.TrimSpace(nameOrID) == "" {
@@ -139,15 +161,8 @@ func (c Config) HubProfile(nameOrID string) (HubProfile, bool) {
 		}
 		return DefaultHub, true
 	}
-	for _, h := range c.HubProfiles {
-		if sameName(h.Name, nameOrID) || strconv.FormatInt(h.StationID, 10) == strings.TrimSpace(nameOrID) {
-			return h, true
-		}
-	}
-	for _, h := range c.HubProfiles {
-		if hubMatches(h, nameOrID) {
-			return h, true
-		}
+	if i, err := c.hubIndex(nameOrID); err == nil {
+		return c.HubProfiles[i], true
 	}
 	if sameName(nameOrID, "Jita 4-4") || sameName(nameOrID, DefaultHub.Name) {
 		return DefaultHub, true
@@ -162,7 +177,18 @@ type legacyHub struct {
 	StationID int64  `json:"stationId"`
 }
 
+// hub converts a legacy profile, keeping the user's name. One for a
+// built-in hub's station takes that hub's system, region, tier and traits,
+// since the legacy profile had none of them and it replaces the built-in.
 func (l legacyHub) hub() HubProfile {
+	for _, b := range BuiltinHubs {
+		if b.StationID == l.StationID {
+			if l.Name != "" {
+				b.Name = l.Name
+			}
+			return b
+		}
+	}
 	h := HubProfile{StationID: l.StationID, Name: l.Name, Region: NamedID{ID: l.RegionID}, Kind: HubNPCStation}
 	if l.StationID > maxNPCStationID {
 		h.Kind = HubStructure
