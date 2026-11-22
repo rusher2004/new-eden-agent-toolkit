@@ -3,7 +3,6 @@ package mcp
 import (
 	"context"
 	"fmt"
-	"slices"
 	"strings"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -15,6 +14,9 @@ import (
 	"github.com/rusher2004/new-eden-agent-toolkit/nav"
 	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 )
+
+// cargoFuelBayAttr is a hull's fuel bay capacity (specialFuelBayCapacity).
+const cargoFuelBayAttr int64 = 1549
 
 // Jump skill type IDs (verified against the SDE 2026-11-18).
 const (
@@ -35,12 +37,6 @@ func (p *planner) jumpDrive(ctx context.Context, shipTypeID int64) (nav.JumpDriv
 		FuelTypeID: int64(attrs[sde.AttrJumpDriveConsumptionType]), SkillBonusPerLevel: attrs[sde.AttrJumpFreighterFuelBonus],
 		FatigueMultiplier: attrs[sde.AttrJumpFatigueMultiplier],
 	}, nil
-}
-
-// canUseHighsec reports whether a hull may enter highsec: everything except
-// the capital groups that are barred from it.
-func canUseHighsec(groupID int64) bool {
-	return !slices.Contains(industry.CapitalShipyardGroups, groupID) && !slices.Contains(industry.SupercapitalGroups, groupID)
 }
 
 func (p *planner) routeGraph(ctx context.Context) (*nav.RouteGraph, error) {
@@ -358,14 +354,36 @@ type PlanJumpRouteInput struct {
 }
 
 type PlanJumpRouteOutput struct {
-	Ship       string         `json:"ship"`
-	RangeLY    float64        `json:"rangeLy"`
-	FuelPerLY  float64        `json:"fuelPerLy"`
-	FuelName   string         `json:"fuelName"`
-	FuelPrice  float64        `json:"fuelPrice"`
-	Routes     []nav.Route    `json:"routes"`
+	Ship      string      `json:"ship"`
+	RangeLY   float64     `json:"rangeLy"`
+	FuelPerLY float64     `json:"fuelPerLy"`
+	FuelName  string      `json:"fuelName"`
+	FuelPrice float64     `json:"fuelPrice"`
+	Routes    []nav.Route `json:"routes"`
+	// Checks lines up with Routes: what each route's landings mean for this
+	// hull and its cyno lighter, and whether its fuel fits the fuel bay.
+	Checks     []RouteChecks  `json:"checks"`
+	CynoTypes  []string       `json:"cynoTypes" jsonschema:"cyno types this hull can jump to"`
 	Suggestion nav.DotlanLink `json:"dotlanSuggestion"`
 	Notes      []string       `json:"notes,omitempty"`
+}
+
+// RouteChecks is what one route means for the hull and its lighter.
+type RouteChecks struct {
+	Landings []nav.LandingCheck `json:"landings"`
+	Fuel     nav.FuelCheck      `json:"fuel"`
+}
+
+// structurePlaces lists the saved structures as places a hull might dock.
+func structurePlaces(cfg config.Config) []nav.Place {
+	var out []nav.Place
+	for _, s := range cfg.Structures {
+		if s.System == nil || s.Type == nil {
+			continue
+		}
+		out = append(out, nav.Place{SystemID: s.System.ID, Name: s.Name, TypeName: s.Type.Name})
+	}
+	return out
 }
 
 func (p *planner) planRoute(ctx context.Context, prof config.HaulProfile, from, to int64, pinned []int64, prefOverride *config.RoutePrefs) (PlanJumpRouteOutput, *nav.RouteGraph, nav.RouteRequest, error) {
@@ -393,7 +411,11 @@ func (p *planner) planRoute(ctx context.Context, prof config.HaulProfile, from, 
 	if err != nil {
 		return PlanJumpRouteOutput{}, nil, nav.RouteRequest{}, err
 	}
-	req := nav.RouteRequest{From: from, To: to, Drive: drive, Prefs: prefs, CanUseHighsec: canUseHighsec(b[prof.ShipTypeID].GroupID),
+	attrs, err := p.sde.TypeAttributes(ctx, p.ua(), prof.ShipTypeID)
+	if err != nil {
+		return PlanJumpRouteOutput{}, nil, nav.RouteRequest{}, err
+	}
+	req := nav.RouteRequest{From: from, To: to, Drive: drive, Prefs: prefs, CanUseHighsec: attrs[nav.AttrDisallowInHighSec] == 0,
 		Skills: nav.JumpSkills{JumpDriveCalibration: s[skillJumpDriveCalibration], JumpFuelConservation: s[skillJumpFuelConservation], JumpFreighters: s[skillJumpFreighters]}}
 	out := PlanJumpRouteOutput{Ship: drive.ShipName, RangeLY: nav.JumpRange(drive, req.Skills), FuelPerLY: nav.FuelPerLY(drive, req.Skills), FuelName: b[drive.FuelTypeID].Name, Notes: notes}
 	if len(pinned) > 0 {
@@ -418,6 +440,19 @@ func (p *planner) planRoute(ctx context.Context, prof config.HaulProfile, from, 
 		}
 	}
 	out.Suggestion = g.Suggestion(req, append(wps, to))
+	cfg, err := p.store.Load()
+	if err != nil {
+		return out, g, req, err
+	}
+	group := b[prof.ShipTypeID].GroupID
+	out.CynoTypes = nav.CynoTypesFor(group)
+	places := structurePlaces(cfg)
+	for _, rt := range out.Routes {
+		out.Checks = append(out.Checks, RouteChecks{
+			Landings: nav.CheckLandings(g, rt, group, places),
+			Fuel:     nav.FuelFit(rt.Fuel, attrs[cargoFuelBayAttr], b[drive.FuelTypeID].Volume),
+		})
+	}
 	return out, g, req, nil
 }
 
@@ -486,34 +521,70 @@ type HaulItemInput struct {
 
 type PlanHaulInput struct {
 	HaulProfile string          `json:"haulProfile"`
+	With        []string        `json:"with,omitempty" jsonschema:"more haul profiles flying the same trip together; their holds add up, each hull must manage the same route, and the result says which cyno types they can share"`
 	From        string          `json:"from" jsonschema:"pickup system, e.g. Jita"`
 	To          string          `json:"to" jsonschema:"delivery system"`
 	Items       []HaulItemInput `json:"items"`
 	Hub         string          `json:"hub,omitempty" jsonschema:"hub profile for pricing the cargo and fuel"`
 }
 
+// HullShare is one hull's part of a load shared between several ships.
+type HullShare struct {
+	HaulProfile string     `json:"haulProfile"`
+	Load        cargo.Load `json:"load"`
+}
+
+// HaulHullTrip is one hull flying the trip.
+type HaulHullTrip struct {
+	HaulProfile string  `json:"haulProfile"`
+	Ship        string  `json:"ship"`
+	HoldM3      float64 `json:"holdM3"`
+	FuelName    string  `json:"fuelName"`
+	FuelPerTrip int64   `json:"fuelPerTrip"`
+}
+
 type LoadView struct {
 	cargo.Load
-	CargoValue float64 `json:"cargoValue"`
-	Multibuy   string  `json:"multibuy" jsonschema:"this load's cargo plus round-trip fuel, for the in-game Multibuy"`
+	ByHull     []HullShare `json:"byHull,omitempty" jsonschema:"how this load divides between the ships flying together"`
+	CargoValue float64     `json:"cargoValue"`
+	Multibuy   string      `json:"multibuy" jsonschema:"this load's cargo plus round-trip fuel, for the in-game Multibuy"`
 }
 
 type PlanHaulOutput struct {
-	Loads         []LoadView `json:"loads"`
-	Route         nav.Route  `json:"outboundRoute"`
-	ReturnRoute   *nav.Route `json:"returnRoute,omitempty"`
-	FuelName      string     `json:"fuelName"`
-	FuelPerTrip   int64      `json:"fuelPerTrip"`
-	FuelM3PerTrip float64    `json:"fuelM3PerTrip"`
-	FuelCostTrip  float64    `json:"fuelCostPerTrip"`
-	TotalM3       float64    `json:"totalM3"`
-	FreightPerM3  float64    `json:"freightPerM3" jsonschema:"fuel cost of one full round trip divided by the hold"`
-	Notes         []string   `json:"notes,omitempty"`
+	Loads           []LoadView     `json:"loads"`
+	Route           nav.Route      `json:"outboundRoute"`
+	ReturnRoute     *nav.Route     `json:"returnRoute,omitempty"`
+	FuelName        string         `json:"fuelName"`
+	FuelPerTrip     int64          `json:"fuelPerTrip" jsonschema:"the first ship's fuel for a round trip; with several ships, hulls gives each one's"`
+	FuelM3PerTrip   float64        `json:"fuelM3PerTrip" jsonschema:"volume of every ship's round-trip fuel together"`
+	FuelCostTrip    float64        `json:"fuelCostPerTrip" jsonschema:"cost of every ship's round-trip fuel together"`
+	TotalM3         float64        `json:"totalM3"`
+	FreightPerM3    float64        `json:"freightPerM3" jsonschema:"fuel cost of one full round trip divided by the hold"`
+	Hulls           []HaulHullTrip `json:"hulls,omitempty" jsonschema:"every ship flying the trip, when there's more than one"`
+	SharedCynoTypes []string       `json:"sharedCynoTypes,omitempty" jsonschema:"cyno types every ship flying together can use, so one cyno serves them all"`
+	Notes           []string       `json:"notes,omitempty"`
 }
 
-// haulPlan routes a round trip and packs cargo.
+// prefixNotes labels another ship's notes with its haul profile's name.
+func prefixNotes(profile string, notes []string) []string {
+	out := make([]string, 0, len(notes))
+	for _, n := range notes {
+		out = append(out, profile+": "+n)
+	}
+	return out
+}
+
+// haulPlan routes a round trip and packs cargo for one ship.
 func (p *planner) haulPlan(ctx context.Context, prof config.HaulProfile, hub config.HubProfile, from, to int64, items []cargo.Cargo, prices map[int64]float64) (PlanHaulOutput, error) {
+	return p.haulPlanWith(ctx, []config.HaulProfile{prof}, hub, from, to, items, prices)
+}
+
+// haulPlanWith routes a round trip for the first profile's ship, checks
+// every other ship can fly the same route, and packs cargo into loads that
+// fill all their holds together.
+func (p *planner) haulPlanWith(ctx context.Context, profs []config.HaulProfile, hub config.HubProfile, from, to int64, items []cargo.Cargo, prices map[int64]float64) (PlanHaulOutput, error) {
 	var out PlanHaulOutput
+	prof := profs[0]
 	cfg, err := p.store.Load()
 	if err != nil {
 		return out, err
@@ -580,8 +651,69 @@ func (p *planner) haulPlan(ctx context.Context, prof config.HaulProfile, hub con
 	} else if len(lines) == 1 {
 		out.FuelCostTrip = lines[0].Average * float64(out.FuelPerTrip)
 	}
-	out.FreightPerM3 = out.FuelCostTrip / prof.HoldM3
-	loads, err := cargo.PackLoads(items, prof.HoldM3)
+	fuelLines := []market.MultibuyLine{{Name: out.FuelName, Quantity: out.FuelPerTrip}}
+	hold := prof.HoldM3
+	holds := []float64{prof.HoldM3}
+	var groups []int64
+	if len(profs) > 1 {
+		ships := []int64{}
+		for _, pr := range profs {
+			ships = append(ships, pr.ShipTypeID)
+		}
+		sb, err := p.typeBasics(ctx, ships)
+		if err != nil {
+			return out, err
+		}
+		out.Hulls = append(out.Hulls, HaulHullTrip{HaulProfile: prof.Name, Ship: sb[prof.ShipTypeID].Name, HoldM3: prof.HoldM3, FuelName: out.FuelName, FuelPerTrip: out.FuelPerTrip})
+		groups = append(groups, sb[prof.ShipTypeID].GroupID)
+		for _, other := range profs[1:] {
+			o, _, oreq, err := p.planRoute(ctx, other, from, to, out.Route.Systems, nil)
+			if err != nil {
+				return out, fmt.Errorf("%s can't fly the same outbound route: %w", other.Name, err)
+			}
+			fuel := o.Routes[0].Fuel
+			if out.ReturnRoute != nil {
+				back := oreq
+				back.From, back.To = to, from
+				og, err := p.routeGraph(ctx)
+				if err != nil {
+					return out, err
+				}
+				r, err := og.ValidateRoute(back, out.ReturnRoute.Systems)
+				if err != nil {
+					return out, fmt.Errorf("%s can't fly the same return route: %w", other.Name, err)
+				}
+				fuel += r.Fuel
+			}
+			ob, err := p.typeBasics(ctx, []int64{oreq.Drive.FuelTypeID})
+			if err != nil {
+				return out, err
+			}
+			fname := ob[oreq.Drive.FuelTypeID].Name
+			out.Hulls = append(out.Hulls, HaulHullTrip{HaulProfile: other.Name, Ship: sb[other.ShipTypeID].Name, HoldM3: other.HoldM3, FuelName: fname, FuelPerTrip: fuel})
+			out.FuelM3PerTrip += float64(fuel) * ob[oreq.Drive.FuelTypeID].Volume
+			out.Notes = append(out.Notes, prefixNotes(other.Name, o.Notes)...)
+			if l, err := p.quote(ctx, hub, []industry.TypeQty{{TypeID: oreq.Drive.FuelTypeID, Quantity: max(fuel, 1)}}, nil); err != nil {
+				out.Notes = append(out.Notes, fmt.Sprintf("%s's fuel price unavailable, so its fuel is left out of fuel cost and freight: %v", other.Name, err))
+			} else if len(l) == 1 {
+				out.FuelCostTrip += l[0].Average * float64(fuel)
+			}
+			fuelLines = append(fuelLines, market.MultibuyLine{Name: fname, Quantity: fuel})
+			hold += other.HoldM3
+			holds = append(holds, other.HoldM3)
+			groups = append(groups, sb[other.ShipTypeID].GroupID)
+		}
+		out.SharedCynoTypes = nav.SharedCynoTypes(groups)
+		if len(out.SharedCynoTypes) == 0 {
+			out.Notes = append(out.Notes, "these ships share no cyno type, so each needs its own cyno")
+		}
+	}
+	out.FreightPerM3 = out.FuelCostTrip / hold
+	portions := map[int64]int64{}
+	for _, it := range items {
+		portions[it.TypeID] = it.Portion
+	}
+	loads, err := cargo.PackLoads(items, hold)
 	if err != nil {
 		return out, err
 	}
@@ -593,8 +725,17 @@ func (p *planner) haulPlan(ctx context.Context, prof config.HaulProfile, hub con
 			lv.CargoValue += prices[it.TypeID] * float64(it.Quantity)
 			ml = append(ml, market.MultibuyLine{Name: it.Name, Quantity: it.Quantity})
 		}
-		ml = append(ml, market.MultibuyLine{Name: out.FuelName, Quantity: out.FuelPerTrip})
+		ml = append(ml, fuelLines...)
 		lv.Multibuy = market.Multibuy(ml)
+		if len(holds) > 1 {
+			shares, err := cargo.SplitLoad(l, holds, portions)
+			if err != nil {
+				return out, fmt.Errorf("load %d: %w", l.Number, err)
+			}
+			for i, sh := range shares {
+				lv.ByHull = append(lv.ByHull, HullShare{HaulProfile: profs[i].Name, Load: sh})
+			}
+		}
 		out.TotalM3 += l.M3
 		out.Loads = append(out.Loads, lv)
 	}
@@ -611,6 +752,19 @@ func planHaulHandler(version, clientID string, store *config.Store, sdeStore *sd
 		prof, ok := cfg.HaulProfile(in.HaulProfile)
 		if !ok {
 			return nil, PlanHaulOutput{}, fmt.Errorf("no haul profile named %q", in.HaulProfile)
+		}
+		profs := []config.HaulProfile{prof}
+		pilots := map[int64]string{prof.PilotID: prof.Name}
+		for _, n := range in.With {
+			o, ok := cfg.HaulProfile(n)
+			if !ok {
+				return nil, PlanHaulOutput{}, fmt.Errorf("no haul profile named %q", n)
+			}
+			if other, dup := pilots[o.PilotID]; dup {
+				return nil, PlanHaulOutput{}, fmt.Errorf("haul profiles %q and %q have the same pilot, who can't fly two ships at once", other, o.Name)
+			}
+			pilots[o.PilotID] = o.Name
+			profs = append(profs, o)
 		}
 		hub, err := p.hub(in.Hub)
 		if err != nil {
@@ -646,7 +800,7 @@ func planHaulHandler(version, clientID string, store *config.Store, sdeStore *sd
 			}
 			loadItems = append(loadItems, cargo.Cargo{TypeID: l.TypeID, Name: l.Name, Quantity: l.Quantity, UnitM3: b[l.TypeID].Volume, Portion: portionFor(b[l.TypeID]), Dest: dest})
 		}
-		out, err := p.haulPlan(ctx, prof, hub, ends[0], ends[1], loadItems, prices)
+		out, err := p.haulPlanWith(ctx, profs, hub, ends[0], ends[1], loadItems, prices)
 		return nil, out, err
 	}
 }
