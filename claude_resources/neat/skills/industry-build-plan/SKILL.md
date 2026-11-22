@@ -22,7 +22,7 @@ You run the discovery and the decisions. neat's tools do every calculation: quan
 ## 3. Where, and the profiles
 
 - `plan_build` needs a facility profile for manufacturing, and optional ones for reactions and refining. It needs a haul profile if anything moves by jump freighter. Call `list_facility_profiles`, `list_haul_profiles` and `list_hub_profiles`.
-- If a profile is missing, use the **industry-profile-setup** skill for facilities and **haul-route-setup** for hauling, then come back.
+- If a profile is missing, use the **industry-profile-setup** skill for facilities and **haul-plan** for hauling, then come back.
 - Run `describe_facility` with the product to show the user the multipliers and any rule that blocks the build there (for example, capitals in highsec). If it can't run there, stop and ask.
 
 ## 4. The real decisions

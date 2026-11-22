@@ -10,7 +10,7 @@
     {
       "name": "neat",
       "source": "./claude_resources/neat",
-      "description": "Lets Claude read your EVE Online characters, corporations, markets and universe data, and plan industry builds and jump freighter hauls. Needs the neat program installed."
+      "description": "Lets Claude read your EVE Online characters, corporations, markets and universe data, and plan industry builds and moves of cargo, ships and characters. Needs the neat program installed."
     }
   ]
 }

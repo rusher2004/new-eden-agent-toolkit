@@ -77,7 +77,7 @@ Merging to `main` tags `v<VERSION>` if the tag doesn't exist yet and runs GoRele
 
 ## Claude resources
 
-[`claude_resources/`](../claude_resources/README.md) holds the Claude Code plugin: it registers the MCP server and ships the skills that guide Claude through logging in characters, setting up facility and haul profiles, and building industry plans. The MCP server's own instructions (`mcp/instructions.go`) carry the essentials for clients that don't load skills, such as the Claude desktop app.
+[`claude_resources/`](../claude_resources/README.md) holds the Claude Code plugin: it registers the MCP server and ships the skills that guide Claude through logging in characters, setting up facility profiles, building industry plans, and planning any move of cargo, ships or characters (haul profiles and routes included). The MCP server's own instructions (`mcp/instructions.go`) carry the essentials for clients that don't load skills, such as the Claude desktop app.
 
 ## Reference and design docs
 
