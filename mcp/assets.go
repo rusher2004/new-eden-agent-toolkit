@@ -6,6 +6,7 @@ import (
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/rusher2004/new-eden-agent-toolkit/cargo"
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
 	"github.com/rusher2004/new-eden-agent-toolkit/sde"
@@ -23,6 +24,39 @@ type AssetItem struct {
 	Quantity        int64  `json:"quantity"`
 	IsSingleton     bool   `json:"isSingleton"`
 	IsBlueprintCopy *bool  `json:"isBlueprintCopy,omitempty"`
+	// VolumeM3 is the stack's volume as it is now, from the SDE: assembled
+	// for an assembled item (isSingleton), packaged otherwise.
+	VolumeM3 float64 `json:"volumeM3,omitempty" jsonschema:"the whole stack's volume in m³ as it is now: assembled for an assembled item (isSingleton true), packaged otherwise"`
+}
+
+// cargoItem pairs an asset with its type's SDE details for cargo/.
+func cargoItem(a AssetItem, b sde.TypeBasic, owner string) cargo.Item {
+	assembled := b.AssembledVolume
+	if assembled == 0 {
+		assembled = b.Volume
+	}
+	return cargo.Item{
+		ItemID: a.ItemID, TypeID: a.TypeID, Name: a.TypeName, GroupID: b.GroupID, CategoryID: b.CategoryID,
+		LocationID: a.LocationID, Flag: a.LocationFlag, Quantity: a.Quantity, Singleton: a.IsSingleton,
+		Volume: assembled, PackagedVolume: b.Volume, Owner: owner,
+	}
+}
+
+// enrichAssets fills in each asset's type name and volume from the SDE.
+func enrichAssets(ctx context.Context, sdeStore *sde.Store, userAgent string, assets []AssetItem) map[int64]sde.TypeBasic {
+	ids := make([]int64, len(assets))
+	for i, a := range assets {
+		ids[i] = a.TypeID
+	}
+	names := resolveTypeNames(ctx, sdeStore, userAgent, ids)
+	basics := resolveTypeBasics(ctx, sdeStore, userAgent, ids)
+	for i := range assets {
+		assets[i].TypeName = names[assets[i].TypeID]
+		if b, ok := basics[assets[i].TypeID]; ok {
+			assets[i].VolumeM3 = cargoItem(assets[i], b, "").StackVolume()
+		}
+	}
+	return basics
 }
 
 // listAssets is overridable in tests so no real network/auth runs.
@@ -80,14 +114,7 @@ func listAssetsHandler(version, clientID string, store *config.Store, sdeStore *
 		if err != nil {
 			return nil, ListAssetsOutput{}, fmt.Errorf("list assets: %w", err)
 		}
-		ids := make([]int64, len(assets))
-		for i, a := range assets {
-			ids[i] = a.TypeID
-		}
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
-		for i := range assets {
-			assets[i].TypeName = names[assets[i].TypeID]
-		}
+		enrichAssets(ctx, sdeStore, sso.UserAgent(version), assets)
 		page := in.Page
 		if page <= 0 {
 			page = 1
@@ -273,14 +300,7 @@ func listCorporationAssetsHandler(version, clientID string, store *config.Store,
 		if err != nil {
 			return nil, ListCorporationAssetsOutput{}, fmt.Errorf("list corporation assets: %w", err)
 		}
-		ids := make([]int64, len(assets))
-		for i, a := range assets {
-			ids[i] = a.TypeID
-		}
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
-		for i := range assets {
-			assets[i].TypeName = names[assets[i].TypeID]
-		}
+		enrichAssets(ctx, sdeStore, sso.UserAgent(version), assets)
 		page := in.Page
 		if page <= 0 {
 			page = 1

@@ -1,6 +1,9 @@
 package nav
 
-import "math"
+import (
+	"math"
+	"strconv"
+)
 
 // Band is a security band. It picks which rig security multiplier applies and
 // which activities are allowed.
@@ -69,4 +72,38 @@ func CynoLegal(sec float64, regionID int64) bool {
 	}
 	b := BandOf(sec, regionID)
 	return b == Lowsec || b == Nullsec
+}
+
+// Security is a system's security as players see it in game.
+type Security struct {
+	Status  float64 `json:"status" jsonschema:"true security status, usually to 6 decimal places"`
+	Display string  `json:"display" jsonschema:"the value the game shows, rounded to one decimal; quote this one to the user, e.g. Aunenen 0.4"`
+	Color   string  `json:"color" jsonschema:"the in-game color for the displayed value, as #RRGGBB, for formatted output"`
+	Band    string  `json:"band" jsonschema:"highsec, lowsec, nullsec or wormhole"`
+}
+
+// SecurityOf describes a system's security for display.
+func SecurityOf(sec float64, regionID int64) Security {
+	return Security{Status: sec, Display: SecurityLabel(sec), Color: SecurityColor(sec), Band: BandOf(sec, regionID).String()}
+}
+
+// SecurityLabel formats the displayed security value as the game shows it,
+// such as "0.4" or "-0.3".
+func SecurityLabel(sec float64) string {
+	d := DisplaySecurity(sec)
+	if d == 0 {
+		return "0.0" // never "-0.0"
+	}
+	return strconv.FormatFloat(d, 'f', 1, 64)
+}
+
+// SecurityColor is the in-game color of a system's displayed security
+// value, as #RRGGBB.
+func SecurityColor(sec float64) string {
+	d := DisplaySecurity(sec)
+	if d <= 0 {
+		return securityColorNull
+	}
+	i := int(math.Round(d * 10))
+	return securityColors[min(i, 10)]
 }

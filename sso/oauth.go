@@ -103,6 +103,21 @@ type AddOptions struct {
 	// session page. Optional: without it, the page lists only the
 	// characters added in this session.
 	SavedCharacters func() ([]Character, error)
+	// Accounts lets the user group characters by EVE account on the session
+	// page. Optional: without it, the page lists characters without the
+	// grouping controls.
+	Accounts *AccountEditor
+}
+
+// AccountEditor saves the account grouping the user sets on the session
+// page. Each call is one change; an error is shown on the page.
+type AccountEditor struct {
+	// Set gives a character an account label; "" makes it unassigned.
+	Set func(characterID int32, label string) error
+	// Rename relabels every character in an account.
+	Rename func(from, to string) error
+	// Delete unassigns every character in an account.
+	Delete func(label string) error
 }
 
 // AddCharacters runs a browser login session: it serves the OAuth2 redirect

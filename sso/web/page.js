@@ -11,6 +11,45 @@
   var token = document.body.dataset.token;
   if (!token) return;
 
+  // Account controls: picking an account moves the character straight
+  // away; "New account…" shows a name field and the Move button instead.
+  document.querySelectorAll("form.move").forEach(function (form) {
+    var select = form.querySelector("select");
+    var name = form.querySelector("input[name=new_account]");
+    var button = form.querySelector("button");
+    name.hidden = true;
+    button.hidden = true;
+    select.addEventListener("change", function () {
+      if (select.value === "new") {
+        name.hidden = false;
+        button.hidden = false;
+        name.required = true;
+        name.focus();
+      } else {
+        form.submit();
+      }
+    });
+  });
+  // Rename: the form is shown without JS; with it, the Rename button
+  // toggles it.
+  document.querySelectorAll(".account").forEach(function (account) {
+    var toggle = account.querySelector("[data-rename]");
+    var form = account.querySelector("form.rename");
+    if (!toggle || !form) return;
+    form.hidden = true;
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.addEventListener("click", function () {
+      form.hidden = !form.hidden;
+      toggle.setAttribute("aria-expanded", String(!form.hidden));
+      if (!form.hidden) form.querySelector("input[name=to]").select();
+    });
+  });
+  document.querySelectorAll("form[data-confirm]").forEach(function (form) {
+    form.addEventListener("submit", function (e) {
+      if (!window.confirm(form.dataset.confirm)) e.preventDefault();
+    });
+  });
+
   function body() {
     return new URLSearchParams({ token: token });
   }

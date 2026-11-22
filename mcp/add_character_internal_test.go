@@ -243,7 +243,7 @@ func TestAddCharacterHandler_ReAuthorize_WarnsWhenOtherCharacterLoggedIn(t *test
 	if err != nil {
 		t.Fatalf("handler: %v", err)
 	}
-	if len(out.Warnings) != 1 || !strings.Contains(out.Warnings[0], "character 42 was not re-authorized") {
+	if len(out.Warnings) != 1 || !strings.Contains(out.Warnings[0], "character 42 was not re-authorized") || !strings.Contains(out.Warnings[0], "still lacks [wallet]") {
 		t.Errorf("warnings = %q, want one saying character 42 wasn't re-authorized", out.Warnings)
 	}
 }
@@ -266,5 +266,23 @@ func TestAddCharacterHandler_NoWarningsOnPlainAddOrMatchingReAuthorize(t *testin
 		if len(out.Warnings) != 0 {
 			t.Errorf("handler(%+v) warnings = %q, want none", in, out.Warnings)
 		}
+	}
+}
+
+func TestAddCharacterHandler_ReAuthorize_NoNewGroups_SaysAccessIsKept(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	fakeAddCharacters(t, []sso.Character{{ID: 43, Name: "Alt Pilot"}}, nil)
+
+	origGranted := grantedScopes
+	t.Cleanup(func() { grantedScopes = origGranted })
+	grantedScopes = func(context.Context, string, int32, string) ([]string, error) { return nil, nil }
+
+	_, out, err := addCharacterHandler("v1", "client-id", store)(context.Background(), nil, AddCharacterInput{CharacterID: 42})
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if len(out.Warnings) != 1 || !strings.Contains(out.Warnings[0], "keeps the access it already had") || strings.Contains(out.Warnings[0], "lacks") {
+		t.Errorf("warnings = %q, want one saying character 42 keeps its access", out.Warnings)
 	}
 }
