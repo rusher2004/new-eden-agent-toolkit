@@ -279,16 +279,17 @@ type CloneLocation struct {
 
 // CharacterClones is one character's clone jump readiness.
 type CharacterClones struct {
-	CharacterID   int32           `json:"characterId"`
-	CharacterName string          `json:"characterName"`
-	Account       string          `json:"account,omitempty"`
-	CooldownHours int             `json:"cooldownHours" jsonschema:"hours between clone jumps for their Infomorph Synchronizing"`
-	LastCloneJump *time.Time      `json:"lastCloneJump,omitempty"`
-	NextCloneJump *time.Time      `json:"nextCloneJump,omitempty" jsonschema:"when they can clone jump again; absent if they never have"`
-	ReadyNow      bool            `json:"readyNow"`
-	Capacity      int             `json:"capacity" jsonschema:"how many jump clones their Infomorph Psychology skills allow"`
-	Home          *CloneLocation  `json:"home,omitempty" jsonschema:"where they wake up after being podded"`
-	JumpClones    []CloneLocation `json:"jumpClones"`
+	CharacterID    int32           `json:"characterId"`
+	CharacterName  string          `json:"characterName"`
+	Account        string          `json:"account,omitempty"`
+	CooldownHours  int             `json:"cooldownHours" jsonschema:"hours between clone jumps for their Infomorph Synchronizing"`
+	LastCloneJump  *time.Time      `json:"lastCloneJump,omitempty"`
+	NextCloneJump  *time.Time      `json:"nextCloneJump,omitempty" jsonschema:"when they can clone jump again; absent if they never have"`
+	ReadyNow       bool            `json:"readyNow"`
+	Capacity       int             `json:"capacity" jsonschema:"how many jump clones their Infomorph Psychology skills allow"`
+	Home           *CloneLocation  `json:"home,omitempty" jsonschema:"where they wake up after being podded"`
+	ActiveImplants *[]string       `json:"activeImplants,omitempty" jsonschema:"implants in the clone they're in now, which they lose if podded; an empty list means none, and absent means they couldn't be read (see warnings), not that there are none"`
+	JumpClones     []CloneLocation `json:"jumpClones"`
 }
 
 // ListJumpClonesOutput is list_jump_clones' result.
@@ -356,6 +357,15 @@ func listJumpClonesHandler(version, clientID string, store *config.Store, sdeSto
 			}
 			for _, jc := range clones.JumpClones {
 				cc.JumpClones = append(cc.JumpClones, p.cloneLocation(ctx, cfg, jc.LocationID, jc.LocationType, jc.Implants))
+			}
+			if implants, err := listCharacterImplants(ctx, clientID, c.ID, p.ua()); err != nil {
+				out.Warnings = append(out.Warnings, fmt.Sprintf("couldn't read the implants in %s's current clone, so they're unknown, not none: %v", c.Name, err))
+			} else {
+				names := []string{}
+				for _, imp := range implants {
+					names = append(names, p.typeName(ctx, imp))
+				}
+				cc.ActiveImplants = &names
 			}
 			out.Characters = append(out.Characters, cc)
 		}

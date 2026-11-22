@@ -1,5 +1,12 @@
 # neat plugin — changelog
 
+## 0.19.0
+- New `list_haul_ships` finds where your haulers, jump freighters, freighters, transports, Rorquals, Black Ops, carriers and other capitals are parked, and every ship with a cyno generator fitted, in one call: owner, class, name, the station, structure or system it's in with its security, and the ship carrying it if it's in a ship maintenance bay. Claude no longer pages through every character's full asset list to find them.
+- `estimate_cyno` no longer counts a cyno ship's own Liquid Ozone as cargo in the way. A cyno Venture with a full load used to come back with no lights per hold; it now says the fuel aboard covers one light, how many lights a load covers, and how many refills the chain needs from what's aboard.
+- Station and celestial names now come out as the game writes them, with the planet in Roman numerals ("Vlillirier VII - Moon 19 - FedMart Warehouse", not "Vlillirier 7 - ..."). The static data neat downloads writes them in Arabic numerals.
+- `list_jump_clones` now includes the implants in the clone each character is in now, not only those in their jump clones.
+- The `haul-plan` skill turns constraints you've already given ("JF it so nothing takes a gate") into routing preferences before planning, keeps choices that are yours, such as repackaging assembled ships, out of the steps until you make them, drops anything you say you'll handle yourself from the plan entirely, and prices a cyno alt's implants so you can see what their pod is worth.
+
 ## 0.18.0
 - New `haul-plan` skill guides Claude through any move of cargo, ships or characters, for a PvP deployment, a staging move, a PvE relocation or a build: it starts from your characters' overview, takes stock of what's at the origin, asks what to do with assembled ships, picks ships and pilots, plans and checks the route with your routing preferences, picks cyno alts on other accounts and works out their Liquid Ozone, uses jump clones to get characters in place, and writes the steps in order. It replaces the `haul-route-setup` skill, whose route and preference steps it includes. Every number and rule comes from neat's tools, so Claude asks you only for the decisions that are yours.
 - Claude in apps without skills, such as the Claude desktop app, gets the same planning order in neat's instructions.

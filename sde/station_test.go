@@ -62,3 +62,18 @@ func TestPutStation_ThenStation_ReturnsOverlaidServices(t *testing.T) {
 		t.Errorf("Services = %v, want [market reprocessing-plant] (overlay values keep whatever PutStation was given)", got.Services)
 	}
 }
+
+// fuzzwork's dump numbers planets in Arabic; the game uses Roman numerals
+// (issue #37).
+func TestStation_PlanetNumberAsTheGameWritesIt(t *testing.T) {
+	store := seedStore(t)
+	seedExec(t, store, `INSERT INTO mapSolarSystems (solarSystemID, solarSystemName) VALUES (30005005, 'Vlillirier')`)
+	seedExec(t, store, `INSERT INTO staStations (stationID, stationName, solarSystemID, stationTypeID) VALUES (60011008, 'Vlillirier 7 - Moon 19 - FedMart Warehouse', 30005005, 1531)`)
+	got, ok, err := store.Station(context.Background(), testUserAgent, 60011008)
+	if err != nil || !ok {
+		t.Fatalf("Station: ok %v err %v", ok, err)
+	}
+	if want := "Vlillirier VII - Moon 19 - FedMart Warehouse"; got.Name != want {
+		t.Errorf("Name = %q, want %q", got.Name, want)
+	}
+}

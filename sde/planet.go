@@ -34,21 +34,22 @@ func (s *Store) Planet(ctx context.Context, userAgent string, id int64) (Planet,
 	}
 
 	var (
-		name     sql.NullString
-		typeID   int64
-		systemID int64
-		x, y, z  sql.NullFloat64
+		name       sql.NullString
+		systemName string
+		typeID     int64
+		systemID   int64
+		x, y, z    sql.NullFloat64
 	)
 	row := s.db.QueryRowContext(ctx,
-		`SELECT itemName, typeID, solarSystemID, x, y, z FROM mapDenormalize WHERE itemID = ? AND groupID = 7`, id)
-	if err := row.Scan(&name, &typeID, &systemID, &x, &y, &z); err != nil {
+		`SELECT itemName, `+systemNameSQL("mapDenormalize.solarSystemID")+`, typeID, solarSystemID, x, y, z FROM mapDenormalize WHERE itemID = ? AND groupID = 7`, id)
+	if err := row.Scan(&name, &systemName, &typeID, &systemID, &x, &y, &z); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Planet{}, false, nil
 		}
 		return Planet{}, false, fmt.Errorf("query planet %d: %w", id, err)
 	}
 
-	return Planet{ID: id, Name: name.String, TypeID: typeID, SystemID: systemID, Position: Position{X: x.Float64, Y: y.Float64, Z: z.Float64}}, true, nil
+	return Planet{ID: id, Name: gameName(name.String, systemName), TypeID: typeID, SystemID: systemID, Position: Position{X: x.Float64, Y: y.Float64, Z: z.Float64}}, true, nil
 }
 
 // PutPlanet stores p in the overlay, keyed by p.ID -- used by mcp/'s

@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"slices"
 	"strings"
@@ -143,8 +144,9 @@ func TestListJumpClones_CooldownCapacityAndNames(t *testing.T) {
 	stubSkills(t, map[int32][]CharacterSkill{
 		reconPilot: {{SkillID: 33399, ActiveSkillLevel: 4}, {SkillID: 24242, ActiveSkillLevel: 5}, {SkillID: 33407, ActiveSkillLevel: 2}},
 	})
-	origC, origN := getCharacterClones, now
-	t.Cleanup(func() { getCharacterClones, now = origC, origN })
+	origC, origN, origI := getCharacterClones, now, listCharacterImplants
+	t.Cleanup(func() { getCharacterClones, now, listCharacterImplants = origC, origN, origI })
+	listCharacterImplants = func(context.Context, string, int32, string) ([]int64, error) { return []int64{35}, nil }
 	now = func() time.Time { return time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC) }
 	last := time.Date(2026, 11, 19, 20, 0, 0, 0, time.UTC)
 	home := int64(60003760)
@@ -167,10 +169,49 @@ func TestListJumpClones_CooldownCapacityAndNames(t *testing.T) {
 	if c.CooldownHours != 20 || c.ReadyNow || !c.NextCloneJump.Equal(time.Date(2026, 11, 20, 16, 0, 0, 0, time.UTC)) || c.Capacity != 7 {
 		t.Errorf("readiness = %+v next %v", c, c.NextCloneJump)
 	}
-	if c.Home == nil || !strings.HasPrefix(c.Home.LocationName, "Jita 4") {
+	if c.Home == nil || c.Home.LocationName != "Jita IV - Moon 4 - Caldari Navy Assembly Plant" {
 		t.Errorf("home = %+v", c.Home)
 	}
 	if c.JumpClones[0].LocationName != "CX7-70 Sotiyo" || !slices.Equal(c.JumpClones[0].Implants, []string{"Tritanium"}) || c.JumpClones[1].LocationName != "" {
 		t.Errorf("clones = %+v", c.JumpClones)
+	}
+	if c.ActiveImplants == nil || !slices.Equal(*c.ActiveImplants, []string{"Pyerite"}) {
+		t.Errorf("active implants = %v, want the current clone's", c.ActiveImplants)
+	}
+}
+
+// A clone with no implants reads as an empty list; implants that couldn't be
+// read are left out, so neither is mistaken for the other.
+func TestListJumpClones_NoImplantsIsNotUnknownImplants(t *testing.T) {
+	store, p := readinessEnv(t)
+	stubSkills(t, map[int32][]CharacterSkill{reconPilot: nil, carrierPilot: nil})
+	origC, origI := getCharacterClones, listCharacterImplants
+	t.Cleanup(func() { getCharacterClones, listCharacterImplants = origC, origI })
+	getCharacterClones = func(_ context.Context, _ string, characterID int32, _ string) (GetCharacterClonesOutput, error) {
+		return GetCharacterClonesOutput{CharacterID: characterID}, nil
+	}
+	listCharacterImplants = func(_ context.Context, _ string, characterID int32, _ string) ([]int64, error) {
+		if characterID == carrierPilot {
+			return nil, errors.New("missing scope")
+		}
+		return nil, nil
+	}
+	_, out, err := listJumpClonesHandler("test", "client", store, p.sde)(context.Background(), nil, ListJumpClonesInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	none, unknown := out.Characters[0], out.Characters[1]
+	if none.ActiveImplants == nil || len(*none.ActiveImplants) != 0 {
+		t.Errorf("no implants: %v, want an empty list", none.ActiveImplants)
+	}
+	if unknown.ActiveImplants != nil || len(out.Warnings) != 1 || !strings.Contains(out.Warnings[0], "unknown, not none") {
+		t.Errorf("unreadable implants: %v, warnings %v; want them left out with a warning", unknown.ActiveImplants, out.Warnings)
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"activeImplants":[]`) || strings.Count(string(b), "activeImplants") != 1 {
+		t.Errorf("json = %s, want activeImplants:[] for the first character only", b)
 	}
 }

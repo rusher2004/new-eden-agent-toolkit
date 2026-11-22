@@ -158,3 +158,39 @@ func TestSaveHaulProfile_ShipMustMatchShipItem(t *testing.T) {
 		t.Errorf("matching name in other case: prof %+v err %v", prof, err)
 	}
 }
+
+// A cyno Venture loaded with its own Liquid Ozone (issue #37): the fuel
+// aboard isn't cargo in the way, so a full load still covers a light, and
+// the refills start from what's aboard.
+func TestEstimateCyno_OwnedVentureCountsFuelAboard(t *testing.T) {
+	store, p := shipToolsEnv(t)
+	origA, origN := listAssets, getAssetNames
+	t.Cleanup(func() { listAssets, getAssetNames = origA, origN })
+	ozone := int64(242)
+	listAssets = func(context.Context, string, int32, string, int32) ([]AssetItem, int32, error) {
+		return []AssetItem{
+			{ItemID: 600, TypeID: 32880, LocationID: 60003760, LocationFlag: "Hangar", Quantity: 1, IsSingleton: true},
+			{ItemID: 601, TypeID: 1319, LocationID: 600, LocationFlag: "LoSlot0", Quantity: 1, IsSingleton: true},
+			{ItemID: 602, TypeID: 31117, LocationID: 600, LocationFlag: "RigSlot0", Quantity: 1, IsSingleton: true},
+			{ItemID: 603, TypeID: 31117, LocationID: 600, LocationFlag: "RigSlot1", Quantity: 1, IsSingleton: true},
+			{ItemID: 604, TypeID: 31117, LocationID: 600, LocationFlag: "RigSlot2", Quantity: 1, IsSingleton: true},
+			{ItemID: 605, TypeID: 52694, LocationID: 600, LocationFlag: "HiSlot0", Quantity: 1, IsSingleton: true},
+			{ItemID: 606, TypeID: 16273, LocationID: 600, LocationFlag: "Cargo", Quantity: ozone},
+		}, 1, nil
+	}
+	getAssetNames = func(context.Context, string, int32, string, []int64) ([]AssetName, error) { return nil, nil }
+	stubSkills(t, map[int32][]CharacterSkill{reconPilot: {{SkillID: 21603, ActiveSkillLevel: 5}}})
+
+	_, out, err := estimateCynoHandler("test", "client", store, p.sde)(context.Background(), nil, EstimateCynoInput{ShipSpec: ShipSpec{ShipItemID: 600}, LighterID: reconPilot, Cyno: "industrial", Lights: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hold := 50 * 1.275 * math.Pow(1.15, 3)
+	if math.Abs(out.CargoM3-(hold-96.8)) > 1e-6 || math.Abs(out.FuelSpaceM3-hold) > 1e-6 {
+		t.Errorf("cargo %v fuel space %v, want %v free and the whole %v hold for fuel", out.CargoM3, out.FuelSpaceM3, hold-96.8, hold)
+	}
+	if out.FuelAboard != ozone || out.LightsAboard != 1 || out.LightsPerHold != 1 || out.Refills != 1 || out.FuelDoesntFit {
+		t.Errorf("aboard %d covers %d, per hold %d, refills %d, doesn't fit %v; want 242 covering 1, 1 per hold, 1 refill",
+			out.FuelAboard, out.LightsAboard, out.LightsPerHold, out.Refills, out.FuelDoesntFit)
+	}
+}

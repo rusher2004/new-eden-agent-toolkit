@@ -98,7 +98,7 @@ func TestGetLogisticsOverview(t *testing.T) {
 		t.Fatal(err)
 	}
 	recon, carrier := out.Characters[0], out.Characters[1]
-	if recon.Location == nil || recon.Location.System != "Jita" || recon.Location.SecurityDisplay != "0.9" || !strings.HasPrefix(recon.Location.DockedAt, "Jita 4") {
+	if recon.Location == nil || recon.Location.System != "Jita" || recon.Location.SecurityDisplay != "0.9" || recon.Location.DockedAt != "Jita IV - Moon 4 - Caldari Navy Assembly Plant" {
 		t.Errorf("location = %+v", recon.Location)
 	}
 	if recon.Ship == nil || recon.Ship.Type != "Falcon" || len(recon.Abilities) != 1 || recon.Abilities[0] != "standard cyno: Falcon" {

@@ -13,11 +13,13 @@ When another skill (such as **industry-build-plan**) sends you here only for a m
 
 - Call `get_logistics_overview`. It gives every character's account, whether they're online, where they are, their ship, what they can light, bridge, conduit and fly, their next clone jump and their jump fatigue.
 - If it warns about unknown accounts or reports a conflict, ask the user which characters share an account and save it with `update_character_details`. A pilot and the cyno lighter they jump to must be on different accounts. Don't pick characters until this is settled.
+- Call `list_haul_ships` to see where every hauler, jump freighter, freighter, transport, Rorqual, Black Ops, carrier and other capital is parked, and every ship with a cyno generator fitted, with the station or system each is in and the ship carrying it if any. Never page through `list_assets` to find them.
 - Call `list_structures` for the places the user works from: what each is for and whether it has a clone bay.
 
 ## 2. Pin down the job
 
 - Confirm the origin, the destination station or structure, what's moving (everything there or a subset), and constraints such as not gating cargo through somewhere.
+- Note every constraint the user has already stated ("JF it so nothing takes a gate", "stay out of Delve", "not through Goon space"). They become routing preferences in step 6 without asking again.
 - Resolve names to IDs with neat. If a station or structure the plan uses isn't saved, offer to save it with `save_structure`, along with anything the user says about it.
 - Quote every system with the displayed security the tools give, never one you'd guess from the name.
 
@@ -34,19 +36,23 @@ Cargo holds only take packaged ships. Point out every assembled ship and let the
 - **Suitcase:** carry them assembled in a capital's ship maintenance bay. Use `compare_haul_hulls` for bay sizes and docking, and the overview for who can fly a suitable capital and owns one nearby.
 - **Fly them** by gate.
 
-Drop whatever the user will handle themselves from the rest of the plan.
+This choice is the user's, so it never goes into the steps before they make it:
+
+- Until they choose, leave the steps that depend on it out of the plan, or show each option as its own short branch (what it costs, what it takes, which steps it adds). Never write one option in as a numbered step and ask about it afterwards.
+- Once the user takes something on themselves ("I'll fly the assembled ships"), remove it from the plan entirely: its steps, its purchases (shuttles, fuel), its trips and its place in the order. Don't plan it for them unless they ask. At most, say in one line what they're handling.
 
 ## 5. Ships and pilots
 
 - Use `compare_haul_hulls` (with `pilotId` for each candidate) to compare holds, align, cloak and nullification, highsec entry, docking and jump drives.
-- For the actual ships, use `estimate_ship_hold` with `shipItemId`: it reads the real fit and the cargo already aboard. For a ship the user doesn't own yet, or one neat can't find, give `shipType` and `modules` instead. Never ask the user for their hold.
+- For the actual ships, use `estimate_ship_hold` with the `itemId` and `ownerId` from `list_haul_ships` as `shipItemId` and `ownerId`: it reads the real fit and the cargo already aboard. A corporation's ship has no `ownerId`; give its `type` and `modules` as `shipType` and `modules`. For a ship the user doesn't own yet, or one neat can't find, give `shipType` and `modules` instead. Never ask the user for their hold.
 - Consider more than one ship. Holds add up, so two jump freighters, or a JF and a carrier, can make one trip instead of several. Weigh the extra pilots, fuel and fatigue against the trips saved, and say which you chose and why.
 - Check each pilot's jump fatigue in the overview.
 
 ## 6. Route and preferences
 
 - Check `list_routes` for a saved route between the same places, and read its notes: it usually reflects choices the user made on purpose. Cost it with `plan_jump_route` and `route` set to its name. To check a route the pilot already flies, pass it as `waypoints` instead.
-- Ask in plain terms, and save what they say on a haul profile with `save_haul_profile`, giving `shipItemId` so neat works out the hold. Save one profile per ship: `plan_haul`'s `with` takes the other ships' haul profile names. Saved routes and profiles live in `~/.neat/routes.yaml` and `haul_profiles.yaml`, which the user can also edit by hand.
+- Start from the constraints the user already stated (step 2) and turn each into a preference before calling `plan_jump_route` or `plan_haul`: "no gates" is `maxGates: 0`, an area to stay out of is an avoid list, an alliance to stay away from is `avoidAlliances`. Never save a profile with empty preferences when the user has stated a constraint, and never leave it to a route's result to catch one.
+- Ask in plain terms about anything else, and save what they say on a haul profile with `save_haul_profile`, giving `shipItemId` so neat works out the hold. Save one profile per ship: `plan_haul`'s `with` takes the other ships' haul profile names. Saved routes and profiles live in `~/.neat/routes.yaml` and `haul_profiles.yaml`, which the user can also edit by hand.
   - **Areas to stay out of:** systems, constellations or regions (`avoidSystems`, `avoidConstellations`, `avoidRegions`).
   - **Whose space:** alliances to avoid (`avoidAlliances`), avoiding sovereignty held by anyone at negative standing (`avoidBadStanding`), and blue alliances to prefer (`preferAlliances`).
   - **Midpoints:** systems where they can dock, have a cyno alt or a friendly POS (`midpoints`), and whether jumps must land only there (`midpointsRequired`).
@@ -63,9 +69,9 @@ Drop whatever the user will handle themselves from the rest of the plan.
 ## 7. Cynos
 
 - **Lighters:** characters whose `list_character_capabilities` include the cyno type needed, on a different account from the pilots jumping to them.
-- **Fuel:** `estimate_cyno` with the lighter, their ship, the cyno type the route needs and the number of lights (one per jump leg) gives Liquid Ozone per light, lights per hold and refills, whether the generator fits, and any skills they're missing.
-- **Ship:** compare sources before choosing: a cyno ship already near the cyno point or the lighter's location or jump clones (`list_location_assets`), one fitted from assets, or one bought (`compare_trade_hubs` for the nearest hub that stocks the fit, `quote_market_purchase` for the list).
-- **Implants:** a lit cyno is an easy target. `list_jump_clones` shows each clone's implants; prefer one with none or cheap ones.
+- **Fuel:** `estimate_cyno` with the lighter, their ship (by `shipItemId` when they own it), the cyno type the route needs and the number of lights (one per jump leg) gives Liquid Ozone per light, lights per load, the fuel already aboard and the lights it covers, refills, whether the generator fits, and any skills they're missing. Plan the refills from its output; don't read the hold contents yourself.
+- **Ship:** compare sources before choosing: a cyno ship already near the cyno point or the lighter's location or jump clones (`list_haul_ships` lists every ship with a cyno generator fitted), one fitted from assets, or one bought (`compare_trade_hubs` for the nearest hub that stocks the fit, `quote_market_purchase` for the list).
+- **Implants:** a lit cyno is an easy target, and the lighter can lose their pod. `list_jump_clones` gives the implants in the clone each character is in now (`activeImplants`) and in each jump clone. An empty `activeImplants` means none; a missing one means neat couldn't read them, so say so rather than calling the clone clean. Price the ones the lighter will wear with `quote_market_purchase` and give the user the pod's value, since that's what they weigh the risk against; a list of implant names doesn't show it. Prefer a clone with none or cheap ones.
 - **One lighter or several:** with one lighter, the hauler waits while the lighter gates to each next cyno point. The route's `lighterGatesFromPreviousLanding` says how far that is. Weigh it against getting another lighter in place, and say which you chose and why. Don't bring in a character only so two parts of the job run at once.
 
 ## 8. Get characters in place
@@ -78,6 +84,7 @@ Drop whatever the user will handle themselves from the rest of the plan.
 
 - Contracts can be made and accepted from anywhere. Only put a contract in the order when something in it is used by a later step.
 - Write numbered steps saying who does what, in which ship, at which station: cyno cycles, refills, docking and unloading included.
+- Only decided work goes in the steps. Leave out choices still open (step 4) and anything the user said they'll handle themselves.
 - Totals (fuel, fatigue, gates, volumes, cost) come from the tools' outputs.
 
 ## 10. Present the plan
@@ -85,7 +92,7 @@ Drop whatever the user will handle themselves from the rest of the plan.
 - Lead with the outcome: how many trips, who hauls, who lights.
 - Write systems with their displayed security, colored with the colors the tools give in formatted output.
 - Say which choices you made and why: one lighter or several, one ship or several, where the cyno ship comes from.
-- End with the decisions that are the user's and anything neat couldn't confirm, such as an unknown clone bay.
+- End with the decisions that are the user's and anything neat couldn't confirm, such as an unknown clone bay. A decision listed here must not already be made for them in the steps above.
 - When you learn something durable (a structure's clone bay, why a route goes a certain way, which account a character is on), record it with `save_structure`, `save_route` or `update_character_details`, and tell the user what you saved.
 
 ## Keep it current

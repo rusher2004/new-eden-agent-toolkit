@@ -237,7 +237,7 @@ func TestNPCStationIndustryData_Jita(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("ok %v err %v", ok, err)
 	}
-	if st.ReprocessingEfficiency != 0.5 || st.ReprocessingStationsTake != 0.05 || st.OwnerCorporationID != 1000035 || st.SystemID != 30000142 {
+	if st.ReprocessingEfficiency != 0.5 || st.ReprocessingStationsTake != 0.05 || st.OwnerCorporationID != 1000035 || st.SystemID != 30000142 || st.Name != "Jita IV - Moon 4 - Caldari Navy Assembly Plant" {
 		t.Errorf("station = %+v", st)
 	}
 }
