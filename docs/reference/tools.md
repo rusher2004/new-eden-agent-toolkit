@@ -2,13 +2,13 @@
 
 # neat tool reference
 
-neat gives Claude 270 tools. You don't call them yourself: ask Claude in plain language and it picks the tools it needs. This page is for when you want to know exactly what neat can do. Tools that need a character's permission list the scope group they need in their error when it's missing; see the main [README](../../README.md#choosing-what-neat-can-see).
+neat gives Claude 272 tools. You don't call them yourself: ask Claude in plain language and it picks the tools it needs. This page is for when you want to know exactly what neat can do. Tools that need a character's permission list the scope group they need in their error when it's missing; see the main [README](../../README.md#choosing-what-neat-can-see).
 
 ## Areas
 
 - [Characters and login](#characters-and-login) (5)
 - [Game client](#game-client) (5)
-- [Navigation and hauling](#navigation-and-hauling) (8)
+- [Navigation and hauling](#navigation-and-hauling) (10)
 - [Stations and structures you use](#stations-and-structures-you-use) (3)
 - [Trade hubs and purchases](#trade-hubs-and-purchases) (6)
 - [Industry planning](#industry-planning) (14)
@@ -51,7 +51,9 @@ Jump and gate routes with fuel, fatigue and dotlan links, saved routes with your
 
 - `delete_haul_profile`: Delete a saved haul profile from neat's local config.
 - `delete_route`: Delete a saved jump route from ~/.neat/routes.yaml.
+- `list_character_capabilities`: For each logged-in character, what their skills let them do in moving ships and cargo, worked out from the game's static data: which cynos they can light (standard, industrial, covert) and on which hulls they can fly, which jump bridges and conduit jumps they can open (covert, industrial, titan bridges; covert, industrial and carrier conduits), and which hauling, jump-capable and capital hulls they can fly by class. Use it to pick pilots and cyno lighters instead of reading skills yourself.
 - `list_haul_profiles`: List saved haul profiles.
+- `list_jump_clones`: For each logged-in character, their jump clones (where, and which implants each carries), their home station, and when they can next clone jump, worked out from their last clone jump and Infomorph Synchronizing, with how many jump clones their skills allow. Check it before planning gate travel to get a character somewhere: a clone jump is often faster.
 - `list_routes`: List saved jump routes with their systems, ship class and the user's notes. Check it before planning a route between the same places.
 - `plan_haul`: Pack a cargo list into loads for a haul profile's hold, each an even slice with volume by drop-off, plus round-trip route, fuel per trip, and a Multibuy list per load including fuel.
 - `plan_jump_route`: Plan jump and gate routes between two systems for a haul profile's ship and pilot, applying their routing preferences, or validate and cost a given route; per leg light years, fuel and fatigue, and dotlan links that display each route.
