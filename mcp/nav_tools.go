@@ -188,12 +188,15 @@ type RoutePrefsInput struct {
 }
 
 type SaveHaulProfileInput struct {
-	Name     string   `json:"name"`
-	Ship     string   `json:"ship" jsonschema:"hull type name, e.g. Nomad"`
-	PilotID  int64    `json:"pilotId" jsonschema:"the pilot's character ID (skills and contacts are read from ESI)"`
-	HoldM3   float64  `json:"holdM3" jsonschema:"the fitted cargo hold in m³ as shown in game"`
-	Outbound []string `json:"outbound,omitempty" jsonschema:"optional pinned route, hub to destination, as system names; saved in routes.yaml as '<name> outbound'"`
-	Return   []string `json:"return,omitempty" jsonschema:"optional pinned return route as system names; saved in routes.yaml as '<name> return'"`
+	Name    string  `json:"name"`
+	Ship    string  `json:"ship" jsonschema:"hull type name, e.g. Nomad"`
+	PilotID int64   `json:"pilotId" jsonschema:"the pilot's character ID (skills and contacts are read from ESI)"`
+	HoldM3  float64 `json:"holdM3,omitempty" jsonschema:"the fitted cargo hold in m³; omit it and give shipItemId to have neat work it out from the ship's real fit and the pilot's skills"`
+	// ShipItemID names the actual ship, whose fitted hold neat works out.
+	ShipItemID  int64    `json:"shipItemId,omitempty" jsonschema:"the actual ship, by item ID, whose fitted cargo hold neat works out (and whose hull it takes when ship is omitted)"`
+	ShipOwnerID int32    `json:"shipOwnerId,omitempty" jsonschema:"the logged-in character who owns shipItemId; defaults to the pilot"`
+	Outbound    []string `json:"outbound,omitempty" jsonschema:"optional pinned route, hub to destination, as system names; saved in routes.yaml as '<name> outbound'"`
+	Return      []string `json:"return,omitempty" jsonschema:"optional pinned return route as system names; saved in routes.yaml as '<name> return'"`
 	// OutboundRoute and ReturnRoute pin routes already saved by name.
 	OutboundRoute string          `json:"outboundRoute,omitempty" jsonschema:"pin a route already saved with save_route, by name, instead of giving outbound"`
 	ReturnRoute   string          `json:"returnRoute,omitempty" jsonschema:"pin a saved route by name for the return trip, instead of giving return"`
@@ -242,8 +245,29 @@ func (p *planner) resolvePrefs(ctx context.Context, in RoutePrefsInput) (config.
 func saveHaulProfileHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[SaveHaulProfileInput, config.HaulProfile] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in SaveHaulProfileInput) (*mcpsdk.CallToolResult, config.HaulProfile, error) {
 		p := newPlanner(version, clientID, store, sdeStore)
-		if strings.TrimSpace(in.Name) == "" || in.HoldM3 <= 0 {
-			return nil, config.HaulProfile{}, fmt.Errorf("save haul profile: name and a positive holdM3 are required")
+		if strings.TrimSpace(in.Name) == "" {
+			return nil, config.HaulProfile{}, fmt.Errorf("save haul profile: name is required")
+		}
+		if in.ShipItemID != 0 {
+			resolved, err := p.resolveShip(ctx, ShipSpec{ShipItemID: in.ShipItemID, OwnerID: in.ShipOwnerID}, int32(in.PilotID))
+			if err != nil {
+				return nil, config.HaulProfile{}, fmt.Errorf("save haul profile: %w", err)
+			}
+			if in.Ship == "" {
+				in.Ship = resolved.hullName
+			} else if !strings.EqualFold(strings.TrimSpace(in.Ship), resolved.hullName) {
+				return nil, config.HaulProfile{}, fmt.Errorf("save haul profile: ship %q doesn't match shipItemId %d, which is a %s", in.Ship, in.ShipItemID, resolved.hullName)
+			}
+			if in.HoldM3 <= 0 {
+				_, f, err := p.shipHold(ctx, resolved, int32(in.PilotID))
+				if err != nil {
+					return nil, config.HaulProfile{}, fmt.Errorf("save haul profile: %w", err)
+				}
+				in.HoldM3 = f.ShipAttr(sde.AttrCapacity)
+			}
+		}
+		if in.HoldM3 <= 0 || in.Ship == "" {
+			return nil, config.HaulProfile{}, fmt.Errorf("save haul profile: give ship and holdM3, or shipItemId for neat to work them out")
 		}
 		ids, err := sdeStore.TypesByName(ctx, p.ua(), []string{in.Ship})
 		if err != nil {

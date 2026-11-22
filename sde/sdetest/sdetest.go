@@ -24,7 +24,8 @@ CREATE TABLE invGroups (groupID INTEGER PRIMARY KEY, categoryID INTEGER, groupNa
 CREATE TABLE invTypes (typeID INTEGER PRIMARY KEY, groupID INTEGER, typeName VARCHAR(100), description TEXT, published BOOLEAN, capacity FLOAT, graphicID INTEGER, iconID INTEGER, marketGroupID INTEGER, mass FLOAT, portionSize INTEGER, radius FLOAT, volume FLOAT, raceID INTEGER, packagedVolume FLOAT);
 CREATE TABLE dgmTypeAttributes (typeID INTEGER, attributeID INTEGER, valueInt INTEGER, valueFloat FLOAT, PRIMARY KEY (typeID, attributeID));
 CREATE TABLE dgmTypeEffects (typeID INTEGER, effectID INTEGER, isDefault BOOLEAN, PRIMARY KEY (typeID, effectID));
-CREATE TABLE dgmEffects (effectID INTEGER PRIMARY KEY, effectName VARCHAR(400), modifierInfo TEXT);
+CREATE TABLE dgmEffects (effectID INTEGER PRIMARY KEY, effectName VARCHAR(400), effectCategory INTEGER, modifierInfo TEXT);
+CREATE TABLE dgmAttributeTypes (attributeID INTEGER PRIMARY KEY, attributeName VARCHAR(100), defaultValue FLOAT, stackable BOOLEAN, highIsGood BOOLEAN);
 CREATE TABLE mapRegions (regionID INTEGER PRIMARY KEY, regionName VARCHAR(100));
 CREATE TABLE mapConstellations (constellationID INTEGER PRIMARY KEY, regionID INTEGER, constellationName VARCHAR(100), x FLOAT, y FLOAT, z FLOAT);
 CREATE TABLE mapSolarSystems (solarSystemID INTEGER PRIMARY KEY, constellationID INTEGER, solarSystemName VARCHAR(100), x FLOAT, y FLOAT, z FLOAT, security FLOAT, securityClass VARCHAR(2));

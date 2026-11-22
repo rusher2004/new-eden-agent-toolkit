@@ -2,13 +2,13 @@
 
 # neat tool reference
 
-neat gives Claude 274 tools. You don't call them yourself: ask Claude in plain language and it picks the tools it needs. This page is for when you want to know exactly what neat can do. Tools that need a character's permission list the scope group they need in their error when it's missing; see the main [README](../../README.md#choosing-what-neat-can-see).
+neat gives Claude 276 tools. You don't call them yourself: ask Claude in plain language and it picks the tools it needs. This page is for when you want to know exactly what neat can do. Tools that need a character's permission list the scope group they need in their error when it's missing; see the main [README](../../README.md#choosing-what-neat-can-see).
 
 ## Areas
 
 - [Characters and login](#characters-and-login) (5)
 - [Game client](#game-client) (5)
-- [Navigation and hauling](#navigation-and-hauling) (12)
+- [Navigation and hauling](#navigation-and-hauling) (14)
 - [Stations and structures you use](#stations-and-structures-you-use) (3)
 - [Trade hubs and purchases](#trade-hubs-and-purchases) (6)
 - [Industry planning](#industry-planning) (14)
@@ -52,6 +52,8 @@ Jump and gate routes with fuel, fatigue and dotlan links, saved routes with your
 - `compare_haul_hulls`: Compare hulls for moving cargo or ships, from the game's static data: every hold by base capacity (cargo, ship maintenance bay, fleet hangar, fuel bay and special holds), warp speed, align time, warp core strength, whether it can fit a covert ops cloak or has or can fit interdiction nullification, whether it can travel into highsec, where it can dock, its jump drive (range, fuel, fatigue and the cyno types it can use), and which bridges and conduits it can ride. Give classes (such as Jump Freighter or Deep Space Transport) or hulls; with pilotId, also which the pilot can fly and their jump range and fuel with their skills. Values are before modules and rigs.
 - `delete_haul_profile`: Delete a saved haul profile from neat's local config.
 - `delete_route`: Delete a saved jump route from ~/.neat/routes.yaml.
+- `estimate_cyno`: Work out what lighting cynos with a ship takes, the way the game does: fuel per light and cycle length with the lighter's Cynosural Field Theory and the hull's bonuses, the fuel's volume, the fitted cargo hold, how many lights one hold covers, and for a number of lights the fuel needed and how many refills. Also says whether the generator fits the hull and which skills the lighter still needs.
+- `estimate_ship_hold`: Work out a ship's fitted holds the way the game does, from its hull, fitted modules and rigs, and the pilot's skills: every hold before and after, what's already in the cargo hold and what's free, and its fitted warp speed, top speed, align time and jump range and fuel. Give an owned ship by shipItemId (its real fit and cargo are read from assets) or a hull and modules by name. Use it instead of asking the user for their cargo hold.
 - `get_logistics_overview`: Start here for any move of ships, cargo or characters. One call gives, for each logged-in character: their account label, whether they're online, where they are (system with its displayed security, and the station or structure they're docked in), their ship, the cynos, bridges and conduits they can use with the hulls for each, the hauling and capital hulls they can fly, when they can next clone jump and where their jump clones are, and their jump fatigue. It also groups characters by account, flags labels the game contradicts (two characters labelled alike online at once; when one of them logged in within the last minute, it waits about a minute and checks again, since ESI can still show a character who just switched off as online), and warns about unknown accounts. Parts ESI won't give are named per character, not dropped silently.
 - `list_character_capabilities`: For each logged-in character, what their skills let them do in moving ships and cargo, worked out from the game's static data: which cynos they can light (standard, industrial, covert) and on which hulls they can fly, which jump bridges and conduit jumps they can open (covert, industrial, titan bridges; covert, industrial and carrier conduits), and which hauling, jump-capable and capital hulls they can fly by class. Use it to pick pilots and cyno lighters instead of reading skills yourself.
 - `list_haul_profiles`: List saved haul profiles.
@@ -59,7 +61,7 @@ Jump and gate routes with fuel, fatigue and dotlan links, saved routes with your
 - `list_routes`: List saved jump routes with their systems, ship class and the user's notes. Check it before planning a route between the same places.
 - `plan_haul`: Pack a cargo list into loads for a haul profile's hold, each an even slice with volume by drop-off, plus round-trip route, fuel per trip, and a Multibuy list per load including fuel.
 - `plan_jump_route`: Plan jump and gate routes between two systems for a haul profile's ship and pilot, applying their routing preferences, or validate and cost a given route; per leg light years, fuel and fatigue, and dotlan links that display each route.
-- `save_haul_profile`: Save (or replace) a named hauling profile: hull, pilot, fitted hold, optional pinned routes (saved in routes.yaml, or saved routes by name), and routing preferences (avoid lists, sovereignty and standings, midpoints, optimise for fuel, jumps or fatigue). Omit notes to keep the notes it has. Writes to ~/.neat/haul_profiles.yaml and routes.yaml only.
+- `save_haul_profile`: Save (or replace) a named hauling profile: hull, pilot, fitted hold (worked out from the ship's real fit when given shipItemId), optional pinned routes (saved in routes.yaml, or saved routes by name), and routing preferences (avoid lists, sovereignty and standings, midpoints, optimise for fuel, jumps or fatigue). Omit notes to keep the notes it has. Writes to ~/.neat/haul_profiles.yaml and routes.yaml only.
 - `save_route`: Save (or replace) a named jump route: its systems in order, the kind of ship it's for, and the user's notes on why it goes that way. Check list_routes before planning a route between the same places, since a saved route usually reflects choices the user made on purpose. plan_jump_route costs a saved route by name, and haul profiles pin saved routes for their regular runs. Returns every value it changed. Writes to ~/.neat/routes.yaml only.
 
 ## Stations and structures you use
