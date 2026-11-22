@@ -1,5 +1,9 @@
 # neat plugin — changelog
 
+## 0.15.0
+- New `get_logistics_overview` is where Claude starts any move of ships, cargo or characters: for each of your characters in one call, their account, whether they're online, where they are, their ship, what cynos, bridges and conduits they can use, which haulers and capitals they can fly, when they can next clone jump, and their jump fatigue. It also groups your characters by account and points out a label the game contradicts, such as two characters you said share an account being online at once.
+- New `compare_haul_hulls` compares ships for hauling from the game's own data: every hold, warp speed and align time, warp core strength, whether it can cloak or nullify bubbles, whether it can enter highsec, where it can dock (a carrier can't dock in an Astrahus; a supercarrier only in a Keepstar), its jump drive and which cynos it can use, and which bridges and conduits it can ride. Name a pilot to see which they can fly and their jump range and fuel.
+
 ## 0.14.0
 - New `list_character_capabilities` shows what each of your characters can do in moving ships and cargo, worked out from their skills and the game's own data: which cynos they can light (standard, industrial, covert) and on which ships they can fly, which jump bridges and conduit jumps they can open, and which haulers, jump freighters and capitals they can fly. Claude uses it to pick pilots and cyno alts instead of guessing from skill lists.
 - New `list_jump_clones` shows every character's jump clones and their implants, their home station, how many jump clones their skills allow, and when each can next clone jump.

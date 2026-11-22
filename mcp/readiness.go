@@ -12,10 +12,12 @@ import (
 	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 )
 
-// hullClassGroups are the ship groups list_character_capabilities reports
-// flyable hulls for: the ones that matter when moving cargo, capitals and
+// hullClassGroups are the ship groups list_character_capabilities and
+// get_logistics_overview report flyable hulls for, and compare_haul_hulls
+// compares by default: the ones that matter when moving cargo, capitals and
 // fleets. This picks what to show, not a game rule.
 var hullClassGroups = []int64{
+	28,   // Hauler
 	902,  // Jump Freighter
 	513,  // Freighter
 	380,  // Deep Space Transport
@@ -64,17 +66,7 @@ func (p *planner) moduleAbility(ctx context.Context, kind, variant string, modul
 	if err != nil {
 		return nav.Ability{}, fmt.Errorf("attributes of module %d: %w", moduleID, err)
 	}
-	var groups, types []int64
-	for _, a := range sde.AttrCanFitShipGroups {
-		if g := int64(attrs[a]); g != 0 {
-			groups = append(groups, g)
-		}
-	}
-	for _, a := range sde.AttrCanFitShipTypes {
-		if t := int64(attrs[a]); t != 0 {
-			types = append(types, t)
-		}
-	}
+	groups, types := fitList(attrs)
 	inGroups, err := p.sde.PublishedTypesInGroups(ctx, p.ua(), groups)
 	if err != nil {
 		return nav.Ability{}, fmt.Errorf("hulls that module %d fits by group: %w", moduleID, err)
