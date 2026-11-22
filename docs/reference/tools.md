@@ -2,7 +2,7 @@
 
 # neat tool reference
 
-neat gives Claude 267 tools. You don't call them yourself: ask Claude in plain language and it picks the tools it needs. This page is for when you want to know exactly what neat can do. Tools that need a character's permission list the scope group they need in their error when it's missing; see the main [README](../../README.md#choosing-what-neat-can-see).
+neat gives Claude 270 tools. You don't call them yourself: ask Claude in plain language and it picks the tools it needs. This page is for when you want to know exactly what neat can do. Tools that need a character's permission list the scope group they need in their error when it's missing; see the main [README](../../README.md#choosing-what-neat-can-see).
 
 ## Areas
 
@@ -10,7 +10,7 @@ neat gives Claude 267 tools. You don't call them yourself: ask Claude in plain l
 - [Game client](#game-client) (5)
 - [Navigation and hauling](#navigation-and-hauling) (8)
 - [Stations and structures you use](#stations-and-structures-you-use) (3)
-- [Trade hubs and purchases](#trade-hubs-and-purchases) (3)
+- [Trade hubs and purchases](#trade-hubs-and-purchases) (6)
 - [Industry planning](#industry-planning) (14)
 - [Universe and static data](#universe-and-static-data) (36)
 - [Wallet](#wallet) (6)
@@ -68,11 +68,14 @@ The NPC stations and Upwell structures you work from, with what the game won't t
 
 ## Trade hubs and purchases
 
-Trade hubs to buy at, and shopping lists priced against a hub's live order book. Hub profiles are saved in `~/.neat/config.json`.
+Trade hubs to buy and sell at, starting with the main NPC hubs, the player markets near Jita and the Amamake Keepstar; checks of how well a hub stocks everyday goods and capitals; and shopping lists priced and compared across hubs on their live order books. Saved in `~/.neat/hubs.yaml`, which you can also edit.
 
-- `list_hub_profiles`: List saved trade hub profiles and the default (Jita 4-4).
+- `compare_trade_hubs`: Rank trade hubs for a shopping list: how many items each supplies in full, the total walking each hub's live order book, and, with from, the gate jumps from a system such as the staging system. Use it to find the nearest hub that actually stocks what a plan needs.
+- `delete_hub_profile`: Delete a trade hub from ~/.neat/hubs.yaml. A built-in hub the user deletes stays deleted.
+- `list_hub_profiles`: List the trade hubs to buy and sell at (~/.neat/hubs.yaml): the five NPC hubs, the player markets near Jita and the Amamake Keepstar to start with, plus any the user saved. Each has its kind (NPC station or player structure), tier, system and region, what it's good for, its latest validation, and whether that validation is stale. The first hub is the default for pricing.
 - `quote_market_purchase`: Price a shopping list against a trade hub's live sell order book, walking depth for the full quantity; returns average and total per item, shortfalls, volume, and an in-game Multibuy list.
-- `save_hub_profile`: Save (or replace) a named trade hub (region and station) to buy at. Writes to ~/.neat/config.json only.
+- `save_hub_profile`: Save a trade hub, or update one: its name, system and region are read from the game (a player structure needs a character with docking access, which neat then uses to read its market). Records the user's tier, traits and notes. Returns every value it changed. Writes to ~/.neat/hubs.yaml only.
+- `validate_trade_hub`: Measure how good a trade hub is on live ESI data and record the dated result on it: how many of a basket of 24 everyday goods it has for sale (or a basket you give), with its sell and buy order counts, and optionally its public contracts by value with the capital ship groups on offer (the check for a capital market). Works for a saved hub or a new station or structure ID, which it then saves. Run it before relying on a hub whose validation is stale. Writes to ~/.neat/hubs.yaml only.
 
 ## Industry planning
 

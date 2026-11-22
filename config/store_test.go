@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -45,7 +46,7 @@ func TestStore_MovesLegacySectionsToYAML(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.Characters) != 2 || len(cfg.FacilityProfiles) != 1 || len(cfg.HaulProfiles) != 1 || len(cfg.HubProfiles) != 1 || !cfg.AnalyticsDisabled {
+	if len(cfg.Characters) != 2 || len(cfg.FacilityProfiles) != 1 || len(cfg.HaulProfiles) != 1 || len(cfg.HubProfiles) != len(config.BuiltinHubs) || !cfg.AnalyticsDisabled {
 		t.Fatalf("loaded = %+v", cfg)
 	}
 	prof := cfg.HaulProfiles[0]
@@ -69,8 +70,11 @@ func TestStore_MovesLegacySectionsToYAML(t *testing.T) {
 			t.Errorf("config.json still has %s", k)
 		}
 	}
-	if left["analyticsDisabled"] != true || left["hubProfiles"] == nil {
-		t.Errorf("config.json lost what it keeps: %v", left)
+	if left["analyticsDisabled"] != true || left["hubProfiles"] != nil || len(left["offeredHubIds"].([]any)) != len(config.BuiltinHubs) {
+		t.Errorf("config.json = %v, want analytics kept, hubs moved and built-ins recorded as offered", left)
+	}
+	if h, _ := cfg.HubProfile(""); h.Name != "Jita 4-4" || h.Region.ID != 10000002 {
+		t.Errorf("default hub = %+v, want the user's own Jita 4-4 first", h)
 	}
 	chars := read(t, filepath.Join(dir, "characters.yaml"))
 	if !strings.HasPrefix(chars, "# Characters logged in to neat.") || !strings.Contains(chars, "- id: 1\n  name: Main\n") {
@@ -150,6 +154,68 @@ func TestStore_BrokenYAMLFailsLoadAndSave(t *testing.T) {
 	}
 	if got := read(t, filepath.Join(dir, "characters.yaml")); got != broken {
 		t.Errorf("broken file changed: %q", got)
+	}
+}
+
+func TestStore_BuiltinHubsSeededOnceAndDeletionsStick(t *testing.T) {
+	dir := t.TempDir()
+	store := config.NewStoreAt(filepath.Join(dir, "config.json"))
+	cfg, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.HubProfiles) != len(config.BuiltinHubs) || cfg.HubProfiles[0].StationID != 60003760 {
+		t.Fatalf("hubs = %+v", cfg.HubProfiles)
+	}
+	if !strings.HasPrefix(read(t, filepath.Join(dir, "hubs.yaml")), "# Trade hubs to buy and sell at.") {
+		t.Error("hubs.yaml has no header")
+	}
+	if err := cfg.DeleteHubProfile("Amamake"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Save(cfg); err != nil {
+		t.Fatal(err)
+	}
+	again, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(again.HubProfiles) != len(config.BuiltinHubs)-1 {
+		t.Errorf("a deleted built-in hub came back: %d hubs", len(again.HubProfiles))
+	}
+	if _, ok := again.HubProfile("Amamake"); ok {
+		t.Error("Amamake found after deleting it")
+	}
+	if h, ok := again.HubProfile("Perimeter - Tranquility Trading Tower"); !ok || !h.IsStructure() {
+		t.Errorf("structure hub = %+v, %v", h, ok)
+	}
+	if h, ok := again.HubProfile("amarr"); !ok || h.StationID != 60008494 {
+		t.Errorf("lookup by system name = %+v, %v", h, ok)
+	}
+}
+
+func TestStore_LegacyBuiltinHubKeepsItsSystem(t *testing.T) {
+	store, _ := legacyStore(t)
+	cfg, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, ok := cfg.HubProfile("Jita")
+	if !ok || h.Name != "Jita 4-4" || h.System == nil || h.System.ID != 30000142 || h.Region.Name != "The Forge" || h.Tier != "major" {
+		t.Errorf("migrated Jita 4-4 = %+v, %v; want the user's name with the built-in hub's system, region and tier", h, ok)
+	}
+}
+
+func TestConfig_HubBySharedSystemNameIsAmbiguous(t *testing.T) {
+	cfg := config.Config{HubProfiles: slices.Clone(config.BuiltinHubs)}
+	if h, ok := cfg.HubProfile("Perimeter"); ok {
+		t.Errorf("Perimeter found %s, though two hubs are there", h.Name)
+	}
+	if err := cfg.DeleteHubProfile("Perimeter"); err == nil || !strings.Contains(err.Error(), "name one") {
+		t.Errorf("delete Perimeter = %v, want an ambiguity error", err)
+	}
+	if len(cfg.HubProfiles) != len(config.BuiltinHubs) {
+		t.Errorf("an ambiguous delete removed a hub")
 	}
 }
 

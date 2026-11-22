@@ -1,5 +1,11 @@
 # neat plugin — changelog
 
+## 0.13.0
+- Trade hubs now live in `~/.neat/hubs.yaml`, which you can edit, and neat starts it with the five NPC hubs (Jita, Amarr, Dodixie, Hek, Rens), the two player markets in Perimeter and the Amamake Keepstar, the lowsec hub where capitals trade. Delete any you don't use and they stay deleted. Hubs you saved before come first, so your default doesn't change.
+- New `validate_trade_hub` measures a hub on live data and records the result with its date: how many of 24 everyday goods it has for sale, its sell and buy order counts, and optionally its public contracts by value with the capital ships on offer. Hubs not checked in the last 30 days are marked stale.
+- New `compare_trade_hubs` ranks your hubs for a shopping list: what each can supply in full, the total cost, and how many jumps each is from a system such as your staging system.
+- Player structure markets now work everywhere neat prices things, including build plans and ore mixes. neat reads them through a character with docking access and remembers which one, so you only name it once. `delete_hub_profile` removes a hub.
+
 ## 0.12.0
 - neat now keeps a list of the stations and structures you work from, in `~/.neat/structures.yaml`, with what the game won't tell it: what you use each for (manufacturing, reactions, market, staging...), its facility profile, whether it has a working clone bay, and your notes. New tools `list_structures`, `save_structure` and `delete_structure`. Names, systems and owners are filled in from the game.
 - Clone bays: neat records one as confirmed whenever one of your characters has a jump clone there, and checks again each time it lists your structures. Anywhere else it stays unknown until you check in game and tell Claude, since the game only shows a structure's services to its owners. Claude asks rather than guessing either way.
