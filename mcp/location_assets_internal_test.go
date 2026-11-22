@@ -51,8 +51,11 @@ func TestListLocationAssets_CombinesCharactersPagesAndTotals(t *testing.T) {
 	if out.Totals.AssembledShips != 1 || !near(out.Totals.ItemsM3, 5) || !near(out.Totals.ShipContentsM3, 10) || !near(out.Totals.ShipsPackagedM3, 2500) {
 		t.Errorf("totals = %+v", out.Totals)
 	}
-	if len(out.Sources) != 2 || out.Sources[0] != (AssetSource{Owner: "Hauler", Items: 2}) || out.Sources[1] != (AssetSource{Owner: "Alt", Items: 1}) {
+	if len(out.Sources) != 2 || out.Sources[0].Owner != "Hauler" || out.Sources[0].Items != 2 || out.Sources[1].Owner != "Alt" || out.Sources[1].Items != 1 {
 		t.Errorf("sources = %+v", out.Sources)
+	}
+	if h, a := out.Sources[0].Totals, out.Sources[1].Totals; h.AssembledShips != 1 || !near(h.ShipContentsM3, 10) || !near(h.ItemsM3, 0) || a.AssembledShips != 0 || !near(a.ItemsM3, 5) {
+		t.Errorf("per-owner totals: Hauler %+v, Alt %+v", h, a)
 	}
 }
 

@@ -218,7 +218,7 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_location_assets",
-		Description: "List everything the user owns at one NPC station or Upwell structure, across every logged-in character (and a corporation's hangars, through a character with the roles), in one call instead of paging list_assets. Items are listed in tree order with what's inside each container and ship, and every volume comes worked out: each stack's volume as it is now, assembled ships' assembled and repackaged volumes, what comes out of each ship to repackage it, and the rigs that repackaging destroys. Totals give the volume to move with ships repackaged or carried assembled. Use it whenever a plan moves things out of a station or structure.",
+		Description: "List everything the user owns at one NPC station or Upwell structure, across every logged-in character (and a corporation's hangars, through a character with the roles), in one call instead of paging list_assets. Items are listed in tree order with what's inside each container and ship, and every volume comes worked out: each stack's volume as it is now, assembled ships' assembled and repackaged volumes, what comes out of each ship to repackage it, and the rigs that repackaging destroys. Totals give the volume to move with ships repackaged or carried assembled, overall and per owner in sources: items in one character's personal hangar can only be hauled by another pilot once its owner gives them over with an item exchange contract. Use it whenever a plan moves things out of a station or structure.",
 	}, listLocationAssetsHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{

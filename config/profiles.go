@@ -69,8 +69,8 @@ type RoutePrefs struct {
 	MidpointsRequired    bool    `json:"midpointsRequired,omitempty" yaml:"midpoints_required,omitempty"`
 	PreferStationSystems bool    `json:"preferStationSystems,omitempty" yaml:"prefer_station_systems,omitempty"`
 	AvoidIncursions      bool    `json:"avoidIncursions,omitempty" yaml:"avoid_incursions,omitempty"`
-	Optimize             string  `json:"optimize,omitempty" yaml:"optimize,omitempty"` // fuel, jumps or fatigue
-	MaxGates             int     `json:"maxGates,omitempty" yaml:"max_gates,omitempty"`
+	Optimize             string  `json:"optimize,omitempty" yaml:"optimize,omitempty"`  // fuel, jumps or fatigue
+	MaxGates             *int    `json:"maxGates,omitempty" yaml:"max_gates,omitempty"` // nil = no limit; 0 = no gates
 	MaxRecentKills       int     `json:"maxRecentKills,omitempty" yaml:"max_recent_kills,omitempty"`
 }
 

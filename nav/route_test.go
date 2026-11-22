@@ -151,9 +151,38 @@ func TestPlanRoutes_NoHighsecLanding(t *testing.T) {
 func TestPlanRoutes_GateCap(t *testing.T) {
 	g := nav.NewRouteGraph(realSystems(), gatesToJita)
 	req := nav.RouteRequest{From: 30001324, To: 30000142, Drive: nomad, Skills: mb, CanUseHighsec: true}
-	req.Prefs.MaxGates = 1
+	one := 1
+	req.Prefs.MaxGates = &one
 	if _, err := g.PlanRoutes(req); err == nil {
 		t.Error("route to Jita found with a 1-gate cap; Jita is 2 gates from the nearest legal landing here")
+	}
+	req.Prefs.MaxGates = nil
+	if _, err := g.PlanRoutes(req); err != nil {
+		t.Errorf("no gate cap: %v", err)
+	}
+}
+
+func TestPlanRoutes_ZeroGatesMeansNoGates(t *testing.T) {
+	g := nav.NewRouteGraph(realSystems(), gatesToJita)
+	req := nav.RouteRequest{From: 30001324, To: 30000142, Drive: nomad, Skills: mb, CanUseHighsec: true}
+	zero := 0
+	req.Prefs.MaxGates = &zero
+	if routes, err := g.PlanRoutes(req); err == nil {
+		t.Errorf("route to Jita found with no gates allowed: %+v", routes[0].Systems)
+	}
+}
+
+func TestValidateRoute_FlagsGateCap(t *testing.T) {
+	g := nav.NewRouteGraph(realSystems(), gatesToJita)
+	req := nav.RouteRequest{From: 30001324, To: 30000142, Drive: nomad, Skills: mb, CanUseHighsec: true}
+	one := 1
+	req.Prefs.MaxGates = &one
+	rt, err := g.ValidateRoute(req, []int64{30001324, 30000855, 30001385, 30000205, 30000163, 30000142})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rt.Broken) != 1 {
+		t.Errorf("a %d-gate pinned route with a 1-gate cap: broken = %q", rt.Gates, rt.Broken)
 	}
 }
 

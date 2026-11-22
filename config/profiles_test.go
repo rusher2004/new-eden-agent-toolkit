@@ -57,3 +57,24 @@ func TestHubProfile_DefaultsToJita(t *testing.T) {
 		t.Error("unknown hub found")
 	}
 }
+
+func TestProfiles_ZeroMaxGatesSurvivesSave(t *testing.T) {
+	store := config.NewStoreAt(filepath.Join(t.TempDir(), "config.json"))
+	zero := 0
+	var cfg config.Config
+	cfg.UpsertHaulProfile(config.HaulProfile{Name: "No gates", ShipTypeID: 28846, PilotID: 1, Prefs: config.RoutePrefs{MaxGates: &zero}})
+	cfg.UpsertHaulProfile(config.HaulProfile{Name: "Any gates", ShipTypeID: 28846, PilotID: 1})
+	if err := store.Save(cfg); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h, _ := got.HaulProfile("No gates"); h.Prefs.MaxGates == nil || *h.Prefs.MaxGates != 0 {
+		t.Errorf("maxGates 0 = %v after a save, want 0", h.Prefs.MaxGates)
+	}
+	if h, _ := got.HaulProfile("Any gates"); h.Prefs.MaxGates != nil {
+		t.Errorf("unset maxGates = %d after a save, want nil", *h.Prefs.MaxGates)
+	}
+}

@@ -1,5 +1,12 @@
 # neat plugin — changelog
 
+## 0.20.0
+- "No gates" now really means no gates. A routing preference of `maxGates: 0` used to mean no limit at all, and saving it on a haul profile dropped it, so a route could still take gates. Now 0 means none, leaving it out means no limit, and a saved 0 stays saved. A pinned route that takes more gates than the limit is flagged.
+- `list_jump_clones` and `get_logistics_overview` now say whether each character can start a clone jump where they're docked (`jumpFromHere`: yes, no, unknown or not docked, with the reason). `readyNow` is true only when the cooldown has passed and a clone bay is known to be there, so a pilot docked at a structure you saved without a clone bay is no longer reported ready to jump from it. `cooldownReady` still tells you about the cooldown alone.
+- `estimate_cyno` lists every load of fuel the lights take: before which light, and how many units to add to what's already aboard. Claude no longer works out the top-up itself.
+- `list_location_assets` totals each owner's share, so a plan can see what each character has to contract to the pilot.
+- The `haul-plan` skill puts an item exchange contract in the steps for anything the pilot doesn't own, loads only what you asked to move, checks the clone bay where a character is now before a clone jump, offers to save every station or structure the plan uses, and no longer sends a character in a valuable clone through lowsec gates in a pod.
+
 ## 0.19.0
 - New `list_haul_ships` finds where your haulers, jump freighters, freighters, transports, Rorquals, Black Ops, carriers and other capitals are parked, and every ship with a cyno generator fitted, in one call: owner, class, name, the station, structure or system it's in with its security, and the ship carrying it if it's in a ship maintenance bay. Claude no longer pages through every character's full asset list to find them.
 - `estimate_cyno` no longer counts a cyno ship's own Liquid Ozone as cargo in the way. A cyno Venture with a full load used to come back with no lights per hold; it now says the fuel aboard covers one light and how many lights a load covers. It now gives `fills` in place of `refills`: how many loads of fuel the chain takes, the first one included. A ship you own counts from the fuel already aboard, and a ship given by name from an empty hold, so two lights at one light per load come to two fills, not one.

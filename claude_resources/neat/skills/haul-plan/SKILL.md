@@ -26,7 +26,7 @@ When another skill (such as **industry-build-plan**) sends you here only for a m
 ## 3. Inventory
 
 - Call `list_location_assets` at the origin for every character, and the corporation's hangars through a character with the roles. It lists what's inside each container and ship, packaged and assembled volumes, each assembled ship's repackaged size and the rigs repackaging destroys, and totals.
-- Mention useful extras that belong to other characters, but don't add them unasked.
+- `sources` gives each owner's share of the totals. Move only what the user asked to move: mention useful extras that belong to other characters (boosters, fuel, modules), but don't add them to the cargo or the steps unless the user says yes.
 
 ## 4. Assembled ships
 
@@ -51,14 +51,14 @@ This choice is the user's, so it never goes into the steps before they make it:
 ## 6. Route and preferences
 
 - Check `list_routes` for a saved route between the same places, and read its notes: it usually reflects choices the user made on purpose. Cost it with `plan_jump_route` and `route` set to its name. To check a route the pilot already flies, pass it as `waypoints` instead.
-- Start from the constraints the user already stated (step 2) and turn each into a preference before calling `plan_jump_route` or `plan_haul`: "no gates" is `maxGates: 0`, an area to stay out of is an avoid list, an alliance to stay away from is `avoidAlliances`. Never save a profile with empty preferences when the user has stated a constraint, and never leave it to a route's result to catch one.
+- Start from the constraints the user already stated (step 2) and turn each into a preference before calling `plan_jump_route` or `plan_haul`: "no gates" is `maxGates: 0` (leaving `maxGates` out means no limit), an area to stay out of is an avoid list, an alliance to stay away from is `avoidAlliances`. Never save a profile with empty preferences when the user has stated a constraint, and never leave it to a route's result to catch one.
 - Ask in plain terms about anything else, and save what they say on a haul profile with `save_haul_profile`, giving `shipItemId` so neat works out the hold. Save one profile per ship: `plan_haul`'s `with` takes the other ships' haul profile names. Saved routes and profiles live in `~/.neat/routes.yaml` and `haul_profiles.yaml`, which the user can also edit by hand.
   - **Areas to stay out of:** systems, constellations or regions (`avoidSystems`, `avoidConstellations`, `avoidRegions`).
   - **Whose space:** alliances to avoid (`avoidAlliances`), avoiding sovereignty held by anyone at negative standing (`avoidBadStanding`), and blue alliances to prefer (`preferAlliances`).
   - **Midpoints:** systems where they can dock, have a cyno alt or a friendly POS (`midpoints`), and whether jumps must land only there (`midpointsRequired`).
   - **dotlan-style options:** prefer station systems (`preferStationSystems`), avoid incursions (`avoidIncursions`).
   - **What to optimise:** fuel (the default), number of jumps, or fatigue (`optimize`).
-  - **Gates:** a cap on gate count (`maxGates`), and whether to skip gate systems with recent kills (`maxRecentKills`).
+  - **Gates:** a cap on gate count (`maxGates`; 0 means no gates at all, and leaving it out means no limit), and whether to skip gate systems with recent kills (`maxRecentKills`).
 - Call `plan_jump_route`, or `plan_haul` for cargo (with the other ships' haul profiles in `with` when several fly together). Read each route's `checks`:
   - a landing with `noDock` has nowhere known to dock: ask whether the user has a structure there, and save it if so;
   - `fuel` says whether the fuel fits the fuel bay or needs cargo space;
@@ -69,20 +69,21 @@ This choice is the user's, so it never goes into the steps before they make it:
 ## 7. Cynos
 
 - **Lighters:** characters whose `list_character_capabilities` include the cyno type needed, on a different account from the pilots jumping to them.
-- **Fuel:** `estimate_cyno` with the lighter, their ship (by `shipItemId` when they own it), the cyno type the route needs and the number of lights (one per jump leg) gives Liquid Ozone per light, lights per load, the fuel already aboard and the lights it covers, how many loads of fuel the lights take (the first one included when the hold starts short), whether the generator fits, and any skills they're missing. Plan every fuel load from its output; don't read the hold contents yourself.
+- **Fuel:** `estimate_cyno` with the lighter, their ship (by `shipItemId` when they own it), the cyno type the route needs and the number of lights (one per jump leg) gives Liquid Ozone per light, lights per load, the fuel already aboard and the lights it covers, how many loads of fuel the lights take, whether the generator fits, and any skills they're missing. Its `loads` list each top-up in order: before which light, how many units to add to what's aboard then, and the lights it covers. Put those numbers in the steps as they are ("trade 158 Liquid Ozone to the lighter before the second light"); never subtract fuel aboard from fuel needed yourself, and don't read the hold contents yourself.
 - **Ship:** compare sources before choosing: a cyno ship already near the cyno point or the lighter's location or jump clones (`list_haul_ships` lists every ship with a cyno generator fitted), one fitted from assets, or one bought (`compare_trade_hubs` for the nearest hub that stocks the fit, `quote_market_purchase` for the list).
-- **Implants:** a lit cyno is an easy target, and the lighter can lose their pod. `list_jump_clones` gives the implants in the clone each character is in now (`activeImplants`) and in each jump clone. An empty `activeImplants` means none; a missing one means neat couldn't read them, so say so rather than calling the clone clean. Price the ones the lighter will wear with `quote_market_purchase` and give the user the pod's value, since that's what they weigh the risk against; a list of implant names doesn't show it. Prefer a clone with none or cheap ones.
+- **Implants:** a lit cyno is an easy target, and the lighter can lose their pod. `list_jump_clones` gives the implants in the clone each character is in now (`activeImplants`) and in each jump clone. An empty `activeImplants` means none; a missing one means neat couldn't read them, so say so rather than calling the clone clean. Price the ones the lighter will wear with `quote_market_purchase` and give the user the pod's value, since that's what they weigh the risk against; a list of implant names doesn't show it. Prefer a clone with none or cheap ones. Never route a character in a valuable clone through lowsec or nullsec gates in a pod: suggest a shuttle or another cheap, fast ship they own or can buy there, and say why.
 - **One lighter or several:** with one lighter, the hauler waits while the lighter gates to each next cyno point. The route's `lighterGatesFromPreviousLanding` says how far that is. Weigh it against getting another lighter in place, and say which you chose and why. Don't bring in a character only so two parts of the job run at once.
 
 ## 8. Get characters in place
 
 - Check `list_jump_clones` before planning gate travel: where each clone is, its implants, whether the character can clone jump now and when they next can, including the trip back.
-- A clone jump has to start where there's a clone bay. If `list_structures` says it's unknown, ask the user to check in game and save the answer with `save_structure`. Don't assume either way.
+- A clone jump has to start where there's a clone bay, and that applies to where the character is docked now, not only where they're going. `readyNow` is true only when the cooldown has passed (`cooldownReady`) and `jumpFromHere` is `yes`. When `jumpFromHere` is `no`, the character has to move to a station or structure with a clone bay first, so put that move in the steps or pick another character. When it's `unknown`, ask the user to check in game and save the answer with `save_structure`. Don't assume either way.
 - A clone jump arrives in a capsule. Any step there beyond flying out in a pod needs a ship already at that station, owned by the character or contracted to them.
 
 ## 9. Order of operations
 
 - Contracts can be made and accepted from anywhere. Only put a contract in the order when something in it is used by a later step.
+- A pilot can load only what they own or can take from a corporation hangar they have access to. Anything in another character's personal hangar needs an item exchange contract from its owner to the pilot before the loading step, so each of those contracts is a step: who makes it, to whom, at which station, and what's in it (`list_location_assets`' `sources` give each owner's share). The same goes for fuel or a cyno ship one character hands to another.
 - Write numbered steps saying who does what, in which ship, at which station: cyno cycles, fuel loads, docking and unloading included.
 - Only decided work goes in the steps. Leave out choices still open (step 4) and anything the user said they'll handle themselves.
 - Totals (fuel, fatigue, gates, volumes, cost) come from the tools' outputs.
@@ -93,6 +94,7 @@ This choice is the user's, so it never goes into the steps before they make it:
 - Write systems with their displayed security, colored with the colors the tools give in formatted output.
 - Say which choices you made and why: one lighter or several, one ship or several, where the cyno ship comes from.
 - End with the decisions that are the user's and anything neat couldn't confirm, such as an unknown clone bay. A decision listed here must not already be made for them in the steps above.
+- Before finishing, check every station and structure the plan uses (origin, destination, staging, where each character starts and every landing) against `list_structures`, and offer to save each one that isn't saved with `save_structure`, in one list.
 - When you learn something durable (a structure's clone bay, why a route goes a certain way, which account a character is on), record it with `save_structure`, `save_route` or `update_character_details`, and tell the user what you saved.
 
 ## Keep it current

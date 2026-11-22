@@ -104,10 +104,10 @@ func TestGetLogisticsOverview(t *testing.T) {
 	if recon.Ship == nil || recon.Ship.Type != "Falcon" || len(recon.Abilities) != 1 || recon.Abilities[0] != "standard cyno: Falcon" {
 		t.Errorf("ship %+v abilities %v", recon.Ship, recon.Abilities)
 	}
-	if recon.Fatigue == nil || !recon.Fatigue.Fatigued || recon.Clones == nil || !recon.Clones.ReadyNow || len(recon.Clones.JumpClonesAt) != 1 {
+	if recon.Fatigue == nil || !recon.Fatigue.Fatigued || recon.Clones == nil || !recon.Clones.ReadyNow || recon.Clones.JumpFromHere == nil || recon.Clones.JumpFromHere.Status != jumpFromYes || len(recon.Clones.JumpClonesAt) != 1 {
 		t.Errorf("fatigue %+v clones %+v", recon.Fatigue, recon.Clones)
 	}
-	if carrier.Location != nil || len(carrier.Unread) != 2 || !strings.Contains(strings.Join(carrier.Unread, ";"), "location: missing scope") || carrier.Clones == nil {
+	if carrier.Location != nil || len(carrier.Unread) != 2 || !strings.Contains(strings.Join(carrier.Unread, ";"), "location: missing scope") || carrier.Clones == nil || carrier.Clones.ReadyNow || carrier.Clones.JumpFromHere != nil {
 		t.Errorf("carrier unread = %v location %+v clones %+v", carrier.Unread, carrier.Location, carrier.Clones)
 	}
 	if len(out.Accounts) != 1 || len(out.Accounts[0].Characters) != 2 || len(out.Conflicts) != 1 || !strings.Contains(out.Conflicts[0], "online at the same time") {
