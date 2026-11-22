@@ -1,6 +1,10 @@
 package industry
 
-import "math"
+import (
+	"math"
+
+	"github.com/rusher2004/new-eden-agent-toolkit/nav"
+)
 
 // ReprocessSkills are a character's reprocessing skill levels.
 type ReprocessSkills struct {
@@ -16,9 +20,9 @@ type ReprocessSkills struct {
 
 // UpwellYieldInput describes an Upwell structure's reprocessing setup.
 type UpwellYieldInput struct {
-	RigTier           int     // 0 none, 1 T1, 2 T2 reprocessing rig
-	Band              Band    // security band of the structure
-	StructureBonusPct float64 // strRefiningYieldBonus (2722): 2 Athanor, 5.5 Tatara, 0 others
+	RigTier           int      // 0 none, 1 T1, 2 T2 reprocessing rig
+	Band              nav.Band // security band of the structure
+	StructureBonusPct float64  // strRefiningYieldBonus (2722): 2 Athanor, 5.5 Tatara, 0 others
 }
 
 // UpwellYield is the Upwell reprocessing yield (0–1) for an ore whose

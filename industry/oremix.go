@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/rusher2004/new-eden-agent-toolkit/market"
 	"gonum.org/v1/gonum/mat"
 	"gonum.org/v1/gonum/optimize/convex/lp"
 )
@@ -16,10 +17,10 @@ type OreOption struct {
 	TypeID     int64
 	Name       string
 	Portion    int64
-	M3         float64   // per unit
-	PerPortion []TypeQty // reprocessing output per portion at 100%
-	Yield      float64   // this character's yield for this ore (0–1)
-	Book       []Order   // sell orders at the hub
+	M3         float64        // per unit
+	PerPortion []TypeQty      // reprocessing output per portion at 100%
+	Yield      float64        // this character's yield for this ore (0–1)
+	Book       []market.Order // sell orders at the hub
 }
 
 // MineralOption is a refined mineral the solver may buy directly.
@@ -27,7 +28,7 @@ type MineralOption struct {
 	TypeID int64
 	Name   string
 	M3     float64
-	Book   []Order
+	Book   []market.Order
 }
 
 // OreMixRequest is the input to SolveOreMix.
@@ -106,7 +107,7 @@ func SolveOreMix(req OreMixRequest) (OreMix, error) {
 		mineral *MineralOption
 		yield   map[int64]float64
 		m3      float64
-		book    []Order
+		book    []market.Order
 	}
 	var opts []option
 	for i := range req.Ores {
@@ -139,12 +140,12 @@ func SolveOreMix(req OreMixRequest) (OreMix, error) {
 		}
 		useful = useful*1.05 + 1
 		var taken float64
-		var tierOrders [][]Order
+		var tierOrders [][]market.Order
 		for _, ord := range book {
 			if taken >= useful {
 				break
 			}
-			tierOrders = append(tierOrders, []Order{ord})
+			tierOrders = append(tierOrders, []market.Order{ord})
 			taken += float64(ord.Volume)
 		}
 		for _, grp := range mergeTiers(tierOrders, tiers) {
@@ -215,7 +216,7 @@ func SolveOreMix(req OreMixRequest) (OreMix, error) {
 		if qty <= 0 {
 			continue
 		}
-		q := WalkBook(o.ore.TypeID, o.ore.Book, qty, req.StationID)
+		q := market.WalkBook(o.ore.TypeID, o.ore.Book, qty, req.StationID)
 		out := Reprocess(o.ore.PerPortion, p, qty, o.ore.Yield)
 		for _, y := range out {
 			got[y.TypeID] += y.Quantity
@@ -227,7 +228,7 @@ func SolveOreMix(req OreMixRequest) (OreMix, error) {
 		if need <= 0 {
 			continue
 		}
-		q := WalkBook(mo.TypeID, mo.Book, need, req.StationID)
+		q := market.WalkBook(mo.TypeID, mo.Book, need, req.StationID)
 		if q.Shortfall > 0 {
 			return OreMix{}, fmt.Errorf("solve ore mix: after rounding, the market is %d short of %s", q.Shortfall, mo.Name)
 		}
@@ -273,8 +274,8 @@ func mineralM3(ms []MineralOption, t int64) float64 {
 	return 0.01
 }
 
-func stationBook(orders []Order, stationID int64) []Order {
-	var b []Order
+func stationBook(orders []market.Order, stationID int64) []market.Order {
+	var b []market.Order
 	for _, o := range orders {
 		if o.Volume > 0 && (stationID == 0 || o.LocationID == stationID) {
 			b = append(b, o)
@@ -286,9 +287,9 @@ func stationBook(orders []Order, stationID int64) []Order {
 
 // mergeTiers groups consecutive orders (already sorted by price) into at most
 // k tiers of roughly equal quantity.
-func mergeTiers(orders [][]Order, k int) [][]Order {
+func mergeTiers(orders [][]market.Order, k int) [][]market.Order {
 	if len(orders) <= k {
-		out := make([][]Order, len(orders))
+		out := make([][]market.Order, len(orders))
 		copy(out, orders)
 		return out
 	}
@@ -297,8 +298,8 @@ func mergeTiers(orders [][]Order, k int) [][]Order {
 		total += float64(g[0].Volume)
 	}
 	per := total / float64(k)
-	var out [][]Order
-	var cur []Order
+	var out [][]market.Order
+	var cur []market.Order
 	var acc float64
 	for _, g := range orders {
 		cur = append(cur, g...)

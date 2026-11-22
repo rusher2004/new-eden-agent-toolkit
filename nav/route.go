@@ -1,4 +1,4 @@
-package industry
+package nav
 
 import (
 	"container/heap"

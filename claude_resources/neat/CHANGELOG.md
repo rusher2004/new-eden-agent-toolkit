@@ -1,5 +1,8 @@
 # neat plugin — changelog
 
+## 0.9.2
+- Jump routes, hauling, trade hubs and purchase pricing are no longer filed under industry planning. They now have their own sections in neat's tool reference, because moving ships and buying supplies matter for PvP and PvE as much as for building. No tool was renamed and nothing about how they work has changed; this prepares for upcoming logistics features.
+
 ## 0.9.1
 - Claude now always asks whether you want your corporation's data when you add characters, and suggests the `corporation`, `corporation_finance` and `corporation_industry` groups up front instead of waiting for a corporation tool to fail. It explains that these only show data for characters with the matching in-game roles, and that granting them to your other characters does no harm.
 - `structures` is now suggested whenever you want to see your assets or plan industry, so Claude can look up the names of the player structures your items, ships and jobs are in instead of showing only a number.

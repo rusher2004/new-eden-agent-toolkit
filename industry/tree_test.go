@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/industry"
+	"github.com/rusher2004/new-eden-agent-toolkit/market"
 )
 
 // A trimmed Minokawa: the hull needs siege arrays, capacitor batteries and
@@ -133,22 +134,14 @@ func TestNetStock(t *testing.T) {
 	}
 }
 
-func TestWalkBook(t *testing.T) {
-	orders := []industry.Order{{Price: 207e6, Volume: 18, LocationID: 60003760}, {Price: 204.8e6, Volume: 2, LocationID: 60003760}, {Price: 1, Volume: 99, LocationID: 1}}
-	q := industry.WalkBook(57487, orders, 25, 60003760)
-	if q.Filled != 20 || q.Shortfall != 5 || q.Lowest != 204.8e6 || q.Total != 2*204.8e6+18*207e6 || q.Depth != 20 {
-		t.Errorf("quote = %+v", q)
-	}
-}
-
 func TestCompareBuildVsBuy(t *testing.T) {
 	// Capacitor batteries: Jita has 4, the plan needs 196.
 	got := industry.CompareBuildVsBuy(industry.BuildBuyInput{TypeID: battery, Units: 196, InputCost: 196 * 10.5e6, InputM3: 196 * 2050, JobFees: 196 * 0.4e6,
-		Buy: industry.Quote{Filled: 4, Shortfall: 192, Average: 31e6}, UnitM3: 2000, FreightPerM3: 500, CanBuild: true})
+		Buy: market.Quote{Filled: 4, Shortfall: 192, Average: 31e6}, UnitM3: 2000, FreightPerM3: 500, CanBuild: true})
 	if got.Recommend != industry.DecideBuild || len(got.Flags) != 1 {
 		t.Errorf("battery = %+v", got)
 	}
-	cheapBuy := industry.CompareBuildVsBuy(industry.BuildBuyInput{Units: 10, InputCost: 100, Buy: industry.Quote{Filled: 10, Average: 5}, CanBuild: true})
+	cheapBuy := industry.CompareBuildVsBuy(industry.BuildBuyInput{Units: 10, InputCost: 100, Buy: market.Quote{Filled: 10, Average: 5}, CanBuild: true})
 	if cheapBuy.Recommend != industry.DecideBuy || cheapBuy.SavedByBuilding >= 0 {
 		t.Errorf("cheap buy = %+v", cheapBuy)
 	}

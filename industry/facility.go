@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/rusher2004/new-eden-agent-toolkit/nav"
 )
 
 // Activity names, as the SDE's indModifierSources spells them.
@@ -123,7 +125,7 @@ type Facility struct {
 	SystemID        int64
 	RegionID        int64
 	Security        float64
-	Band            Band
+	Band            nav.Band
 	Modifiers       []Modifier
 	Filters         map[int64]TargetFilter
 	Services        []string
@@ -156,7 +158,7 @@ type ResolveFacilityInput struct {
 func ResolveFacility(in ResolveFacilityInput) Facility {
 	f := Facility{
 		Name: in.Name, Kind: in.Kind, SystemID: in.SystemID, RegionID: in.RegionID, Security: in.Security,
-		Band: BandOf(in.Security, in.RegionID), Filters: in.Filters, Services: in.Services,
+		Band: nav.BandOf(in.Security, in.RegionID), Filters: in.Filters, Services: in.Services,
 		SupercapUpgrade: in.SupercapUpgrade, FacilityTax: in.FacilityTax, StarbaseSecurityMax: in.StarbaseSecurityMax,
 	}
 	if in.Kind == KindNPCStation {
@@ -174,7 +176,7 @@ func ResolveFacility(in ResolveFacilityInput) Facility {
 	s := in.Structure
 	f.StructureTypeID, f.StructureName = s.TypeID, s.Name
 	f.StructureSize = int64(s.Attributes[attrRigSize])
-	if s.Attributes[attrDisallowInHighSec] != 0 && f.Band == Highsec {
+	if s.Attributes[attrDisallowInHighSec] != 0 && f.Band == nav.Highsec {
 		f.Warnings = append(f.Warnings, fmt.Sprintf("%s can't be anchored in highsec", s.Name))
 	}
 	for _, src := range s.Sources {
@@ -189,7 +191,7 @@ func ResolveFacility(in ResolveFacilityInput) Facility {
 			f.Warnings = append(f.Warnings, fmt.Sprintf("%s is size %d but %s takes size %d rigs; ignored", rig.Name, size, s.Name, f.StructureSize))
 			continue
 		}
-		if rig.Attributes[attrDisallowInHighSec] != 0 && f.Band == Highsec {
+		if rig.Attributes[attrDisallowInHighSec] != 0 && f.Band == nav.Highsec {
 			f.Warnings = append(f.Warnings, fmt.Sprintf("%s can't be fitted in highsec; ignored", rig.Name))
 			continue
 		}
@@ -301,19 +303,19 @@ func (f Facility) CanRun(activity string, p Product) error {
 			}
 		} else if isCap {
 			switch {
-			case f.Band == Highsec:
+			case f.Band == nav.Highsec:
 				add("%s can't be built in highsec", p.Name)
 			case f.Kind == KindUpwell && (f.StructureSize < SizeLarge || !f.hasService(SvcCapitalShipyard)):
 				add("%s needs a Large or XL structure with a Standup Capital Shipyard", p.Name)
-			case f.Kind == KindStarbase && f.StarbaseSecurityMax != 0 && DisplaySecurity(f.Security) > f.StarbaseSecurityMax:
+			case f.Kind == KindStarbase && f.StarbaseSecurityMax != 0 && nav.DisplaySecurity(f.Security) > f.StarbaseSecurityMax:
 				add("this starbase array can't operate above %.1f security", f.StarbaseSecurityMax)
 			}
 		}
-		if f.Kind == KindStarbase && f.Band == Highsec && slices.Contains(HighsecStarbaseBlockedGroups, p.GroupID) {
+		if f.Kind == KindStarbase && f.Band == nav.Highsec && slices.Contains(HighsecStarbaseBlockedGroups, p.GroupID) {
 			add("starbases at 0.5 and above are limited to Large Assembly Arrays (battleship and smaller)")
 		}
 	case ActReaction:
-		if f.Band == Highsec {
+		if f.Band == nav.Highsec {
 			add("reactions can't run in highsec")
 		}
 		if f.Kind != KindUpwell || (f.StructureName != "Athanor" && f.StructureName != "Tatara") {
