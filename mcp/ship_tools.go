@@ -19,7 +19,7 @@ import (
 // character who owns it, so its real fit and cargo are read from assets) or
 // as a hull type with a list of modules.
 type ShipSpec struct {
-	ShipItemID int64    `json:"shipItemId,omitempty" jsonschema:"an assembled ship the user owns, by item ID (from list_location_assets, list_assets or get_logistics_overview); its fit and cargo are read from the owner's assets"`
+	ShipItemID int64    `json:"shipItemId,omitempty" jsonschema:"an assembled ship the user owns, by item ID (from list_haul_ships, list_location_assets, list_assets or get_logistics_overview); its fit and cargo are read from the owner's assets"`
 	OwnerID    int32    `json:"ownerId,omitempty" jsonschema:"the logged-in character who owns shipItemId; defaults to the pilot"`
 	ShipType   string   `json:"shipType,omitempty" jsonschema:"a hull by name, for a fit the user describes rather than owns"`
 	Modules    []string `json:"modules,omitempty" jsonschema:"with shipType: fitted modules and rigs by name, one entry per module (repeat a name for each copy)"`
@@ -32,7 +32,9 @@ type resolvedShip struct {
 	shipName    string
 	modules     []int64
 	moduleNames []string
-	cargoM3     float64 // what already sits in the cargo hold
+	cargoM3     float64         // what already sits in the cargo hold
+	cargoUnits  map[int64]int64 // units of each type in the cargo hold
+	owned       bool            // read from assets, so the cargo is real
 }
 
 // resolveShip reads a ship from assets or builds it from names.
@@ -89,9 +91,13 @@ func (p *planner) resolveShip(ctx context.Context, s ShipSpec, pilot int32) (res
 				out.moduleNames = append(out.moduleNames, basics[a.TypeID].Name)
 			case a.LocationFlag == "Cargo":
 				out.cargoM3 += cargoItem(a, basics[a.TypeID], "").StackVolume()
+				if out.cargoUnits == nil {
+					out.cargoUnits = map[int64]int64{}
+				}
+				out.cargoUnits[a.TypeID] += a.Quantity
 			}
 		}
-		out.hullName = basics[out.hull].Name
+		out.hullName, out.owned = basics[out.hull].Name, true
 		return out, nil
 	}
 	if s.ShipType == "" {
@@ -247,11 +253,15 @@ type EstimateCynoOutput struct {
 	FuelPerLight     float64  `json:"fuelPerLight" jsonschema:"units of fuel one cyno uses, with the lighter's skills and the hull's bonuses"`
 	FuelM3PerLight   float64  `json:"fuelM3PerLight"`
 	CycleSeconds     float64  `json:"cycleSeconds" jsonschema:"how long the cyno stays up"`
-	CargoM3          float64  `json:"cargoM3" jsonschema:"free space in the fitted cargo hold, after what's already in it (owned ships only)"`
-	LightsPerHold    int      `json:"lightsPerHold" jsonschema:"cynos one full hold of fuel covers"`
+	CargoM3          float64  `json:"cargoM3" jsonschema:"free space in the fitted cargo hold, after what's already in it, fuel included (owned ships only)"`
+	FuelSpaceM3      float64  `json:"fuelSpaceM3" jsonschema:"cargo space fuel can fill: the fitted hold less everything in it except the fuel itself"`
+	LightsPerHold    int      `json:"lightsPerHold" jsonschema:"cynos one full load of fuel covers, with the hold's other cargo left where it is"`
+	FuelAboard       int64    `json:"fuelAboard,omitempty" jsonschema:"units of this fuel already in the cargo hold (owned ships only)"`
+	LightsAboard     int      `json:"lightsAboard,omitempty" jsonschema:"cynos the fuel already aboard covers (owned ships only)"`
 	Lights           int      `json:"lights,omitempty"`
 	FuelForLights    float64  `json:"fuelForLights,omitempty"`
-	Refills          int      `json:"refills,omitempty" jsonschema:"times the lighter must reload fuel between lights"`
+	Fills            int      `json:"fills,omitempty" jsonschema:"times the lighter must fill the hold with fuel to light every cyno, the first load included: an owned ship counts from the fuel already aboard, so an empty hold's first load is one of them; a ship given by name is assumed to carry none"`
+	FuelDoesntFit    bool     `json:"fuelDoesntFit,omitempty" jsonschema:"one light's fuel doesn't fit the space left in the cargo hold"`
 	MissingSkills    []string `json:"missingSkills,omitempty" jsonschema:"skills the lighter still needs for the generator"`
 	GeneratorNotFits bool     `json:"generatorDoesntFit,omitempty" jsonschema:"the generator can't be fitted to this hull"`
 }
@@ -302,14 +312,28 @@ func estimateCynoHandler(version, clientID string, store *config.Store, sdeStore
 		out := EstimateCynoOutput{Ship: ship.hullName, Generator: basics[gen].Name, Fuel: basics[fuel].Name,
 			FuelPerLight: f.ModuleAttr(gi, attrCynoFuelPerCycle), CycleSeconds: f.ModuleAttr(gi, attrDuration) / 1000, Lights: in.Lights}
 		out.FuelM3PerLight = out.FuelPerLight * basics[fuel].Volume
-		out.CargoM3 = math.Max(f.ShipAttr(sde.AttrCapacity)-ship.cargoM3, 0)
+		capacity := f.ShipAttr(sde.AttrCapacity)
+		out.CargoM3 = math.Max(capacity-ship.cargoM3, 0)
+		// The fuel already aboard is the cyno's own, not cargo in its way:
+		// only the hold's other contents take space from it.
+		out.FuelAboard = ship.cargoUnits[fuel]
+		out.FuelSpaceM3 = math.Max(capacity-math.Max(ship.cargoM3-float64(out.FuelAboard)*basics[fuel].Volume, 0), 0)
 		if out.FuelM3PerLight > 0 {
-			out.LightsPerHold = int(math.Floor(out.CargoM3/out.FuelM3PerLight + 1e-9))
+			out.LightsPerHold = int(math.Floor(out.FuelSpaceM3/out.FuelM3PerLight + 1e-9))
 		}
+		if out.FuelPerLight > 0 {
+			out.LightsAboard = int(math.Floor(float64(out.FuelAboard)/out.FuelPerLight + 1e-9))
+		}
+		out.FuelDoesntFit = out.FuelM3PerLight > 0 && out.LightsPerHold == 0
 		if in.Lights > 0 {
 			out.FuelForLights = out.FuelPerLight * float64(in.Lights)
-			if out.LightsPerHold > 0 {
-				out.Refills = (in.Lights+out.LightsPerHold-1)/out.LightsPerHold - 1
+			// A ship given by name has no known contents, so every load counts.
+			start := 0
+			if ship.owned {
+				start = out.LightsAboard
+			}
+			if left := in.Lights - start; left > 0 && out.LightsPerHold > 0 {
+				out.Fills = (left + out.LightsPerHold - 1) / out.LightsPerHold
 			}
 		}
 		for _, r := range nav.Missing(skills, requiredSkills(genAttrs)) {

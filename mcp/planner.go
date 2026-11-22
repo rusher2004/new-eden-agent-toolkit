@@ -83,9 +83,13 @@ func (p *planner) requireCharacter(id int32) error {
 // typeBasics loads and caches basic type data.
 func (p *planner) typeBasics(ctx context.Context, ids []int64) (map[int64]sde.TypeBasic, error) {
 	p.mu.Lock()
+	// A set, not slices.Contains: callers such as list_haul_ships pass one
+	// ID per asset, tens of thousands with many repeats.
 	var missing []int64
+	seen := make(map[int64]bool)
 	for _, id := range ids {
-		if _, ok := p.basics[id]; !ok && !slices.Contains(missing, id) {
+		if _, ok := p.basics[id]; !ok && !seen[id] {
+			seen[id] = true
 			missing = append(missing, id)
 		}
 	}

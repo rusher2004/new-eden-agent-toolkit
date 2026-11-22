@@ -361,17 +361,18 @@ func (s *Store) NPCStationIndustryData(ctx context.Context, userAgent string, st
 	}
 	var st NPCStationIndustry
 	var name sql.NullString
+	var systemName string
 	var corp, op sql.NullInt64
 	var eff, take sql.NullFloat64
-	err := s.db.QueryRowContext(ctx, `SELECT stationID, stationName, solarSystemID, corporationID, operationID, reprocessingEfficiency, reprocessingStationsTake FROM staStations WHERE stationID = ?`, stationID).
-		Scan(&st.StationID, &name, &st.SystemID, &corp, &op, &eff, &take)
+	err := s.db.QueryRowContext(ctx, `SELECT stationID, stationName, `+systemNameSQL("staStations.solarSystemID")+`, solarSystemID, corporationID, operationID, reprocessingEfficiency, reprocessingStationsTake FROM staStations WHERE stationID = ?`, stationID).
+		Scan(&st.StationID, &name, &systemName, &st.SystemID, &corp, &op, &eff, &take)
 	if errors.Is(err, sql.ErrNoRows) {
 		return NPCStationIndustry{}, false, nil
 	}
 	if err != nil {
 		return NPCStationIndustry{}, false, fmt.Errorf("npc station %d: %w", stationID, err)
 	}
-	st.Name, st.OwnerCorporationID, st.OperationID = name.String, corp.Int64, op.Int64
+	st.Name, st.OwnerCorporationID, st.OperationID = gameName(name.String, systemName), corp.Int64, op.Int64
 	st.ReprocessingEfficiency, st.ReprocessingStationsTake = eff.Float64, take.Float64
 	return st, true, nil
 }

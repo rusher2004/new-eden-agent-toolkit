@@ -35,20 +35,21 @@ func (s *Store) AsteroidBelt(ctx context.Context, userAgent string, id int64) (A
 	}
 
 	var (
-		name     sql.NullString
-		systemID int64
-		x, y, z  sql.NullFloat64
+		name       sql.NullString
+		systemName string
+		systemID   int64
+		x, y, z    sql.NullFloat64
 	)
 	row := s.db.QueryRowContext(ctx,
-		`SELECT itemName, solarSystemID, x, y, z FROM mapDenormalize WHERE itemID = ? AND groupID IN (9, 4430)`, id)
-	if err := row.Scan(&name, &systemID, &x, &y, &z); err != nil {
+		`SELECT itemName, `+systemNameSQL("mapDenormalize.solarSystemID")+`, solarSystemID, x, y, z FROM mapDenormalize WHERE itemID = ? AND groupID IN (9, 4430)`, id)
+	if err := row.Scan(&name, &systemName, &systemID, &x, &y, &z); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return AsteroidBelt{}, false, nil
 		}
 		return AsteroidBelt{}, false, fmt.Errorf("query asteroid belt %d: %w", id, err)
 	}
 
-	return AsteroidBelt{ID: id, Name: name.String, SystemID: systemID, Position: Position{X: x.Float64, Y: y.Float64, Z: z.Float64}}, true, nil
+	return AsteroidBelt{ID: id, Name: gameName(name.String, systemName), SystemID: systemID, Position: Position{X: x.Float64, Y: y.Float64, Z: z.Float64}}, true, nil
 }
 
 // PutAsteroidBelt stores b in the overlay, keyed by b.ID -- used by mcp/'s

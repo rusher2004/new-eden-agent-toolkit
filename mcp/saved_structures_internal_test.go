@@ -86,7 +86,7 @@ func TestSaveStructure_NPCStationFromSDE(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s := out.Structure; s.Kind != config.StructureNPCStation || s.System.Name != "Jita" || !strings.HasPrefix(s.Name, "Jita 4") {
+	if s := out.Structure; s.Kind != config.StructureNPCStation || s.System.Name != "Jita" || s.Name != "Jita IV - Moon 4 - Caldari Navy Assembly Plant" {
 		t.Errorf("station = %+v system %+v", s, s.System)
 	}
 }

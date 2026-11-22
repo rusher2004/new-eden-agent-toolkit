@@ -76,12 +76,12 @@ func TestEstimateCyno_VentureIndustrial(t *testing.T) {
 	store, p := shipToolsEnv(t)
 	fit := ShipSpec{ShipType: "Venture", Modules: []string{"Expanded Cargohold II", "Small Cargohold Optimization I", "Small Cargohold Optimization I", "Small Cargohold Optimization I"}}
 	for _, tt := range []struct {
-		cft                  int64
-		perLight             float64
-		perHold, refillsFor3 int
+		cft                int64
+		perLight           float64
+		perHold, fillsFor3 int
 	}{
-		{4, 240, 1, 2},
-		{5, 200, 1, 2},
+		{4, 240, 1, 3},
+		{5, 200, 1, 3},
 	} {
 		stubSkills(t, map[int32][]CharacterSkill{reconPilot: {{SkillID: 21603, ActiveSkillLevel: tt.cft}}})
 		_, out, err := estimateCynoHandler("test", "client", store, p.sde)(context.Background(), nil, EstimateCynoInput{ShipSpec: fit, LighterID: reconPilot, Cyno: "industrial", Lights: 3})
@@ -91,8 +91,8 @@ func TestEstimateCyno_VentureIndustrial(t *testing.T) {
 		if math.Abs(out.FuelPerLight-tt.perLight) > 1e-9 || out.CycleSeconds != 600 || out.Fuel != "Liquid Ozone" || math.Abs(out.FuelM3PerLight-tt.perLight*0.4) > 1e-9 {
 			t.Errorf("CFT %d: %+v", tt.cft, out)
 		}
-		if out.LightsPerHold != tt.perHold || out.Refills != tt.refillsFor3 || out.FuelForLights != 3*tt.perLight || out.GeneratorNotFits || out.MissingSkills != nil {
-			t.Errorf("CFT %d: lights per hold %d refills %d fuel %v fits %v missing %v", tt.cft, out.LightsPerHold, out.Refills, out.FuelForLights, !out.GeneratorNotFits, out.MissingSkills)
+		if out.LightsPerHold != tt.perHold || out.Fills != tt.fillsFor3 || out.FuelForLights != 3*tt.perLight || out.GeneratorNotFits || out.MissingSkills != nil {
+			t.Errorf("CFT %d: lights per hold %d fills %d fuel %v fits %v missing %v", tt.cft, out.LightsPerHold, out.Fills, out.FuelForLights, !out.GeneratorNotFits, out.MissingSkills)
 		}
 	}
 	stubSkills(t, map[int32][]CharacterSkill{reconPilot: nil})
@@ -156,5 +156,78 @@ func TestSaveHaulProfile_ShipMustMatchShipItem(t *testing.T) {
 	}
 	if _, prof, err := save(context.Background(), nil, SaveHaulProfileInput{Name: "Right hull", Ship: "ark", PilotID: int64(reconPilot), ShipItemID: 500}); err != nil || prof.ShipTypeID != 28850 {
 		t.Errorf("matching name in other case: prof %+v err %v", prof, err)
+	}
+}
+
+// A cyno Venture loaded with its own Liquid Ozone (issue #37): the fuel
+// aboard isn't cargo in the way, so a full load still covers a light, and
+// the fills start from what's aboard.
+func TestEstimateCyno_OwnedVentureCountsFuelAboard(t *testing.T) {
+	store, p := shipToolsEnv(t)
+	origA, origN := listAssets, getAssetNames
+	t.Cleanup(func() { listAssets, getAssetNames = origA, origN })
+	ozone := int64(242)
+	listAssets = func(context.Context, string, int32, string, int32) ([]AssetItem, int32, error) {
+		return []AssetItem{
+			{ItemID: 600, TypeID: 32880, LocationID: 60003760, LocationFlag: "Hangar", Quantity: 1, IsSingleton: true},
+			{ItemID: 601, TypeID: 1319, LocationID: 600, LocationFlag: "LoSlot0", Quantity: 1, IsSingleton: true},
+			{ItemID: 602, TypeID: 31117, LocationID: 600, LocationFlag: "RigSlot0", Quantity: 1, IsSingleton: true},
+			{ItemID: 603, TypeID: 31117, LocationID: 600, LocationFlag: "RigSlot1", Quantity: 1, IsSingleton: true},
+			{ItemID: 604, TypeID: 31117, LocationID: 600, LocationFlag: "RigSlot2", Quantity: 1, IsSingleton: true},
+			{ItemID: 605, TypeID: 52694, LocationID: 600, LocationFlag: "HiSlot0", Quantity: 1, IsSingleton: true},
+			{ItemID: 606, TypeID: 16273, LocationID: 600, LocationFlag: "Cargo", Quantity: ozone},
+		}, 1, nil
+	}
+	getAssetNames = func(context.Context, string, int32, string, []int64) ([]AssetName, error) { return nil, nil }
+	stubSkills(t, map[int32][]CharacterSkill{reconPilot: {{SkillID: 21603, ActiveSkillLevel: 5}}})
+
+	_, out, err := estimateCynoHandler("test", "client", store, p.sde)(context.Background(), nil, EstimateCynoInput{ShipSpec: ShipSpec{ShipItemID: 600}, LighterID: reconPilot, Cyno: "industrial", Lights: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hold := 50 * 1.275 * math.Pow(1.15, 3)
+	if math.Abs(out.CargoM3-(hold-96.8)) > 1e-6 || math.Abs(out.FuelSpaceM3-hold) > 1e-6 {
+		t.Errorf("cargo %v fuel space %v, want %v free and the whole %v hold for fuel", out.CargoM3, out.FuelSpaceM3, hold-96.8, hold)
+	}
+	if out.FuelAboard != ozone || out.LightsAboard != 1 || out.LightsPerHold != 1 || out.Fills != 1 || out.FuelDoesntFit {
+		t.Errorf("aboard %d covers %d, per hold %d, fills %d, doesn't fit %v; want 242 covering 1, 1 per hold, 1 fill",
+			out.FuelAboard, out.LightsAboard, out.LightsPerHold, out.Fills, out.FuelDoesntFit)
+	}
+}
+
+// An owned cyno Venture with no fuel aboard: two lights at one light per
+// load take two fills, the first load included, same as the hull by name.
+func TestEstimateCyno_OwnedEmptyHoldCountsFirstFill(t *testing.T) {
+	store, p := shipToolsEnv(t)
+	origA, origN := listAssets, getAssetNames
+	t.Cleanup(func() { listAssets, getAssetNames = origA, origN })
+	listAssets = func(context.Context, string, int32, string, int32) ([]AssetItem, int32, error) {
+		return []AssetItem{
+			{ItemID: 600, TypeID: 32880, LocationID: 60003760, LocationFlag: "Hangar", Quantity: 1, IsSingleton: true},
+			{ItemID: 601, TypeID: 1319, LocationID: 600, LocationFlag: "LoSlot0", Quantity: 1, IsSingleton: true},
+			{ItemID: 602, TypeID: 31117, LocationID: 600, LocationFlag: "RigSlot0", Quantity: 1, IsSingleton: true},
+			{ItemID: 603, TypeID: 31117, LocationID: 600, LocationFlag: "RigSlot1", Quantity: 1, IsSingleton: true},
+			{ItemID: 604, TypeID: 31117, LocationID: 600, LocationFlag: "RigSlot2", Quantity: 1, IsSingleton: true},
+			{ItemID: 605, TypeID: 52694, LocationID: 600, LocationFlag: "HiSlot0", Quantity: 1, IsSingleton: true},
+		}, 1, nil
+	}
+	getAssetNames = func(context.Context, string, int32, string, []int64) ([]AssetName, error) { return nil, nil }
+	stubSkills(t, map[int32][]CharacterSkill{reconPilot: {{SkillID: 21603, ActiveSkillLevel: 5}}})
+
+	in := EstimateCynoInput{ShipSpec: ShipSpec{ShipItemID: 600}, LighterID: reconPilot, Cyno: "industrial", Lights: 2}
+	_, owned, err := estimateCynoHandler("test", "client", store, p.sde)(context.Background(), nil, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in.ShipSpec = ShipSpec{ShipType: "Venture", Modules: []string{"Expanded Cargohold II", "Small Cargohold Optimization I", "Small Cargohold Optimization I", "Small Cargohold Optimization I"}}
+	_, named, err := estimateCynoHandler("test", "client", store, p.sde)(context.Background(), nil, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if owned.FuelAboard != 0 || owned.LightsAboard != 0 || owned.LightsPerHold != 1 || owned.Fills != 2 {
+		t.Errorf("owned: aboard %d covers %d, per hold %d, fills %d; want nothing aboard, 1 per hold, 2 fills", owned.FuelAboard, owned.LightsAboard, owned.LightsPerHold, owned.Fills)
+	}
+	if named.Fills != owned.Fills {
+		t.Errorf("by name: %d fills, want the owned ship's %d", named.Fills, owned.Fills)
 	}
 }

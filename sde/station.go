@@ -50,15 +50,16 @@ func (s *Store) Station(ctx context.Context, userAgent string, id int64) (Statio
 
 	var (
 		name                                                 sql.NullString
+		systemName                                           string
 		systemID, typeID                                     int64
 		x, y, z                                              sql.NullFloat64
 		maxDockable, officeRentalCost, reprocEff, reprocTake sql.NullFloat64
 		owner                                                sql.NullInt64
 	)
 	row := s.db.QueryRowContext(ctx,
-		`SELECT stationName, solarSystemID, stationTypeID, x, y, z, maxShipVolumeDockable, officeRentalCost, corporationID, reprocessingEfficiency, reprocessingStationsTake
+		`SELECT stationName, `+systemNameSQL("staStations.solarSystemID")+`, solarSystemID, stationTypeID, x, y, z, maxShipVolumeDockable, officeRentalCost, corporationID, reprocessingEfficiency, reprocessingStationsTake
 		 FROM staStations WHERE stationID = ?`, id)
-	if err := row.Scan(&name, &systemID, &typeID, &x, &y, &z, &maxDockable, &officeRentalCost, &owner, &reprocEff, &reprocTake); err != nil {
+	if err := row.Scan(&name, &systemName, &systemID, &typeID, &x, &y, &z, &maxDockable, &officeRentalCost, &owner, &reprocEff, &reprocTake); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Station{}, false, nil
 		}
@@ -66,7 +67,7 @@ func (s *Store) Station(ctx context.Context, userAgent string, id int64) (Statio
 	}
 
 	out := Station{
-		ID: id, Name: name.String, SystemID: systemID, TypeID: typeID,
+		ID: id, Name: gameName(name.String, systemName), SystemID: systemID, TypeID: typeID,
 		Position:                 Position{X: x.Float64, Y: y.Float64, Z: z.Float64},
 		MaxDockableShipVolume:    maxDockable.Float64,
 		OfficeRentalCost:         officeRentalCost.Float64,

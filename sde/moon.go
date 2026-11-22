@@ -31,20 +31,21 @@ func (s *Store) Moon(ctx context.Context, userAgent string, id int64) (Moon, boo
 	}
 
 	var (
-		name     sql.NullString
-		systemID int64
-		x, y, z  sql.NullFloat64
+		name       sql.NullString
+		systemName string
+		systemID   int64
+		x, y, z    sql.NullFloat64
 	)
 	row := s.db.QueryRowContext(ctx,
-		`SELECT itemName, solarSystemID, x, y, z FROM mapDenormalize WHERE itemID = ? AND groupID = 8`, id)
-	if err := row.Scan(&name, &systemID, &x, &y, &z); err != nil {
+		`SELECT itemName, `+systemNameSQL("mapDenormalize.solarSystemID")+`, solarSystemID, x, y, z FROM mapDenormalize WHERE itemID = ? AND groupID = 8`, id)
+	if err := row.Scan(&name, &systemName, &systemID, &x, &y, &z); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Moon{}, false, nil
 		}
 		return Moon{}, false, fmt.Errorf("query moon %d: %w", id, err)
 	}
 
-	return Moon{ID: id, Name: name.String, SystemID: systemID, Position: Position{X: x.Float64, Y: y.Float64, Z: z.Float64}}, true, nil
+	return Moon{ID: id, Name: gameName(name.String, systemName), SystemID: systemID, Position: Position{X: x.Float64, Y: y.Float64, Z: z.Float64}}, true, nil
 }
 
 // PutMoon stores m in the overlay, keyed by m.ID -- used by mcp/'s
