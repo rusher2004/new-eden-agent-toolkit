@@ -21,6 +21,10 @@ const cynoClass = "cyno ship"
 // maxAssetNameIDs is how many item IDs one ESI asset names request takes.
 const maxAssetNameIDs = 1000
 
+// corpOfficeFlag is the location flag ESI gives a corporation's office in a
+// station or structure; corporation hangar items sit inside it.
+const corpOfficeFlag = "OfficeFolder"
+
 // ListHaulShipsInput is list_haul_ships' input.
 type ListHaulShipsInput struct {
 	CharacterIDs           []int32  `json:"characterIds,omitempty" jsonschema:"whose ships to list; omit for every logged-in character"`
@@ -31,7 +35,7 @@ type ListHaulShipsInput struct {
 
 // HaulShip is one assembled ship and where it is.
 type HaulShip struct {
-	OwnerID         int32    `json:"ownerId,omitempty" jsonschema:"the character who owns it; pass it with itemId to estimate_ship_hold, estimate_cyno or save_haul_profile. Absent for a corporation's ship"`
+	OwnerID         int32    `json:"ownerId,omitempty" jsonschema:"the character who owns it; pass it as ownerId, with itemId as shipItemId, to estimate_ship_hold or estimate_cyno, or as shipOwnerId to save_haul_profile. Absent for a corporation's ship"`
 	Owner           string   `json:"owner"`
 	ItemID          int64    `json:"itemId"`
 	Type            string   `json:"type"`
@@ -63,7 +67,8 @@ type haulShipOwner struct {
 
 // rootOf follows an item up through the items holding it to the station,
 // structure or solar system they're all in. It returns that location's ID
-// and kind and the item directly holding this one, if any.
+// and kind and the item directly holding this one, if any. A corporation
+// office is transparent: a ship in a corporation hangar has no holder.
 func rootOf(byID map[int64]AssetItem, a AssetItem) (loc int64, kind string, holder int64) {
 	cur := a
 	for seen := 0; seen <= len(byID); seen++ {
@@ -71,7 +76,7 @@ func rootOf(byID map[int64]AssetItem, a AssetItem) (loc int64, kind string, hold
 		if !ok {
 			return cur.LocationID, cur.LocationType, holder
 		}
-		if holder == 0 {
+		if holder == 0 && parent.LocationFlag != corpOfficeFlag {
 			holder = parent.ItemID
 		}
 		cur = parent
@@ -163,9 +168,12 @@ func listHaulShipsHandler(version, clientID string, store *config.Store, sdeStor
 
 		out := ListHaulShipsOutput{Ships: []HaulShip{}, Warnings: warnings}
 		for _, o := range owners {
-			ships, err := p.haulShips(ctx, cfg, o, className, generators, want)
+			ships, warning, err := p.haulShips(ctx, cfg, o, className, generators, want)
 			if err != nil {
 				return nil, ListHaulShipsOutput{}, err
+			}
+			if warning != "" {
+				out.Warnings = append(out.Warnings, warning)
 			}
 			out.Ships = append(out.Ships, ships...)
 		}
@@ -174,8 +182,9 @@ func listHaulShipsHandler(version, clientID string, store *config.Store, sdeStor
 }
 
 // haulShips picks one owner's hauling, jump-capable, capital and cyno ships
-// out of their assets and says where each is.
-func (p *planner) haulShips(ctx context.Context, cfg config.Config, o haulShipOwner, className map[int64]string, generators map[int64]bool, want map[string]bool) ([]HaulShip, error) {
+// out of their assets and says where each is. warning is set when the names
+// the user gave their ships couldn't be read.
+func (p *planner) haulShips(ctx context.Context, cfg config.Config, o haulShipOwner, className map[int64]string, generators map[int64]bool, want map[string]bool) (ships []HaulShip, warning string, err error) {
 	byID := make(map[int64]AssetItem, len(o.assets))
 	ids := make([]int64, 0, len(o.assets))
 	for _, a := range o.assets {
@@ -184,7 +193,7 @@ func (p *planner) haulShips(ctx context.Context, cfg config.Config, o haulShipOw
 	}
 	basics, err := p.typeBasics(ctx, ids)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	fitted := map[int64][]int64{} // ship item ID -> fitted module types
 	for _, a := range o.assets {
@@ -193,7 +202,6 @@ func (p *planner) haulShips(ctx context.Context, cfg config.Config, o haulShipOw
 		}
 	}
 
-	var ships []HaulShip
 	for _, a := range o.assets {
 		b := basics[a.TypeID]
 		if !a.IsSingleton || b.CategoryID != shipCategoryID {
@@ -256,10 +264,13 @@ func (p *planner) haulShips(ctx context.Context, cfg config.Config, o haulShipOw
 			for _, s := range chunk {
 				shipIDs = append(shipIDs, s.ItemID)
 			}
-			if got, err := getAssetNames(ctx, p.clientID, o.id, p.ua(), shipIDs); err == nil {
-				for _, n := range got {
-					names[n.ItemID] = n.Name
-				}
+			got, err := getAssetNames(ctx, p.clientID, o.id, p.ua(), shipIDs)
+			if err != nil {
+				warning = fmt.Sprintf("couldn't read the names of %s's ships, so they're left out: %v", o.name, err)
+				continue
+			}
+			for _, n := range got {
+				names[n.ItemID] = n.Name
 			}
 		}
 		for i := range ships {
@@ -281,5 +292,5 @@ func (p *planner) haulShips(ctx context.Context, cfg config.Config, o haulShipOw
 		}
 		return ships[i].ItemID < ships[j].ItemID
 	})
-	return ships, nil
+	return ships, warning, nil
 }

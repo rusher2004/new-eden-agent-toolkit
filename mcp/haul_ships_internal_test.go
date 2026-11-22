@@ -92,3 +92,13 @@ func TestListHaulShips_FiltersByClass(t *testing.T) {
 		t.Errorf("unknown class: err = %v, want one listing the classes", err)
 	}
 }
+
+func TestRootOf_CorporationOfficeIsTransparent(t *testing.T) {
+	office := AssetItem{ItemID: 10, TypeID: 27, LocationID: 60003760, LocationType: "station", LocationFlag: "OfficeFolder", IsSingleton: true}
+	ship := AssetItem{ItemID: 11, TypeID: 28352, LocationID: 10, LocationType: "item", LocationFlag: "CorpSAG1", IsSingleton: true}
+	byID := map[int64]AssetItem{office.ItemID: office, ship.ItemID: ship}
+	loc, kind, holder := rootOf(byID, ship)
+	if loc != 60003760 || kind != "station" || holder != 0 {
+		t.Errorf("rootOf = %d, %q, %d; want the station with no holder", loc, kind, holder)
+	}
+}

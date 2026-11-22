@@ -69,7 +69,7 @@ This choice is the user's, so it never goes into the steps before they make it:
 ## 7. Cynos
 
 - **Lighters:** characters whose `list_character_capabilities` include the cyno type needed, on a different account from the pilots jumping to them.
-- **Fuel:** `estimate_cyno` with the lighter, their ship (by `shipItemId` when they own it), the cyno type the route needs and the number of lights (one per jump leg) gives Liquid Ozone per light, lights per load, the fuel already aboard and the lights it covers, refills, whether the generator fits, and any skills they're missing. Plan the refills from its output; don't read the hold contents yourself.
+- **Fuel:** `estimate_cyno` with the lighter, their ship (by `shipItemId` when they own it), the cyno type the route needs and the number of lights (one per jump leg) gives Liquid Ozone per light, lights per load, the fuel already aboard and the lights it covers, how many loads of fuel the lights take (the first one included when the hold starts short), whether the generator fits, and any skills they're missing. Plan every fuel load from its output; don't read the hold contents yourself.
 - **Ship:** compare sources before choosing: a cyno ship already near the cyno point or the lighter's location or jump clones (`list_haul_ships` lists every ship with a cyno generator fitted), one fitted from assets, or one bought (`compare_trade_hubs` for the nearest hub that stocks the fit, `quote_market_purchase` for the list).
 - **Implants:** a lit cyno is an easy target, and the lighter can lose their pod. `list_jump_clones` gives the implants in the clone each character is in now (`activeImplants`) and in each jump clone. An empty `activeImplants` means none; a missing one means neat couldn't read them, so say so rather than calling the clone clean. Price the ones the lighter will wear with `quote_market_purchase` and give the user the pod's value, since that's what they weigh the risk against; a list of implant names doesn't show it. Prefer a clone with none or cheap ones.
 - **One lighter or several:** with one lighter, the hauler waits while the lighter gates to each next cyno point. The route's `lighterGatesFromPreviousLanding` says how far that is. Weigh it against getting another lighter in place, and say which you chose and why. Don't bring in a character only so two parts of the job run at once.
@@ -83,7 +83,7 @@ This choice is the user's, so it never goes into the steps before they make it:
 ## 9. Order of operations
 
 - Contracts can be made and accepted from anywhere. Only put a contract in the order when something in it is used by a later step.
-- Write numbered steps saying who does what, in which ship, at which station: cyno cycles, refills, docking and unloading included.
+- Write numbered steps saying who does what, in which ship, at which station: cyno cycles, fuel loads, docking and unloading included.
 - Only decided work goes in the steps. Leave out choices still open (step 4) and anything the user said they'll handle themselves.
 - Totals (fuel, fatigue, gates, volumes, cost) come from the tools' outputs.
 
