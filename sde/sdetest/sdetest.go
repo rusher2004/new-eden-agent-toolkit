@@ -53,7 +53,19 @@ func NewStore(t testing.TB, fixtureFiles ...string) *sde.Store {
 	if err != nil {
 		t.Fatalf("sdetest: open: %v", err)
 	}
-	if _, err := db.Exec(Schema); err != nil {
+	// A throwaway file: no journal, no fsync, and every statement in one
+	// transaction. Committing each line on its own flushed the file to disk
+	// hundreds of times per fixture, which on Windows runners (FlushFileBuffers)
+	// took the mcp package's tests past go test's 10-minute timeout.
+	db.SetMaxOpenConns(1)
+	if _, err := db.Exec("PRAGMA journal_mode = OFF; PRAGMA synchronous = OFF;"); err != nil {
+		t.Fatalf("sdetest: pragmas: %v", err)
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatalf("sdetest: begin: %v", err)
+	}
+	if _, err := tx.Exec(Schema); err != nil {
 		t.Fatalf("sdetest: schema: %v", err)
 	}
 	for _, f := range fixtureFiles {
@@ -66,10 +78,13 @@ func NewStore(t testing.TB, fixtureFiles ...string) *sde.Store {
 			if line == "" || strings.HasPrefix(line, "--") {
 				continue
 			}
-			if _, err := db.Exec(line); err != nil {
+			if _, err := tx.Exec(line); err != nil {
 				t.Fatalf("sdetest: %s: %v\n%s", f, err, line)
 			}
 		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("sdetest: commit: %v", err)
 	}
 	if err := db.Close(); err != nil {
 		t.Fatalf("sdetest: close: %v", err)
