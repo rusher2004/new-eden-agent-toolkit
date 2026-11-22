@@ -287,3 +287,29 @@ func TestListJumpClones_ReadyNowNeedsACloneBayHere(t *testing.T) {
 		})
 	}
 }
+
+// A jump clone of a character the call didn't ask about still proves a
+// clone bay where the asked-about character is docked.
+func TestListJumpClones_UnaskedCharacterProvesCloneBay(t *testing.T) {
+	const provenBay = int64(60003760)
+	store, p := readinessEnv(t)
+	stubSkills(t, map[int32][]CharacterSkill{reconPilot: nil, carrierPilot: nil})
+	stubLocations(t, map[int32]int64{reconPilot: provenBay})
+	origC, origI := getCharacterClones, listCharacterImplants
+	t.Cleanup(func() { getCharacterClones, listCharacterImplants = origC, origI })
+	listCharacterImplants = func(context.Context, string, int32, string) ([]int64, error) { return nil, nil }
+	getCharacterClones = func(_ context.Context, _ string, id int32, _ string) (GetCharacterClonesOutput, error) {
+		out := GetCharacterClonesOutput{CharacterID: id}
+		if id == carrierPilot {
+			out.JumpClones = []JumpClone{{LocationID: provenBay, LocationType: "station"}}
+		}
+		return out, nil
+	}
+	_, out, err := listJumpClonesHandler("test", "client", store, p.sde)(context.Background(), nil, ListJumpClonesInput{CharacterIDs: []int32{reconPilot}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Characters) != 1 || out.Characters[0].JumpFromHere.Status != jumpFromYes || !out.Characters[0].ReadyNow {
+		t.Errorf("characters = %+v, want only the recon pilot, ready to jump from a bay the carrier pilot's clone proves", out.Characters)
+	}
+}

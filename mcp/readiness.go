@@ -324,6 +324,31 @@ func provenCloneBays(clones ...GetCharacterClonesOutput) map[int64]bool {
 	return proven
 }
 
+// otherCharactersClones reads the jump clones of every logged-in character
+// not in chars, since any character's jump clone proves a clone bay even
+// when only some characters were asked about. A character whose clones
+// can't be read is named in the returned warnings.
+func otherCharactersClones(ctx context.Context, clientID, userAgent string, cfg config.Config, chars []config.Character) ([]GetCharacterClonesOutput, []string) {
+	asked := make(map[int32]bool, len(chars))
+	for _, c := range chars {
+		asked[c.ID] = true
+	}
+	var clones []GetCharacterClonesOutput
+	var warnings []string
+	for _, c := range cfg.Characters {
+		if asked[c.ID] {
+			continue
+		}
+		cl, err := getCharacterClones(ctx, clientID, c.ID, userAgent)
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("couldn't read %s's jump clones, so clone bays they'd prove aren't counted: %v", c.Name, err))
+			continue
+		}
+		clones = append(clones, cl)
+	}
+	return clones, warnings
+}
+
 // jumpFromHere says whether a clone jump can start at dockedAt (0 when in
 // space), from a jump clone there or the clone bay saved in structures.yaml.
 func (p *planner) jumpFromHere(ctx context.Context, cfg config.Config, dockedAt int64, proven map[int64]bool) JumpFromHere {
@@ -443,8 +468,11 @@ func listJumpClonesHandler(version, clientID string, store *config.Store, sdeSto
 			out.Characters = append(out.Characters, cc)
 		}
 		// Every character's jump clones are read before any clone bay is
-		// judged, since one character's clone proves a bay for all.
-		proven := provenCloneBays(allClones...)
+		// judged, since one character's clone proves a bay for all, including
+		// characters that weren't asked about.
+		others, warnings := otherCharactersClones(ctx, clientID, p.ua(), cfg, chars)
+		out.Warnings = append(out.Warnings, warnings...)
+		proven := provenCloneBays(append(allClones, others...)...)
 		for i := range out.Characters {
 			cc := &out.Characters[i]
 			if !located[cc.CharacterID] {

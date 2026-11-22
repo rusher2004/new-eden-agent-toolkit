@@ -256,8 +256,11 @@ func getLogisticsOverviewHandler(version, clientID string, store *config.Store, 
 		}
 
 		// Clone bays are judged once every character's jump clones are read,
-		// since one character's clone proves a bay for all.
-		proven := provenCloneBays(allClones...)
+		// since one character's clone proves a bay for all, including
+		// characters that weren't asked about.
+		others, warnings := otherCharactersClones(ctx, clientID, p.ua(), cfg, chars)
+		out.Warnings = append(out.Warnings, warnings...)
+		proven := provenCloneBays(append(allClones, others...)...)
 		for i := range out.Characters {
 			oc := &out.Characters[i]
 			if oc.Clones == nil || oc.Location == nil {

@@ -416,8 +416,9 @@ func (g *RouteGraph) ValidateRoute(req RouteRequest, waypoints []int64) (Route, 
 			rt.Broken = append(rt.Broken, fmt.Sprintf("passes %s, which your preferences avoid", g.Systems[id].Name))
 		}
 	}
-	if mg := req.Prefs.MaxGates; mg != nil && rt.Gates > *mg {
-		rt.Broken = append(rt.Broken, fmt.Sprintf("takes %d gates, more than your limit of %d", rt.Gates, *mg))
+	// A negative cap counts as no gates, as in shortest.
+	if mg := req.Prefs.MaxGates; mg != nil && rt.Gates > max(*mg, 0) {
+		rt.Broken = append(rt.Broken, fmt.Sprintf("takes %d gates, more than your limit of %d", rt.Gates, max(*mg, 0)))
 	}
 	return rt, nil
 }
