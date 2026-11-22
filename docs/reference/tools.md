@@ -2,13 +2,14 @@
 
 # neat tool reference
 
-neat gives Claude 264 tools. You don't call them yourself: ask Claude in plain language and it picks the tools it needs. This page is for when you want to know exactly what neat can do. Tools that need a character's permission list the scope group they need in their error when it's missing; see the main [README](../../README.md#choosing-what-neat-can-see).
+neat gives Claude 267 tools. You don't call them yourself: ask Claude in plain language and it picks the tools it needs. This page is for when you want to know exactly what neat can do. Tools that need a character's permission list the scope group they need in their error when it's missing; see the main [README](../../README.md#choosing-what-neat-can-see).
 
 ## Areas
 
 - [Characters and login](#characters-and-login) (5)
 - [Game client](#game-client) (5)
 - [Navigation and hauling](#navigation-and-hauling) (8)
+- [Stations and structures you use](#stations-and-structures-you-use) (3)
 - [Trade hubs and purchases](#trade-hubs-and-purchases) (3)
 - [Industry planning](#industry-planning) (14)
 - [Universe and static data](#universe-and-static-data) (36)
@@ -56,6 +57,14 @@ Jump and gate routes with fuel, fatigue and dotlan links, saved routes with your
 - `plan_jump_route`: Plan jump and gate routes between two systems for a haul profile's ship and pilot, applying their routing preferences, or validate and cost a given route; per leg light years, fuel and fatigue, and dotlan links that display each route.
 - `save_haul_profile`: Save (or replace) a named hauling profile: hull, pilot, fitted hold, optional pinned routes (saved in routes.yaml, or saved routes by name), and routing preferences (avoid lists, sovereignty and standings, midpoints, optimise for fuel, jumps or fatigue). Omit notes to keep the notes it has. Writes to ~/.neat/haul_profiles.yaml and routes.yaml only.
 - `save_route`: Save (or replace) a named jump route: its systems in order, the kind of ship it's for, and the user's notes on why it goes that way. Check list_routes before planning a route between the same places, since a saved route usually reflects choices the user made on purpose. plan_jump_route costs a saved route by name, and haul profiles pin saved routes for their regular runs. Returns every value it changed. Writes to ~/.neat/routes.yaml only.
+
+## Stations and structures you use
+
+The NPC stations and Upwell structures you work from, with what the game won't tell neat: what you use each for, whether it has a working clone bay and how that's known, and your notes. Saved in `~/.neat/structures.yaml`, which you can also edit.
+
+- `delete_structure`: Delete a saved station or structure from ~/.neat/structures.yaml.
+- `list_structures`: List the NPC stations and Upwell structures the user works from (~/.neat/structures.yaml), with what the game won't tell neat: what they use each for, whether it has a working clone bay and how that's known, their corporation offices, and their notes. Each call checks every logged-in character's jump clones and records any clone bay they prove; a clone bay neat can't prove stays unknown, and only the user can check it in game. Pass characterIds to check, live, which characters have docking access to each Upwell structure: one ESI lookup per Upwell structure and character, and ESI counts every refused lookup (usually no docking access) against its error limit, so after 10 refusals in one call the rest are returned as access not_checked with a warning. Pass only the characters you need, and don't call again to fill in not_checked entries for characters that were already refused. Use it before planning a clone jump, a staging move or anything that needs to dock somewhere.
+- `save_structure`: Save an NPC station or Upwell structure the user works from, or update one. Its name, type, system and owner are filled in from the game (an Upwell structure needs a character with docking access the first time). Record what the user tells you: what they use it for, its facility profile, a clone bay they checked in game (cloneBay yes or no), and notes. Offer to save a location whenever a plan uses one that isn't saved yet. Returns every value it changed, old and new, so you can tell the user what was recorded. Writes to ~/.neat/structures.yaml only.
 
 ## Trade hubs and purchases
 

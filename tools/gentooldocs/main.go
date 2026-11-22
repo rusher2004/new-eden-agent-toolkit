@@ -53,6 +53,11 @@ var areas = []area{
 		names: []string{"save_haul_profile", "list_haul_profiles", "delete_haul_profile", "save_route", "list_routes", "delete_route", "plan_jump_route", "plan_haul"},
 	},
 	{
+		title: "Stations and structures you use",
+		blurb: "The NPC stations and Upwell structures you work from, with what the game won't tell neat: what you use each for, whether it has a working clone bay and how that's known, and your notes. Saved in `~/.neat/structures.yaml`, which you can also edit.",
+		names: []string{"list_structures", "save_structure", "delete_structure"},
+	},
+	{
 		title: "Trade hubs and purchases",
 		blurb: "Trade hubs to buy at, and shopping lists priced against a hub's live order book. Hub profiles are saved in `~/.neat/config.json`.",
 		names: []string{"save_hub_profile", "list_hub_profiles", "quote_market_purchase"},
