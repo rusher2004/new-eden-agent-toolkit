@@ -147,6 +147,7 @@ func TestListJumpClones_CooldownCapacityAndNames(t *testing.T) {
 	origC, origN, origI := getCharacterClones, now, listCharacterImplants
 	t.Cleanup(func() { getCharacterClones, now, listCharacterImplants = origC, origN, origI })
 	listCharacterImplants = func(context.Context, string, int32, string) ([]int64, error) { return []int64{35}, nil }
+	stubLocations(t, map[int32]int64{reconPilot: 1049345291823})
 	now = func() time.Time { return time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC) }
 	last := time.Date(2026, 11, 19, 20, 0, 0, 0, time.UTC)
 	home := int64(60003760)
@@ -166,7 +167,7 @@ func TestListJumpClones_CooldownCapacityAndNames(t *testing.T) {
 		t.Fatalf("out = %+v", out)
 	}
 	c := out.Characters[0]
-	if c.CooldownHours != 20 || c.ReadyNow || !c.NextCloneJump.Equal(time.Date(2026, 11, 20, 16, 0, 0, 0, time.UTC)) || c.Capacity != 7 {
+	if c.CooldownHours != 20 || c.ReadyNow || c.CooldownReady || c.JumpFromHere.Status != jumpFromYes || !c.NextCloneJump.Equal(time.Date(2026, 11, 20, 16, 0, 0, 0, time.UTC)) || c.Capacity != 7 {
 		t.Errorf("readiness = %+v next %v", c, c.NextCloneJump)
 	}
 	if c.Home == nil || c.Home.LocationName != "Jita IV - Moon 4 - Caldari Navy Assembly Plant" {
@@ -185,6 +186,7 @@ func TestListJumpClones_CooldownCapacityAndNames(t *testing.T) {
 func TestListJumpClones_NoImplantsIsNotUnknownImplants(t *testing.T) {
 	store, p := readinessEnv(t)
 	stubSkills(t, map[int32][]CharacterSkill{reconPilot: nil, carrierPilot: nil})
+	stubLocations(t, map[int32]int64{})
 	origC, origI := getCharacterClones, listCharacterImplants
 	t.Cleanup(func() { getCharacterClones, listCharacterImplants = origC, origI })
 	getCharacterClones = func(_ context.Context, _ string, characterID int32, _ string) (GetCharacterClonesOutput, error) {
@@ -213,5 +215,101 @@ func TestListJumpClones_NoImplantsIsNotUnknownImplants(t *testing.T) {
 	}
 	if !strings.Contains(string(b), `"activeImplants":[]`) || strings.Count(string(b), "activeImplants") != 1 {
 		t.Errorf("json = %s, want activeImplants:[] for the first character only", b)
+	}
+}
+
+// stubLocations docks each character at the given station or structure
+// (stations below 1e9), leaving the rest in space.
+func stubLocations(t *testing.T, docked map[int32]int64) {
+	t.Helper()
+	orig := getCharacterLocation
+	t.Cleanup(func() { getCharacterLocation = orig })
+	getCharacterLocation = func(_ context.Context, _ string, id int32, _ string) (int64, *int64, *int64, error) {
+		at, ok := docked[id]
+		switch {
+		case !ok:
+			return 30000142, nil, nil, nil
+		case at < 1e9:
+			return 30000142, &at, nil, nil
+		default:
+			return 30000142, nil, &at, nil
+		}
+	}
+}
+
+// readyNow needs a clone bay where the character is docked, not just a
+// finished cooldown.
+func TestListJumpClones_ReadyNowNeedsACloneBayHere(t *testing.T) {
+	const noBay, unknownBay, provenBay = int64(1049345291823), int64(1049345291824), int64(60003760)
+	tests := []struct {
+		name       string
+		docked     map[int32]int64
+		wantStatus string
+		wantReady  bool
+	}{
+		{"saved with no clone bay", map[int32]int64{reconPilot: noBay}, jumpFromNo, false},
+		{"clone bay unknown", map[int32]int64{reconPilot: unknownBay}, jumpFromUnknown, false},
+		{"another character's jump clone proves it", map[int32]int64{reconPilot: provenBay}, jumpFromYes, true},
+		{"in space", map[int32]int64{}, jumpFromNotDocked, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store, p := readinessEnv(t)
+			cfg, err := store.Load()
+			if err != nil {
+				t.Fatal(err)
+			}
+			cfg.UpsertStructure(config.Structure{ID: noBay, Name: "No Bay Fortizar", Kind: config.StructureUpwell,
+				CloneBay: &config.CloneBay{Status: config.CloneBayNo, Source: config.CloneBayFromUser, Checked: "2026-11-01"}})
+			if err := store.Save(cfg); err != nil {
+				t.Fatal(err)
+			}
+			stubSkills(t, map[int32][]CharacterSkill{reconPilot: nil, carrierPilot: nil})
+			stubLocations(t, tt.docked)
+			origC, origI := getCharacterClones, listCharacterImplants
+			t.Cleanup(func() { getCharacterClones, listCharacterImplants = origC, origI })
+			listCharacterImplants = func(context.Context, string, int32, string) ([]int64, error) { return nil, nil }
+			getCharacterClones = func(_ context.Context, _ string, id int32, _ string) (GetCharacterClonesOutput, error) {
+				out := GetCharacterClonesOutput{CharacterID: id}
+				if id == carrierPilot {
+					out.JumpClones = []JumpClone{{LocationID: provenBay, LocationType: "station"}}
+				}
+				return out, nil
+			}
+			_, out, err := listJumpClonesHandler("test", "client", store, p.sde)(context.Background(), nil, ListJumpClonesInput{CharacterIDs: []int32{reconPilot, carrierPilot}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			c := out.Characters[0]
+			if !c.CooldownReady || c.JumpFromHere.Status != tt.wantStatus || c.ReadyNow != tt.wantReady || c.JumpFromHere.Reason == "" {
+				t.Errorf("cooldownReady %v readyNow %v jumpFromHere %+v; want status %s, readyNow %v", c.CooldownReady, c.ReadyNow, c.JumpFromHere, tt.wantStatus, tt.wantReady)
+			}
+		})
+	}
+}
+
+// A jump clone of a character the call didn't ask about still proves a
+// clone bay where the asked-about character is docked.
+func TestListJumpClones_UnaskedCharacterProvesCloneBay(t *testing.T) {
+	const provenBay = int64(60003760)
+	store, p := readinessEnv(t)
+	stubSkills(t, map[int32][]CharacterSkill{reconPilot: nil, carrierPilot: nil})
+	stubLocations(t, map[int32]int64{reconPilot: provenBay})
+	origC, origI := getCharacterClones, listCharacterImplants
+	t.Cleanup(func() { getCharacterClones, listCharacterImplants = origC, origI })
+	listCharacterImplants = func(context.Context, string, int32, string) ([]int64, error) { return nil, nil }
+	getCharacterClones = func(_ context.Context, _ string, id int32, _ string) (GetCharacterClonesOutput, error) {
+		out := GetCharacterClonesOutput{CharacterID: id}
+		if id == carrierPilot {
+			out.JumpClones = []JumpClone{{LocationID: provenBay, LocationType: "station"}}
+		}
+		return out, nil
+	}
+	_, out, err := listJumpClonesHandler("test", "client", store, p.sde)(context.Background(), nil, ListJumpClonesInput{CharacterIDs: []int32{reconPilot}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Characters) != 1 || out.Characters[0].JumpFromHere.Status != jumpFromYes || !out.Characters[0].ReadyNow {
+		t.Errorf("characters = %+v, want only the recon pilot, ready to jump from a bay the carrier pilot's clone proves", out.Characters)
 	}
 }

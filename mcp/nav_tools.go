@@ -179,7 +179,7 @@ type RoutePrefsInput struct {
 	PreferStationSystems bool     `json:"preferStationSystems,omitempty"`
 	AvoidIncursions      bool     `json:"avoidIncursions,omitempty"`
 	Optimize             string   `json:"optimize,omitempty" jsonschema:"fuel (default), jumps or fatigue"`
-	MaxGates             int      `json:"maxGates,omitempty"`
+	MaxGates             *int     `json:"maxGates,omitempty" jsonschema:"the most gates the route may take: 0 means no gates at all; omit for no limit"`
 	MaxRecentKills       int      `json:"maxRecentKills,omitempty" jsonschema:"skip gate systems with more ship and pod kills than this in the last hour"`
 }
 
@@ -208,6 +208,9 @@ func (p *planner) resolvePrefs(ctx context.Context, in RoutePrefsInput) (config.
 	case "", nav.OptimizeFuel, nav.OptimizeJumps, nav.OptimizeFatigue:
 	default:
 		return out, fmt.Errorf("optimize must be fuel, jumps or fatigue, not %q", in.Optimize)
+	}
+	if in.MaxGates != nil && *in.MaxGates < 0 {
+		return out, fmt.Errorf("maxGates must be 0 (no gates) or more, or omitted for no limit, not %d", *in.MaxGates)
 	}
 	var err error
 	if out.AvoidSystems, err = p.systemIDs(ctx, in.AvoidSystems); err != nil {

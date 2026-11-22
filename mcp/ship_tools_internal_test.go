@@ -10,6 +10,7 @@ import (
 	"github.com/zalando/go-keyring"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
+	"github.com/rusher2004/new-eden-agent-toolkit/nav"
 	"github.com/rusher2004/new-eden-agent-toolkit/sde/sdetest"
 )
 
@@ -192,6 +193,9 @@ func TestEstimateCyno_OwnedVentureCountsFuelAboard(t *testing.T) {
 	if out.FuelAboard != ozone || out.LightsAboard != 1 || out.LightsPerHold != 1 || out.Fills != 1 || out.FuelDoesntFit {
 		t.Errorf("aboard %d covers %d, per hold %d, fills %d, doesn't fit %v; want 242 covering 1, 1 per hold, 1 fill",
 			out.FuelAboard, out.LightsAboard, out.LightsPerHold, out.Fills, out.FuelDoesntFit)
+	}
+	if len(out.Loads) != 1 || out.Loads[0] != (nav.CynoFuelLoad{BeforeLight: 2, AddUnits: 200*2 - ozone, FuelAfter: 200, Lights: 1}) {
+		t.Errorf("loads = %+v, want 158 more before the second light", out.Loads)
 	}
 }
 

@@ -247,23 +247,24 @@ type EstimateCynoInput struct {
 
 // EstimateCynoOutput is what lighting cynos with a ship takes.
 type EstimateCynoOutput struct {
-	Ship             string   `json:"ship"`
-	Generator        string   `json:"generator"`
-	Fuel             string   `json:"fuel"`
-	FuelPerLight     float64  `json:"fuelPerLight" jsonschema:"units of fuel one cyno uses, with the lighter's skills and the hull's bonuses"`
-	FuelM3PerLight   float64  `json:"fuelM3PerLight"`
-	CycleSeconds     float64  `json:"cycleSeconds" jsonschema:"how long the cyno stays up"`
-	CargoM3          float64  `json:"cargoM3" jsonschema:"free space in the fitted cargo hold, after what's already in it, fuel included (owned ships only)"`
-	FuelSpaceM3      float64  `json:"fuelSpaceM3" jsonschema:"cargo space fuel can fill: the fitted hold less everything in it except the fuel itself"`
-	LightsPerHold    int      `json:"lightsPerHold" jsonschema:"cynos one full load of fuel covers, with the hold's other cargo left where it is"`
-	FuelAboard       int64    `json:"fuelAboard,omitempty" jsonschema:"units of this fuel already in the cargo hold (owned ships only)"`
-	LightsAboard     int      `json:"lightsAboard,omitempty" jsonschema:"cynos the fuel already aboard covers (owned ships only)"`
-	Lights           int      `json:"lights,omitempty"`
-	FuelForLights    float64  `json:"fuelForLights,omitempty"`
-	Fills            int      `json:"fills,omitempty" jsonschema:"times the lighter must fill the hold with fuel to light every cyno, the first load included: an owned ship counts from the fuel already aboard, so an empty hold's first load is one of them; a ship given by name is assumed to carry none"`
-	FuelDoesntFit    bool     `json:"fuelDoesntFit,omitempty" jsonschema:"one light's fuel doesn't fit the space left in the cargo hold"`
-	MissingSkills    []string `json:"missingSkills,omitempty" jsonschema:"skills the lighter still needs for the generator"`
-	GeneratorNotFits bool     `json:"generatorDoesntFit,omitempty" jsonschema:"the generator can't be fitted to this hull"`
+	Ship             string             `json:"ship"`
+	Generator        string             `json:"generator"`
+	Fuel             string             `json:"fuel"`
+	FuelPerLight     float64            `json:"fuelPerLight" jsonschema:"units of fuel one cyno uses, with the lighter's skills and the hull's bonuses"`
+	FuelM3PerLight   float64            `json:"fuelM3PerLight"`
+	CycleSeconds     float64            `json:"cycleSeconds" jsonschema:"how long the cyno stays up"`
+	CargoM3          float64            `json:"cargoM3" jsonschema:"free space in the fitted cargo hold, after what's already in it, fuel included (owned ships only)"`
+	FuelSpaceM3      float64            `json:"fuelSpaceM3" jsonschema:"cargo space fuel can fill: the fitted hold less everything in it except the fuel itself"`
+	LightsPerHold    int                `json:"lightsPerHold" jsonschema:"cynos one full load of fuel covers, with the hold's other cargo left where it is"`
+	FuelAboard       int64              `json:"fuelAboard,omitempty" jsonschema:"units of this fuel already in the cargo hold (owned ships only)"`
+	LightsAboard     int                `json:"lightsAboard,omitempty" jsonschema:"cynos the fuel already aboard covers (owned ships only)"`
+	Lights           int                `json:"lights,omitempty"`
+	FuelForLights    float64            `json:"fuelForLights,omitempty"`
+	Fills            int                `json:"fills,omitempty" jsonschema:"how many loads of fuel lighting every cyno takes (the length of loads), the first one included: an owned ship counts from the fuel already aboard, so an empty hold's first load is one of them; a ship given by name is assumed to carry none"`
+	Loads            []nav.CynoFuelLoad `json:"loads,omitempty" jsonschema:"each time the lighter adds fuel, in order: before which light, how many units to add to what's aboard then, and the lights it covers; the fuel already aboard is burned first (owned ships only; a ship given by name starts empty). Plan fuel trades and purchases from these, never by subtracting yourself"`
+	FuelDoesntFit    bool               `json:"fuelDoesntFit,omitempty" jsonschema:"one light's fuel doesn't fit the space left in the cargo hold"`
+	MissingSkills    []string           `json:"missingSkills,omitempty" jsonschema:"skills the lighter still needs for the generator"`
+	GeneratorNotFits bool               `json:"generatorDoesntFit,omitempty" jsonschema:"the generator can't be fitted to this hull"`
 }
 
 func estimateCynoHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[EstimateCynoInput, EstimateCynoOutput] {
@@ -327,14 +328,13 @@ func estimateCynoHandler(version, clientID string, store *config.Store, sdeStore
 		out.FuelDoesntFit = out.FuelM3PerLight > 0 && out.LightsPerHold == 0
 		if in.Lights > 0 {
 			out.FuelForLights = out.FuelPerLight * float64(in.Lights)
-			// A ship given by name has no known contents, so every load counts.
-			start := 0
+			// A ship given by name has no known contents, so it starts empty.
+			var aboard int64
 			if ship.owned {
-				start = out.LightsAboard
+				aboard = out.FuelAboard
 			}
-			if left := in.Lights - start; left > 0 && out.LightsPerHold > 0 {
-				out.Fills = (left + out.LightsPerHold - 1) / out.LightsPerHold
-			}
+			out.Loads = nav.CynoFuelLoads(out.FuelPerLight, aboard, out.LightsPerHold, in.Lights)
+			out.Fills = len(out.Loads)
 		}
 		for _, r := range nav.Missing(skills, requiredSkills(genAttrs)) {
 			out.MissingSkills = append(out.MissingSkills, p.skillLabel(ctx, r))

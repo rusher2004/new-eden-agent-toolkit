@@ -27,8 +27,9 @@ type ListLocationAssetsInput struct {
 
 // AssetSource is one owner whose assets were read.
 type AssetSource struct {
-	Owner string `json:"owner"`
-	Items int    `json:"items" jsonschema:"how many of the owner's items are at the location"`
+	Owner  string                `json:"owner"`
+	Items  int                   `json:"items" jsonschema:"how many of the owner's items are at the location"`
+	Totals cargo.InventoryTotals `json:"totals" jsonschema:"the owner's share of the totals: a character's personal hangar is theirs alone, so anything a different pilot hauls needs an item exchange contract from its owner first"`
 }
 
 // ListLocationAssetsOutput is list_location_assets' result.
@@ -146,8 +147,8 @@ func listLocationAssetsHandler(version, clientID string, store *config.Store, sd
 				}
 				items = append(items, cargoItem(a, b, o.owner))
 			}
-			lines, _ := cargo.Inventory(items[before:], in.LocationID)
-			out.Sources = append(out.Sources, AssetSource{Owner: o.owner, Items: len(lines)})
+			lines, totals := cargo.Inventory(items[before:], in.LocationID)
+			out.Sources = append(out.Sources, AssetSource{Owner: o.owner, Items: len(lines), Totals: totals})
 		}
 		out.Items, out.Totals = cargo.Inventory(items, in.LocationID)
 		if out.Items == nil {

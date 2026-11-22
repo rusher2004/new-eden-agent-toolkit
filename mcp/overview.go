@@ -39,9 +39,11 @@ type OverviewShip struct {
 
 // OverviewClones is a character's clone jump readiness in brief.
 type OverviewClones struct {
-	ReadyNow      bool       `json:"readyNow"`
-	NextCloneJump *time.Time `json:"nextCloneJump,omitempty"`
-	JumpClonesAt  []string   `json:"jumpClonesAt" jsonschema:"where their jump clones are; list_jump_clones has the implants"`
+	CooldownReady bool          `json:"cooldownReady" jsonschema:"their clone jump cooldown has passed"`
+	ReadyNow      bool          `json:"readyNow" jsonschema:"true only when the cooldown has passed and they're docked where a clone bay is known to be (jumpFromHere yes)"`
+	JumpFromHere  *JumpFromHere `json:"jumpFromHere,omitempty" jsonschema:"whether they can start a clone jump where they are now; absent when their location couldn't be read"`
+	NextCloneJump *time.Time    `json:"nextCloneJump,omitempty"`
+	JumpClonesAt  []string      `json:"jumpClonesAt" jsonschema:"where their jump clones are; list_jump_clones has the implants"`
 }
 
 // OverviewFatigue is a character's jump fatigue.
@@ -170,6 +172,7 @@ func getLogisticsOverviewHandler(version, clientID string, store *config.Store, 
 
 		out := GetLogisticsOverviewOutput{Characters: []OverviewCharacter{}, Accounts: []AccountGroup{}, Warnings: accountWarnings(cfg)}
 		online := map[int32]*esi.CharacterOnlineStatus{} // characters reported online
+		var allClones []GetCharacterClonesOutput
 		for _, c := range chars {
 			r := readOverview(ctx, clientID, p.ua(), c.ID)
 			oc := OverviewCharacter{CharacterID: c.ID, CharacterName: c.Name, Account: c.Account, Abilities: []string{}, Hulls: []HullClass{}}
@@ -228,11 +231,12 @@ func getLogisticsOverviewHandler(version, clientID string, store *config.Store, 
 				}
 			}
 			if r.clonesErr == nil {
-				cl := &OverviewClones{ReadyNow: true, JumpClonesAt: []string{}}
+				cl := &OverviewClones{CooldownReady: true, JumpClonesAt: []string{}}
 				if r.clones.LastCloneJumpDate != nil {
 					next := nav.NextCloneJump(*r.clones.LastCloneJumpDate, skills[nav.SkillInfomorphSynchronizing])
-					cl.NextCloneJump, cl.ReadyNow = &next, !now().Before(next)
+					cl.NextCloneJump, cl.CooldownReady = &next, !now().Before(next)
 				}
+				allClones = append(allClones, r.clones)
 				for _, jc := range r.clones.JumpClones {
 					cl.JumpClonesAt = append(cl.JumpClonesAt, p.placeName(ctx, cfg, jc.LocationID))
 				}
@@ -249,6 +253,22 @@ func getLogisticsOverviewHandler(version, clientID string, store *config.Store, 
 				oc.Fatigue = f
 			}
 			out.Characters = append(out.Characters, oc)
+		}
+
+		// Clone bays are judged once every character's jump clones are read,
+		// since one character's clone proves a bay for all, including
+		// characters that weren't asked about.
+		others, warnings := otherCharactersClones(ctx, clientID, p.ua(), cfg, chars)
+		out.Warnings = append(out.Warnings, warnings...)
+		proven := provenCloneBays(append(allClones, others...)...)
+		for i := range out.Characters {
+			oc := &out.Characters[i]
+			if oc.Clones == nil || oc.Location == nil {
+				continue
+			}
+			j := p.jumpFromHere(ctx, cfg, oc.Location.DockedAtID, proven)
+			oc.Clones.JumpFromHere = &j
+			oc.Clones.ReadyNow = oc.Clones.CooldownReady && j.Status == jumpFromYes
 		}
 
 		// Accounts, and labels the game contradicts.

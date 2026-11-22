@@ -285,11 +285,95 @@ type CharacterClones struct {
 	CooldownHours  int             `json:"cooldownHours" jsonschema:"hours between clone jumps for their Infomorph Synchronizing"`
 	LastCloneJump  *time.Time      `json:"lastCloneJump,omitempty"`
 	NextCloneJump  *time.Time      `json:"nextCloneJump,omitempty" jsonschema:"when they can clone jump again; absent if they never have"`
-	ReadyNow       bool            `json:"readyNow"`
+	CooldownReady  bool            `json:"cooldownReady" jsonschema:"their clone jump cooldown has passed; whether they can jump from where they are is jumpFromHere"`
+	ReadyNow       bool            `json:"readyNow" jsonschema:"true only when the cooldown has passed and they're docked where a clone bay is known to be (jumpFromHere yes)"`
+	JumpFromHere   JumpFromHere    `json:"jumpFromHere" jsonschema:"whether they can start a clone jump where they are now"`
 	Capacity       int             `json:"capacity" jsonschema:"how many jump clones their Infomorph Psychology skills allow"`
 	Home           *CloneLocation  `json:"home,omitempty" jsonschema:"where they wake up after being podded"`
 	ActiveImplants *[]string       `json:"activeImplants,omitempty" jsonschema:"implants in the clone they're in now, which they lose if podded; an empty list means none, and absent means they couldn't be read (see warnings), not that there are none"`
 	JumpClones     []CloneLocation `json:"jumpClones"`
+}
+
+// Statuses for JumpFromHere.
+const (
+	jumpFromYes       = "yes"
+	jumpFromNo        = "no"
+	jumpFromUnknown   = "unknown"
+	jumpFromNotDocked = "not_docked"
+)
+
+// JumpFromHere says whether a character can start a clone jump where they
+// are now: a clone jump starts docked at a station or structure with a
+// clone bay.
+type JumpFromHere struct {
+	Status       string `json:"status" jsonschema:"yes: a clone bay is known to be here; no: the user found none here; unknown: neat can't tell, so ask the user to check in game; not_docked: they're in space. A location that couldn't be read is unknown, with a warning"`
+	LocationID   int64  `json:"locationId,omitempty" jsonschema:"the station or structure they're docked in"`
+	LocationName string `json:"locationName,omitempty"`
+	Reason       string `json:"reason"`
+}
+
+// provenCloneBays is every place a logged-in character has a jump clone,
+// which proves a clone bay there.
+func provenCloneBays(clones ...GetCharacterClonesOutput) map[int64]bool {
+	proven := map[int64]bool{}
+	for _, c := range clones {
+		for _, jc := range c.JumpClones {
+			proven[jc.LocationID] = true
+		}
+	}
+	return proven
+}
+
+// otherCharactersClones reads the jump clones of every logged-in character
+// not in chars, since any character's jump clone proves a clone bay even
+// when only some characters were asked about. A character whose clones
+// can't be read is named in the returned warnings.
+func otherCharactersClones(ctx context.Context, clientID, userAgent string, cfg config.Config, chars []config.Character) ([]GetCharacterClonesOutput, []string) {
+	asked := make(map[int32]bool, len(chars))
+	for _, c := range chars {
+		asked[c.ID] = true
+	}
+	var clones []GetCharacterClonesOutput
+	var warnings []string
+	for _, c := range cfg.Characters {
+		if asked[c.ID] {
+			continue
+		}
+		cl, err := getCharacterClones(ctx, clientID, c.ID, userAgent)
+		if err != nil {
+			warnings = append(warnings, fmt.Sprintf("couldn't read %s's jump clones, so clone bays they'd prove aren't counted: %v", c.Name, err))
+			continue
+		}
+		clones = append(clones, cl)
+	}
+	return clones, warnings
+}
+
+// jumpFromHere says whether a clone jump can start at dockedAt (0 when in
+// space), from a jump clone there or the clone bay saved in structures.yaml.
+func (p *planner) jumpFromHere(ctx context.Context, cfg config.Config, dockedAt int64, proven map[int64]bool) JumpFromHere {
+	if dockedAt == 0 {
+		return JumpFromHere{Status: jumpFromNotDocked, Reason: "not docked: a clone jump has to start docked where there's a clone bay"}
+	}
+	j := JumpFromHere{LocationID: dockedAt, LocationName: p.placeName(ctx, cfg, dockedAt)}
+	saved, ok := cfg.Structure(dockedAt)
+	switch {
+	case proven[dockedAt]:
+		j.Status, j.Reason = jumpFromYes, "a logged-in character has a jump clone here, so it has a clone bay"
+	case ok && saved.CloneBayStatus() == config.CloneBayYes:
+		j.Status, j.Reason = jumpFromYes, "saved in structures.yaml as having a clone bay"
+		if saved.CloneBay.Checked != "" {
+			j.Reason += ", checked " + saved.CloneBay.Checked
+		}
+	case ok && saved.CloneBayStatus() == config.CloneBayNo:
+		j.Status, j.Reason = jumpFromNo, "saved in structures.yaml as having no clone bay, so they can't clone jump from here: they have to move to a station or structure with one first"
+		if saved.CloneBay.Checked != "" {
+			j.Reason += " (checked " + saved.CloneBay.Checked + ")"
+		}
+	default:
+		j.Status, j.Reason = jumpFromUnknown, "neat doesn't know whether this has a clone bay: ask the user to check in game, and save the answer with save_structure"
+	}
+	return j
 }
 
 // ListJumpClonesOutput is list_jump_clones' result.
@@ -325,11 +409,25 @@ func listJumpClonesHandler(version, clientID string, store *config.Store, sdeSto
 		}
 		p := newPlanner(version, clientID, store, sdeStore)
 		out := ListJumpClonesOutput{Characters: []CharacterClones{}}
+		var allClones []GetCharacterClonesOutput
+		docked := map[int32]int64{} // character → where they're docked
+		located := map[int32]bool{}
 		for _, c := range chars {
 			clones, err := getCharacterClones(ctx, clientID, c.ID, p.ua())
 			if err != nil {
 				out.Warnings = append(out.Warnings, fmt.Sprintf("couldn't read %s's clones: %v", c.Name, err))
 				continue
+			}
+			allClones = append(allClones, clones)
+			if _, st, sr, err := getCharacterLocation(ctx, clientID, c.ID, p.ua()); err != nil {
+				out.Warnings = append(out.Warnings, fmt.Sprintf("couldn't read %s's location, so whether they can clone jump from there is unknown: %v", c.Name, err))
+			} else {
+				located[c.ID] = true
+				if st != nil {
+					docked[c.ID] = *st
+				} else if sr != nil {
+					docked[c.ID] = *sr
+				}
 			}
 			skills, err := p.skills(ctx, c.ID)
 			if err != nil {
@@ -340,12 +438,12 @@ func listJumpClonesHandler(version, clientID string, store *config.Store, sdeSto
 			cc := CharacterClones{CharacterID: c.ID, CharacterName: c.Name, Account: c.Account, JumpClones: []CloneLocation{},
 				CooldownHours: int(nav.CloneJumpCooldown(sync).Hours()),
 				Capacity:      nav.JumpCloneCapacity(skills[nav.SkillInfomorphPsychology], skills[nav.SkillAdvancedInfomorphPsychology], skills[nav.SkillEliteInfomorphPsychology]),
-				ReadyNow:      true}
+				CooldownReady: true}
 			if clones.LastCloneJumpDate != nil {
 				last := *clones.LastCloneJumpDate
 				next := nav.NextCloneJump(last, sync)
 				cc.LastCloneJump, cc.NextCloneJump = &last, &next
-				cc.ReadyNow = !now().Before(next)
+				cc.CooldownReady = !now().Before(next)
 			}
 			if clones.HomeLocationID != nil {
 				kind := ""
@@ -368,6 +466,21 @@ func listJumpClonesHandler(version, clientID string, store *config.Store, sdeSto
 				cc.ActiveImplants = &names
 			}
 			out.Characters = append(out.Characters, cc)
+		}
+		// Every character's jump clones are read before any clone bay is
+		// judged, since one character's clone proves a bay for all, including
+		// characters that weren't asked about.
+		others, warnings := otherCharactersClones(ctx, clientID, p.ua(), cfg, chars)
+		out.Warnings = append(out.Warnings, warnings...)
+		proven := provenCloneBays(append(allClones, others...)...)
+		for i := range out.Characters {
+			cc := &out.Characters[i]
+			if !located[cc.CharacterID] {
+				cc.JumpFromHere = JumpFromHere{Status: jumpFromUnknown, Reason: "couldn't read their location (see warnings)"}
+			} else {
+				cc.JumpFromHere = p.jumpFromHere(ctx, cfg, docked[cc.CharacterID], proven)
+			}
+			cc.ReadyNow = cc.CooldownReady && cc.JumpFromHere.Status == jumpFromYes
 		}
 		return nil, out, nil
 	}

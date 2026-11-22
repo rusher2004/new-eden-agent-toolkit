@@ -104,7 +104,7 @@ type RoutePrefs struct {
 	AvoidIncursions      bool
 	IncursionSystems     map[int64]bool
 	Optimize             string
-	MaxGates             int           // 0 = no limit
+	MaxGates             *int          // nil = no limit; 0 = no gates at all
 	MaxRecentKills       int           // 0 = no limit; per gate system
 	RecentKills          map[int64]int // ship + pod kills in the last hour by system
 }
@@ -199,9 +199,12 @@ type stateKey struct {
 func (g *RouteGraph) shortest(req RouteRequest, soft bool) ([]int64, []string) {
 	p := req.Prefs
 	rng := JumpRange(req.Drive, req.Skills)
-	maxGates := p.MaxGates
+	maxGates := -1 // no limit
+	if p.MaxGates != nil {
+		maxGates = max(*p.MaxGates, 0)
+	}
 	gateKey := func(n int) int {
-		if maxGates <= 0 {
+		if maxGates < 0 {
 			return 0
 		}
 		return n
@@ -265,7 +268,7 @@ func (g *RouteGraph) shortest(req RouteRequest, soft bool) ([]int64, []string) {
 			}
 		}
 		// Gates.
-		if maxGates > 0 && it.gates >= maxGates {
+		if maxGates >= 0 && it.gates >= maxGates {
 			continue
 		}
 		for _, to := range g.gates[it.node] {
@@ -412,6 +415,10 @@ func (g *RouteGraph) ValidateRoute(req RouteRequest, waypoints []int64) (Route, 
 		if g.avoided(id, req.Prefs, req) {
 			rt.Broken = append(rt.Broken, fmt.Sprintf("passes %s, which your preferences avoid", g.Systems[id].Name))
 		}
+	}
+	// A negative cap counts as no gates, as in shortest.
+	if mg := req.Prefs.MaxGates; mg != nil && rt.Gates > max(*mg, 0) {
+		rt.Broken = append(rt.Broken, fmt.Sprintf("takes %d gates, more than your limit of %d", rt.Gates, max(*mg, 0)))
 	}
 	return rt, nil
 }
