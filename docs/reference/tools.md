@@ -2,13 +2,13 @@
 
 # neat tool reference
 
-neat gives Claude 261 tools. You don't call them yourself: ask Claude in plain language and it picks the tools it needs. This page is for when you want to know exactly what neat can do. Tools that need a character's permission list the scope group they need in their error when it's missing; see the main [README](../../README.md#choosing-what-neat-can-see).
+neat gives Claude 264 tools. You don't call them yourself: ask Claude in plain language and it picks the tools it needs. This page is for when you want to know exactly what neat can do. Tools that need a character's permission list the scope group they need in their error when it's missing; see the main [README](../../README.md#choosing-what-neat-can-see).
 
 ## Areas
 
 - [Characters and login](#characters-and-login) (5)
 - [Game client](#game-client) (5)
-- [Navigation and hauling](#navigation-and-hauling) (5)
+- [Navigation and hauling](#navigation-and-hauling) (8)
 - [Trade hubs and purchases](#trade-hubs-and-purchases) (3)
 - [Industry planning](#industry-planning) (14)
 - [Universe and static data](#universe-and-static-data) (36)
@@ -32,7 +32,7 @@ Log characters in, choose what each one lets neat see, record which EVE account 
 - `list_characters`: List EVE Online characters currently logged in to neat, with the account label and notes the user gave each. Characters with the same account label are on the same EVE account and can't be logged in at the same time. Its warnings name characters whose account is unknown: ask the user and save the answer with update_character_details.
 - `list_scope_groups`: List the scope groups add_character can grant a character: each group's name, what it lets neat do, and its ESI scopes. The basic group is always granted.
 - `remove_character`: Remove a logged-in EVE Online character, deleting its stored credentials.
-- `update_character_details`: Record what the user tells you about their characters: which EVE account each is on (an account label shared by the characters on that account), and notes on what a character is for. Also renames an account label for every character that has it. Ask about accounts whenever list_characters or add_character warns that one is unknown, and save notes the user gives you. Returns every value changed, old and new, so you can tell the user what was saved. Writes to ~/.neat/config.json only.
+- `update_character_details`: Record what the user tells you about their characters: which EVE account each is on (an account label shared by the characters on that account), and notes on what a character is for. Also renames an account label for every character that has it. Ask about accounts whenever list_characters or add_character warns that one is unknown, and save notes the user gives you. Returns every value changed, old and new, so you can tell the user what was saved. Writes to ~/.neat/characters.yaml only.
 
 ## Game client
 
@@ -46,13 +46,16 @@ Act on the running EVE client: set autopilot waypoints and open in-game windows.
 
 ## Navigation and hauling
 
-Jump and gate routes with fuel, fatigue and dotlan links, and cargo packed into loads, for any move: PvP, PvE or industry. Haul profiles are saved in `~/.neat/config.json`.
+Jump and gate routes with fuel, fatigue and dotlan links, saved routes with your notes, and cargo packed into loads, for any move: PvP, PvE or industry. Haul profiles and routes are saved in `~/.neat/haul_profiles.yaml` and `~/.neat/routes.yaml`, which you can also edit.
 
 - `delete_haul_profile`: Delete a saved haul profile from neat's local config.
+- `delete_route`: Delete a saved jump route from ~/.neat/routes.yaml.
 - `list_haul_profiles`: List saved haul profiles.
+- `list_routes`: List saved jump routes with their systems, ship class and the user's notes. Check it before planning a route between the same places.
 - `plan_haul`: Pack a cargo list into loads for a haul profile's hold, each an even slice with volume by drop-off, plus round-trip route, fuel per trip, and a Multibuy list per load including fuel.
 - `plan_jump_route`: Plan jump and gate routes between two systems for a haul profile's ship and pilot, applying their routing preferences, or validate and cost a given route; per leg light years, fuel and fatigue, and dotlan links that display each route.
-- `save_haul_profile`: Save (or replace) a named hauling profile: hull, pilot, fitted hold, optional pinned routes, and routing preferences (avoid lists, sovereignty and standings, midpoints, optimise for fuel, jumps or fatigue). Writes to ~/.neat/config.json only.
+- `save_haul_profile`: Save (or replace) a named hauling profile: hull, pilot, fitted hold, optional pinned routes (saved in routes.yaml, or saved routes by name), and routing preferences (avoid lists, sovereignty and standings, midpoints, optimise for fuel, jumps or fatigue). Omit notes to keep the notes it has. Writes to ~/.neat/haul_profiles.yaml and routes.yaml only.
+- `save_route`: Save (or replace) a named jump route: its systems in order, the kind of ship it's for, and the user's notes on why it goes that way. Check list_routes before planning a route between the same places, since a saved route usually reflects choices the user made on purpose. plan_jump_route costs a saved route by name, and haul profiles pin saved routes for their regular runs. Returns every value it changed. Writes to ~/.neat/routes.yaml only.
 
 ## Trade hubs and purchases
 
@@ -64,9 +67,9 @@ Trade hubs to buy at, and shopping lists priced against a hub's live order book.
 
 ## Industry planning
 
-Build plans, build-or-buy, job costs, research and invention, and refining and compressed ore. Facility profiles are saved in `~/.neat/config.json`.
+Build plans, build-or-buy, job costs, research and invention, and refining and compressed ore. Facility profiles are saved in `~/.neat/facilities.yaml`, which you can also edit.
 
-- `calibrate_facility_profile`: Read a real industry job's charged fee, back out the effective fee rate, and save it on a facility profile so later estimates use it. Writes to ~/.neat/config.json only.
+- `calibrate_facility_profile`: Read a real industry job's charged fee, back out the effective fee rate, and save it on a facility profile so later estimates use it. Writes to ~/.neat/facilities.yaml only.
 - `check_build_skills`: For each character, show manufacturing, reaction and science slots, skill time multipliers, and which items in a product's build tree they can build or which skills they lack.
 - `check_material_stock`: Net a list of materials against what a character or corporation holds at a station or structure (optionally one hangar division), with the volume of stock used.
 - `delete_facility_profile`: Delete a saved facility profile from neat's local config.
@@ -78,7 +81,7 @@ Build plans, build-or-buy, job costs, research and invention, and refining and c
 - `find_owned_blueprints`: Find a character's or corporation's blueprints by product or name, with ME, TE, runs, whether each is tied up in an active job, the station or structure it's in and any named container, plus per-blueprint totals.
 - `list_facility_profiles`: List saved facility profiles.
 - `plan_build`: Plan building owned blueprints end to end: expand the build tree with your copies' ME and the facility's bonuses, net stock, price purchases on live order books, optionally buy compressed ore and refine it, compare building against buying every intermediate, price job fees, pack haul loads with fuel and dotlan route links, and estimate job time across builders. Returns cost, decisions, shopping and Multibuy lists, loads, jobs and assumptions, and saves the full plan under ~/.neat/plans/.
-- `save_facility_profile`: Save (or replace) a named industry or reprocessing facility profile in neat's local config: NPC station, Upwell structure or starbase, its system, fitted rigs and services, and owner-set taxes. Rig and structure bonuses are read from the SDE; the response shows every resolved multiplier. Writes to ~/.neat/config.json only.
+- `save_facility_profile`: Save (or replace) a named industry or reprocessing facility profile in neat's local config: NPC station, Upwell structure or starbase, its system, fitted rigs and services, and owner-set taxes. Rig and structure bonuses are read from the SDE; the response shows every resolved multiplier. Writes to ~/.neat/facilities.yaml only; omit notes to keep the notes it has.
 - `solve_ore_mix`: Find the cheapest mix of compressed ore and refined minerals at a hub to cover a mineral need, counting the refiner's yield, freight per m³ and live order-book depth; returns purchases, refined output, surplus, byproducts and a Multibuy list.
 
 ## Universe and static data

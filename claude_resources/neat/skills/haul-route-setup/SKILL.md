@@ -28,7 +28,9 @@ Call `save_haul_profile` with the answers.
 
 - Call `plan_jump_route` from the hub to the destination. It returns several ranked routes: the best for their preferences, the fewest jumps, the least fatigue, and one ignoring preferred midpoints. Each has per-leg distance, fuel and fatigue, the security, owner and recent kills at each midpoint, any preference it breaks, and dotlan links.
 - Show the routes side by side with their dotlan links, plus the `dotlanSuggestion` link so the pilot can compare dotlan's own pick. Sovereignty and standings preferences can't be expressed in a dotlan link; the tool says so in the link's label.
-- When they pick one, save it as the pinned `outbound` (and `return`) route on the haul profile with `save_haul_profile`, as system names in order. A pinned route is only used for trips with the same start and end systems; for any other trip the planner searches a route and says so in its notes, so save a separate haul profile for each regular run.
+- Before planning, check `list_routes`: a saved route between the same places usually reflects choices the user made on purpose, and its notes say why. Cost it with `plan_jump_route` and `route` set to its name.
+- When they pick a route, save it with `save_route`, as system names in order, with the user's reasons as `notes` ("Akora is quiet", "under 300M ISK through Jita"). Pin it on the haul profile with `save_haul_profile`'s `outboundRoute` (and `returnRoute`), or pass `outbound`/`return` system names to save and pin it in one call. A pinned route is only used for trips with the same start and end systems; for any other trip the planner searches a route and says so in its notes, so save a separate haul profile for each regular run.
+- Saved routes and profiles live in `~/.neat/routes.yaml` and `haul_profiles.yaml`, which the user can also edit by hand. Save anything durable the user tells you about a profile or route as its `notes`, and say what you saved.
 - To check a route the pilot already flies, pass it as `waypoints` to `plan_jump_route`. It validates range and cyno-legal landings and costs it.
 
 ## 4. Keep it current

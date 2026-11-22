@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -41,7 +42,8 @@ type ListLocationAssetsOutput struct {
 }
 
 // allAssetPages walks every page of an owner's assets, up to maxAssetPages.
-// truncated reports that the owner has more pages than were read.
+// truncated reports that the owner has more pages than that, so the result
+// is missing items.
 func allAssetPages(fetch func(page int32) ([]AssetItem, int32, error)) (all []AssetItem, truncated bool, err error) {
 	for page := int32(1); ; page++ {
 		items, total, err := fetch(page)
@@ -58,10 +60,9 @@ func allAssetPages(fetch func(page int32) ([]AssetItem, int32, error)) (all []As
 	}
 }
 
-// truncatedWarning says an owner's listing stopped at maxAssetPages, so the
-// location's items and totals may be missing some of theirs.
+// truncatedWarning says an owner's assets were cut off at maxAssetPages.
 func truncatedWarning(owner string) string {
-	return fmt.Sprintf("%s has more than %d pages of assets; only the first %d were read, so items and totals here may be missing some of theirs", owner, maxAssetPages, maxAssetPages)
+	return fmt.Sprintf("%s has more than %d pages of assets, so only the first %d were read: items and totals here may be incomplete", owner, maxAssetPages, maxAssetPages)
 }
 
 func listLocationAssetsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListLocationAssetsInput, ListLocationAssetsOutput] {
@@ -76,12 +77,10 @@ func listLocationAssetsHandler(version, clientID string, store *config.Store, sd
 		if err != nil {
 			return nil, ListLocationAssetsOutput{}, fmt.Errorf("load config: %w", err)
 		}
-		// A character listed twice would have its assets read and counted twice.
+		// A character listed twice would count its assets twice.
 		var chars []int32
-		seenChar := map[int32]bool{}
 		for _, id := range in.CharacterIDs {
-			if !seenChar[id] {
-				seenChar[id] = true
+			if !slices.Contains(chars, id) {
 				chars = append(chars, id)
 			}
 		}
@@ -124,11 +123,10 @@ func listLocationAssetsHandler(version, clientID string, store *config.Store, sd
 			if err != nil {
 				warnings = append(warnings, fmt.Sprintf("couldn't read corporation %d's assets: %v", in.CorporationID, err))
 			} else {
-				owner := fmt.Sprintf("corporation %d", in.CorporationID)
 				if truncated {
-					warnings = append(warnings, truncatedWarning(owner))
+					warnings = append(warnings, truncatedWarning(fmt.Sprintf("corporation %d", in.CorporationID)))
 				}
-				owners = append(owners, owned{owner, assets})
+				owners = append(owners, owned{fmt.Sprintf("corporation %d", in.CorporationID), assets})
 			}
 		}
 		if len(owners) == 0 {

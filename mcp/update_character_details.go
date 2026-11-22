@@ -51,11 +51,9 @@ func updateCharacterDetailsHandler(store *config.Store) mcpsdk.ToolHandlerFor[Up
 		if in.Notes != nil && len(in.CharacterIDs) != 1 {
 			return nil, UpdateCharacterDetailsOutput{}, fmt.Errorf("update character details: notes belong to one character, but %d were given", len(in.CharacterIDs))
 		}
-		// Update holds the store's lock from load to save, so this can't
-		// race a login page's account change or a login being saved.
 		var cfg config.Config
 		before := map[int32]config.Character{}
-		err := store.Update(func(c *config.Config) error {
+		if _, err := store.Update(func(c *config.Config) error {
 			for _, ch := range c.Characters {
 				before[ch.ID] = ch
 			}
@@ -83,9 +81,8 @@ func updateCharacterDetailsHandler(store *config.Store) mcpsdk.ToolHandlerFor[Up
 			}
 			cfg = *c
 			return nil
-		})
-		if err != nil {
-			return nil, UpdateCharacterDetailsOutput{}, fmt.Errorf("update character details: %w", err)
+		}); err != nil {
+			return nil, UpdateCharacterDetailsOutput{}, err
 		}
 
 		out := UpdateCharacterDetailsOutput{Changes: []FieldChange{}, Characters: make([]CharacterInfo, 0, len(cfg.Characters)), Warnings: accountWarnings(cfg)}

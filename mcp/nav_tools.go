@@ -188,13 +188,17 @@ type RoutePrefsInput struct {
 }
 
 type SaveHaulProfileInput struct {
-	Name     string          `json:"name"`
-	Ship     string          `json:"ship" jsonschema:"hull type name, e.g. Nomad"`
-	PilotID  int64           `json:"pilotId" jsonschema:"the pilot's character ID (skills and contacts are read from ESI)"`
-	HoldM3   float64         `json:"holdM3" jsonschema:"the fitted cargo hold in m³ as shown in game"`
-	Outbound []string        `json:"outbound,omitempty" jsonschema:"optional pinned route, hub to destination, as system names"`
-	Return   []string        `json:"return,omitempty" jsonschema:"optional pinned return route as system names"`
-	Prefs    RoutePrefsInput `json:"prefs"`
+	Name     string   `json:"name"`
+	Ship     string   `json:"ship" jsonschema:"hull type name, e.g. Nomad"`
+	PilotID  int64    `json:"pilotId" jsonschema:"the pilot's character ID (skills and contacts are read from ESI)"`
+	HoldM3   float64  `json:"holdM3" jsonschema:"the fitted cargo hold in m³ as shown in game"`
+	Outbound []string `json:"outbound,omitempty" jsonschema:"optional pinned route, hub to destination, as system names; saved in routes.yaml as '<name> outbound'"`
+	Return   []string `json:"return,omitempty" jsonschema:"optional pinned return route as system names; saved in routes.yaml as '<name> return'"`
+	// OutboundRoute and ReturnRoute pin routes already saved by name.
+	OutboundRoute string          `json:"outboundRoute,omitempty" jsonschema:"pin a route already saved with save_route, by name, instead of giving outbound"`
+	ReturnRoute   string          `json:"returnRoute,omitempty" jsonschema:"pin a saved route by name for the return trip, instead of giving return"`
+	Prefs         RoutePrefsInput `json:"prefs"`
+	Notes         *string         `json:"notes,omitempty" jsonschema:"what the user says about this profile; omit to keep the notes it has"`
 }
 
 func (p *planner) resolvePrefs(ctx context.Context, in RoutePrefsInput) (config.RoutePrefs, error) {
@@ -253,19 +257,51 @@ func saveHaulProfileHandler(version, clientID string, store *config.Store, sdeSt
 		if err != nil {
 			return nil, config.HaulProfile{}, fmt.Errorf("save haul profile: %w", err)
 		}
-		prof := config.HaulProfile{Name: strings.TrimSpace(in.Name), ShipTypeID: ship, PilotID: in.PilotID, HoldM3: in.HoldM3, Prefs: prefs}
-		if prof.Outbound, err = p.systemIDs(ctx, in.Outbound); err != nil {
-			return nil, config.HaulProfile{}, fmt.Errorf("save haul profile: %w", err)
-		}
-		if prof.Return, err = p.systemIDs(ctx, in.Return); err != nil {
-			return nil, config.HaulProfile{}, fmt.Errorf("save haul profile: %w", err)
-		}
-		cfg, err := store.Load()
-		if err != nil {
-			return nil, config.HaulProfile{}, err
-		}
-		cfg.UpsertHaulProfile(prof)
-		if err := store.Save(cfg); err != nil {
+		prof := config.HaulProfile{Name: strings.TrimSpace(in.Name), ShipTypeID: ship, ShipName: p.typeName(ctx, ship), PilotID: in.PilotID, HoldM3: in.HoldM3, Prefs: prefs}
+		if _, err := store.Update(func(cfg *config.Config) error {
+			if c, ok := cfg.Character(int32(in.PilotID)); ok {
+				prof.PilotName = c.Name
+			}
+			if old, ok := cfg.HaulProfile(prof.Name); ok {
+				prof.Name, prof.Notes = old.Name, old.Notes
+			}
+			if in.Notes != nil {
+				prof.Notes = strings.TrimSpace(*in.Notes)
+			}
+			pin := func(systems []string, named, suffix string) (string, error) {
+				if len(systems) > 0 && named != "" {
+					return "", fmt.Errorf("give %s systems or a saved %s route by name, not both", suffix, suffix)
+				}
+				if len(systems) > 0 {
+					r, err := p.namedRoute(ctx, prof.Name+" "+suffix, systems)
+					if err != nil {
+						return "", err
+					}
+					if old, ok := cfg.Route(r.Name); ok {
+						r.ShipClass, r.Notes = old.ShipClass, old.Notes
+					}
+					cfg.UpsertRoute(r)
+					return r.Name, nil
+				}
+				if named == "" {
+					return "", nil
+				}
+				r, ok := cfg.Route(named)
+				if !ok {
+					return "", fmt.Errorf("no saved route named %q; save it with save_route first", named)
+				}
+				return r.Name, nil
+			}
+			var err error
+			if prof.OutboundRoute, err = pin(in.Outbound, in.OutboundRoute, "outbound"); err != nil {
+				return fmt.Errorf("save haul profile: %w", err)
+			}
+			if prof.ReturnRoute, err = pin(in.Return, in.ReturnRoute, "return"); err != nil {
+				return fmt.Errorf("save haul profile: %w", err)
+			}
+			cfg.UpsertHaulProfile(prof)
+			return nil
+		}); err != nil {
 			return nil, config.HaulProfile{}, err
 		}
 		return nil, prof, nil
@@ -293,6 +329,7 @@ type PlanJumpRouteInput struct {
 	From        string           `json:"from" jsonschema:"origin system name"`
 	To          string           `json:"to" jsonschema:"destination system name"`
 	Waypoints   []string         `json:"waypoints,omitempty" jsonschema:"validate and cost this exact route instead of searching (system names, origin to destination)"`
+	Route       string           `json:"route,omitempty" jsonschema:"validate and cost a route saved with save_route, by name, instead of giving waypoints"`
 	Prefs       *RoutePrefsInput `json:"prefs,omitempty" jsonschema:"override the profile's saved preferences for this call"`
 }
 
@@ -379,6 +416,16 @@ func planJumpRouteHandler(version, clientID string, store *config.Store, sdeStor
 		if err != nil {
 			return nil, PlanJumpRouteOutput{}, err
 		}
+		if in.Route != "" {
+			if len(in.Waypoints) > 0 {
+				return nil, PlanJumpRouteOutput{}, fmt.Errorf("plan jump route: give waypoints or route, not both")
+			}
+			r, ok := cfg.Route(in.Route)
+			if !ok {
+				return nil, PlanJumpRouteOutput{}, fmt.Errorf("no saved route named %q", in.Route)
+			}
+			pinned = r.SystemIDs()
+		}
 		var override *config.RoutePrefs
 		if in.Prefs != nil {
 			rp, err := p.resolvePrefs(ctx, *in.Prefs)
@@ -443,20 +490,40 @@ type PlanHaulOutput struct {
 // haulPlan routes a round trip and packs cargo.
 func (p *planner) haulPlan(ctx context.Context, prof config.HaulProfile, hub config.HubProfile, from, to int64, items []cargo.Cargo, prices map[int64]float64) (PlanHaulOutput, error) {
 	var out PlanHaulOutput
-	outbound := pinnedRoute(prof.Outbound, from, to)
+	cfg, err := p.store.Load()
+	if err != nil {
+		return out, err
+	}
+	var pinnedOut, pinnedBack []int64
+	var missing []string
+	savedRoute := func(name string) []int64 {
+		if name == "" {
+			return nil
+		}
+		r, ok := cfg.Route(name)
+		if !ok {
+			// Deleted with delete_route, or renamed in routes.yaml.
+			missing = append(missing, fmt.Sprintf("haul profile %q pins the route %q, which isn't saved any more, so a route was searched instead", prof.Name, name))
+			return nil
+		}
+		return r.SystemIDs()
+	}
+	pinnedOut = savedRoute(prof.OutboundRoute)
+	pinnedBack = savedRoute(prof.ReturnRoute)
+	outbound := pinnedRoute(pinnedOut, from, to)
 	outR, g, req, err := p.planRoute(ctx, prof, from, to, outbound, nil)
 	if err != nil {
 		return out, fmt.Errorf("outbound route: %w", err)
 	}
-	out.Route, out.Notes = outR.Routes[0], outR.Notes
-	if len(prof.Outbound) > 0 && outbound == nil {
+	out.Route, out.Notes = outR.Routes[0], append(outR.Notes, missing...)
+	if len(pinnedOut) > 0 && outbound == nil {
 		out.Notes = append(out.Notes, fmt.Sprintf("haul profile %q's pinned outbound route doesn't run from %s to %s, so a route was searched instead", prof.Name, g.Systems[from].Name, g.Systems[to].Name))
 	}
 	back := req
 	back.From, back.To = to, from
 	var ret nav.Route
-	pinnedReturn := pinnedRoute(prof.Return, to, from)
-	if len(prof.Return) > 0 && pinnedReturn == nil {
+	pinnedReturn := pinnedRoute(pinnedBack, to, from)
+	if len(pinnedBack) > 0 && pinnedReturn == nil {
 		out.Notes = append(out.Notes, fmt.Sprintf("haul profile %q's pinned return route doesn't run from %s to %s, so a route was searched instead", prof.Name, g.Systems[to].Name, g.Systems[from].Name))
 	}
 	if len(pinnedReturn) > 0 {
@@ -575,4 +642,89 @@ func portionFor(b sde.TypeBasic) int64 {
 		return b.PortionSize
 	}
 	return 1
+}
+
+// namedRoute builds a saved route from system names, in order.
+func (p *planner) namedRoute(ctx context.Context, name string, systems []string) (config.Route, error) {
+	ids, err := p.systemIDs(ctx, systems)
+	if err != nil {
+		return config.Route{}, err
+	}
+	if len(ids) < 2 {
+		return config.Route{}, fmt.Errorf("route %q needs at least two systems", name)
+	}
+	r := config.Route{Name: strings.TrimSpace(name)}
+	for _, id := range ids {
+		r.Waypoints = append(r.Waypoints, config.RouteWaypoint{ID: id, Name: p.systems[id].Name})
+	}
+	return r, nil
+}
+
+// --- saved routes ---
+
+// SaveRouteInput is save_route's input.
+type SaveRouteInput struct {
+	Name      string   `json:"name" jsonschema:"a name for the route, such as '6RCQ-V to Jita'"`
+	Systems   []string `json:"systems" jsonschema:"the route's systems in order, origin to destination, as system names: every system a jump lands in, plus any gate path"`
+	ShipClass string   `json:"shipClass,omitempty" jsonschema:"the kind of ship it's planned for, such as jump_freighter"`
+	Notes     *string  `json:"notes,omitempty" jsonschema:"why the route goes this way, in the user's words; omit to keep the notes it has"`
+}
+
+// SaveRouteOutput is the saved route and every value the save changed.
+type SaveRouteOutput struct {
+	Route   config.Route    `json:"route"`
+	Changes []config.Change `json:"changes"`
+}
+
+func saveRouteHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[SaveRouteInput, SaveRouteOutput] {
+	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in SaveRouteInput) (*mcpsdk.CallToolResult, SaveRouteOutput, error) {
+		if strings.TrimSpace(in.Name) == "" {
+			return nil, SaveRouteOutput{}, fmt.Errorf("save route: name is required")
+		}
+		p := newPlanner(version, clientID, store, sdeStore)
+		r, err := p.namedRoute(ctx, in.Name, in.Systems)
+		if err != nil {
+			return nil, SaveRouteOutput{}, fmt.Errorf("save route: %w", err)
+		}
+		r.ShipClass = strings.TrimSpace(in.ShipClass)
+		changes, err := store.Update(func(cfg *config.Config) error {
+			if old, ok := cfg.Route(r.Name); ok {
+				r.Name, r.Notes = old.Name, old.Notes
+				if r.ShipClass == "" {
+					r.ShipClass = old.ShipClass
+				}
+			}
+			if in.Notes != nil {
+				r.Notes = strings.TrimSpace(*in.Notes)
+			}
+			cfg.UpsertRoute(r)
+			return nil
+		})
+		if err != nil {
+			return nil, SaveRouteOutput{}, err
+		}
+		if changes == nil {
+			changes = []config.Change{}
+		}
+		return nil, SaveRouteOutput{Route: r, Changes: changes}, nil
+	}
+}
+
+// ListRoutesOutput is list_routes' result.
+type ListRoutesOutput struct {
+	Routes []config.Route `json:"routes"`
+}
+
+func listRoutesHandler(store *config.Store) mcpsdk.ToolHandlerFor[struct{}, ListRoutesOutput] {
+	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, _ struct{}) (*mcpsdk.CallToolResult, ListRoutesOutput, error) {
+		cfg, err := store.Load()
+		if err != nil {
+			return nil, ListRoutesOutput{}, err
+		}
+		out := ListRoutesOutput{Routes: cfg.Routes}
+		if out.Routes == nil {
+			out.Routes = []config.Route{}
+		}
+		return nil, out, nil
+	}
 }
