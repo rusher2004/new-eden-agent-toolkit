@@ -91,8 +91,8 @@ func openFakeFor(f func(characterID int32) fakeESI) func(context.Context, int32)
 	return func(_ context.Context, characterID int32) (fakeESI, error) { return f(characterID), nil }
 }
 
-// openNarrow opens c for every character, the way narrowESI hands a tool
-// file its own small interface.
+// openNarrow opens c for every character, standing in for the opener
+// commands passes a tool's Add function.
 func openNarrow[C any](c C) func(context.Context, int32) (C, error) {
 	return func(context.Context, int32) (C, error) { return c, nil }
 }
