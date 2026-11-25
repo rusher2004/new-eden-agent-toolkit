@@ -21,7 +21,11 @@ func connectedSession(t *testing.T, store *config.Store) (*mcpsdk.ClientSession,
 	if err != nil {
 		t.Fatalf("sde.Open: %v", err)
 	}
-	t.Cleanup(func() { sdeStore.Close() })
+	t.Cleanup(func() {
+		if err := sdeStore.Close(); err != nil {
+			t.Errorf("close sde store: %v", err)
+		}
+	})
 	server, err := commands.NewMCPServer("test", "client-id", store, sdeStore)
 	if err != nil {
 		t.Fatalf("commands.NewMCPServer: %v", err)
@@ -209,7 +213,11 @@ func TestNewServer_RejectsMissingDeps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sde.Open: %v", err)
 	}
-	t.Cleanup(func() { sdeStore.Close() })
+	t.Cleanup(func() {
+		if err := sdeStore.Close(); err != nil {
+			t.Errorf("close sde store: %v", err)
+		}
+	})
 	full := mcp.Deps{
 		Config: config.NewStoreAt(filepath.Join(t.TempDir(), "config.json")),
 		SDE:    sdeStore,

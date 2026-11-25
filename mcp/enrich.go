@@ -9,9 +9,10 @@ import (
 // Every resolver in this file treats a nil cache as "nothing to look up" and
 // returns no names. That is part of the additive-enrichment exception in
 // CLAUDE.md, not a guard against a wiring bug: NewServer rejects a missing
-// Deps.SDE, and the composition root passes a nil *sde.Store (whose methods
-// are nil-safe) when the cache can't open, so a missing SDE degrades to
-// unenriched output instead of failing the tool.
+// Deps.SDE. The composition root may pass a nil *sde.Store when the cache
+// can't open; held in an interface that is not a nil interface, so these
+// checks don't see it. Its nil-safe methods report every lookup as a miss
+// instead, and the output comes back unenriched rather than the tool failing.
 
 // typeNameCache is the minimal read-only view of sde.Store.Type() that
 // resolveTypeNames needs -- narrower than universe.go's typeCache, which

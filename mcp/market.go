@@ -7,11 +7,7 @@ import (
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
-
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
-
-	"github.com/rusher2004/new-eden-agent-toolkit/esi"
 )
 
 // MarketOrder is shared by list_character_market_orders, list_character_market_order_history,
@@ -126,11 +122,19 @@ func toMarketOrderBookEntryFromStructure(o esiapi.MarketsStructuresStructureIdGe
 
 // --- list_character_market_orders (private) ---
 
-var listCharacterMarketOrders = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]esiapi.CharactersCharacterIdOrdersGetInner, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
+// characterMarketOrdersESI is the ESI call list_character_market_orders makes.
+type characterMarketOrdersESI interface {
+	CharacterMarketOrders(ctx context.Context) ([]esiapi.CharactersCharacterIdOrdersGetInner, error)
+}
+
+// marketOrderOwnerNameCache is the SDE lookups the owner-scoped order tools
+// enrich with.
+type marketOrderOwnerNameCache interface {
+	typeNameCache
+	regionNameCache
+}
+
+func listCharacterMarketOrders(ctx context.Context, client characterMarketOrdersESI) ([]esiapi.CharactersCharacterIdOrdersGetInner, error) {
 	return client.CharacterMarketOrders(ctx)
 }
 
@@ -142,7 +146,16 @@ type ListCharacterMarketOrdersOutput struct {
 	Orders      []MarketOrder `json:"orders"`
 }
 
-func listCharacterMarketOrdersHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCharacterMarketOrdersInput, ListCharacterMarketOrdersOutput] {
+// AddListCharacterMarketOrders registers list_character_market_orders. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListCharacterMarketOrders[C characterMarketOrdersESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore marketOrderOwnerNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_character_market_orders",
+		Description: "List a logged-in EVE Online character's open market orders.",
+	}, listCharacterMarketOrdersHandler(userAgent, open, store, sdeStore))
+}
+
+func listCharacterMarketOrdersHandler[C characterMarketOrdersESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore marketOrderOwnerNameCache) mcpsdk.ToolHandlerFor[ListCharacterMarketOrdersInput, ListCharacterMarketOrdersOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterMarketOrdersInput) (*mcpsdk.CallToolResult, ListCharacterMarketOrdersOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -151,7 +164,11 @@ func listCharacterMarketOrdersHandler(version, clientID string, store ConfigStor
 		if !found {
 			return nil, ListCharacterMarketOrdersOutput{}, fmt.Errorf("list character market orders for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		orders, err := listCharacterMarketOrders(ctx, clientID, in.CharacterID, sso.UserAgent(version))
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCharacterMarketOrdersOutput{}, fmt.Errorf("list character market orders: %w", err)
+		}
+		orders, err := listCharacterMarketOrders(ctx, client)
 		if err != nil {
 			return nil, ListCharacterMarketOrdersOutput{}, fmt.Errorf("list character market orders: %w", err)
 		}
@@ -163,7 +180,7 @@ func listCharacterMarketOrdersHandler(version, clientID string, store ConfigStor
 		for i, o := range out {
 			ids[i] = o.TypeID
 		}
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		names := resolveTypeNames(ctx, sdeStore, userAgent, ids)
 		for i := range out {
 			out[i].TypeName = names[out[i].TypeID]
 		}
@@ -171,7 +188,7 @@ func listCharacterMarketOrdersHandler(version, clientID string, store ConfigStor
 		for i, o := range out {
 			regionIDs[i] = o.RegionID
 		}
-		regionNames := resolveRegionNames(ctx, sdeStore, sso.UserAgent(version), regionIDs)
+		regionNames := resolveRegionNames(ctx, sdeStore, userAgent, regionIDs)
 		for i := range out {
 			out[i].RegionName = regionNames[out[i].RegionID]
 		}
@@ -181,11 +198,12 @@ func listCharacterMarketOrdersHandler(version, clientID string, store ConfigStor
 
 // --- list_character_market_order_history (private, paginated) ---
 
-var listCharacterMarketOrderHistory = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]esiapi.CharactersCharacterIdOrdersHistoryGetInner, int32, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, 0, fmt.Errorf("build ESI client: %w", err)
-	}
+// characterMarketOrderHistoryESI is the ESI call list_character_market_order_history makes.
+type characterMarketOrderHistoryESI interface {
+	CharacterMarketOrderHistory(ctx context.Context, page int32) ([]esiapi.CharactersCharacterIdOrdersHistoryGetInner, int32, error)
+}
+
+func listCharacterMarketOrderHistory(ctx context.Context, client characterMarketOrderHistoryESI, page int32) ([]esiapi.CharactersCharacterIdOrdersHistoryGetInner, int32, error) {
 	return client.CharacterMarketOrderHistory(ctx, page)
 }
 
@@ -200,7 +218,16 @@ type ListCharacterMarketOrderHistoryOutput struct {
 	Orders      []MarketOrder `json:"orders"`
 }
 
-func listCharacterMarketOrderHistoryHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCharacterMarketOrderHistoryInput, ListCharacterMarketOrderHistoryOutput] {
+// AddListCharacterMarketOrderHistory registers list_character_market_order_history. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListCharacterMarketOrderHistory[C characterMarketOrderHistoryESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore marketOrderOwnerNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_character_market_order_history",
+		Description: "List a logged-in EVE Online character's cancelled/expired market orders from the last 90 days.",
+	}, listCharacterMarketOrderHistoryHandler(userAgent, open, store, sdeStore))
+}
+
+func listCharacterMarketOrderHistoryHandler[C characterMarketOrderHistoryESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore marketOrderOwnerNameCache) mcpsdk.ToolHandlerFor[ListCharacterMarketOrderHistoryInput, ListCharacterMarketOrderHistoryOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterMarketOrderHistoryInput) (*mcpsdk.CallToolResult, ListCharacterMarketOrderHistoryOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -209,7 +236,11 @@ func listCharacterMarketOrderHistoryHandler(version, clientID string, store Conf
 		if !found {
 			return nil, ListCharacterMarketOrderHistoryOutput{}, fmt.Errorf("list character market order history for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		history, totalPages, err := listCharacterMarketOrderHistory(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.Page)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCharacterMarketOrderHistoryOutput{}, fmt.Errorf("list character market order history: %w", err)
+		}
+		history, totalPages, err := listCharacterMarketOrderHistory(ctx, client, in.Page)
 		if err != nil {
 			return nil, ListCharacterMarketOrderHistoryOutput{}, fmt.Errorf("list character market order history: %w", err)
 		}
@@ -221,7 +252,7 @@ func listCharacterMarketOrderHistoryHandler(version, clientID string, store Conf
 		for i, o := range out {
 			ids[i] = o.TypeID
 		}
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		names := resolveTypeNames(ctx, sdeStore, userAgent, ids)
 		for i := range out {
 			out[i].TypeName = names[out[i].TypeID]
 		}
@@ -229,7 +260,7 @@ func listCharacterMarketOrderHistoryHandler(version, clientID string, store Conf
 		for i, o := range out {
 			regionIDs[i] = o.RegionID
 		}
-		regionNames := resolveRegionNames(ctx, sdeStore, sso.UserAgent(version), regionIDs)
+		regionNames := resolveRegionNames(ctx, sdeStore, userAgent, regionIDs)
 		for i := range out {
 			out[i].RegionName = regionNames[out[i].RegionID]
 		}
@@ -243,11 +274,12 @@ func listCharacterMarketOrderHistoryHandler(version, clientID string, store Conf
 
 // --- list_corporation_market_orders (private, corp-scoped, paginated) ---
 
-var listCorporationMarketOrders = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdOrdersGetInner, int32, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, 0, fmt.Errorf("build ESI client: %w", err)
-	}
+// corporationMarketOrdersESI is the ESI call list_corporation_market_orders makes.
+type corporationMarketOrdersESI interface {
+	CorporationMarketOrders(ctx context.Context, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdOrdersGetInner, int32, error)
+}
+
+func listCorporationMarketOrders(ctx context.Context, client corporationMarketOrdersESI, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdOrdersGetInner, int32, error) {
 	return client.CorporationMarketOrders(ctx, corporationID, page)
 }
 
@@ -264,7 +296,16 @@ type ListCorporationMarketOrdersOutput struct {
 	Orders        []MarketOrder `json:"orders"`
 }
 
-func listCorporationMarketOrdersHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCorporationMarketOrdersInput, ListCorporationMarketOrdersOutput] {
+// AddListCorporationMarketOrders registers list_corporation_market_orders. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListCorporationMarketOrders[C corporationMarketOrdersESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore marketOrderOwnerNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_corporation_market_orders",
+		Description: "List a corporation's open market orders, using a logged-in character's roles to authorize.",
+	}, listCorporationMarketOrdersHandler(userAgent, open, store, sdeStore))
+}
+
+func listCorporationMarketOrdersHandler[C corporationMarketOrdersESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore marketOrderOwnerNameCache) mcpsdk.ToolHandlerFor[ListCorporationMarketOrdersInput, ListCorporationMarketOrdersOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationMarketOrdersInput) (*mcpsdk.CallToolResult, ListCorporationMarketOrdersOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -273,7 +314,11 @@ func listCorporationMarketOrdersHandler(version, clientID string, store ConfigSt
 		if !found {
 			return nil, ListCorporationMarketOrdersOutput{}, fmt.Errorf("list corporation market orders for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		orders, totalPages, err := listCorporationMarketOrders(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.Page)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCorporationMarketOrdersOutput{}, fmt.Errorf("list corporation market orders: %w", err)
+		}
+		orders, totalPages, err := listCorporationMarketOrders(ctx, client, in.CorporationID, in.Page)
 		if err != nil {
 			return nil, ListCorporationMarketOrdersOutput{}, fmt.Errorf("list corporation market orders: %w", err)
 		}
@@ -285,7 +330,7 @@ func listCorporationMarketOrdersHandler(version, clientID string, store ConfigSt
 		for i, o := range out {
 			ids[i] = o.TypeID
 		}
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		names := resolveTypeNames(ctx, sdeStore, userAgent, ids)
 		for i := range out {
 			out[i].TypeName = names[out[i].TypeID]
 		}
@@ -293,7 +338,7 @@ func listCorporationMarketOrdersHandler(version, clientID string, store ConfigSt
 		for i, o := range out {
 			regionIDs[i] = o.RegionID
 		}
-		regionNames := resolveRegionNames(ctx, sdeStore, sso.UserAgent(version), regionIDs)
+		regionNames := resolveRegionNames(ctx, sdeStore, userAgent, regionIDs)
 		for i := range out {
 			out[i].RegionName = regionNames[out[i].RegionID]
 		}
@@ -307,11 +352,12 @@ func listCorporationMarketOrdersHandler(version, clientID string, store ConfigSt
 
 // --- list_corporation_market_order_history (private, corp-scoped, paginated) ---
 
-var listCorporationMarketOrderHistory = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdOrdersHistoryGetInner, int32, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, 0, fmt.Errorf("build ESI client: %w", err)
-	}
+// corporationMarketOrderHistoryESI is the ESI call list_corporation_market_order_history makes.
+type corporationMarketOrderHistoryESI interface {
+	CorporationMarketOrderHistory(ctx context.Context, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdOrdersHistoryGetInner, int32, error)
+}
+
+func listCorporationMarketOrderHistory(ctx context.Context, client corporationMarketOrderHistoryESI, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdOrdersHistoryGetInner, int32, error) {
 	return client.CorporationMarketOrderHistory(ctx, corporationID, page)
 }
 
@@ -328,7 +374,16 @@ type ListCorporationMarketOrderHistoryOutput struct {
 	Orders        []MarketOrder `json:"orders"`
 }
 
-func listCorporationMarketOrderHistoryHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCorporationMarketOrderHistoryInput, ListCorporationMarketOrderHistoryOutput] {
+// AddListCorporationMarketOrderHistory registers list_corporation_market_order_history. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListCorporationMarketOrderHistory[C corporationMarketOrderHistoryESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore marketOrderOwnerNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_corporation_market_order_history",
+		Description: "List a corporation's cancelled/expired market orders from the last 90 days, using a logged-in character's roles to authorize.",
+	}, listCorporationMarketOrderHistoryHandler(userAgent, open, store, sdeStore))
+}
+
+func listCorporationMarketOrderHistoryHandler[C corporationMarketOrderHistoryESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore marketOrderOwnerNameCache) mcpsdk.ToolHandlerFor[ListCorporationMarketOrderHistoryInput, ListCorporationMarketOrderHistoryOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationMarketOrderHistoryInput) (*mcpsdk.CallToolResult, ListCorporationMarketOrderHistoryOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -337,7 +392,11 @@ func listCorporationMarketOrderHistoryHandler(version, clientID string, store Co
 		if !found {
 			return nil, ListCorporationMarketOrderHistoryOutput{}, fmt.Errorf("list corporation market order history for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		history, totalPages, err := listCorporationMarketOrderHistory(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.Page)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCorporationMarketOrderHistoryOutput{}, fmt.Errorf("list corporation market order history: %w", err)
+		}
+		history, totalPages, err := listCorporationMarketOrderHistory(ctx, client, in.CorporationID, in.Page)
 		if err != nil {
 			return nil, ListCorporationMarketOrderHistoryOutput{}, fmt.Errorf("list corporation market order history: %w", err)
 		}
@@ -349,7 +408,7 @@ func listCorporationMarketOrderHistoryHandler(version, clientID string, store Co
 		for i, o := range out {
 			ids[i] = o.TypeID
 		}
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		names := resolveTypeNames(ctx, sdeStore, userAgent, ids)
 		for i := range out {
 			out[i].TypeName = names[out[i].TypeID]
 		}
@@ -357,7 +416,7 @@ func listCorporationMarketOrderHistoryHandler(version, clientID string, store Co
 		for i, o := range out {
 			regionIDs[i] = o.RegionID
 		}
-		regionNames := resolveRegionNames(ctx, sdeStore, sso.UserAgent(version), regionIDs)
+		regionNames := resolveRegionNames(ctx, sdeStore, userAgent, regionIDs)
 		for i := range out {
 			out[i].RegionName = regionNames[out[i].RegionID]
 		}
@@ -371,8 +430,12 @@ func listCorporationMarketOrderHistoryHandler(version, clientID string, store Co
 
 // --- list_market_groups (public, no input) ---
 
-var listMarketGroups = func(ctx context.Context, userAgent string) ([]int64, error) {
-	client := esi.NewPublicClient(userAgent)
+// marketGroupsESI is the public ESI call list_market_groups makes.
+type marketGroupsESI interface {
+	MarketGroups(ctx context.Context) ([]int64, error)
+}
+
+func listMarketGroups(ctx context.Context, client marketGroupsESI) ([]int64, error) {
 	return client.MarketGroups(ctx)
 }
 
@@ -381,9 +444,18 @@ type ListMarketGroupsOutput struct {
 	MarketGroupIDs []int64 `json:"marketGroupIds"`
 }
 
-func listMarketGroupsHandler(version string) mcpsdk.ToolHandlerFor[ListMarketGroupsInput, ListMarketGroupsOutput] {
+// AddListMarketGroups registers list_market_groups. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListMarketGroups[C marketGroupsESI](s *mcpsdk.Server, open func() C) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_market_groups",
+		Description: "List every market group ID in the game (public data, no character required).",
+	}, listMarketGroupsHandler(open))
+}
+
+func listMarketGroupsHandler[C marketGroupsESI](open func() C) mcpsdk.ToolHandlerFor[ListMarketGroupsInput, ListMarketGroupsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListMarketGroupsInput) (*mcpsdk.CallToolResult, ListMarketGroupsOutput, error) {
-		ids, err := listMarketGroups(ctx, sso.UserAgent(version))
+		ids, err := listMarketGroups(ctx, open())
 		if err != nil {
 			return nil, ListMarketGroupsOutput{}, fmt.Errorf("list market groups: %w", err)
 		}
@@ -401,8 +473,12 @@ type GetMarketGroupOutput struct {
 	Types         []int64 `json:"types"`
 }
 
-var getMarketGroup = func(ctx context.Context, userAgent string, marketGroupID int64) (GetMarketGroupOutput, error) {
-	client := esi.NewPublicClient(userAgent)
+// marketGroupESI is the public ESI call get_market_group makes.
+type marketGroupESI interface {
+	MarketGroup(ctx context.Context, marketGroupID int64) (*esiapi.MarketsGroupsMarketGroupIdGet, error)
+}
+
+func getMarketGroup(ctx context.Context, client marketGroupESI, marketGroupID int64) (GetMarketGroupOutput, error) {
 	group, err := client.MarketGroup(ctx, marketGroupID)
 	if err != nil {
 		return GetMarketGroupOutput{}, err
@@ -417,9 +493,18 @@ type GetMarketGroupInput struct {
 	MarketGroupID int64 `json:"marketGroupId" jsonschema:"the market group ID to look up"`
 }
 
-func getMarketGroupHandler(version string) mcpsdk.ToolHandlerFor[GetMarketGroupInput, GetMarketGroupOutput] {
+// AddGetMarketGroup registers get_market_group. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddGetMarketGroup[C marketGroupESI](s *mcpsdk.Server, open func() C) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_market_group",
+		Description: "Get detail for one market group, including its item types (public data, no character required).",
+	}, getMarketGroupHandler(open))
+}
+
+func getMarketGroupHandler[C marketGroupESI](open func() C) mcpsdk.ToolHandlerFor[GetMarketGroupInput, GetMarketGroupOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetMarketGroupInput) (*mcpsdk.CallToolResult, GetMarketGroupOutput, error) {
-		out, err := getMarketGroup(ctx, sso.UserAgent(version), in.MarketGroupID)
+		out, err := getMarketGroup(ctx, open(), in.MarketGroupID)
 		if err != nil {
 			return nil, GetMarketGroupOutput{}, fmt.Errorf("get market group: %w", err)
 		}
@@ -493,8 +578,12 @@ type MarketHistoryEntry struct {
 	Volume     int64   `json:"volume"`
 }
 
-var getMarketHistory = func(ctx context.Context, userAgent string, regionID, typeID int64) ([]esiapi.MarketsRegionIdHistoryGetInner, error) {
-	client := esi.NewPublicClient(userAgent)
+// marketHistoryESI is the public ESI call get_market_history makes.
+type marketHistoryESI interface {
+	MarketHistory(ctx context.Context, regionID, typeID int64) ([]esiapi.MarketsRegionIdHistoryGetInner, error)
+}
+
+func getMarketHistory(ctx context.Context, client marketHistoryESI, regionID, typeID int64) ([]esiapi.MarketsRegionIdHistoryGetInner, error) {
 	return client.MarketHistory(ctx, regionID, typeID)
 }
 
@@ -508,9 +597,18 @@ type GetMarketHistoryOutput struct {
 	History  []MarketHistoryEntry `json:"history"`
 }
 
-func getMarketHistoryHandler(version string) mcpsdk.ToolHandlerFor[GetMarketHistoryInput, GetMarketHistoryOutput] {
+// AddGetMarketHistory registers get_market_history. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddGetMarketHistory[C marketHistoryESI](s *mcpsdk.Server, open func() C) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_market_history",
+		Description: "Get daily historical market statistics for one item type in one region (public data, no character required).",
+	}, getMarketHistoryHandler(open))
+}
+
+func getMarketHistoryHandler[C marketHistoryESI](open func() C) mcpsdk.ToolHandlerFor[GetMarketHistoryInput, GetMarketHistoryOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetMarketHistoryInput) (*mcpsdk.CallToolResult, GetMarketHistoryOutput, error) {
-		history, err := getMarketHistory(ctx, sso.UserAgent(version), in.RegionID, in.TypeID)
+		history, err := getMarketHistory(ctx, open(), in.RegionID, in.TypeID)
 		if err != nil {
 			return nil, GetMarketHistoryOutput{}, fmt.Errorf("get market history: %w", err)
 		}
@@ -599,8 +697,12 @@ func listMarketOrdersHandler[C marketOrdersESI](userAgent string, open func() C,
 
 // --- list_market_types (public, paginated) ---
 
-var listMarketTypes = func(ctx context.Context, userAgent string, regionID int64, page int32) ([]int64, int32, error) {
-	client := esi.NewPublicClient(userAgent)
+// marketTypesESI is the public ESI call list_market_types makes.
+type marketTypesESI interface {
+	MarketTypes(ctx context.Context, regionID int64, page int32) ([]int64, int32, error)
+}
+
+func listMarketTypes(ctx context.Context, client marketTypesESI, regionID int64, page int32) ([]int64, int32, error) {
 	return client.MarketTypes(ctx, regionID, page)
 }
 
@@ -616,13 +718,22 @@ type ListMarketTypesOutput struct {
 	TypeNames  []string `json:"typeNames,omitempty"`
 }
 
-func listMarketTypesHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListMarketTypesInput, ListMarketTypesOutput] {
+// AddListMarketTypes registers list_market_types. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListMarketTypes[C marketTypesESI](s *mcpsdk.Server, userAgent string, open func() C, sdeStore typeNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_market_types",
+		Description: "List the item type IDs with at least one active market order in a region (public data, no character required).",
+	}, listMarketTypesHandler(userAgent, open, sdeStore))
+}
+
+func listMarketTypesHandler[C marketTypesESI](userAgent string, open func() C, sdeStore typeNameCache) mcpsdk.ToolHandlerFor[ListMarketTypesInput, ListMarketTypesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListMarketTypesInput) (*mcpsdk.CallToolResult, ListMarketTypesOutput, error) {
-		types, totalPages, err := listMarketTypes(ctx, sso.UserAgent(version), in.RegionID, in.Page)
+		types, totalPages, err := listMarketTypes(ctx, open(), in.RegionID, in.Page)
 		if err != nil {
 			return nil, ListMarketTypesOutput{}, fmt.Errorf("list market types: %w", err)
 		}
-		nameMap := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), types)
+		nameMap := resolveTypeNames(ctx, sdeStore, userAgent, types)
 		typeNames := make([]string, len(types))
 		for i, id := range types {
 			typeNames[i] = nameMap[id]

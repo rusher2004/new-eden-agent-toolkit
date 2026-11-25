@@ -8,9 +8,7 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/cargo"
-	"github.com/rusher2004/new-eden-agent-toolkit/esi"
 	"github.com/rusher2004/new-eden-agent-toolkit/sde"
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
 // AssetItem is one asset entry, shared by character- and corporation-scoped listings.
@@ -153,12 +151,13 @@ type AssetLocation struct {
 	Z      float64 `json:"z"`
 }
 
-// getAssetLocations is overridable in tests.
-var getAssetLocations = func(ctx context.Context, clientID string, characterID int32, userAgent string, itemIDs []int64) ([]AssetLocation, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
+// assetLocationsESI is the ESI call get_asset_locations makes.
+type assetLocationsESI interface {
+	AssetLocations(ctx context.Context, itemIDs []int64) ([]esiapi.CharactersCharacterIdAssetsLocationsPostInner, error)
+}
+
+// getAssetLocations reads the positions of a character's items.
+func getAssetLocations(ctx context.Context, client assetLocationsESI, itemIDs []int64) ([]AssetLocation, error) {
 	locs, err := client.AssetLocations(ctx, itemIDs)
 	if err != nil {
 		return nil, err
@@ -182,7 +181,16 @@ type GetAssetLocationsOutput struct {
 	Locations   []AssetLocation `json:"locations"`
 }
 
-func getAssetLocationsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetAssetLocationsInput, GetAssetLocationsOutput] {
+// AddGetAssetLocations registers get_asset_locations. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddGetAssetLocations[C assetLocationsESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_asset_locations",
+		Description: "Resolve a set of a character's asset item IDs into their positions.",
+	}, getAssetLocationsHandler(open, store))
+}
+
+func getAssetLocationsHandler[C assetLocationsESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[GetAssetLocationsInput, GetAssetLocationsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetAssetLocationsInput) (*mcpsdk.CallToolResult, GetAssetLocationsOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -198,7 +206,11 @@ func getAssetLocationsHandler(version, clientID string, store ConfigStore) mcpsd
 		if !found {
 			return nil, GetAssetLocationsOutput{}, fmt.Errorf("get asset locations for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		locs, err := getAssetLocations(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.ItemIDs)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, GetAssetLocationsOutput{}, fmt.Errorf("get asset locations: %w", err)
+		}
+		locs, err := getAssetLocations(ctx, client, in.ItemIDs)
 		if err != nil {
 			return nil, GetAssetLocationsOutput{}, fmt.Errorf("get asset locations: %w", err)
 		}
@@ -361,12 +373,13 @@ func listCorporationAssetsHandler[C corporationAssetsESI](userAgent string, open
 	}
 }
 
-// getCorporationAssetLocations is overridable in tests.
-var getCorporationAssetLocations = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, itemIDs []int64) ([]AssetLocation, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
+// corporationAssetLocationsESI is the ESI call get_corporation_asset_locations makes.
+type corporationAssetLocationsESI interface {
+	CorporationAssetLocations(ctx context.Context, corporationID int64, itemIDs []int64) ([]esiapi.CharactersCharacterIdAssetsLocationsPostInner, error)
+}
+
+// getCorporationAssetLocations reads the positions of a corporation's items.
+func getCorporationAssetLocations(ctx context.Context, client corporationAssetLocationsESI, corporationID int64, itemIDs []int64) ([]AssetLocation, error) {
 	locs, err := client.CorporationAssetLocations(ctx, corporationID, itemIDs)
 	if err != nil {
 		return nil, err
@@ -392,7 +405,16 @@ type GetCorporationAssetLocationsOutput struct {
 	Locations     []AssetLocation `json:"locations"`
 }
 
-func getCorporationAssetLocationsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetCorporationAssetLocationsInput, GetCorporationAssetLocationsOutput] {
+// AddGetCorporationAssetLocations registers get_corporation_asset_locations. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddGetCorporationAssetLocations[C corporationAssetLocationsESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_corporation_asset_locations",
+		Description: "Resolve a set of a corporation's asset item IDs into their positions.",
+	}, getCorporationAssetLocationsHandler(open, store))
+}
+
+func getCorporationAssetLocationsHandler[C corporationAssetLocationsESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[GetCorporationAssetLocationsInput, GetCorporationAssetLocationsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCorporationAssetLocationsInput) (*mcpsdk.CallToolResult, GetCorporationAssetLocationsOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -408,7 +430,11 @@ func getCorporationAssetLocationsHandler(version, clientID string, store ConfigS
 		if !found {
 			return nil, GetCorporationAssetLocationsOutput{}, fmt.Errorf("get corporation asset locations for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		locs, err := getCorporationAssetLocations(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.ItemIDs)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, GetCorporationAssetLocationsOutput{}, fmt.Errorf("get corporation asset locations: %w", err)
+		}
+		locs, err := getCorporationAssetLocations(ctx, client, in.CorporationID, in.ItemIDs)
 		if err != nil {
 			return nil, GetCorporationAssetLocationsOutput{}, fmt.Errorf("get corporation asset locations: %w", err)
 		}

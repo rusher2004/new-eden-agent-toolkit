@@ -29,7 +29,7 @@ type toolDeps struct {
 func (d toolDeps) openESI(ctx context.Context, characterID int32) (*esi.Client, error) {
 	c, err := esi.NewClient(ctx, d.clientID, characterID, d.userAgent)
 	if err != nil {
-		return nil, fmt.Errorf("open ESI client for character %d: %w", characterID, err)
+		return nil, fmt.Errorf("character %d: %w", characterID, err)
 	}
 	return c, nil
 }
@@ -102,4 +102,5 @@ func addConvertedTools(s *mcpsdk.Server, d toolDeps) {
 	addCharacterInfoTools(s, d)
 	addContactWriteTools(s, d)
 	addMiningAndFacilityTools(s, d)
+	addMarketContractAssetTools(s, d)
 }

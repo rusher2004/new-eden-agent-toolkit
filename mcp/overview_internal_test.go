@@ -190,7 +190,7 @@ func TestConfirmOnlineConflicts(t *testing.T) {
 				}
 				return f
 			})
-			got, err := confirmOnlineConflicts(context.Background(), open, suspect, online)
+			got, _, err := confirmOnlineConflicts(context.Background(), open, suspect, online)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -209,7 +209,7 @@ func TestConfirmOnlineConflicts_Cancelled(t *testing.T) {
 	cancel()
 	online := map[int32]*esi.CharacterOnlineStatus{1: {Online: true}, 2: {Online: true}}
 	suspect := map[string][]config.Character{"Main": {{ID: 1}, {ID: 2}}}
-	if _, err := confirmOnlineConflicts(ctx, failNarrow[characterOnlineESI](errNotFaked), suspect, online); !errors.Is(err, context.Canceled) {
+	if _, _, err := confirmOnlineConflicts(ctx, failNarrow[characterOnlineESI](errNotFaked), suspect, online); !errors.Is(err, context.Canceled) {
 		t.Errorf("err = %v, want context.Canceled", err)
 	}
 }
@@ -225,11 +225,14 @@ func TestConfirmOnlineConflicts_UnopenableClientIsNotReported(t *testing.T) {
 	stubSleep(t, func(time.Duration) {})
 	online := map[int32]*esi.CharacterOnlineStatus{1: {Online: true, LastLogin: &recent}, 2: {Online: true, LastLogin: &recent}}
 	suspect := map[string][]config.Character{"Main": {{ID: 1, Name: "Alt A"}, {ID: 2, Name: "Alt B"}}}
-	got, err := confirmOnlineConflicts(context.Background(), failNarrow[characterOnlineESI](errors.New("no refresh token")), suspect, online)
+	got, warnings, err := confirmOnlineConflicts(context.Background(), failNarrow[characterOnlineESI](errors.New("no refresh token")), suspect, online)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(got) != 0 {
 		t.Errorf("confirmed = %v, want none", got)
+	}
+	if len(warnings) != 2 {
+		t.Errorf("warnings = %v, want one per character that couldn't be re-checked", warnings)
 	}
 }
