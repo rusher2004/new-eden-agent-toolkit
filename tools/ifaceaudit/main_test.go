@@ -186,3 +186,41 @@ func TestAuditKeepsSamePackageNameDirectoriesApart(t *testing.T) {
 		t.Errorf("dup/b Runner used-by = %v, want [dup]", u)
 	}
 }
+
+// The repo itself must conform to the two rules CI enforces: no file that only
+// declares types, and no exported interface in a producer package.
+func TestRepoHasNoTypeOnlyFiles(t *testing.T) {
+	fs, err := Audit("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range fs {
+		if f.Kind == "TYPE_ONLY_FILE" {
+			t.Errorf("type-only file (declare a type in the file of the code that uses it): %s", f)
+		}
+	}
+}
+
+func TestRepoProducerPackagesDeclareNoInterfaces(t *testing.T) {
+	fs, err := Audit("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range fs {
+		if f.Kind == "PRODUCER_IFACE" {
+			t.Errorf("producer package exports an interface (the consumer declares it): %s", f)
+		}
+	}
+}
+
+func TestAuditTreatsUnexportedProducerInterfaceAsInternal(t *testing.T) {
+	fs, err := Audit("testdata")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range fs {
+		if f.Context == "sde.internalSeam" && f.Kind != "INTERFACE" {
+			t.Errorf("unexported producer interface kind = %s, want INTERFACE", f.Kind)
+		}
+	}
+}

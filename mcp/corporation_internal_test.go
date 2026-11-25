@@ -11,7 +11,8 @@ import (
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 )
 
-func ptrInt64(v int64) *int64 { return &v }
+//go:fix inline
+func ptrInt64(v int64) *int64 { return new(v) }
 
 func TestGetCorporationHandler_MapsFields(t *testing.T) {
 	orig := getCorporationDetail
@@ -286,7 +287,7 @@ func TestListCorporationMemberTrackingHandler_ResolvesShipTypeName(t *testing.T)
 	orig := listCorporationMemberTracking
 	t.Cleanup(func() { listCorporationMemberTracking = orig })
 	listCorporationMemberTracking = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64) ([]MemberTracking, error) {
-		return []MemberTracking{{CharacterID: 1, ShipTypeID: ptrInt64(587)}}, nil
+		return []MemberTracking{{CharacterID: 1, ShipTypeID: new(int64(587))}}, nil
 	}
 
 	origResolve := resolveTypeNames
@@ -704,7 +705,7 @@ func TestListCorporationContainerLogsHandler_ResolvesTypeNames(t *testing.T) {
 	orig := listCorporationContainerLogs
 	t.Cleanup(func() { listCorporationContainerLogs = orig })
 	listCorporationContainerLogs = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]ContainerLog, int32, error) {
-		return []ContainerLog{{ContainerTypeID: 588, TypeID: ptrInt64(587)}}, 1, nil
+		return []ContainerLog{{ContainerTypeID: 588, TypeID: new(int64(587))}}, 1, nil
 	}
 
 	origResolve := resolveTypeNames

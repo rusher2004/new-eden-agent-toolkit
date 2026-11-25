@@ -94,24 +94,18 @@ func (s *Store) Blueprint(ctx context.Context, userAgent string, blueprintTypeID
 	bp := Blueprint{TypeID: blueprintTypeID}
 	idx := map[int64]int{}
 
-	rows, err := s.db.QueryContext(ctx, `SELECT activityID, time FROM industryActivity WHERE typeID = ? ORDER BY activityID`, blueprintTypeID)
-	if err != nil {
-		return Blueprint{}, false, fmt.Errorf("query blueprint %d activities: %w", blueprintTypeID, err)
-	}
-	for rows.Next() {
+	err := s.eachRow(ctx, `SELECT activityID, time FROM industryActivity WHERE typeID = ? ORDER BY activityID`, []any{blueprintTypeID}, func(rows *sql.Rows) error {
 		var a BlueprintActivity
 		if err := rows.Scan(&a.ActivityID, &a.TimeSeconds); err != nil {
-			rows.Close()
-			return Blueprint{}, false, fmt.Errorf("scan blueprint activity: %w", err)
+			return fmt.Errorf("scan blueprint activity: %w", err)
 		}
 		idx[a.ActivityID] = len(bp.Activities)
 		bp.Activities = append(bp.Activities, a)
+		return nil
+	})
+	if err != nil {
+		return Blueprint{}, false, fmt.Errorf("query blueprint %d activities: %w", blueprintTypeID, err)
 	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return Blueprint{}, false, fmt.Errorf("iterate blueprint activities: %w", err)
-	}
-	rows.Close()
 	if len(bp.Activities) == 0 {
 		return Blueprint{}, false, nil
 	}
@@ -378,12 +372,12 @@ func (s *Store) NPCStationIndustryData(ctx context.Context, userAgent string, st
 }
 
 // eachRow runs a query and calls fn for each row, closing rows afterwards.
-func (s *Store) eachRow(ctx context.Context, query string, args []any, fn func(*sql.Rows) error) error {
+func (s *Store) eachRow(ctx context.Context, query string, args []any, fn func(*sql.Rows) error) (err error) {
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("query: %w", err)
 	}
-	defer rows.Close()
+	defer closeInto(&err, rows, "rows")
 	for rows.Next() {
 		if err := fn(rows); err != nil {
 			return fmt.Errorf("scan: %w", err)

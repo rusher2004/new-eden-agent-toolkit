@@ -294,10 +294,7 @@ func paginateIDs(ids []int64, page int32) ([]int64, int32) {
 	if start >= len(ids) {
 		return []int64{}, totalPages
 	}
-	end := start + universeListPageSize
-	if end > len(ids) {
-		end = len(ids)
-	}
+	end := min(start+universeListPageSize, len(ids))
 	return ids[start:end], totalPages
 }
 

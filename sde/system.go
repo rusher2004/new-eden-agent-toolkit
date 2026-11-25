@@ -46,7 +46,7 @@ func (s *Store) System(ctx context.Context, userAgent string, id int64) (System,
 	if v, ok := getOverlay[System](s, "system", id); ok {
 		return v, true, nil
 	}
-	_ = s.ensureSynced(ctx, userAgent)
+	s.syncBestEffort(ctx, userAgent)
 	if s.db == nil {
 		return System{}, false, nil
 	}
@@ -132,7 +132,7 @@ func (s *Store) SystemIDs(ctx context.Context, userAgent string) ([]int64, error
 	if s == nil {
 		return nil, nil
 	}
-	_ = s.ensureSynced(ctx, userAgent)
+	s.syncBestEffort(ctx, userAgent)
 	if s.db == nil {
 		return nil, nil
 	}

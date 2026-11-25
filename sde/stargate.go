@@ -32,7 +32,7 @@ func (s *Store) Stargate(ctx context.Context, userAgent string, id int64) (Starg
 	if v, ok := getOverlay[Stargate](s, "stargate", id); ok {
 		return v, true, nil
 	}
-	_ = s.ensureSynced(ctx, userAgent)
+	s.syncBestEffort(ctx, userAgent)
 	if s.db == nil {
 		return Stargate{}, false, nil
 	}

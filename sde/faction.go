@@ -56,11 +56,11 @@ const factionSelectColumns = `factionID, factionName, description, solarSystemID
 // Factions returns every cached faction. Returns an empty slice, not an
 // error, if the store has never synced successfully -- mcp/'s caller treats
 // an empty result as a signal to read-through to a live ESI list call.
-func (s *Store) Factions(ctx context.Context, userAgent string) ([]Faction, error) {
+func (s *Store) Factions(ctx context.Context, userAgent string) (_ []Faction, err error) {
 	if s == nil {
 		return nil, nil
 	}
-	_ = s.ensureSynced(ctx, userAgent)
+	s.syncBestEffort(ctx, userAgent)
 	if s.db == nil {
 		return nil, nil
 	}
@@ -69,7 +69,7 @@ func (s *Store) Factions(ctx context.Context, userAgent string) ([]Faction, erro
 	if err != nil {
 		return nil, fmt.Errorf("query factions: %w", err)
 	}
-	defer rows.Close()
+	defer closeInto(&err, rows, "rows")
 
 	var out []Faction
 	for rows.Next() {
@@ -87,7 +87,7 @@ func (s *Store) Faction(ctx context.Context, userAgent string, id int64) (Factio
 	if s == nil {
 		return Faction{}, false, nil
 	}
-	_ = s.ensureSynced(ctx, userAgent)
+	s.syncBestEffort(ctx, userAgent)
 	if s.db == nil {
 		return Faction{}, false, nil
 	}

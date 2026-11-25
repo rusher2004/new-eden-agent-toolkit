@@ -3,8 +3,8 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 
@@ -100,9 +100,7 @@ func (p *planner) typeBasics(ctx context.Context, ids []int64) (map[int64]sde.Ty
 			return nil, err
 		}
 		p.mu.Lock()
-		for k, v := range got {
-			p.basics[k] = v
-		}
+		maps.Copy(p.basics, got)
 		p.mu.Unlock()
 	}
 	out := make(map[int64]sde.TypeBasic, len(ids))
@@ -234,7 +232,7 @@ func sortedKeys[V any](m map[int64]V) []int64 {
 	for k := range m {
 		out = append(out, k)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	slices.Sort(out)
 	return out
 }
 

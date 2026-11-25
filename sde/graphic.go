@@ -31,7 +31,7 @@ func (s *Store) Graphic(ctx context.Context, userAgent string, id int64) (Graphi
 	if v, ok := getOverlay[Graphic](s, "graphic", id); ok {
 		return v, true, nil
 	}
-	_ = s.ensureSynced(ctx, userAgent)
+	s.syncBestEffort(ctx, userAgent)
 	if s.db == nil {
 		return Graphic{}, false, nil
 	}
@@ -84,7 +84,7 @@ func (s *Store) GraphicIDs(ctx context.Context, userAgent string) ([]int64, erro
 	if s == nil {
 		return nil, nil
 	}
-	_ = s.ensureSynced(ctx, userAgent)
+	s.syncBestEffort(ctx, userAgent)
 	if s.db == nil {
 		return nil, nil
 	}

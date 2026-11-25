@@ -28,7 +28,7 @@ func (s *Store) Planet(ctx context.Context, userAgent string, id int64) (Planet,
 	if v, ok := getOverlay[Planet](s, "planet", id); ok {
 		return v, true, nil
 	}
-	_ = s.ensureSynced(ctx, userAgent)
+	s.syncBestEffort(ctx, userAgent)
 	if s.db == nil {
 		return Planet{}, false, nil
 	}

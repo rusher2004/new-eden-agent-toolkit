@@ -220,7 +220,7 @@ func TestGetDogmaEffectHandler_MapsFields(t *testing.T) {
 			TrackingSpeedAttributeID: &trackingSpeedAttributeID,
 			Modifiers: []EffectModifier{
 				{Func: "mod1", Domain: nil, EffectID: nil, ModifiedAttributeID: nil, ModifyingAttributeID: nil, Operator: nil},
-				{Func: "mod2", Domain: pStr("domain1"), EffectID: pInt64(100), ModifiedAttributeID: pInt64(200), ModifyingAttributeID: pInt64(300), Operator: pInt64(1)},
+				{Func: "mod2", Domain: new("domain1"), EffectID: new(int64(100)), ModifiedAttributeID: new(int64(200)), ModifyingAttributeID: new(int64(300)), Operator: new(int64(1))},
 			},
 		}, nil
 	}
@@ -328,12 +328,15 @@ func TestGetDogmaEffectHandler_MapsFields(t *testing.T) {
 }
 
 // Helper functions to create pointers
+//
+//go:fix inline
 func pStr(s string) *string {
-	return &s
+	return new(s)
 }
 
+//go:fix inline
 func pInt64(i int64) *int64 {
-	return &i
+	return new(i)
 }
 
 func TestListDogmaAttributesHandler_PropagatesError(t *testing.T) {

@@ -876,7 +876,7 @@ func TestGetUniverseRegion_CacheHit_MapsFields(t *testing.T) {
 	cache := &fakeRegionCache{
 		region: sde.Region{
 			ID: 10000001, Name: "Derelik",
-			Description: pStr("A dangerous frontier region."), ConstellationIDs: []int64{20000001},
+			Description: new("A dangerous frontier region."), ConstellationIDs: []int64{20000001},
 		},
 		regionOK: true,
 	}

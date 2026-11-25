@@ -15,16 +15,14 @@ func TestStore_Update_ConcurrentChangesAreAllKept(t *testing.T) {
 	const n = 20
 	var wg sync.WaitGroup
 	for i := range n {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			if _, err := store.Update(func(c *config.Config) error {
 				c.UpsertCharacter(config.Character{ID: int32(i + 1), Name: "c"})
 				return nil
 			}); err != nil {
 				t.Errorf("Update: %v", err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	cfg, err := store.Load()

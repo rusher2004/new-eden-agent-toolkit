@@ -160,7 +160,7 @@ func TestCompareTradeHubs_RanksByCoverageThenPriceAndSkipsUnreadable(t *testing.
 func TestSaveAndDeleteHubProfile(t *testing.T) {
 	store, p := industryTestEnv(t)
 	stubHubMarkets(t, nil, nil, nil)
-	_, out, err := saveHubProfileHandler("test", "client", store, p.sde)(context.Background(), nil, SaveHubProfileInput{ID: jitaHub, Name: "Jita 4-4", Notes: ptr("my default")})
+	_, out, err := saveHubProfileHandler("test", "client", store, p.sde)(context.Background(), nil, SaveHubProfileInput{ID: jitaHub, Name: "Jita 4-4", Notes: new("my default")})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -22,7 +22,7 @@ func (s *Store) SkinrComponent(ctx context.Context, userAgent string, id int64) 
 	if s == nil {
 		return SkinrComponent{}, false, nil
 	}
-	_ = s.ensureSynced(ctx, userAgent)
+	s.syncBestEffort(ctx, userAgent)
 	if s.db == nil {
 		return SkinrComponent{}, false, nil
 	}
@@ -50,7 +50,7 @@ func (s *Store) SkinrSlot(ctx context.Context, userAgent string, id int64) (Skin
 	if s == nil {
 		return SkinrSlot{}, false, nil
 	}
-	_ = s.ensureSynced(ctx, userAgent)
+	s.syncBestEffort(ctx, userAgent)
 	if s.db == nil {
 		return SkinrSlot{}, false, nil
 	}

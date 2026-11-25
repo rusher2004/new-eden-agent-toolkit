@@ -63,10 +63,10 @@ func TestListCharacterParagonHubSkinrListingsHandler_FlattensTarget(t *testing.T
 	t.Cleanup(func() { listCharacterParagonHubSkinrListings = orig })
 	listCharacterParagonHubSkinrListings = func(ctx context.Context, clientID string, characterID int32, userAgent, after, before string, limit int64) ([]esiapi.CharactersParagonHubSkinrItem, *esiapi.Cursor, error) {
 		return []esiapi.CharactersParagonHubSkinrItem{
-			{Id: "l-1", Price: iskPrice(1000), Target: esiapi.CharactersParagonHubSkinrItemTarget{Public: &esiapi.Public{Public: ptr(true)}}},
-			{Id: "l-2", Price: plexPrice(10), Target: esiapi.CharactersParagonHubSkinrItemTarget{AllianceId: &esiapi.AllianceId{AllianceId: ptr[int64](99000001)}}},
-			{Id: "l-3", Price: plexPrice(10), Target: esiapi.CharactersParagonHubSkinrItemTarget{CorporationId: &esiapi.CorporationId{CorporationId: ptr[int64](98000001)}}},
-			{Id: "l-4", Price: plexPrice(10), Target: esiapi.CharactersParagonHubSkinrItemTarget{CharacterId: &esiapi.CharacterId{CharacterId: ptr[int64](2112000001)}}},
+			{Id: "l-1", Price: iskPrice(1000), Target: esiapi.CharactersParagonHubSkinrItemTarget{Public: &esiapi.Public{Public: new(true)}}},
+			{Id: "l-2", Price: plexPrice(10), Target: esiapi.CharactersParagonHubSkinrItemTarget{AllianceId: &esiapi.AllianceId{AllianceId: new(int64(99000001))}}},
+			{Id: "l-3", Price: plexPrice(10), Target: esiapi.CharactersParagonHubSkinrItemTarget{CorporationId: &esiapi.CorporationId{CorporationId: new(int64(98000001))}}},
+			{Id: "l-4", Price: plexPrice(10), Target: esiapi.CharactersParagonHubSkinrItemTarget{CharacterId: &esiapi.CharacterId{CharacterId: new(int64(2112000001))}}},
 		}, nil, nil
 	}
 

@@ -1,5 +1,8 @@
 # neat plugin — changelog
 
+## 0.20.2
+- No change for players. Internal cleanup to meet the Go coding standards: errors from closing files and database rows are no longer dropped, and the code uses current Go idioms.
+
 ## 0.20.1
 - No change for players. Developer tooling only: Go coding standards, a review checklist, CI hygiene checks and an interface audit tool were added to the repository.
 

@@ -29,7 +29,7 @@ func (s *Store) AsteroidBelt(ctx context.Context, userAgent string, id int64) (A
 	if v, ok := getOverlay[AsteroidBelt](s, "asteroidBelt", id); ok {
 		return v, true, nil
 	}
-	_ = s.ensureSynced(ctx, userAgent)
+	s.syncBestEffort(ctx, userAgent)
 	if s.db == nil {
 		return AsteroidBelt{}, false, nil
 	}

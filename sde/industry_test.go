@@ -110,7 +110,7 @@ INSERT INTO indTargetFilterGroups (targetFilterID, groupID) VALUES (13,873);
 func seedIndustry(t *testing.T) *Store {
 	t.Helper()
 	store := seedStore(t)
-	for _, stmt := range strings.Split(strings.TrimSpace(industryFixtures), "\n") {
+	for stmt := range strings.SplitSeq(strings.TrimSpace(industryFixtures), "\n") {
 		seedExec(t, store, stmt)
 	}
 	return store

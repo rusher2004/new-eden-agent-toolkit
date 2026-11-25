@@ -51,7 +51,7 @@ func TestSaveStructure_UpwellFromESIWithUserFacts(t *testing.T) {
 	if _, _, err := save(context.Background(), nil, SaveStructureInput{ID: sotiyo}); err == nil || !strings.Contains(err.Error(), "needs characterId") {
 		t.Errorf("an Upwell structure without a character: err = %v", err)
 	}
-	_, out, err := save(context.Background(), nil, SaveStructureInput{ID: sotiyo, CharacterID: testPilot, Uses: []string{"manufacturing"}, CloneBay: "yes", Notes: ptr("XL rig, measured fee 6.7%")})
+	_, out, err := save(context.Background(), nil, SaveStructureInput{ID: sotiyo, CharacterID: testPilot, Uses: []string{"manufacturing"}, CloneBay: "yes", Notes: new("XL rig, measured fee 6.7%")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +99,7 @@ func TestSaveStructure_RejectsBadInput(t *testing.T) {
 		"no id":             {},
 		"bad clone bay":     {ID: 60003760, CloneBay: "maybe"},
 		"unknown character": {ID: sotiyo, CharacterID: 42},
-		"unknown facility":  {ID: 60003760, FacilityProfile: ptr("Nope")},
+		"unknown facility":  {ID: 60003760, FacilityProfile: new("Nope")},
 		"no docking access": {ID: sotiyo, CharacterID: testPilot},
 	} {
 		if _, _, err := save(context.Background(), nil, in); err == nil {
@@ -264,12 +264,10 @@ func TestSaveStructure_ConcurrentSavesKeepEveryStructure(t *testing.T) {
 	var wg sync.WaitGroup
 	errs := make(chan error, n)
 	for i := range n {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			_, _, err := save(context.Background(), nil, SaveStructureInput{ID: sotiyo + int64(i), CharacterID: testPilot, Notes: ptr(fmt.Sprintf("structure %d", i))})
+		wg.Go(func() {
+			_, _, err := save(context.Background(), nil, SaveStructureInput{ID: sotiyo + int64(i), CharacterID: testPilot, Notes: new(fmt.Sprintf("structure %d", i))})
 			errs <- err
-		}()
+		})
 	}
 	wg.Wait()
 	close(errs)

@@ -280,8 +280,7 @@ func listStructuresHandler(version, clientID string, store *config.Store, sdeSto
 						check.Access, check.Detail = "not_checked", fmt.Sprintf("not checked: ESI had already refused %d docking lookups in this call", maxDockingRefusals)
 					} else if _, err := getUniverseStructure(ctx, clientID, id, ua, s.ID); err != nil {
 						check.Access, check.Detail = "unknown", err.Error()
-						var scopeErr *esi.MissingScopeError
-						if !errors.As(err, &scopeErr) {
+						if _, ok := errors.AsType[*esi.MissingScopeError](err); !ok {
 							refused++
 						}
 					}

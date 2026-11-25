@@ -12,7 +12,8 @@ import (
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 )
 
-func ptr[T any](v T) *T { return &v }
+//go:fix inline
+func ptr[T any](v T) *T { return new(v) }
 
 func TestListCharacterSkinrLicensesHandler_MapsFields(t *testing.T) {
 	store := storeWithCharacter(t)
@@ -53,8 +54,8 @@ func TestListCharacterSkinrComponentLicensesHandler_FlattensRunsAndEnrichesNames
 	t.Cleanup(func() { listCharacterSkinrComponentLicenses, resolveSkinrComponentNames = origList, origNames })
 	listCharacterSkinrComponentLicenses = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]esiapi.CharactersCosmeticsSkinrComponentsItem, error) {
 		return []esiapi.CharactersCosmeticsSkinrComponentsItem{
-			{ComponentId: 1254, Type: "material", Runs: esiapi.CharactersCosmeticsSkinrComponentsItemRuns{Remaining: &esiapi.Remaining{Remaining: ptr[int64](3)}}},
-			{ComponentId: 1328, Type: "pattern", Runs: esiapi.CharactersCosmeticsSkinrComponentsItemRuns{Unlimited: &esiapi.Unlimited{Unlimited: ptr(true)}}},
+			{ComponentId: 1254, Type: "material", Runs: esiapi.CharactersCosmeticsSkinrComponentsItemRuns{Remaining: &esiapi.Remaining{Remaining: new(int64(3))}}},
+			{ComponentId: 1328, Type: "pattern", Runs: esiapi.CharactersCosmeticsSkinrComponentsItemRuns{Unlimited: &esiapi.Unlimited{Unlimited: new(true)}}},
 		}, nil
 	}
 	resolveSkinrComponentNames = func(ctx context.Context, sdeStore skinrComponentNameCache, userAgent string, ids []int64) map[int64]string {
@@ -83,7 +84,7 @@ func TestGetSkinrHandler_FlattensSlotsAndEnriches(t *testing.T) {
 	})
 	getSkinr = func(ctx context.Context, userAgent, skinrID string) (*esiapi.CosmeticsSkinr, error) {
 		return &esiapi.CosmeticsSkinr{
-			Id: skinrID, Name: "Semper Fi", Line: ptr("Combat"), CreatorId: 2119410889, ShipTypeId: 78576,
+			Id: skinrID, Name: "Semper Fi", Line: new("Combat"), CreatorId: 2119410889, ShipTypeId: 78576,
 			Tier: esiapi.CosmeticsSkinrTier{Level: 13},
 			Layout: esiapi.CosmeticsSkinrLayout{PatternBlendMode: "normal", Slots: []esiapi.CosmeticsSkinrLayoutslot{
 				{Id: 1, Configuration: esiapi.CosmeticsSkinrLayoutslotConfiguration{Nanocoating: &esiapi.Nanocoating{Nanocoating: &esiapi.CosmeticsSkinrSlotnanocoating{Id: 1254}}}},
