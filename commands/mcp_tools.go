@@ -95,4 +95,8 @@ func addConvertedTools(s *mcpsdk.Server, d toolDeps) {
 	addSavedStructureTools(s, d)
 	addTradeHubTools(s, d)
 	addIndustryPlanningTools(s, d)
+	addCorporationTools(s, d)
+	addSovereigntyTools(s, d)
+	addSkillTools(s, d)
+	addUniverseTools(s, d)
 }

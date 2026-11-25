@@ -1,5 +1,11 @@
 # neat plugin — changelog
 
+## 0.20.10
+- No change for players. A skills read that fails to open a character's ESI client no longer names the character twice in its error.
+
+## 0.20.9
+- No change for players. Internal refactor: the corporation, sovereignty, skill and universe tools get their ESI client from the command that starts the server instead of building it themselves.
+
 ## 0.20.8
 - No change for players. Internal refactor: the planning tools (routes, hauling, industry, trade hubs, logistics overview) and the ESI helpers they share get their ESI clients from the command that starts the server instead of building them themselves.
 

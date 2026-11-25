@@ -10,22 +10,20 @@ import (
 )
 
 func TestListSovereigntyCampaignsHandler_MapsFields(t *testing.T) {
-	orig := listSovereigntyCampaigns
-	t.Cleanup(func() { listSovereigntyCampaigns = orig })
 	attackersScore := 0.5
 	defenderID := int64(99000001)
 	defenderScore := 0.75
 	startTime := time.Date(2026, 7, 25, 20, 0, 0, 0, time.UTC)
-	listSovereigntyCampaigns = func(ctx context.Context, userAgent string) ([]esiapi.SovereigntyCampaignsGetInner, error) {
+	fake := fakeSovereigntyCampaignsESI{sovereigntyCampaigns: func(context.Context) ([]esiapi.SovereigntyCampaignsGetInner, error) {
 		return []esiapi.SovereigntyCampaignsGetInner{{
 			CampaignId: 12345, ConstellationId: 20000001, SolarSystemId: 30000001, StructureId: 1000000000001,
 			EventType: "tcu_defense", StartTime: startTime,
 			AttackersScore: &attackersScore, DefenderId: &defenderID, DefenderScore: &defenderScore,
 			Participants: []esiapi.SovereigntyCampaignsGetInnerParticipantsInner{{AllianceId: 99000002, Score: 0.25}},
 		}}, nil
-	}
+	}}
 
-	handler := listSovereigntyCampaignsHandler("v1", nil)
+	handler := listSovereigntyCampaignsHandler("v1", publicNarrow[sovereigntyCampaignsESI](fake), nil)
 	_, out, err := handler(context.Background(), nil, ListSovereigntyCampaignsInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -165,14 +163,12 @@ func TestToSovereigntyClaim_UnrecognizedVariantIsNotReportedAsUnclaimed(t *testi
 }
 
 func TestListSovereigntyCampaignsHandler_PropagatesError(t *testing.T) {
-	orig := listSovereigntyCampaigns
-	t.Cleanup(func() { listSovereigntyCampaigns = orig })
 	wantErr := errors.New("upstream failure")
-	listSovereigntyCampaigns = func(ctx context.Context, userAgent string) ([]esiapi.SovereigntyCampaignsGetInner, error) {
+	fake := fakeSovereigntyCampaignsESI{sovereigntyCampaigns: func(context.Context) ([]esiapi.SovereigntyCampaignsGetInner, error) {
 		return nil, wantErr
-	}
+	}}
 
-	handler := listSovereigntyCampaignsHandler("v1", nil)
+	handler := listSovereigntyCampaignsHandler("v1", publicNarrow[sovereigntyCampaignsESI](fake), nil)
 	_, _, err := handler(context.Background(), nil, ListSovereigntyCampaignsInput{})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -193,13 +189,11 @@ func TestListSovereigntySystemsHandler_PropagatesError(t *testing.T) {
 }
 
 func TestListSovereigntyCampaignsHandler_ResolvesLocationNames(t *testing.T) {
-	orig := listSovereigntyCampaigns
-	t.Cleanup(func() { listSovereigntyCampaigns = orig })
-	listSovereigntyCampaigns = func(ctx context.Context, userAgent string) ([]esiapi.SovereigntyCampaignsGetInner, error) {
+	fake := fakeSovereigntyCampaignsESI{sovereigntyCampaigns: func(context.Context) ([]esiapi.SovereigntyCampaignsGetInner, error) {
 		return []esiapi.SovereigntyCampaignsGetInner{{
 			CampaignId: 1, ConstellationId: 20000020, SolarSystemId: 30000142,
 		}}, nil
-	}
+	}}
 
 	origConstellation := resolveConstellationNames
 	t.Cleanup(func() { resolveConstellationNames = origConstellation })
@@ -212,7 +206,7 @@ func TestListSovereigntyCampaignsHandler_ResolvesLocationNames(t *testing.T) {
 		return map[int64]string{30000142: "Jita"}
 	}
 
-	handler := listSovereigntyCampaignsHandler("v1", nil)
+	handler := listSovereigntyCampaignsHandler("v1", publicNarrow[sovereigntyCampaignsESI](fake), nil)
 	_, out, err := handler(context.Background(), nil, ListSovereigntyCampaignsInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -287,4 +281,16 @@ func (f fakeSovereigntySystemsESI) SovereigntySystems(ctx context.Context) ([]es
 		return nil, errNotFaked
 	}
 	return f.sovereigntySystems(ctx)
+}
+
+// fakeSovereigntyCampaignsESI fakes sovereigntyCampaignsESI; a nil sovereigntyCampaigns fails as an unfaked call.
+type fakeSovereigntyCampaignsESI struct {
+	sovereigntyCampaigns func(ctx context.Context) ([]esiapi.SovereigntyCampaignsGetInner, error)
+}
+
+func (f fakeSovereigntyCampaignsESI) SovereigntyCampaigns(ctx context.Context) ([]esiapi.SovereigntyCampaignsGetInner, error) {
+	if f.sovereigntyCampaigns == nil {
+		return nil, errNotFaked
+	}
+	return f.sovereigntyCampaigns(ctx)
 }
