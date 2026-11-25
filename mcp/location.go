@@ -131,7 +131,7 @@ func getCharacterOnlineHandler[C characterOnlineESI](open func(ctx context.Conte
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, GetCharacterOnlineOutput{}, fmt.Errorf("get character online: %w", err)
+			return nil, GetCharacterOnlineOutput{}, fmt.Errorf("get character online status: open ESI client: %w", err)
 		}
 		status, err := getCharacterOnline(ctx, client)
 		if err != nil {

@@ -401,7 +401,6 @@ func (p *planner) findJob(ctx context.Context, characterID int32, corporationID,
 		}
 		jobs, err := listCharacterIndustryJobs(ctx, client, true)
 		if err != nil {
-
 			return IndustryJob{}, fmt.Errorf("character jobs: %w", err)
 		}
 		for _, j := range jobs {

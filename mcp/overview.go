@@ -86,6 +86,7 @@ type GetLogisticsOverviewOutput struct {
 type overviewReads struct {
 	systemID, stationID, structureID int64
 	locErr                           error
+	openErr                          error // the client couldn't be opened, so no part was read
 	shipItem                         int64
 	shipName                         string
 	shipType                         int64
@@ -120,12 +121,13 @@ func readOverview[C overviewClient](ctx context.Context, open func(ctx context.C
 	var r overviewReads
 	client, err := open(ctx, id)
 	if err != nil {
+		r.openErr = err
 		r.locErr, r.shipErr, r.onlineErr, r.clonesErr, r.fatigueErr, r.skillsErr = err, err, err, err, err, err
 		return r
 	}
 	var wg sync.WaitGroup
 	run := func(f func()) {
-		wg.Go(func() { ; f() })
+		wg.Go(f)
 	}
 	run(func() {
 		var st, sr *int64
@@ -201,7 +203,15 @@ func getLogisticsOverviewHandler[C overviewClient, P plannerPublicClient](userAg
 		for _, c := range chars {
 			r := readOverview(ctx, openESI, c.ID)
 			oc := OverviewCharacter{CharacterID: c.ID, CharacterName: c.Name, Account: c.Account, Abilities: []string{}, Hulls: []HullClass{}}
-			unread := func(part string, err error) { oc.Unread = append(oc.Unread, fmt.Sprintf("%s: %v", part, err)) }
+			if r.openErr != nil {
+				oc.Unread = append(oc.Unread, fmt.Sprintf("everything (the ESI client couldn't be opened): %v", r.openErr))
+			}
+			unread := func(part string, err error) {
+				if r.openErr != nil {
+					return // already reported once above
+				}
+				oc.Unread = append(oc.Unread, fmt.Sprintf("%s: %v", part, err))
+			}
 
 			if r.onlineErr != nil {
 				unread("online status", r.onlineErr)
