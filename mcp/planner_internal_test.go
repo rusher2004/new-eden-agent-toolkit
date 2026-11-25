@@ -3,7 +3,6 @@ package mcp
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"testing"
 
@@ -261,7 +260,7 @@ func TestPlannerReads_ReportUnopenableClients(t *testing.T) {
 		"corporation blueprints": {func() error { _, err := p.loadOwnership(ctx, testPilot, testCorp, false); return err }, "corporation blueprints"},
 		"character jobs":         {func() error { _, err := p.findJob(ctx, testPilot, 0, 1); return err }, "character jobs"},
 		"corporation jobs":       {func() error { _, err := p.findJob(ctx, testPilot, testCorp, 1); return err }, "corporation jobs"},
-		"implants":               {func() error { _, _, err := p.implantRefiningBonus(ctx, testPilot); return err }, fmt.Sprintf("implants of %d", testPilot)},
+		"implants":               {func() error { _, _, err := p.implantRefiningBonus(ctx, testPilot); return err }, "implants"},
 		"contacts":               {func() error { _, err := p.badStandingAlliances(ctx, testPilot); return err }, "character contacts"},
 		"structure market":       {func() error { _, err := p.structureOrders(ctx, testPilot, 1049345291823); return err }, "read structure 1049345291823's market through character"},
 		"structure":              {func() error { _, err := p.hubFacts(ctx, 1049345291823, testPilot); return err }, "read structure 1049345291823 through character"},

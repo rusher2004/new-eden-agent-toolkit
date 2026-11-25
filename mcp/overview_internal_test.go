@@ -117,8 +117,9 @@ func TestGetLogisticsOverview(t *testing.T) {
 	}
 }
 
-// A character whose ESI client can't be opened has every part unread, with
-// the reason, rather than failing the whole overview.
+// A character whose ESI client can't be opened is reported unread once, with
+// the reason, rather than failing the whole overview or repeating the error
+// for every part.
 func TestGetLogisticsOverview_UnopenableClientLeavesEveryPartUnread(t *testing.T) {
 	store, p := readinessEnv(t)
 	p.openESI = failOpenESI(errors.New("no refresh token"))
@@ -130,8 +131,8 @@ func TestGetLogisticsOverview_UnopenableClientLeavesEveryPartUnread(t *testing.T
 		t.Fatalf("characters = %+v, want one", out.Characters)
 	}
 	c := out.Characters[0]
-	if len(c.Unread) != 6 || c.Location != nil || c.Ship != nil || c.Online != nil || c.Clones != nil || c.Fatigue != nil {
-		t.Fatalf("character = %+v, want all six parts unread", c)
+	if len(c.Unread) != 1 || c.Location != nil || c.Ship != nil || c.Online != nil || c.Clones != nil || c.Fatigue != nil {
+		t.Fatalf("character = %+v, want one unread entry", c)
 	}
 	for _, u := range c.Unread {
 		if !strings.Contains(u, "no refresh token") {

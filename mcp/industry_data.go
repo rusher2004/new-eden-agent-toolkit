@@ -228,11 +228,10 @@ func (p *planner) costIndex(ctx context.Context, systemID int64, activity string
 func (p *planner) implantRefiningBonus(ctx context.Context, characterID int32) (float64, string, error) {
 	client, err := p.esi(ctx, characterID)
 	if err != nil {
-		return 0, "", fmt.Errorf("implants of %d: %w", characterID, err)
+		return 0, "", fmt.Errorf("implants: %w", err)
 	}
 	ids, err := listCharacterImplants(ctx, client)
 	if err != nil {
-
 		return 0, "", fmt.Errorf("implants of %d: %w", characterID, err)
 	}
 	best, name := 0.0, ""

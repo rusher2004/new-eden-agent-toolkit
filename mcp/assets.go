@@ -7,11 +7,10 @@ import (
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
-
 	"github.com/rusher2004/new-eden-agent-toolkit/cargo"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
 	"github.com/rusher2004/new-eden-agent-toolkit/sde"
+	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
 // AssetItem is one asset entry, shared by character- and corporation-scoped listings.
