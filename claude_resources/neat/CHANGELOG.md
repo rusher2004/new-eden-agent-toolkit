@@ -1,5 +1,8 @@
 # neat plugin — changelog
 
+## 0.20.11
+- No change for players. Internal refactor: the market, contract and asset tools get their ESI client from the command that starts the server instead of building it themselves.
+
 ## 0.20.10
 - No change for players. Internal refactor: the character, contact, industry and mining tools get their ESI client from the command that starts the server instead of building it themselves.
 
