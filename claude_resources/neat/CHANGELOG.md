@@ -1,5 +1,8 @@
 # neat plugin — changelog
 
+## 0.20.12
+- The logistics overview now names any character it couldn't re-check for an account conflict, and `save_structure` no longer blames docking access when the real problem is a missing login. Internal: one public ESI client per trade hub scan, clearer error text, and review follow-ups from the ESI client refactor.
+
 ## 0.20.11
 - No change for players. Internal refactor: the market, contract and asset tools get their ESI client from the command that starts the server instead of building it themselves.
 

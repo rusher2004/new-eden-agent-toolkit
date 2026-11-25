@@ -243,13 +243,14 @@ func (p *planner) sellBooks(ctx context.Context, regionID int64, typeIDs []int64
 	var firstErr error
 	sem := make(chan struct{}, 4)
 	var wg sync.WaitGroup
+	public := p.openPublicESI() // one client for every request this call makes
 	for _, id := range ids {
 		wg.Add(1)
 		sem <- struct{}{}
 		go func(id int64) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			orders, err := fetchSellOrders(ctx, p.openPublicESI(), regionID, id)
+			orders, err := fetchSellOrders(ctx, public, regionID, id)
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
