@@ -4,16 +4,22 @@ import (
 	"context"
 	"fmt"
 
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-
-	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
+
+// dogmaESI is the ESI calls the dogma tools make; all are public.
+type dogmaESI interface {
+	DogmaAttributes(ctx context.Context) ([]int64, error)
+	DogmaAttributeDetail(ctx context.Context, attributeID int64) (*esiapi.DogmaAttributesAttributeIdGet, error)
+	DogmaDynamicItemDetail(ctx context.Context, typeID int64, itemID int64) (*esiapi.DogmaDynamicItemsTypeIdItemIdGet, error)
+	DogmaEffects(ctx context.Context) ([]int64, error)
+	DogmaEffectDetail(ctx context.Context, effectID int64) (*esiapi.DogmaEffectsEffectIdGet, error)
+}
 
 // --- list_dogma_attributes (public, no input) ---
 
-var listDogmaAttributes = func(ctx context.Context, userAgent string) ([]int64, error) {
-	client := esi.NewPublicClient(userAgent)
+func listDogmaAttributes(ctx context.Context, client dogmaESI) ([]int64, error) {
 	return client.DogmaAttributes(ctx)
 }
 
@@ -22,9 +28,18 @@ type ListDogmaAttributesOutput struct {
 	AttributeIDs []int64 `json:"attributeIds"`
 }
 
-func listDogmaAttributesHandler(version string) mcpsdk.ToolHandlerFor[ListDogmaAttributesInput, ListDogmaAttributesOutput] {
+// AddListDogmaAttributes registers list_dogma_attributes. open builds the ESI client; any client with the
+// dogmaESI methods will do.
+func AddListDogmaAttributes[C dogmaESI](s *mcpsdk.Server, open func() C) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_dogma_attributes",
+		Description: "List every dogma attribute ID currently defined (public data, no character required).",
+	}, listDogmaAttributesHandler(open))
+}
+
+func listDogmaAttributesHandler[C dogmaESI](open func() C) mcpsdk.ToolHandlerFor[ListDogmaAttributesInput, ListDogmaAttributesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListDogmaAttributesInput) (*mcpsdk.CallToolResult, ListDogmaAttributesOutput, error) {
-		ids, err := listDogmaAttributes(ctx, sso.UserAgent(version))
+		ids, err := listDogmaAttributes(ctx, open())
 		if err != nil {
 			return nil, ListDogmaAttributesOutput{}, fmt.Errorf("list dogma attributes: %w", err)
 		}
@@ -47,8 +62,7 @@ type GetDogmaAttributeOutput struct {
 	UnitID       *int64   `json:"unitId,omitempty"`
 }
 
-var getDogmaAttribute = func(ctx context.Context, userAgent string, attributeID int64) (GetDogmaAttributeOutput, error) {
-	client := esi.NewPublicClient(userAgent)
+func getDogmaAttribute(ctx context.Context, client dogmaESI, attributeID int64) (GetDogmaAttributeOutput, error) {
 	attr, err := client.DogmaAttributeDetail(ctx, attributeID)
 	if err != nil {
 		return GetDogmaAttributeOutput{}, err
@@ -64,9 +78,18 @@ type GetDogmaAttributeInput struct {
 	AttributeID int64 `json:"attributeId" jsonschema:"the dogma attribute ID to look up"`
 }
 
-func getDogmaAttributeHandler(version string) mcpsdk.ToolHandlerFor[GetDogmaAttributeInput, GetDogmaAttributeOutput] {
+// AddGetDogmaAttribute registers get_dogma_attribute. open builds the ESI client; any client with the
+// dogmaESI methods will do.
+func AddGetDogmaAttribute[C dogmaESI](s *mcpsdk.Server, open func() C) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_dogma_attribute",
+		Description: "Get detail for one dogma attribute (public data, no character required).",
+	}, getDogmaAttributeHandler(open))
+}
+
+func getDogmaAttributeHandler[C dogmaESI](open func() C) mcpsdk.ToolHandlerFor[GetDogmaAttributeInput, GetDogmaAttributeOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetDogmaAttributeInput) (*mcpsdk.CallToolResult, GetDogmaAttributeOutput, error) {
-		out, err := getDogmaAttribute(ctx, sso.UserAgent(version), in.AttributeID)
+		out, err := getDogmaAttribute(ctx, open(), in.AttributeID)
 		if err != nil {
 			return nil, GetDogmaAttributeOutput{}, fmt.Errorf("get dogma attribute: %w", err)
 		}
@@ -98,8 +121,7 @@ type GetDogmaDynamicItemOutput struct {
 	DogmaEffects    []DynamicItemEffect    `json:"dogmaEffects"`
 }
 
-var getDogmaDynamicItem = func(ctx context.Context, userAgent string, typeID, itemID int64) (GetDogmaDynamicItemOutput, error) {
-	client := esi.NewPublicClient(userAgent)
+func getDogmaDynamicItem(ctx context.Context, client dogmaESI, typeID, itemID int64) (GetDogmaDynamicItemOutput, error) {
 	item, err := client.DogmaDynamicItemDetail(ctx, typeID, itemID)
 	if err != nil {
 		return GetDogmaDynamicItemOutput{}, err
@@ -123,13 +145,22 @@ type GetDogmaDynamicItemInput struct {
 	ItemID int64 `json:"itemId" jsonschema:"the mutated item's item ID"`
 }
 
-func getDogmaDynamicItemHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetDogmaDynamicItemInput, GetDogmaDynamicItemOutput] {
+// AddGetDogmaDynamicItem registers get_dogma_dynamic_item. open builds the ESI client; any client with the
+// dogmaESI methods will do.
+func AddGetDogmaDynamicItem[C dogmaESI](s *mcpsdk.Server, userAgent string, open func() C, sdeStore typeNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_dogma_dynamic_item",
+		Description: "Get detail for one mutated (\"abyssal\") item, identified by its source type and item ID (public data, no character required).",
+	}, getDogmaDynamicItemHandler(userAgent, open, sdeStore))
+}
+
+func getDogmaDynamicItemHandler[C dogmaESI](userAgent string, open func() C, sdeStore typeNameCache) mcpsdk.ToolHandlerFor[GetDogmaDynamicItemInput, GetDogmaDynamicItemOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetDogmaDynamicItemInput) (*mcpsdk.CallToolResult, GetDogmaDynamicItemOutput, error) {
-		out, err := getDogmaDynamicItem(ctx, sso.UserAgent(version), in.TypeID, in.ItemID)
+		out, err := getDogmaDynamicItem(ctx, open(), in.TypeID, in.ItemID)
 		if err != nil {
 			return nil, GetDogmaDynamicItemOutput{}, fmt.Errorf("get dogma dynamic item: %w", err)
 		}
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), []int64{out.TypeID, out.MutatorTypeID, out.SourceTypeID})
+		names := resolveTypeNames(ctx, sdeStore, userAgent, []int64{out.TypeID, out.MutatorTypeID, out.SourceTypeID})
 		out.TypeName = names[out.TypeID]
 		out.MutatorTypeName = names[out.MutatorTypeID]
 		out.SourceTypeName = names[out.SourceTypeID]
@@ -139,8 +170,7 @@ func getDogmaDynamicItemHandler(version string, sdeStore SDEStore) mcpsdk.ToolHa
 
 // --- list_dogma_effects (public, no input) ---
 
-var listDogmaEffects = func(ctx context.Context, userAgent string) ([]int64, error) {
-	client := esi.NewPublicClient(userAgent)
+func listDogmaEffects(ctx context.Context, client dogmaESI) ([]int64, error) {
 	return client.DogmaEffects(ctx)
 }
 
@@ -149,9 +179,18 @@ type ListDogmaEffectsOutput struct {
 	EffectIDs []int64 `json:"effectIds"`
 }
 
-func listDogmaEffectsHandler(version string) mcpsdk.ToolHandlerFor[ListDogmaEffectsInput, ListDogmaEffectsOutput] {
+// AddListDogmaEffects registers list_dogma_effects. open builds the ESI client; any client with the
+// dogmaESI methods will do.
+func AddListDogmaEffects[C dogmaESI](s *mcpsdk.Server, open func() C) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_dogma_effects",
+		Description: "List every dogma effect ID currently defined (public data, no character required).",
+	}, listDogmaEffectsHandler(open))
+}
+
+func listDogmaEffectsHandler[C dogmaESI](open func() C) mcpsdk.ToolHandlerFor[ListDogmaEffectsInput, ListDogmaEffectsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListDogmaEffectsInput) (*mcpsdk.CallToolResult, ListDogmaEffectsOutput, error) {
-		ids, err := listDogmaEffects(ctx, sso.UserAgent(version))
+		ids, err := listDogmaEffects(ctx, open())
 		if err != nil {
 			return nil, ListDogmaEffectsOutput{}, fmt.Errorf("list dogma effects: %w", err)
 		}
@@ -194,8 +233,7 @@ type GetDogmaEffectOutput struct {
 	Modifiers                []EffectModifier `json:"modifiers,omitempty"`
 }
 
-var getDogmaEffect = func(ctx context.Context, userAgent string, effectID int64) (GetDogmaEffectOutput, error) {
-	client := esi.NewPublicClient(userAgent)
+func getDogmaEffect(ctx context.Context, client dogmaESI, effectID int64) (GetDogmaEffectOutput, error) {
 	effect, err := client.DogmaEffectDetail(ctx, effectID)
 	if err != nil {
 		return GetDogmaEffectOutput{}, err
@@ -223,9 +261,18 @@ type GetDogmaEffectInput struct {
 	EffectID int64 `json:"effectId" jsonschema:"the dogma effect ID to look up"`
 }
 
-func getDogmaEffectHandler(version string) mcpsdk.ToolHandlerFor[GetDogmaEffectInput, GetDogmaEffectOutput] {
+// AddGetDogmaEffect registers get_dogma_effect. open builds the ESI client; any client with the
+// dogmaESI methods will do.
+func AddGetDogmaEffect[C dogmaESI](s *mcpsdk.Server, open func() C) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_dogma_effect",
+		Description: "Get detail for one dogma effect (public data, no character required).",
+	}, getDogmaEffectHandler(open))
+}
+
+func getDogmaEffectHandler[C dogmaESI](open func() C) mcpsdk.ToolHandlerFor[GetDogmaEffectInput, GetDogmaEffectOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetDogmaEffectInput) (*mcpsdk.CallToolResult, GetDogmaEffectOutput, error) {
-		out, err := getDogmaEffect(ctx, sso.UserAgent(version), in.EffectID)
+		out, err := getDogmaEffect(ctx, open(), in.EffectID)
 		if err != nil {
 			return nil, GetDogmaEffectOutput{}, fmt.Errorf("get dogma effect: %w", err)
 		}

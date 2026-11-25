@@ -5,13 +5,33 @@ import (
 	"fmt"
 	"time"
 
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
-
-	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+// planetsESI is the ESI calls the authenticated planetary interaction tools make.
+type planetsESI interface {
+	CharacterPlanets(ctx context.Context) ([]esiapi.CharactersCharacterIdPlanetsGetInner, error)
+	CharacterPlanetDetail(ctx context.Context, planetID int64) (*esiapi.CharactersCharacterIdPlanetsPlanetIdGet, error)
+	CorporationCustomsOffices(ctx context.Context, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdCustomsOfficesGetInner, int32, error)
+}
+
+// colonyNameCache is the SDE lookups list_character_planets makes: system and planet names.
+type colonyNameCache interface {
+	systemNameCache
+	planetNameCache
+}
+
+// customsOfficeNameCache is the SDE lookups list_corporation_customs_offices makes: type and system names.
+type customsOfficeNameCache interface {
+	typeNameCache
+	systemNameCache
+}
+
+// planetarySchematicESI is the ESI call get_planetary_schematic makes; it is public.
+type planetarySchematicESI interface {
+	PlanetarySchematic(ctx context.Context, schematicID int64) (*esiapi.UniverseSchematicsSchematicIdGet, error)
+}
 
 // --- list_character_planets (private) ---
 
@@ -27,11 +47,7 @@ type Planet struct {
 	LastUpdate      time.Time `json:"lastUpdate"`
 }
 
-var listCharacterPlanets = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]Planet, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
+func listCharacterPlanets(ctx context.Context, client planetsESI) ([]Planet, error) {
 	planets, err := client.CharacterPlanets(ctx)
 	if err != nil {
 		return nil, err
@@ -54,7 +70,16 @@ type ListCharacterPlanetsOutput struct {
 	Planets     []Planet `json:"planets"`
 }
 
-func listCharacterPlanetsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCharacterPlanetsInput, ListCharacterPlanetsOutput] {
+// AddListCharacterPlanets registers list_character_planets. open builds the ESI client; any client with the
+// planetsESI methods will do.
+func AddListCharacterPlanets[C planetsESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore colonyNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_character_planets",
+		Description: "List a logged-in EVE Online character's colonized planets (Planetary Interaction).",
+	}, listCharacterPlanetsHandler(userAgent, open, store, sdeStore))
+}
+
+func listCharacterPlanetsHandler[C planetsESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore colonyNameCache) mcpsdk.ToolHandlerFor[ListCharacterPlanetsInput, ListCharacterPlanetsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterPlanetsInput) (*mcpsdk.CallToolResult, ListCharacterPlanetsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -63,7 +88,11 @@ func listCharacterPlanetsHandler(version, clientID string, store ConfigStore, sd
 		if !found {
 			return nil, ListCharacterPlanetsOutput{}, fmt.Errorf("list character planets for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		planets, err := listCharacterPlanets(ctx, clientID, in.CharacterID, sso.UserAgent(version))
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCharacterPlanetsOutput{}, fmt.Errorf("build ESI client: %w", err)
+		}
+		planets, err := listCharacterPlanets(ctx, client)
 		if err != nil {
 			return nil, ListCharacterPlanetsOutput{}, fmt.Errorf("list character planets: %w", err)
 		}
@@ -74,8 +103,8 @@ func listCharacterPlanetsHandler(version, clientID string, store ConfigStore, sd
 			systemIDs[i] = p.SolarSystemID
 			planetIDs[i] = p.PlanetID
 		}
-		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), systemIDs)
-		planetNames := resolvePlanetNames(ctx, sdeStore, sso.UserAgent(version), planetIDs)
+		systemNames := resolveSystemNames(ctx, sdeStore, userAgent, systemIDs)
+		planetNames := resolvePlanetNames(ctx, sdeStore, userAgent, planetIDs)
 		for i := range planets {
 			planets[i].SolarSystemName = systemNames[planets[i].SolarSystemID]
 			planets[i].PlanetName = planetNames[planets[i].PlanetID]
@@ -207,11 +236,7 @@ func toPlanetRoutes(routes []esiapi.CharactersCharacterIdPlanetsPlanetIdGetRoute
 	return out
 }
 
-var getCharacterPlanet = func(ctx context.Context, clientID string, characterID int32, userAgent string, planetID int64) (*esiapi.CharactersCharacterIdPlanetsPlanetIdGet, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
+func getCharacterPlanet(ctx context.Context, client planetsESI, planetID int64) (*esiapi.CharactersCharacterIdPlanetsPlanetIdGet, error) {
 	return client.CharacterPlanetDetail(ctx, planetID)
 }
 
@@ -227,7 +252,16 @@ type GetCharacterPlanetOutput struct {
 	Routes      []PlanetRoute `json:"routes"`
 }
 
-func getCharacterPlanetHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetCharacterPlanetInput, GetCharacterPlanetOutput] {
+// AddGetCharacterPlanet registers get_character_planet. open builds the ESI client; any client with the
+// planetsESI methods will do.
+func AddGetCharacterPlanet[C planetsESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore typeNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_character_planet",
+		Description: "Get the full colony layout (links, pins, routes) of one of a character's planets.",
+	}, getCharacterPlanetHandler(userAgent, open, store, sdeStore))
+}
+
+func getCharacterPlanetHandler[C planetsESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore typeNameCache) mcpsdk.ToolHandlerFor[GetCharacterPlanetInput, GetCharacterPlanetOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterPlanetInput) (*mcpsdk.CallToolResult, GetCharacterPlanetOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -236,7 +270,11 @@ func getCharacterPlanetHandler(version, clientID string, store ConfigStore, sdeS
 		if !found {
 			return nil, GetCharacterPlanetOutput{}, fmt.Errorf("get character planet for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		detail, err := getCharacterPlanet(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.PlanetID)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, GetCharacterPlanetOutput{}, fmt.Errorf("build ESI client: %w", err)
+		}
+		detail, err := getCharacterPlanet(ctx, client, in.PlanetID)
 		if err != nil {
 			return nil, GetCharacterPlanetOutput{}, fmt.Errorf("get character planet: %w", err)
 		}
@@ -256,7 +294,7 @@ func getCharacterPlanetHandler(version, clientID string, store ConfigStore, sdeS
 		for _, r := range routes {
 			ids = append(ids, r.ContentTypeID)
 		}
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		names := resolveTypeNames(ctx, sdeStore, userAgent, ids)
 		for i := range pins {
 			pins[i].TypeName = names[pins[i].TypeID]
 			for j := range pins[i].Contents {
@@ -299,11 +337,7 @@ type CustomsOffice struct {
 	TerribleStandingTaxRate  *float64 `json:"terribleStandingTaxRate,omitempty"`
 }
 
-var listCorporationCustomsOffices = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdCustomsOfficesGetInner, int32, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, 0, fmt.Errorf("build ESI client: %w", err)
-	}
+func listCorporationCustomsOffices(ctx context.Context, client planetsESI, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdCustomsOfficesGetInner, int32, error) {
 	return client.CorporationCustomsOffices(ctx, corporationID, page)
 }
 
@@ -320,7 +354,16 @@ type ListCorporationCustomsOfficesOutput struct {
 	Offices       []CustomsOffice `json:"offices"`
 }
 
-func listCorporationCustomsOfficesHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCorporationCustomsOfficesInput, ListCorporationCustomsOfficesOutput] {
+// AddListCorporationCustomsOffices registers list_corporation_customs_offices. open builds the ESI client; any client with the
+// planetsESI methods will do.
+func AddListCorporationCustomsOffices[C planetsESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore customsOfficeNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_corporation_customs_offices",
+		Description: "List a corporation's customs offices (POCOs), including tax rates and reinforcement schedule.",
+	}, listCorporationCustomsOfficesHandler(userAgent, open, store, sdeStore))
+}
+
+func listCorporationCustomsOfficesHandler[C planetsESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore customsOfficeNameCache) mcpsdk.ToolHandlerFor[ListCorporationCustomsOfficesInput, ListCorporationCustomsOfficesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationCustomsOfficesInput) (*mcpsdk.CallToolResult, ListCorporationCustomsOfficesOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -329,7 +372,11 @@ func listCorporationCustomsOfficesHandler(version, clientID string, store Config
 		if !found {
 			return nil, ListCorporationCustomsOfficesOutput{}, fmt.Errorf("list corporation customs offices for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		offices, totalPages, err := listCorporationCustomsOffices(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.Page)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCorporationCustomsOfficesOutput{}, fmt.Errorf("build ESI client: %w", err)
+		}
+		offices, totalPages, err := listCorporationCustomsOffices(ctx, client, in.CorporationID, in.Page)
 		if err != nil {
 			return nil, ListCorporationCustomsOfficesOutput{}, fmt.Errorf("list corporation customs offices: %w", err)
 		}
@@ -352,7 +399,7 @@ func listCorporationCustomsOfficesHandler(version, clientID string, store Config
 				ids = append(ids, *o.TypeID)
 			}
 		}
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		names := resolveTypeNames(ctx, sdeStore, userAgent, ids)
 		for i := range out {
 			if out[i].TypeID != nil {
 				out[i].TypeName = names[*out[i].TypeID]
@@ -363,7 +410,7 @@ func listCorporationCustomsOfficesHandler(version, clientID string, store Config
 		for i, o := range out {
 			systemIDs[i] = o.SystemID
 		}
-		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), systemIDs)
+		systemNames := resolveSystemNames(ctx, sdeStore, userAgent, systemIDs)
 		for i := range out {
 			out[i].SystemName = systemNames[out[i].SystemID]
 		}
@@ -386,8 +433,7 @@ type GetPlanetarySchematicOutput struct {
 	CycleTime     int64  `json:"cycleTime"`
 }
 
-var getPlanetarySchematic = func(ctx context.Context, userAgent string, schematicID int64) (GetPlanetarySchematicOutput, error) {
-	client := esi.NewPublicClient(userAgent)
+func getPlanetarySchematic(ctx context.Context, client planetarySchematicESI, schematicID int64) (GetPlanetarySchematicOutput, error) {
 	schematic, err := client.PlanetarySchematic(ctx, schematicID)
 	if err != nil {
 		return GetPlanetarySchematicOutput{}, err
@@ -399,9 +445,18 @@ type GetPlanetarySchematicInput struct {
 	SchematicID int64 `json:"schematicId" jsonschema:"the PI schematic ID"`
 }
 
-func getPlanetarySchematicHandler(version string) mcpsdk.ToolHandlerFor[GetPlanetarySchematicInput, GetPlanetarySchematicOutput] {
+// AddGetPlanetarySchematic registers get_planetary_schematic. open builds the ESI client; any client with the
+// planetarySchematicESI methods will do.
+func AddGetPlanetarySchematic[C planetarySchematicESI](s *mcpsdk.Server, open func() C) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_planetary_schematic",
+		Description: "Get a Planetary Interaction schematic's cycle time and name.",
+	}, getPlanetarySchematicHandler(open))
+}
+
+func getPlanetarySchematicHandler[C planetarySchematicESI](open func() C) mcpsdk.ToolHandlerFor[GetPlanetarySchematicInput, GetPlanetarySchematicOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetPlanetarySchematicInput) (*mcpsdk.CallToolResult, GetPlanetarySchematicOutput, error) {
-		out, err := getPlanetarySchematic(ctx, sso.UserAgent(version), in.SchematicID)
+		out, err := getPlanetarySchematic(ctx, open(), in.SchematicID)
 		if err != nil {
 			return nil, GetPlanetarySchematicOutput{}, fmt.Errorf("get planetary schematic: %w", err)
 		}

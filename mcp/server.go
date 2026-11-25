@@ -100,87 +100,56 @@ type SDEStore interface {
 	TypesByName(ctx context.Context, userAgent string, names []string) (map[string]int64, error)
 }
 
-// NewServer builds neat's MCP server, or returns an error naming the first
-// missing dependency in deps, with add_character, list_scope_groups, list_characters,
-// remove_character, get_wallet_balance, list_character_wallet_journal,
-// list_character_wallet_transactions, list_corporation_wallets,
-// list_corporation_wallet_journal, list_corporation_wallet_transactions,
-// list_access_lists, get_access_list,
-// list_mercenary_tactical_operations, get_mercenary_tactical_operation,
-// list_raidable_skyhooks, list_alliances, get_alliance,
-// list_alliance_corporations, get_alliance_icons, list_assets,
-// get_asset_locations, get_asset_names, list_corporation_assets,
-// get_corporation_asset_locations, get_corporation_asset_names,
-// list_calendar_events, get_calendar_event, list_calendar_event_attendees,
-// respond_calendar_event, get_character, get_character_affiliations,
-// list_character_corporation_history, get_character_portrait,
-// list_character_agents_research, list_character_blueprints,
+// NewServer builds neat's MCP server, or returns an error naming the first missing
+// dependency in deps, with add_character, list_scope_groups, list_characters,
+// remove_character, list_assets, get_asset_locations, get_asset_names,
+// list_corporation_assets, get_corporation_asset_locations, get_corporation_asset_names,
+// get_character, get_character_affiliations, list_character_corporation_history,
+// get_character_portrait, list_character_agents_research, list_character_blueprints,
 // get_character_fatigue, list_character_medals, list_character_notifications,
-// list_character_notification_contacts, get_character_roles,
-// list_character_standings, list_character_titles, get_character_cspa_cost,
-// get_character_clones, list_character_implants, list_character_contacts,
-// list_character_contact_labels, list_corporation_contacts,
-// list_corporation_contact_labels, list_alliance_contacts,
-// list_alliance_contact_labels, add_character_contacts,
-// update_character_contacts, remove_character_contacts, list_character_contracts,
-// list_character_contract_bids, list_character_contract_items, list_corporation_contracts,
+// list_character_notification_contacts, get_character_roles, list_character_standings,
+// list_character_titles, get_character_cspa_cost, get_character_clones,
+// list_character_implants, list_character_contacts, list_character_contact_labels,
+// list_corporation_contacts, list_corporation_contact_labels, list_alliance_contacts,
+// list_alliance_contact_labels, add_character_contacts, update_character_contacts,
+// remove_character_contacts, list_character_contracts, list_character_contract_bids,
+// list_character_contract_items, list_corporation_contracts,
 // list_corporation_contract_bids, list_corporation_contract_items, list_public_contracts,
 // list_public_contract_bids, list_public_contract_items, get_corporation,
 // list_corporation_alliance_history, get_corporation_icons, list_npc_corporations,
 // list_corporation_members, get_corporation_members_limit, list_corporation_member_titles,
-// list_corporation_member_tracking, list_corporation_roles, list_corporation_roles_history,
-// list_corporation_titles, get_corporation_divisions, list_corporation_shareholders,
-// list_corporation_standings, list_corporation_blueprints, list_corporation_container_logs,
-// list_corporation_facilities, list_corporation_medals, list_corporation_medals_issued,
-// list_corporation_starbases, get_corporation_starbase, list_corporation_structures,
-// get_corporation_project_contribution, list_corporation_project_contributors,
-// get_corporation_project_detail, list_corporation_projects, list_dogma_attributes,
-// get_dogma_attribute, get_dogma_dynamic_item, list_dogma_effects, get_dogma_effect,
-// get_character_fw_stats, get_corporation_fw_stats, get_fw_leaderboards,
-// get_fw_character_leaderboards, get_fw_corporation_leaderboards,
-// list_fw_stats, list_fw_systems, list_fw_wars, list_character_fittings, create_character_fitting,
-// delete_character_fitting, get_character_fleet, get_fleet, update_fleet,
-// list_fleet_members, invite_fleet_member, move_fleet_member, kick_fleet_member, list_fleet_wings,
-// create_fleet_wing, rename_fleet_wing, delete_fleet_wing, create_fleet_squad, rename_fleet_squad,
-// delete_fleet_squad, list_character_freelance_jobs,
-// get_character_freelance_job_participation, list_corporation_freelance_jobs,
-// list_corporation_freelance_job_participants, get_freelance_job, list_freelance_jobs,
-// list_incursions, list_character_industry_jobs, list_character_mining,
+// list_corporation_member_tracking, list_corporation_roles,
+// list_corporation_roles_history, list_corporation_titles, get_corporation_divisions,
+// list_corporation_shareholders, list_corporation_standings, list_corporation_blueprints,
+// list_corporation_container_logs, list_corporation_facilities, list_corporation_medals,
+// list_corporation_medals_issued, list_corporation_starbases, get_corporation_starbase,
+// list_corporation_structures, get_corporation_project_contribution,
+// list_corporation_project_contributors, get_corporation_project_detail,
+// list_corporation_projects, get_character_fw_stats, get_corporation_fw_stats,
+// get_fw_leaderboards, get_fw_character_leaderboards, get_fw_corporation_leaderboards,
+// list_fw_stats, list_fw_systems, list_fw_wars, list_incursions,
+// list_character_industry_jobs, list_character_mining,
 // list_corporation_mining_extractions, list_corporation_mining_observers,
-// get_corporation_mining_observer_detail, list_corporation_industry_jobs, list_industry_facilities,
-// list_industry_systems, list_insurance_prices, list_character_killmails_recent,
-// list_corporation_killmails_recent, get_killmail, get_character_location,
-// get_character_online, get_character_ship,
-// list_character_mail, get_character_mail_labels,
-// list_character_mail_lists, get_character_mail, send_character_mail,
-// create_character_mail_label, update_character_mail, delete_character_mail,
-// delete_character_mail_label, list_character_market_orders, list_character_market_order_history,
-// list_corporation_market_orders, list_corporation_market_order_history, list_market_groups,
-// get_market_group, list_market_prices, get_market_history, list_market_orders, list_market_types,
-// list_structure_market_orders, get_esi_changelog, list_esi_compatibility_dates, get_esi_name,
-// get_esi_status, list_character_planets, get_character_planet, list_corporation_customs_offices,
-// get_planetary_schematic, get_route, search_character, get_character_attributes,
-// list_character_skill_queue, list_character_skills, list_sovereignty_campaigns,
-// list_sovereignty_systems, get_status, list_character_mercenary_dens, get_character_mercenary_den,
-// list_corporation_skyhooks, get_corporation_skyhook, list_corporation_sovereignty_hubs,
+// get_corporation_mining_observer_detail, list_corporation_industry_jobs,
+// list_industry_facilities, list_industry_systems, get_character_location,
+// get_character_online, get_character_ship, list_character_market_orders,
+// list_character_market_order_history, list_corporation_market_orders,
+// list_corporation_market_order_history, list_market_groups, get_market_group,
+// list_market_prices, get_market_history, list_market_orders, list_market_types,
+// list_structure_market_orders, get_character_attributes, list_character_skill_queue,
+// list_character_skills, list_sovereignty_campaigns, list_sovereignty_systems,
+// list_character_mercenary_dens, get_character_mercenary_den, list_corporation_skyhooks,
+// get_corporation_skyhook, list_corporation_sovereignty_hubs,
 // get_corporation_sovereignty_hub, list_universe_ancestries, list_universe_bloodlines,
-// list_universe_races, list_universe_factions, list_universe_categories, get_universe_category,
-// list_universe_groups, get_universe_group, list_universe_types, get_universe_type,
-// list_universe_regions, get_universe_region, list_universe_constellations,
-// get_universe_constellation, list_universe_systems, get_universe_system,
-// get_universe_asteroid_belt, get_universe_moon, get_universe_planet, get_universe_stargate,
-// get_universe_star, get_universe_station, list_universe_graphics, get_universe_graphic,
-// list_universe_structures, get_universe_structure, list_universe_system_jumps,
-// list_universe_system_kills, resolve_universe_ids, resolve_universe_names,
-// set_autopilot_waypoint, open_contract_window, open_information_window,
-// open_market_details_window, open_new_mail_window, list_wars, get_war, list_war_killmails,
-// list_military_campaigns, get_military_campaign, list_military_campaign_objectives,
-// get_military_campaign_objective, list_character_military_campaign_objectives,
-// get_character_military_campaign_objective_participation, list_character_skinr_licenses,
-// list_character_skinr_component_licenses, get_skinr, list_paragon_hub_skinr_listings,
-// list_character_paragon_hub_skinr_listings, list_paragon_hub_skinr_listings_for_alliance,
-// list_paragon_hub_skinr_listings_for_corporation, and
-// list_paragon_hub_skinr_listings_for_character registered.
+// list_universe_races, list_universe_factions, list_universe_categories,
+// get_universe_category, list_universe_groups, get_universe_group, list_universe_types,
+// get_universe_type, list_universe_regions, get_universe_region,
+// list_universe_constellations, get_universe_constellation, list_universe_systems,
+// get_universe_system, get_universe_asteroid_belt, get_universe_moon, get_universe_planet,
+// get_universe_stargate, get_universe_star, get_universe_station, list_universe_graphics,
+// get_universe_graphic, list_universe_structures, get_universe_structure,
+// list_universe_system_jumps, list_universe_system_kills, resolve_universe_ids, and
+// resolve_universe_names registered.
 func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
 	switch {
 	case deps.Config == nil:
@@ -220,51 +189,6 @@ func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
 	}, removeCharacterHandler(store))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_access_lists",
-		Description: "List a logged-in EVE Online character's structure/fleet access list IDs.",
-	}, listAccessListsHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_access_list",
-		Description: "Get the name, description, and membership detail of one of a character's access lists.",
-	}, getAccessListHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_mercenary_tactical_operations",
-		Description: "List a logged-in EVE Online character's mercenary tactical operations.",
-	}, listMercenaryTacticalOperationsHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_mercenary_tactical_operation",
-		Description: "Get detail (dungeon type, mercenary den, state, expiry) for one mercenary tactical operation.",
-	}, getMercenaryTacticalOperationHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_raidable_skyhooks",
-		Description: "List upcoming raidable skyhooks (public data, no character scope required).",
-	}, listRaidableSkyhooksHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_alliances",
-		Description: "List every alliance ID currently in EVE Online (public data, no character required).",
-	}, listAlliancesHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_alliance",
-		Description: "Get an alliance's name, ticker, founding info, and executor corporation (public data, no character required).",
-	}, getAllianceHandler(version, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_alliance_corporations",
-		Description: "List the corporation IDs currently in an alliance (public data, no character required).",
-	}, listAllianceCorporationsHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_alliance_icons",
-		Description: "Get an alliance's icon URLs (public data, no character required).",
-	}, getAllianceIconsHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_assets",
 		Description: "List a logged-in EVE Online character's assets.",
 	}, listAssetsHandler(version, clientID, store, sdeStore))
@@ -298,26 +222,6 @@ func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
 		Name:        "get_corporation_asset_names",
 		Description: "Resolve a set of a corporation's asset item IDs into their player-assigned custom names.",
 	}, getCorporationAssetNamesHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_calendar_events",
-		Description: "List a logged-in EVE Online character's calendar events.",
-	}, listCalendarEventsHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_calendar_event",
-		Description: "Get detail (date, duration, owner, description, RSVP status) for one calendar event.",
-	}, getCalendarEventHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_calendar_event_attendees",
-		Description: "List the attendees and their RSVP status for one calendar event.",
-	}, listCalendarEventAttendeesHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "respond_calendar_event",
-		Description: "Respond to a calendar event invite (accepted/declined/tentative) — this changes your RSVP status on EVE's server.",
-	}, respondCalendarEventHandler(version, clientID, store))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_character",
@@ -620,31 +524,6 @@ func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
 	}, listCorporationProjectsHandler(version, clientID, store))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_dogma_attributes",
-		Description: "List every dogma attribute ID currently defined (public data, no character required).",
-	}, listDogmaAttributesHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_dogma_attribute",
-		Description: "Get detail for one dogma attribute (public data, no character required).",
-	}, getDogmaAttributeHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_dogma_dynamic_item",
-		Description: "Get detail for one mutated (\"abyssal\") item, identified by its source type and item ID (public data, no character required).",
-	}, getDogmaDynamicItemHandler(version, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_dogma_effects",
-		Description: "List every dogma effect ID currently defined (public data, no character required).",
-	}, listDogmaEffectsHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_dogma_effect",
-		Description: "Get detail for one dogma effect (public data, no character required).",
-	}, getDogmaEffectHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_character_fw_stats",
 		Description: "Get a logged-in EVE Online character's faction warfare stats.",
 	}, getCharacterFwStatsHandler(version, clientID, store, sdeStore))
@@ -730,26 +609,6 @@ func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
 	}, listIndustrySystemsHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_insurance_prices",
-		Description: "List insurance price levels for every insurable ship type (public data, no character required).",
-	}, listInsurancePricesHandler(version, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_character_killmails_recent",
-		Description: "List a logged-in EVE Online character's recent killmail references.",
-	}, listCharacterKillmailsRecentHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_corporation_killmails_recent",
-		Description: "List a corporation's recent killmail references, using a logged-in character's roles to authorize.",
-	}, listCorporationKillmailsRecentHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_killmail",
-		Description: "Get the full details of a killmail, given its ID and hash (public data, no character required).",
-	}, getKillmailHandler(version, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_character_location",
 		Description: "Get a logged-in EVE Online character's current solar system, and station or structure ID if docked/boarded.",
 	}, getCharacterLocationHandler(version, clientID, store, sdeStore))
@@ -820,56 +679,6 @@ func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
 	}, listStructureMarketOrdersHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_esi_changelog",
-		Description: "Get ESI's own changelog, keyed by date (public data, no character required).",
-	}, getEsiChangelogHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_esi_compatibility_dates",
-		Description: "List every compatibility date ESI currently accepts (public data, no character required).",
-	}, listEsiCompatibilityDatesHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_esi_name",
-		Description: "Get ESI's current and historical names (public data, no character required).",
-	}, getEsiNameHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_esi_status",
-		Description: "Get the health status of every ESI route (public data, no character required).",
-	}, getEsiStatusHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_character_planets",
-		Description: "List a logged-in EVE Online character's colonized planets (Planetary Interaction).",
-	}, listCharacterPlanetsHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_character_planet",
-		Description: "Get the full colony layout (links, pins, routes) of one of a character's planets.",
-	}, getCharacterPlanetHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_corporation_customs_offices",
-		Description: "List a corporation's customs offices (POCOs), including tax rates and reinforcement schedule.",
-	}, listCorporationCustomsOfficesHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_planetary_schematic",
-		Description: "Get a Planetary Interaction schematic's cycle time and name.",
-	}, getPlanetarySchematicHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_route",
-		Description: "Compute a route between two solar systems, optionally avoiding systems or adding extra connections (public data, no character required).",
-	}, getRouteHandler(version, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "search_character",
-		Description: "Search for entities (characters, corporations, systems, etc.) matching a string, scoped to a logged-in character's search permissions.",
-	}, searchCharacterHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_character_attributes",
 		Description: "Get a logged-in EVE Online character's neural attributes (Charisma, Intelligence, Memory, Perception, Willpower) and remap history.",
 	}, getCharacterAttributesHandler(version, clientID, store))
@@ -893,11 +702,6 @@ func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
 		Name:        "list_sovereignty_systems",
 		Description: "List every solar system and its current sovereignty claim, if any (public data, no character required).",
 	}, listSovereigntySystemsHandler(version, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_status",
-		Description: "Get the current EVE Online server status: player count, version, start time, and VIP mode (public data, no character required).",
-	}, getStatusHandler(version))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_character_mercenary_dens",

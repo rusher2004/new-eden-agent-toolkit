@@ -5,15 +5,19 @@ import (
 	"fmt"
 	"time"
 
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-
-	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
-// listAlliances is overridable in tests so no real network call runs.
-var listAlliances = func(ctx context.Context, userAgent string) ([]int64, error) {
-	client := esi.NewPublicClient(userAgent)
+// allianceESI is the ESI calls the alliance tools make; all are public.
+type allianceESI interface {
+	Alliances(ctx context.Context) ([]int64, error)
+	AllianceDetail(ctx context.Context, allianceID int64) (*esiapi.AlliancesDetail, error)
+	AllianceCorporations(ctx context.Context, allianceID int64) ([]int64, error)
+	AllianceIcons(ctx context.Context, allianceID int64) (*esiapi.AlliancesAllianceIdIconsGet, error)
+}
+
+func listAlliances(ctx context.Context, client allianceESI) ([]int64, error) {
 	return client.Alliances(ctx)
 }
 
@@ -26,9 +30,18 @@ type ListAlliancesOutput struct {
 	AllianceIDs []int64 `json:"allianceIds"`
 }
 
-func listAlliancesHandler(version string) mcpsdk.ToolHandlerFor[ListAlliancesInput, ListAlliancesOutput] {
+// AddListAlliances registers list_alliances. open builds the ESI client; any client with the
+// allianceESI methods will do.
+func AddListAlliances[C allianceESI](s *mcpsdk.Server, open func() C) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_alliances",
+		Description: "List every alliance ID currently in EVE Online (public data, no character required).",
+	}, listAlliancesHandler(open))
+}
+
+func listAlliancesHandler[C allianceESI](open func() C) mcpsdk.ToolHandlerFor[ListAlliancesInput, ListAlliancesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListAlliancesInput) (*mcpsdk.CallToolResult, ListAlliancesOutput, error) {
-		ids, err := listAlliances(ctx, sso.UserAgent(version))
+		ids, err := listAlliances(ctx, open())
 		if err != nil {
 			return nil, ListAlliancesOutput{}, fmt.Errorf("list alliances: %w", err)
 		}
@@ -49,9 +62,7 @@ type AllianceDetailResult struct {
 	FactionName           string
 }
 
-// getAllianceDetail is overridable in tests.
-var getAllianceDetail = func(ctx context.Context, userAgent string, allianceID int64) (AllianceDetailResult, error) {
-	client := esi.NewPublicClient(userAgent)
+func getAllianceDetail(ctx context.Context, client allianceESI, allianceID int64) (AllianceDetailResult, error) {
 	detail, err := client.AllianceDetail(ctx, allianceID)
 	if err != nil {
 		return AllianceDetailResult{}, err
@@ -85,14 +96,23 @@ type GetAllianceOutput struct {
 	FactionName           string    `json:"factionName,omitempty"`
 }
 
-func getAllianceHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetAllianceInput, GetAllianceOutput] {
+// AddGetAlliance registers get_alliance. open builds the ESI client; any client with the
+// allianceESI methods will do.
+func AddGetAlliance[C allianceESI](s *mcpsdk.Server, userAgent string, open func() C, sdeStore factionNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_alliance",
+		Description: "Get an alliance's name, ticker, founding info, and executor corporation (public data, no character required).",
+	}, getAllianceHandler(userAgent, open, sdeStore))
+}
+
+func getAllianceHandler[C allianceESI](userAgent string, open func() C, sdeStore factionNameCache) mcpsdk.ToolHandlerFor[GetAllianceInput, GetAllianceOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetAllianceInput) (*mcpsdk.CallToolResult, GetAllianceOutput, error) {
-		result, err := getAllianceDetail(ctx, sso.UserAgent(version), in.AllianceID)
+		result, err := getAllianceDetail(ctx, open(), in.AllianceID)
 		if err != nil {
 			return nil, GetAllianceOutput{}, fmt.Errorf("get alliance detail: %w", err)
 		}
 		if result.FactionID != nil {
-			names := resolveFactionNames(ctx, sdeStore, sso.UserAgent(version), []int64{*result.FactionID})
+			names := resolveFactionNames(ctx, sdeStore, userAgent, []int64{*result.FactionID})
 			result.FactionName = names[*result.FactionID]
 		}
 		return nil, GetAllianceOutput{
@@ -109,9 +129,7 @@ func getAllianceHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor
 	}
 }
 
-// listAllianceCorporations is overridable in tests.
-var listAllianceCorporations = func(ctx context.Context, userAgent string, allianceID int64) ([]int64, error) {
-	client := esi.NewPublicClient(userAgent)
+func listAllianceCorporations(ctx context.Context, client allianceESI, allianceID int64) ([]int64, error) {
 	return client.AllianceCorporations(ctx, allianceID)
 }
 
@@ -126,9 +144,18 @@ type ListAllianceCorporationsOutput struct {
 	CorporationIDs []int64 `json:"corporationIds"`
 }
 
-func listAllianceCorporationsHandler(version string) mcpsdk.ToolHandlerFor[ListAllianceCorporationsInput, ListAllianceCorporationsOutput] {
+// AddListAllianceCorporations registers list_alliance_corporations. open builds the ESI client; any client with the
+// allianceESI methods will do.
+func AddListAllianceCorporations[C allianceESI](s *mcpsdk.Server, open func() C) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_alliance_corporations",
+		Description: "List the corporation IDs currently in an alliance (public data, no character required).",
+	}, listAllianceCorporationsHandler(open))
+}
+
+func listAllianceCorporationsHandler[C allianceESI](open func() C) mcpsdk.ToolHandlerFor[ListAllianceCorporationsInput, ListAllianceCorporationsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListAllianceCorporationsInput) (*mcpsdk.CallToolResult, ListAllianceCorporationsOutput, error) {
-		ids, err := listAllianceCorporations(ctx, sso.UserAgent(version), in.AllianceID)
+		ids, err := listAllianceCorporations(ctx, open(), in.AllianceID)
 		if err != nil {
 			return nil, ListAllianceCorporationsOutput{}, fmt.Errorf("list alliance corporations: %w", err)
 		}
@@ -143,9 +170,7 @@ type AllianceIconsResult struct {
 	Px64x64   *string
 }
 
-// getAllianceIcons is overridable in tests.
-var getAllianceIcons = func(ctx context.Context, userAgent string, allianceID int64) (AllianceIconsResult, error) {
-	client := esi.NewPublicClient(userAgent)
+func getAllianceIcons(ctx context.Context, client allianceESI, allianceID int64) (AllianceIconsResult, error) {
 	icons, err := client.AllianceIcons(ctx, allianceID)
 	if err != nil {
 		return AllianceIconsResult{}, err
@@ -165,9 +190,18 @@ type GetAllianceIconsOutput struct {
 	Px64x64    *string `json:"px64x64,omitempty"`
 }
 
-func getAllianceIconsHandler(version string) mcpsdk.ToolHandlerFor[GetAllianceIconsInput, GetAllianceIconsOutput] {
+// AddGetAllianceIcons registers get_alliance_icons. open builds the ESI client; any client with the
+// allianceESI methods will do.
+func AddGetAllianceIcons[C allianceESI](s *mcpsdk.Server, open func() C) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_alliance_icons",
+		Description: "Get an alliance's icon URLs (public data, no character required).",
+	}, getAllianceIconsHandler(open))
+}
+
+func getAllianceIconsHandler[C allianceESI](open func() C) mcpsdk.ToolHandlerFor[GetAllianceIconsInput, GetAllianceIconsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetAllianceIconsInput) (*mcpsdk.CallToolResult, GetAllianceIconsOutput, error) {
-		result, err := getAllianceIcons(ctx, sso.UserAgent(version), in.AllianceID)
+		result, err := getAllianceIcons(ctx, open(), in.AllianceID)
 		if err != nil {
 			return nil, GetAllianceIconsOutput{}, fmt.Errorf("get alliance icons: %w", err)
 		}

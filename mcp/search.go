@@ -4,13 +4,14 @@ import (
 	"context"
 	"fmt"
 
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
-
-	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+// searchESI is the ESI call search_character makes.
+type searchESI interface {
+	CharacterSearch(ctx context.Context, categories []string, search string, strict bool) (*esiapi.CharactersCharacterIdSearchGet, error)
+}
 
 // --- search_character (private) ---
 
@@ -29,11 +30,7 @@ type SearchResults struct {
 	Structure          []int64  `json:"structure,omitempty"`
 }
 
-var searchCharacter = func(ctx context.Context, clientID string, characterID int32, userAgent string, categories []string, search string, strict bool) (*esiapi.CharactersCharacterIdSearchGet, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
+func searchCharacter(ctx context.Context, client searchESI, categories []string, search string, strict bool) (*esiapi.CharactersCharacterIdSearchGet, error) {
 	return client.CharacterSearch(ctx, categories, search, strict)
 }
 
@@ -48,7 +45,16 @@ type SearchCharacterOutput struct {
 	Results     SearchResults `json:"results"`
 }
 
-func searchCharacterHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[SearchCharacterInput, SearchCharacterOutput] {
+// AddSearchCharacter registers search_character. open builds the ESI client; any client with the
+// searchESI methods will do.
+func AddSearchCharacter[C searchESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore typeNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "search_character",
+		Description: "Search for entities (characters, corporations, systems, etc.) matching a string, scoped to a logged-in character's search permissions.",
+	}, searchCharacterHandler(userAgent, open, store, sdeStore))
+}
+
+func searchCharacterHandler[C searchESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore typeNameCache) mcpsdk.ToolHandlerFor[SearchCharacterInput, SearchCharacterOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in SearchCharacterInput) (*mcpsdk.CallToolResult, SearchCharacterOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -57,11 +63,15 @@ func searchCharacterHandler(version, clientID string, store ConfigStore, sdeStor
 		if !found {
 			return nil, SearchCharacterOutput{}, fmt.Errorf("search character for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		results, err := searchCharacter(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.Categories, in.Search, in.Strict)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, SearchCharacterOutput{}, fmt.Errorf("build ESI client: %w", err)
+		}
+		results, err := searchCharacter(ctx, client, in.Categories, in.Search, in.Strict)
 		if err != nil {
 			return nil, SearchCharacterOutput{}, fmt.Errorf("search character: %w", err)
 		}
-		nameMap := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), results.InventoryType)
+		nameMap := resolveTypeNames(ctx, sdeStore, userAgent, results.InventoryType)
 		inventoryTypeNames := make([]string, len(results.InventoryType))
 		for i, id := range results.InventoryType {
 			inventoryTypeNames[i] = nameMap[id]

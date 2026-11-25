@@ -4,18 +4,41 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 )
 
-func TestGetEsiChangelogHandler_MapsFields(t *testing.T) {
-	orig := getEsiChangelog
-	t.Cleanup(func() { getEsiChangelog = orig })
-	getEsiChangelog = func(ctx context.Context, userAgent string) (map[string][]ChangelogEntry, error) {
-		return map[string][]ChangelogEntry{
-			"2026-07-01": {{CompatibilityDate: "2026-07-01", Description: "Added a thing", Method: "GET", Path: "/foo", Type: "added"}},
-		}, nil
-	}
+// fakeMetaESI fakes the meta tools' ESI calls; err is returned by every call.
+type fakeMetaESI struct {
+	changelog *esiapi.MetaChangelog
+	dates     *esiapi.MetaCompatibilityDates
+	name      *esiapi.MetaName
+	status    *esiapi.MetaStatus
+	err       error
+}
 
-	handler := getEsiChangelogHandler("v1")
+func (f fakeMetaESI) MetaChangelog(context.Context) (*esiapi.MetaChangelog, error) {
+	return f.changelog, f.err
+}
+
+func (f fakeMetaESI) MetaCompatibilityDates(context.Context) (*esiapi.MetaCompatibilityDates, error) {
+	return f.dates, f.err
+}
+
+func (f fakeMetaESI) MetaName(context.Context) (*esiapi.MetaName, error) { return f.name, f.err }
+
+func (f fakeMetaESI) MetaStatus(context.Context) (*esiapi.MetaStatus, error) {
+	return f.status, f.err
+}
+
+func openMetaFake(c metaESI) func() metaESI { return func() metaESI { return c } }
+
+func TestGetEsiChangelogHandler_MapsFields(t *testing.T) {
+	fake := fakeMetaESI{changelog: &esiapi.MetaChangelog{Changelog: map[string][]esiapi.MetaChangelogEntry{
+		"2026-07-01": {{CompatibilityDate: "2026-07-01", Description: "Added a thing", Method: "GET", Path: "/foo", Type: "added"}},
+	}}}
+
+	handler := getEsiChangelogHandler(openMetaFake(fake))
 	_, out, err := handler(context.Background(), nil, GetEsiChangelogInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -31,13 +54,9 @@ func TestGetEsiChangelogHandler_MapsFields(t *testing.T) {
 }
 
 func TestListEsiCompatibilityDatesHandler_MapsFields(t *testing.T) {
-	orig := listEsiCompatibilityDates
-	t.Cleanup(func() { listEsiCompatibilityDates = orig })
-	listEsiCompatibilityDates = func(ctx context.Context, userAgent string) ([]string, error) {
-		return []string{"2026-01-01", "2026-07-01"}, nil
-	}
+	fake := fakeMetaESI{dates: &esiapi.MetaCompatibilityDates{CompatibilityDates: []string{"2026-01-01", "2026-07-01"}}}
 
-	handler := listEsiCompatibilityDatesHandler("v1")
+	handler := listEsiCompatibilityDatesHandler(openMetaFake(fake))
 	_, out, err := handler(context.Background(), nil, ListEsiCompatibilityDatesInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -48,13 +67,9 @@ func TestListEsiCompatibilityDatesHandler_MapsFields(t *testing.T) {
 }
 
 func TestGetEsiNameHandler_MapsFields(t *testing.T) {
-	orig := getEsiName
-	t.Cleanup(func() { getEsiName = orig })
-	getEsiName = func(ctx context.Context, userAgent string) (string, []NameEntry, error) {
-		return "ESI", []NameEntry{{Date: "2016-01-01", Name: "CREST"}}, nil
-	}
+	fake := fakeMetaESI{name: &esiapi.MetaName{Current: "ESI", History: []esiapi.MetaNameEntry{{Date: "2016-01-01", Name: "CREST"}}}}
 
-	handler := getEsiNameHandler("v1")
+	handler := getEsiNameHandler(openMetaFake(fake))
 	_, out, err := handler(context.Background(), nil, GetEsiNameInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -68,13 +83,9 @@ func TestGetEsiNameHandler_MapsFields(t *testing.T) {
 }
 
 func TestGetEsiStatusHandler_MapsFields(t *testing.T) {
-	orig := getEsiStatus
-	t.Cleanup(func() { getEsiStatus = orig })
-	getEsiStatus = func(ctx context.Context, userAgent string) ([]RouteStatus, error) {
-		return []RouteStatus{{Method: "GET", Path: "/characters/{character_id}/", Status: "green"}}, nil
-	}
+	fake := fakeMetaESI{status: &esiapi.MetaStatus{Routes: []esiapi.MetaStatusRoute{{Method: "GET", Path: "/characters/{character_id}/", Status: "green"}}}}
 
-	handler := getEsiStatusHandler("v1")
+	handler := getEsiStatusHandler(openMetaFake(fake))
 	_, out, err := handler(context.Background(), nil, GetEsiStatusInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -89,14 +100,9 @@ func TestGetEsiStatusHandler_MapsFields(t *testing.T) {
 }
 
 func TestGetEsiChangelogHandler_PropagatesError(t *testing.T) {
-	orig := getEsiChangelog
-	t.Cleanup(func() { getEsiChangelog = orig })
 	wantErr := errors.New("upstream failure")
-	getEsiChangelog = func(ctx context.Context, userAgent string) (map[string][]ChangelogEntry, error) {
-		return nil, wantErr
-	}
 
-	handler := getEsiChangelogHandler("v1")
+	handler := getEsiChangelogHandler(openMetaFake(fakeMetaESI{err: wantErr}))
 	_, _, err := handler(context.Background(), nil, GetEsiChangelogInput{})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -104,14 +110,9 @@ func TestGetEsiChangelogHandler_PropagatesError(t *testing.T) {
 }
 
 func TestListEsiCompatibilityDatesHandler_PropagatesError(t *testing.T) {
-	orig := listEsiCompatibilityDates
-	t.Cleanup(func() { listEsiCompatibilityDates = orig })
 	wantErr := errors.New("upstream failure")
-	listEsiCompatibilityDates = func(ctx context.Context, userAgent string) ([]string, error) {
-		return nil, wantErr
-	}
 
-	handler := listEsiCompatibilityDatesHandler("v1")
+	handler := listEsiCompatibilityDatesHandler(openMetaFake(fakeMetaESI{err: wantErr}))
 	_, _, err := handler(context.Background(), nil, ListEsiCompatibilityDatesInput{})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -119,14 +120,9 @@ func TestListEsiCompatibilityDatesHandler_PropagatesError(t *testing.T) {
 }
 
 func TestGetEsiNameHandler_PropagatesError(t *testing.T) {
-	orig := getEsiName
-	t.Cleanup(func() { getEsiName = orig })
 	wantErr := errors.New("upstream failure")
-	getEsiName = func(ctx context.Context, userAgent string) (string, []NameEntry, error) {
-		return "", nil, wantErr
-	}
 
-	handler := getEsiNameHandler("v1")
+	handler := getEsiNameHandler(openMetaFake(fakeMetaESI{err: wantErr}))
 	_, _, err := handler(context.Background(), nil, GetEsiNameInput{})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -134,14 +130,9 @@ func TestGetEsiNameHandler_PropagatesError(t *testing.T) {
 }
 
 func TestGetEsiStatusHandler_PropagatesError(t *testing.T) {
-	orig := getEsiStatus
-	t.Cleanup(func() { getEsiStatus = orig })
 	wantErr := errors.New("upstream failure")
-	getEsiStatus = func(ctx context.Context, userAgent string) ([]RouteStatus, error) {
-		return nil, wantErr
-	}
 
-	handler := getEsiStatusHandler("v1")
+	handler := getEsiStatusHandler(openMetaFake(fakeMetaESI{err: wantErr}))
 	_, _, err := handler(context.Background(), nil, GetEsiStatusInput{})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)

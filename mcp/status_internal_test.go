@@ -5,17 +5,23 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 )
 
-func TestGetStatusHandler_MapsFields(t *testing.T) {
-	orig := getStatus
-	t.Cleanup(func() { getStatus = orig })
-	startTime := time.Date(2026, 7, 25, 11, 0, 0, 0, time.UTC)
-	getStatus = func(ctx context.Context, userAgent string) (int64, string, time.Time, bool, error) {
-		return 23456, "1234567", startTime, true, nil
-	}
+// fakeStatusESI fakes get_status's one ESI call.
+type fakeStatusESI struct {
+	status *esiapi.Status
+	err    error
+}
 
-	handler := getStatusHandler("v1")
+func (f fakeStatusESI) Status(context.Context) (*esiapi.Status, error) { return f.status, f.err }
+
+func TestGetStatusHandler_MapsFields(t *testing.T) {
+	startTime := time.Date(2026, 7, 25, 11, 0, 0, 0, time.UTC)
+	fake := fakeStatusESI{status: &esiapi.Status{Players: 23456, ServerVersion: "1234567", StartTime: startTime, Vip: true}}
+
+	handler := getStatusHandler(func() statusESI { return fake })
 	_, out, err := handler(context.Background(), nil, GetStatusInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -32,15 +38,11 @@ func TestGetStatusHandler_MapsFields(t *testing.T) {
 }
 
 func TestGetStatusHandler_PropagatesError(t *testing.T) {
-	orig := getStatus
-	t.Cleanup(func() { getStatus = orig })
-	getStatus = func(ctx context.Context, userAgent string) (int64, string, time.Time, bool, error) {
-		return 0, "", time.Time{}, false, errors.New("boom")
-	}
+	wantErr := errors.New("boom")
 
-	handler := getStatusHandler("v1")
+	handler := getStatusHandler(func() statusESI { return fakeStatusESI{err: wantErr} })
 	_, _, err := handler(context.Background(), nil, GetStatusInput{})
-	if err == nil {
-		t.Fatal("handler returned nil error, want propagated error")
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
 	}
 }
