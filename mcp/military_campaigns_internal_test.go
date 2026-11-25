@@ -13,6 +13,57 @@ import (
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 )
 
+// openMilitaryCampaignsFake and openMilitaryCampaignsPubFake adapt a fake to the openers the handlers take.
+func openMilitaryCampaignsFake[C any](c C) func(context.Context, int32) (C, error) {
+	return func(context.Context, int32) (C, error) { return c, nil }
+}
+
+func openMilitaryCampaignsPubFake[C any](c C) func() C {
+	return func() C { return c }
+}
+
+// fakeMilitaryCampaignsESI fakes the ESI call behind listMilitaryCampaignsHandler.
+type fakeMilitaryCampaignsESI func(ctx context.Context) ([]esiapi.MilitaryCampaignsDetailCampaign, error)
+
+func (f fakeMilitaryCampaignsESI) MilitaryCampaigns(ctx context.Context) ([]esiapi.MilitaryCampaignsDetailCampaign, error) {
+	return f(ctx)
+}
+
+// fakeMilitaryCampaignDetailESI fakes the ESI call behind getMilitaryCampaignHandler.
+type fakeMilitaryCampaignDetailESI func(ctx context.Context, campaignID string) (*esiapi.MilitaryCampaignsDetail, error)
+
+func (f fakeMilitaryCampaignDetailESI) MilitaryCampaignDetail(ctx context.Context, campaignID string) (*esiapi.MilitaryCampaignsDetail, error) {
+	return f(ctx, campaignID)
+}
+
+// fakeMilitaryCampaignObjectivesESI fakes the ESI call behind listMilitaryCampaignObjectivesHandler.
+type fakeMilitaryCampaignObjectivesESI func(ctx context.Context, campaignID, after, before string, limit int64) ([]esiapi.MilitaryCampaignsObjectivesDetailObjective, *esiapi.Cursor, error)
+
+func (f fakeMilitaryCampaignObjectivesESI) MilitaryCampaignObjectives(ctx context.Context, campaignID, after, before string, limit int64) ([]esiapi.MilitaryCampaignsObjectivesDetailObjective, *esiapi.Cursor, error) {
+	return f(ctx, campaignID, after, before, limit)
+}
+
+// fakeMilitaryCampaignObjectiveDetailESI fakes the ESI call behind getMilitaryCampaignObjectiveHandler.
+type fakeMilitaryCampaignObjectiveDetailESI func(ctx context.Context, campaignID, objectiveID string) (*esiapi.MilitaryCampaignsObjectivesDetail, error)
+
+func (f fakeMilitaryCampaignObjectiveDetailESI) MilitaryCampaignObjectiveDetail(ctx context.Context, campaignID, objectiveID string) (*esiapi.MilitaryCampaignsObjectivesDetail, error) {
+	return f(ctx, campaignID, objectiveID)
+}
+
+// fakeCharacterMilitaryCampaignObjectivesESI fakes the ESI call behind listCharacterMilitaryCampaignObjectivesHandler.
+type fakeCharacterMilitaryCampaignObjectivesESI func(ctx context.Context, after, before string, limit int64) ([]esiapi.CharactersMilitaryCampaignsObjectivesParticipationCharacterobjective, *esiapi.Cursor, error)
+
+func (f fakeCharacterMilitaryCampaignObjectivesESI) CharacterMilitaryCampaignObjectives(ctx context.Context, after, before string, limit int64) ([]esiapi.CharactersMilitaryCampaignsObjectivesParticipationCharacterobjective, *esiapi.Cursor, error) {
+	return f(ctx, after, before, limit)
+}
+
+// fakeCharacterMilitaryCampaignObjectiveParticipationESI fakes the ESI call behind getCharacterMilitaryCampaignObjectiveParticipationHandler.
+type fakeCharacterMilitaryCampaignObjectiveParticipationESI func(ctx context.Context, objectiveID string) (*esiapi.CharactersMilitaryCampaignsObjectivesParticipation, error)
+
+func (f fakeCharacterMilitaryCampaignObjectiveParticipationESI) CharacterMilitaryCampaignObjectiveParticipation(ctx context.Context, objectiveID string) (*esiapi.CharactersMilitaryCampaignsObjectivesParticipation, error) {
+	return f(ctx, objectiveID)
+}
+
 // storeWithCharacter returns a config store holding one known character, ID 7.
 func storeWithCharacter(t *testing.T) *config.Store {
 	t.Helper()
@@ -25,14 +76,12 @@ func storeWithCharacter(t *testing.T) *config.Store {
 }
 
 func TestListMilitaryCampaignsHandler_MapsFields(t *testing.T) {
-	orig := listMilitaryCampaigns
-	t.Cleanup(func() { listMilitaryCampaigns = orig })
 	started := time.Date(2026, 6, 9, 11, 0, 0, 0, time.UTC)
-	listMilitaryCampaigns = func(ctx context.Context, userAgent string) ([]esiapi.MilitaryCampaignsDetailCampaign, error) {
+	listMilitaryCampaignsFake := fakeMilitaryCampaignsESI(func(ctx context.Context) ([]esiapi.MilitaryCampaignsDetailCampaign, error) {
 		return []esiapi.MilitaryCampaignsDetailCampaign{{Id: "camp-1", State: "Active", Progress: 12, Started: &started}}, nil
-	}
+	})
 
-	_, out, err := listMilitaryCampaignsHandler("v1")(context.Background(), nil, ListMilitaryCampaignsInput{})
+	_, out, err := listMilitaryCampaignsHandler(openMilitaryCampaignsPubFake[militaryCampaignsESI](listMilitaryCampaignsFake))(context.Background(), nil, ListMilitaryCampaignsInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
@@ -46,26 +95,22 @@ func TestListMilitaryCampaignsHandler_MapsFields(t *testing.T) {
 }
 
 func TestListMilitaryCampaignsHandler_PropagatesError(t *testing.T) {
-	orig := listMilitaryCampaigns
-	t.Cleanup(func() { listMilitaryCampaigns = orig })
-	listMilitaryCampaigns = func(ctx context.Context, userAgent string) ([]esiapi.MilitaryCampaignsDetailCampaign, error) {
+	listMilitaryCampaignsFake := fakeMilitaryCampaignsESI(func(ctx context.Context) ([]esiapi.MilitaryCampaignsDetailCampaign, error) {
 		return nil, errors.New("boom")
-	}
-	if _, _, err := listMilitaryCampaignsHandler("v1")(context.Background(), nil, ListMilitaryCampaignsInput{}); err == nil {
+	})
+	if _, _, err := listMilitaryCampaignsHandler(openMilitaryCampaignsPubFake[militaryCampaignsESI](listMilitaryCampaignsFake))(context.Background(), nil, ListMilitaryCampaignsInput{}); err == nil {
 		t.Fatal("handler returned nil error, want propagated error")
 	}
 }
 
 func TestGetMilitaryCampaignHandler_MapsFields(t *testing.T) {
-	orig := getMilitaryCampaign
-	t.Cleanup(func() { getMilitaryCampaign = orig })
 	var gotID string
-	getMilitaryCampaign = func(ctx context.Context, userAgent, campaignID string) (*esiapi.MilitaryCampaignsDetail, error) {
+	getMilitaryCampaignFake := fakeMilitaryCampaignDetailESI(func(ctx context.Context, campaignID string) (*esiapi.MilitaryCampaignsDetail, error) {
 		gotID = campaignID
 		return &esiapi.MilitaryCampaignsDetail{Id: campaignID, State: "Completed", Progress: 30}, nil
-	}
+	})
 
-	_, out, err := getMilitaryCampaignHandler("v1")(context.Background(), nil, GetMilitaryCampaignInput{CampaignID: "camp-1"})
+	_, out, err := getMilitaryCampaignHandler(openMilitaryCampaignsPubFake[militaryCampaignDetailESI](getMilitaryCampaignFake))(context.Background(), nil, GetMilitaryCampaignInput{CampaignID: "camp-1"})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
@@ -75,21 +120,19 @@ func TestGetMilitaryCampaignHandler_MapsFields(t *testing.T) {
 }
 
 func TestListMilitaryCampaignObjectivesHandler_MapsFieldsAndCursor(t *testing.T) {
-	orig := listMilitaryCampaignObjectives
-	t.Cleanup(func() { listMilitaryCampaignObjectives = orig })
 	var gotAfter, gotBefore string
 	var gotLimit int64
 	lastModified := time.Unix(1000, 0)
 	next := "next-cursor"
-	listMilitaryCampaignObjectives = func(ctx context.Context, userAgent, campaignID, after, before string, limit int64) ([]esiapi.MilitaryCampaignsObjectivesDetailObjective, *esiapi.Cursor, error) {
+	listMilitaryCampaignObjectivesFake := fakeMilitaryCampaignObjectivesESI(func(ctx context.Context, campaignID, after, before string, limit int64) ([]esiapi.MilitaryCampaignsObjectivesDetailObjective, *esiapi.Cursor, error) {
 		gotAfter, gotBefore, gotLimit = after, before, limit
 		return []esiapi.MilitaryCampaignsObjectivesDetailObjective{{
 			Id: "obj-1", State: "Active", Progress: 48700, LastModified: lastModified,
 			Participants: esiapi.MilitaryCampaignsObjectivesDetailParticipants{Total: 667, Committed: 585, Contributors: 59},
 		}}, &esiapi.Cursor{After: &next}, nil
-	}
+	})
 
-	_, out, err := listMilitaryCampaignObjectivesHandler("v1")(context.Background(), nil, ListMilitaryCampaignObjectivesInput{CampaignID: "camp-1", After: "a", Limit: 20})
+	_, out, err := listMilitaryCampaignObjectivesHandler(openMilitaryCampaignsPubFake[militaryCampaignObjectivesESI](listMilitaryCampaignObjectivesFake))(context.Background(), nil, ListMilitaryCampaignObjectivesInput{CampaignID: "camp-1", After: "a", Limit: 20})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
@@ -109,16 +152,14 @@ func TestListMilitaryCampaignObjectivesHandler_MapsFieldsAndCursor(t *testing.T)
 }
 
 func TestGetMilitaryCampaignObjectiveHandler_MapsFields(t *testing.T) {
-	orig := getMilitaryCampaignObjective
-	t.Cleanup(func() { getMilitaryCampaignObjective = orig })
-	getMilitaryCampaignObjective = func(ctx context.Context, userAgent, campaignID, objectiveID string) (*esiapi.MilitaryCampaignsObjectivesDetail, error) {
+	getMilitaryCampaignObjectiveFake := fakeMilitaryCampaignObjectiveDetailESI(func(ctx context.Context, campaignID, objectiveID string) (*esiapi.MilitaryCampaignsObjectivesDetail, error) {
 		return &esiapi.MilitaryCampaignsObjectivesDetail{
 			Id: objectiveID, State: "Completed", Progress: 100,
 			Participants: esiapi.MilitaryCampaignsObjectivesDetailParticipants{Total: 10, Contributors: 8},
 		}, nil
-	}
+	})
 
-	_, out, err := getMilitaryCampaignObjectiveHandler("v1")(context.Background(), nil, GetMilitaryCampaignObjectiveInput{CampaignID: "camp-1", ObjectiveID: "obj-1"})
+	_, out, err := getMilitaryCampaignObjectiveHandler(openMilitaryCampaignsPubFake[militaryCampaignObjectiveDetailESI](getMilitaryCampaignObjectiveFake))(context.Background(), nil, GetMilitaryCampaignObjectiveInput{CampaignID: "camp-1", ObjectiveID: "obj-1"})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
@@ -129,13 +170,11 @@ func TestGetMilitaryCampaignObjectiveHandler_MapsFields(t *testing.T) {
 
 func TestListCharacterMilitaryCampaignObjectivesHandler_MapsFields(t *testing.T) {
 	store := storeWithCharacter(t)
-	orig := listCharacterMilitaryCampaignObjectives
-	t.Cleanup(func() { listCharacterMilitaryCampaignObjectives = orig })
-	listCharacterMilitaryCampaignObjectives = func(ctx context.Context, clientID string, characterID int32, userAgent, after, before string, limit int64) ([]esiapi.CharactersMilitaryCampaignsObjectivesParticipationCharacterobjective, *esiapi.Cursor, error) {
+	listCharacterMilitaryCampaignObjectivesFake := fakeCharacterMilitaryCampaignObjectivesESI(func(ctx context.Context, after, before string, limit int64) ([]esiapi.CharactersMilitaryCampaignsObjectivesParticipationCharacterobjective, *esiapi.Cursor, error) {
 		return []esiapi.CharactersMilitaryCampaignsObjectivesParticipationCharacterobjective{{Id: "obj-1", CampaignId: "camp-1", Contributed: 42, IsCommitted: true}}, nil, nil
-	}
+	})
 
-	_, out, err := listCharacterMilitaryCampaignObjectivesHandler("v1", "client-id", store)(context.Background(), nil, ListCharacterMilitaryCampaignObjectivesInput{CharacterID: 7})
+	_, out, err := listCharacterMilitaryCampaignObjectivesHandler(openMilitaryCampaignsFake[characterMilitaryCampaignObjectivesESI](listCharacterMilitaryCampaignObjectivesFake), store)(context.Background(), nil, ListCharacterMilitaryCampaignObjectivesInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
@@ -153,14 +192,12 @@ func TestListCharacterMilitaryCampaignObjectivesHandler_MapsFields(t *testing.T)
 func TestListCharacterMilitaryCampaignObjectivesHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
-	orig := listCharacterMilitaryCampaignObjectives
-	t.Cleanup(func() { listCharacterMilitaryCampaignObjectives = orig })
-	listCharacterMilitaryCampaignObjectives = func(ctx context.Context, clientID string, characterID int32, userAgent, after, before string, limit int64) ([]esiapi.CharactersMilitaryCampaignsObjectivesParticipationCharacterobjective, *esiapi.Cursor, error) {
+	listCharacterMilitaryCampaignObjectivesFake := fakeCharacterMilitaryCampaignObjectivesESI(func(ctx context.Context, after, before string, limit int64) ([]esiapi.CharactersMilitaryCampaignsObjectivesParticipationCharacterobjective, *esiapi.Cursor, error) {
 		t.Fatal("listCharacterMilitaryCampaignObjectives should not be called for an unknown character")
 		return nil, nil, nil
-	}
+	})
 
-	_, _, err := listCharacterMilitaryCampaignObjectivesHandler("v1", "client-id", store)(context.Background(), nil, ListCharacterMilitaryCampaignObjectivesInput{CharacterID: 999})
+	_, _, err := listCharacterMilitaryCampaignObjectivesHandler(openMilitaryCampaignsFake[characterMilitaryCampaignObjectivesESI](listCharacterMilitaryCampaignObjectivesFake), store)(context.Background(), nil, ListCharacterMilitaryCampaignObjectivesInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
 	}
@@ -168,13 +205,11 @@ func TestListCharacterMilitaryCampaignObjectivesHandler_UnknownCharacter(t *test
 
 func TestGetCharacterMilitaryCampaignObjectiveParticipationHandler_MapsFields(t *testing.T) {
 	store := storeWithCharacter(t)
-	orig := getCharacterMilitaryCampaignObjectiveParticipation
-	t.Cleanup(func() { getCharacterMilitaryCampaignObjectiveParticipation = orig })
-	getCharacterMilitaryCampaignObjectiveParticipation = func(ctx context.Context, clientID string, characterID int32, userAgent, objectiveID string) (*esiapi.CharactersMilitaryCampaignsObjectivesParticipation, error) {
+	getCharacterMilitaryCampaignObjectiveParticipationFake := fakeCharacterMilitaryCampaignObjectiveParticipationESI(func(ctx context.Context, objectiveID string) (*esiapi.CharactersMilitaryCampaignsObjectivesParticipation, error) {
 		return &esiapi.CharactersMilitaryCampaignsObjectivesParticipation{Id: objectiveID, CampaignId: "camp-1", Contributed: 5}, nil
-	}
+	})
 
-	_, out, err := getCharacterMilitaryCampaignObjectiveParticipationHandler("v1", "client-id", store)(context.Background(), nil, GetCharacterMilitaryCampaignObjectiveParticipationInput{CharacterID: 7, ObjectiveID: "obj-1"})
+	_, out, err := getCharacterMilitaryCampaignObjectiveParticipationHandler(openMilitaryCampaignsFake[characterMilitaryCampaignObjectiveParticipationESI](getCharacterMilitaryCampaignObjectiveParticipationFake), store)(context.Background(), nil, GetCharacterMilitaryCampaignObjectiveParticipationInput{CharacterID: 7, ObjectiveID: "obj-1"})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
@@ -185,12 +220,37 @@ func TestGetCharacterMilitaryCampaignObjectiveParticipationHandler_MapsFields(t 
 
 func TestGetCharacterMilitaryCampaignObjectiveParticipationHandler_PropagatesError(t *testing.T) {
 	store := storeWithCharacter(t)
-	orig := getCharacterMilitaryCampaignObjectiveParticipation
-	t.Cleanup(func() { getCharacterMilitaryCampaignObjectiveParticipation = orig })
-	getCharacterMilitaryCampaignObjectiveParticipation = func(ctx context.Context, clientID string, characterID int32, userAgent, objectiveID string) (*esiapi.CharactersMilitaryCampaignsObjectivesParticipation, error) {
+	getCharacterMilitaryCampaignObjectiveParticipationFake := fakeCharacterMilitaryCampaignObjectiveParticipationESI(func(ctx context.Context, objectiveID string) (*esiapi.CharactersMilitaryCampaignsObjectivesParticipation, error) {
 		return nil, errors.New("boom")
-	}
-	if _, _, err := getCharacterMilitaryCampaignObjectiveParticipationHandler("v1", "client-id", store)(context.Background(), nil, GetCharacterMilitaryCampaignObjectiveParticipationInput{CharacterID: 7, ObjectiveID: "obj-1"}); err == nil {
+	})
+	if _, _, err := getCharacterMilitaryCampaignObjectiveParticipationHandler(openMilitaryCampaignsFake[characterMilitaryCampaignObjectiveParticipationESI](getCharacterMilitaryCampaignObjectiveParticipationFake), store)(context.Background(), nil, GetCharacterMilitaryCampaignObjectiveParticipationInput{CharacterID: 7, ObjectiveID: "obj-1"}); err == nil {
 		t.Fatal("handler returned nil error, want propagated error")
+	}
+}
+
+// TestMilitaryCampaignsPrivateHandlers_PropagateOpenError checks the authenticated handlers report a failed ESI client build,
+// wrapped so errors.Is still finds the cause.
+func TestMilitaryCampaignsPrivateHandlers_PropagateOpenError(t *testing.T) {
+	store := storeWithCharacter(t)
+	ctx := context.Background()
+	errOpen := errors.New("open failed")
+
+	for name, call := range map[string]func() error{
+		"list_character_military_campaign_objectives": func() error {
+			open := func(context.Context, int32) (characterMilitaryCampaignObjectivesESI, error) { return nil, errOpen }
+			_, _, err := listCharacterMilitaryCampaignObjectivesHandler(open, store)(ctx, nil, ListCharacterMilitaryCampaignObjectivesInput{CharacterID: 7})
+			return err
+		},
+		"get_character_military_campaign_objective_participation": func() error {
+			open := func(context.Context, int32) (characterMilitaryCampaignObjectiveParticipationESI, error) {
+				return nil, errOpen
+			}
+			_, _, err := getCharacterMilitaryCampaignObjectiveParticipationHandler(open, store)(ctx, nil, GetCharacterMilitaryCampaignObjectiveParticipationInput{CharacterID: 7, ObjectiveID: "o"})
+			return err
+		},
+	} {
+		if err := call(); !errors.Is(err, errOpen) {
+			t.Errorf("%s: err = %v, want wrapping errOpen", name, err)
+		}
 	}
 }

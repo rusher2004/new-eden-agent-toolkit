@@ -220,36 +220,6 @@ func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
 	}, removeCharacterHandler(store))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_wallet_balance",
-		Description: "Get a logged-in EVE Online character's current ISK wallet balance.",
-	}, getWalletBalanceHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_character_wallet_journal",
-		Description: "List a logged-in EVE Online character's wallet journal entries (ISK gains/losses with reasons), paginated.",
-	}, listCharacterWalletJournalHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_character_wallet_transactions",
-		Description: "List a logged-in EVE Online character's market wallet transactions (buys/sells), newest first.",
-	}, listCharacterWalletTransactionsHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_corporation_wallets",
-		Description: "List a corporation's wallet division balances, using a logged-in character's roles to authorize.",
-	}, listCorporationWalletsHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_corporation_wallet_journal",
-		Description: "List a corporation wallet division's journal entries, using a logged-in character's roles to authorize.",
-	}, listCorporationWalletJournalHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_corporation_wallet_transactions",
-		Description: "List a corporation wallet division's market transactions, using a logged-in character's roles to authorize.",
-	}, listCorporationWalletTransactionsHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_access_lists",
 		Description: "List a logged-in EVE Online character's structure/fleet access list IDs.",
 	}, listAccessListsHandler(version, clientID, store))
@@ -715,36 +685,6 @@ func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
 	}, listFwWarsHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_character_freelance_jobs",
-		Description: "List a logged-in EVE Online character's freelance jobs.",
-	}, listCharacterFreelanceJobsHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_character_freelance_job_participation",
-		Description: "Get a logged-in character's contribution to a freelance job.",
-	}, getCharacterFreelanceJobParticipationHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_corporation_freelance_jobs",
-		Description: "List a corporation's freelance jobs, using a logged-in character's roles to authorize.",
-	}, listCorporationFreelanceJobsHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_corporation_freelance_job_participants",
-		Description: "List the participants in a corporation's freelance job, using a logged-in character's roles to authorize.",
-	}, listCorporationFreelanceJobParticipantsHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_freelance_job",
-		Description: "Get the full details of a freelance job (public data, no character required).",
-	}, getFreelanceJobHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_freelance_jobs",
-		Description: "List freelance jobs game-wide, optionally filtered by corporation (public data, no character required).",
-	}, listFreelanceJobsHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_incursions",
 		Description: "List every currently active incursion (public data, no character required).",
 	}, listIncursionsHandler(version, sdeStore))
@@ -1138,97 +1078,6 @@ func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
 		Name:        "resolve_universe_names",
 		Description: "Resolve a list of IDs to their names and categories. Accepts 1-1000 IDs per call (public data, no character required).",
 	}, resolveUniverseNamesHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_wars",
-		Description: "List war IDs, optionally only those older than a given war ID (public data, no character required).",
-	}, listWarsHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_war",
-		Description: "Get a war's aggressor/defender/allies, declared/started/retracted/finished times, and mutual/open-for-allies flags (public data, no character required).",
-	}, getWarHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_war_killmails",
-		Description: "List killmail references for a war, paginated (public data, no character required).",
-	}, listWarKillmailsHandler(version))
-
-	// Military Campaigns (37th ESI tag; unblocked by goesi-openapi v0.0.42).
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_military_campaigns",
-		Description: "List EVE Online military campaigns with their state, progress, and start/finish times (public data, no character required).",
-	}, listMilitaryCampaignsHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_military_campaign",
-		Description: "Get one military campaign's state, progress, and start/finish times (public data, no character required).",
-	}, getMilitaryCampaignHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_military_campaign_objectives",
-		Description: "List a military campaign's objectives with progress and participant counts, cursor-paginated (public data, no character required).",
-	}, listMilitaryCampaignObjectivesHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_military_campaign_objective",
-		Description: "Get one military campaign objective's state, progress, and participant counts (public data, no character required).",
-	}, getMilitaryCampaignObjectiveHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_character_military_campaign_objectives",
-		Description: "List the military campaign objectives a logged-in character has participated in, with contribution and commitment, cursor-paginated.",
-	}, listCharacterMilitaryCampaignObjectivesHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_character_military_campaign_objective_participation",
-		Description: "Get a logged-in character's contribution to and commitment status in one military campaign objective.",
-	}, getCharacterMilitaryCampaignObjectiveParticipationHandler(version, clientID, store))
-
-	// Cosmetics.
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_character_skinr_licenses",
-		Description: "List the SKINR (ship skin) licenses a logged-in character owns, with activated/unactivated counts.",
-	}, listCharacterSkinrLicensesHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_character_skinr_component_licenses",
-		Description: "List the SKINR component licenses (nanocoatings, patterns) a logged-in character owns, with names and remaining runs.",
-	}, listCharacterSkinrComponentLicensesHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_skinr",
-		Description: "Get a SKINR's full design: ship type, tier, and each cosmetic slot's nanocoating or pattern, with names (public data, no character required).",
-	}, getSkinrHandler(version, sdeStore))
-
-	// Paragon Hub.
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_paragon_hub_skinr_listings",
-		Description: "Browse the SKINR listings publicly available on the Paragon Hub, with ISK or PLEX prices, cursor-paginated (public data, no character required).",
-	}, listParagonHubSkinrListingsHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_character_paragon_hub_skinr_listings",
-		Description: "List the SKINR listings a logged-in character has posted on the Paragon Hub, including who each targets, cursor-paginated.",
-	}, listCharacterParagonHubSkinrListingsHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_paragon_hub_skinr_listings_for_alliance",
-		Description: "Browse the Paragon Hub SKINR listings visible to an alliance, using a logged-in character to authorize, cursor-paginated.",
-	}, listParagonHubSkinrListingsForAllianceHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_paragon_hub_skinr_listings_for_corporation",
-		Description: "Browse the Paragon Hub SKINR listings visible to a corporation, using a logged-in character to authorize, cursor-paginated.",
-	}, listParagonHubSkinrListingsForCorporationHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_paragon_hub_skinr_listings_for_character",
-		Description: "Browse the Paragon Hub SKINR listings visible to a logged-in character (listings other sellers targeted at it), cursor-paginated.",
-	}, listParagonHubSkinrListingsForCharacterHandler(version, clientID, store))
 
 	registerNavigationTools(server, version, clientID, store, sdeStore)
 	registerStructureTools(server, version, clientID, store, sdeStore)

@@ -8,9 +8,6 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
-
-	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
 // --- shared types ---
@@ -93,8 +90,9 @@ func nextCursor(c *esiapi.Cursor) (after, before *string) {
 
 // --- list_paragon_hub_skinr_listings (public, cursor-paginated) ---
 
-var listParagonHubSkinrListings = func(ctx context.Context, userAgent, after, before string, limit int64) ([]esiapi.ParagonHubSkinrInternalItem, *esiapi.Cursor, error) {
-	return esi.NewPublicClient(userAgent).ParagonHubSkinrListings(ctx, after, before, limit)
+// paragonHubSkinrListingsESI is the ESI call list_paragon_hub_skinr_listings makes.
+type paragonHubSkinrListingsESI interface {
+	ParagonHubSkinrListings(ctx context.Context, after, before string, limit int64) ([]esiapi.ParagonHubSkinrInternalItem, *esiapi.Cursor, error)
 }
 
 type ListParagonHubSkinrListingsInput struct {
@@ -104,9 +102,19 @@ type ListParagonHubSkinrListingsInput struct {
 }
 type ListParagonHubSkinrListingsOutput = SkinrListingsPage
 
-func listParagonHubSkinrListingsHandler(version string) mcpsdk.ToolHandlerFor[ListParagonHubSkinrListingsInput, ListParagonHubSkinrListingsOutput] {
+// AddListParagonHubSkinrListings registers list_paragon_hub_skinr_listings. open builds the ESI client; any client with the
+// paragonHubSkinrListingsESI methods will do.
+func AddListParagonHubSkinrListings[C paragonHubSkinrListingsESI](s *mcpsdk.Server, open func() C) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_paragon_hub_skinr_listings",
+		Description: "Browse the SKINR listings publicly available on the Paragon Hub, with ISK or PLEX prices, cursor-paginated (public data, no character required).",
+	}, listParagonHubSkinrListingsHandler(open))
+}
+
+func listParagonHubSkinrListingsHandler[C paragonHubSkinrListingsESI](open func() C) mcpsdk.ToolHandlerFor[ListParagonHubSkinrListingsInput, ListParagonHubSkinrListingsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListParagonHubSkinrListingsInput) (*mcpsdk.CallToolResult, ListParagonHubSkinrListingsOutput, error) {
-		items, cursor, err := listParagonHubSkinrListings(ctx, sso.UserAgent(version), in.After, in.Before, in.Limit)
+		client := open()
+		items, cursor, err := client.ParagonHubSkinrListings(ctx, in.After, in.Before, in.Limit)
 		if err != nil {
 			return nil, ListParagonHubSkinrListingsOutput{}, fmt.Errorf("list paragon hub skinr listings: %w", err)
 		}
@@ -118,12 +126,9 @@ func listParagonHubSkinrListingsHandler(version string) mcpsdk.ToolHandlerFor[Li
 
 // --- list_character_paragon_hub_skinr_listings (private, cursor-paginated) ---
 
-var listCharacterParagonHubSkinrListings = func(ctx context.Context, clientID string, characterID int32, userAgent, after, before string, limit int64) ([]esiapi.CharactersParagonHubSkinrItem, *esiapi.Cursor, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, nil, fmt.Errorf("build ESI client: %w", err)
-	}
-	return client.CharacterParagonHubSkinrListings(ctx, after, before, limit)
+// characterParagonHubSkinrListingsESI is the ESI call list_character_paragon_hub_skinr_listings makes.
+type characterParagonHubSkinrListingsESI interface {
+	CharacterParagonHubSkinrListings(ctx context.Context, after, before string, limit int64) ([]esiapi.CharactersParagonHubSkinrItem, *esiapi.Cursor, error)
 }
 
 type ListCharacterParagonHubSkinrListingsInput struct {
@@ -139,7 +144,16 @@ type ListCharacterParagonHubSkinrListingsOutput struct {
 	NextBefore  *string        `json:"nextBefore,omitempty"`
 }
 
-func listCharacterParagonHubSkinrListingsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCharacterParagonHubSkinrListingsInput, ListCharacterParagonHubSkinrListingsOutput] {
+// AddListCharacterParagonHubSkinrListings registers list_character_paragon_hub_skinr_listings. open builds the ESI client; any client with the
+// characterParagonHubSkinrListingsESI methods will do.
+func AddListCharacterParagonHubSkinrListings[C characterParagonHubSkinrListingsESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_character_paragon_hub_skinr_listings",
+		Description: "List the SKINR listings a logged-in character has posted on the Paragon Hub, including who each targets, cursor-paginated.",
+	}, listCharacterParagonHubSkinrListingsHandler(open, store))
+}
+
+func listCharacterParagonHubSkinrListingsHandler[C characterParagonHubSkinrListingsESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListCharacterParagonHubSkinrListingsInput, ListCharacterParagonHubSkinrListingsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterParagonHubSkinrListingsInput) (*mcpsdk.CallToolResult, ListCharacterParagonHubSkinrListingsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -148,7 +162,11 @@ func listCharacterParagonHubSkinrListingsHandler(version, clientID string, store
 		if !found {
 			return nil, ListCharacterParagonHubSkinrListingsOutput{}, fmt.Errorf("list character paragon hub skinr listings for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		items, cursor, err := listCharacterParagonHubSkinrListings(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.After, in.Before, in.Limit)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCharacterParagonHubSkinrListingsOutput{}, fmt.Errorf("build ESI client: %w", err)
+		}
+		items, cursor, err := client.CharacterParagonHubSkinrListings(ctx, in.After, in.Before, in.Limit)
 		if err != nil {
 			return nil, ListCharacterParagonHubSkinrListingsOutput{}, fmt.Errorf("list character paragon hub skinr listings: %w", err)
 		}
@@ -167,12 +185,9 @@ func listCharacterParagonHubSkinrListingsHandler(version, clientID string, store
 
 // --- list_paragon_hub_skinr_listings_for_alliance (private, cursor-paginated) ---
 
-var listParagonHubSkinrListingsForAlliance = func(ctx context.Context, clientID string, characterID int32, userAgent string, allianceID int64, after, before string, limit int64) ([]esiapi.ParagonHubSkinrInternalItem, *esiapi.Cursor, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, nil, fmt.Errorf("build ESI client: %w", err)
-	}
-	return client.ParagonHubSkinrListingsForAlliance(ctx, allianceID, after, before, limit)
+// paragonHubSkinrListingsForAllianceESI is the ESI call list_paragon_hub_skinr_listings_for_alliance makes.
+type paragonHubSkinrListingsForAllianceESI interface {
+	ParagonHubSkinrListingsForAlliance(ctx context.Context, allianceID int64, after, before string, limit int64) ([]esiapi.ParagonHubSkinrInternalItem, *esiapi.Cursor, error)
 }
 
 type ListParagonHubSkinrListingsForAllianceInput struct {
@@ -190,7 +205,16 @@ type ListParagonHubSkinrListingsForAllianceOutput struct {
 	NextBefore  *string        `json:"nextBefore,omitempty"`
 }
 
-func listParagonHubSkinrListingsForAllianceHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListParagonHubSkinrListingsForAllianceInput, ListParagonHubSkinrListingsForAllianceOutput] {
+// AddListParagonHubSkinrListingsForAlliance registers list_paragon_hub_skinr_listings_for_alliance. open builds the ESI client; any client with the
+// paragonHubSkinrListingsForAllianceESI methods will do.
+func AddListParagonHubSkinrListingsForAlliance[C paragonHubSkinrListingsForAllianceESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_paragon_hub_skinr_listings_for_alliance",
+		Description: "Browse the Paragon Hub SKINR listings visible to an alliance, using a logged-in character to authorize, cursor-paginated.",
+	}, listParagonHubSkinrListingsForAllianceHandler(open, store))
+}
+
+func listParagonHubSkinrListingsForAllianceHandler[C paragonHubSkinrListingsForAllianceESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListParagonHubSkinrListingsForAllianceInput, ListParagonHubSkinrListingsForAllianceOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListParagonHubSkinrListingsForAllianceInput) (*mcpsdk.CallToolResult, ListParagonHubSkinrListingsForAllianceOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -199,7 +223,11 @@ func listParagonHubSkinrListingsForAllianceHandler(version, clientID string, sto
 		if !found {
 			return nil, ListParagonHubSkinrListingsForAllianceOutput{}, fmt.Errorf("list paragon hub skinr listings for alliance for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		items, cursor, err := listParagonHubSkinrListingsForAlliance(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.AllianceID, in.After, in.Before, in.Limit)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListParagonHubSkinrListingsForAllianceOutput{}, fmt.Errorf("build ESI client: %w", err)
+		}
+		items, cursor, err := client.ParagonHubSkinrListingsForAlliance(ctx, in.AllianceID, in.After, in.Before, in.Limit)
 		if err != nil {
 			return nil, ListParagonHubSkinrListingsForAllianceOutput{}, fmt.Errorf("list paragon hub skinr listings for alliance: %w", err)
 		}
@@ -211,12 +239,9 @@ func listParagonHubSkinrListingsForAllianceHandler(version, clientID string, sto
 
 // --- list_paragon_hub_skinr_listings_for_corporation (private, cursor-paginated) ---
 
-var listParagonHubSkinrListingsForCorporation = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, after, before string, limit int64) ([]esiapi.ParagonHubSkinrInternalItem, *esiapi.Cursor, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, nil, fmt.Errorf("build ESI client: %w", err)
-	}
-	return client.ParagonHubSkinrListingsForCorporation(ctx, corporationID, after, before, limit)
+// paragonHubSkinrListingsForCorporationESI is the ESI call list_paragon_hub_skinr_listings_for_corporation makes.
+type paragonHubSkinrListingsForCorporationESI interface {
+	ParagonHubSkinrListingsForCorporation(ctx context.Context, corporationID int64, after, before string, limit int64) ([]esiapi.ParagonHubSkinrInternalItem, *esiapi.Cursor, error)
 }
 
 type ListParagonHubSkinrListingsForCorporationInput struct {
@@ -234,7 +259,16 @@ type ListParagonHubSkinrListingsForCorporationOutput struct {
 	NextBefore    *string        `json:"nextBefore,omitempty"`
 }
 
-func listParagonHubSkinrListingsForCorporationHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListParagonHubSkinrListingsForCorporationInput, ListParagonHubSkinrListingsForCorporationOutput] {
+// AddListParagonHubSkinrListingsForCorporation registers list_paragon_hub_skinr_listings_for_corporation. open builds the ESI client; any client with the
+// paragonHubSkinrListingsForCorporationESI methods will do.
+func AddListParagonHubSkinrListingsForCorporation[C paragonHubSkinrListingsForCorporationESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_paragon_hub_skinr_listings_for_corporation",
+		Description: "Browse the Paragon Hub SKINR listings visible to a corporation, using a logged-in character to authorize, cursor-paginated.",
+	}, listParagonHubSkinrListingsForCorporationHandler(open, store))
+}
+
+func listParagonHubSkinrListingsForCorporationHandler[C paragonHubSkinrListingsForCorporationESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListParagonHubSkinrListingsForCorporationInput, ListParagonHubSkinrListingsForCorporationOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListParagonHubSkinrListingsForCorporationInput) (*mcpsdk.CallToolResult, ListParagonHubSkinrListingsForCorporationOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -243,7 +277,11 @@ func listParagonHubSkinrListingsForCorporationHandler(version, clientID string, 
 		if !found {
 			return nil, ListParagonHubSkinrListingsForCorporationOutput{}, fmt.Errorf("list paragon hub skinr listings for corporation for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		items, cursor, err := listParagonHubSkinrListingsForCorporation(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.After, in.Before, in.Limit)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListParagonHubSkinrListingsForCorporationOutput{}, fmt.Errorf("build ESI client: %w", err)
+		}
+		items, cursor, err := client.ParagonHubSkinrListingsForCorporation(ctx, in.CorporationID, in.After, in.Before, in.Limit)
 		if err != nil {
 			return nil, ListParagonHubSkinrListingsForCorporationOutput{}, fmt.Errorf("list paragon hub skinr listings for corporation: %w", err)
 		}
@@ -255,12 +293,9 @@ func listParagonHubSkinrListingsForCorporationHandler(version, clientID string, 
 
 // --- list_paragon_hub_skinr_listings_for_character (private, cursor-paginated) ---
 
-var listParagonHubSkinrListingsForCharacter = func(ctx context.Context, clientID string, characterID int32, userAgent, after, before string, limit int64) ([]esiapi.ParagonHubSkinrInternalItem, *esiapi.Cursor, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, nil, fmt.Errorf("build ESI client: %w", err)
-	}
-	return client.ParagonHubSkinrListingsForCharacter(ctx, after, before, limit)
+// paragonHubSkinrListingsForCharacterESI is the ESI call list_paragon_hub_skinr_listings_for_character makes.
+type paragonHubSkinrListingsForCharacterESI interface {
+	ParagonHubSkinrListingsForCharacter(ctx context.Context, after, before string, limit int64) ([]esiapi.ParagonHubSkinrInternalItem, *esiapi.Cursor, error)
 }
 
 type ListParagonHubSkinrListingsForCharacterInput struct {
@@ -276,7 +311,16 @@ type ListParagonHubSkinrListingsForCharacterOutput struct {
 	NextBefore  *string        `json:"nextBefore,omitempty"`
 }
 
-func listParagonHubSkinrListingsForCharacterHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListParagonHubSkinrListingsForCharacterInput, ListParagonHubSkinrListingsForCharacterOutput] {
+// AddListParagonHubSkinrListingsForCharacter registers list_paragon_hub_skinr_listings_for_character. open builds the ESI client; any client with the
+// paragonHubSkinrListingsForCharacterESI methods will do.
+func AddListParagonHubSkinrListingsForCharacter[C paragonHubSkinrListingsForCharacterESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_paragon_hub_skinr_listings_for_character",
+		Description: "Browse the Paragon Hub SKINR listings visible to a logged-in character (listings other sellers targeted at it), cursor-paginated.",
+	}, listParagonHubSkinrListingsForCharacterHandler(open, store))
+}
+
+func listParagonHubSkinrListingsForCharacterHandler[C paragonHubSkinrListingsForCharacterESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListParagonHubSkinrListingsForCharacterInput, ListParagonHubSkinrListingsForCharacterOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListParagonHubSkinrListingsForCharacterInput) (*mcpsdk.CallToolResult, ListParagonHubSkinrListingsForCharacterOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -285,7 +329,11 @@ func listParagonHubSkinrListingsForCharacterHandler(version, clientID string, st
 		if !found {
 			return nil, ListParagonHubSkinrListingsForCharacterOutput{}, fmt.Errorf("list paragon hub skinr listings for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		items, cursor, err := listParagonHubSkinrListingsForCharacter(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.After, in.Before, in.Limit)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListParagonHubSkinrListingsForCharacterOutput{}, fmt.Errorf("build ESI client: %w", err)
+		}
+		items, cursor, err := client.ParagonHubSkinrListingsForCharacter(ctx, in.After, in.Before, in.Limit)
 		if err != nil {
 			return nil, ListParagonHubSkinrListingsForCharacterOutput{}, fmt.Errorf("list paragon hub skinr listings for character: %w", err)
 		}

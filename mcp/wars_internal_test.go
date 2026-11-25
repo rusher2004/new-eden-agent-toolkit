@@ -4,18 +4,39 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 )
+
+// fakeWarsESI fakes the one ESI call list_wars makes.
+type fakeWarsESI func(ctx context.Context, maxWarID int64) ([]int64, error)
+
+func (f fakeWarsESI) Wars(ctx context.Context, maxWarID int64) ([]int64, error) {
+	return f(ctx, maxWarID)
+}
+
+// fakeWarDetailESI fakes the one ESI call get_war makes.
+type fakeWarDetailESI func(ctx context.Context, warID int64) (*esiapi.WarsWarIdGet, error)
+
+func (f fakeWarDetailESI) WarDetail(ctx context.Context, warID int64) (*esiapi.WarsWarIdGet, error) {
+	return f(ctx, warID)
+}
+
+// fakeWarKillmailsESI fakes the one ESI call list_war_killmails makes.
+type fakeWarKillmailsESI func(ctx context.Context, warID int64, page int32) ([]esiapi.CharactersCharacterIdKillmailsRecentGetInner, int32, error)
+
+func (f fakeWarKillmailsESI) WarKillmails(ctx context.Context, warID int64, page int32) ([]esiapi.CharactersCharacterIdKillmailsRecentGetInner, int32, error) {
+	return f(ctx, warID, page)
+}
 
 // --- list_wars ---
 
 func TestListWarsHandler_MapsFields(t *testing.T) {
-	orig := listWars
-	t.Cleanup(func() { listWars = orig })
-	listWars = func(ctx context.Context, userAgent string, maxWarID int64) ([]int64, error) {
+	fake := fakeWarsESI(func(ctx context.Context, maxWarID int64) ([]int64, error) {
 		return []int64{5000, 5001}, nil
-	}
+	})
 
-	handler := listWarsHandler("v1")
+	handler := listWarsHandler(func() warsESI { return fake })
 	_, out, err := handler(context.Background(), nil, ListWarsInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -26,14 +47,12 @@ func TestListWarsHandler_MapsFields(t *testing.T) {
 }
 
 func TestListWarsHandler_PropagatesError(t *testing.T) {
-	orig := listWars
-	t.Cleanup(func() { listWars = orig })
 	wantErr := errors.New("upstream failure")
-	listWars = func(ctx context.Context, userAgent string, maxWarID int64) ([]int64, error) {
+	fake := fakeWarsESI(func(ctx context.Context, maxWarID int64) ([]int64, error) {
 		return nil, wantErr
-	}
+	})
 
-	handler := listWarsHandler("v1")
+	handler := listWarsHandler(func() warsESI { return fake })
 	_, _, err := handler(context.Background(), nil, ListWarsInput{})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -43,26 +62,24 @@ func TestListWarsHandler_PropagatesError(t *testing.T) {
 // --- get_war ---
 
 func TestGetWarHandler_MapsFields_AllianceAndCorporationParties(t *testing.T) {
-	orig := getWar
-	t.Cleanup(func() { getWar = orig })
 	aggressorAllianceID := int64(99000001)
 	defenderCorpID := int64(98000001)
 	allyAllianceID := int64(99000002)
 	allyCorpID := int64(98000002)
-	getWar = func(ctx context.Context, userAgent string, warID int64) (War, error) {
-		return War{
-			WarID:     5000,
-			Aggressor: WarParty{AllianceID: &aggressorAllianceID, IskDestroyed: 1000000, ShipsKilled: 5},
-			Defender:  WarParty{CorporationID: &defenderCorpID, IskDestroyed: 500000, ShipsKilled: 2},
-			Allies: []WarAlly{
-				{AllianceID: &allyAllianceID},
-				{CorporationID: &allyCorpID},
+	fake := fakeWarDetailESI(func(ctx context.Context, warID int64) (*esiapi.WarsWarIdGet, error) {
+		return &esiapi.WarsWarIdGet{
+			Id:        5000,
+			Aggressor: esiapi.WarsWarIdGetAggressor{AllianceId: &aggressorAllianceID, IskDestroyed: 1000000, ShipsKilled: 5},
+			Defender:  esiapi.WarsWarIdGetDefender{CorporationId: &defenderCorpID, IskDestroyed: 500000, ShipsKilled: 2},
+			Allies: []esiapi.WarsWarIdGetAlliesInner{
+				{AllianceId: &allyAllianceID},
+				{CorporationId: &allyCorpID},
 			},
 			Mutual: false, OpenForAllies: true,
 		}, nil
-	}
+	})
 
-	handler := getWarHandler("v1")
+	handler := getWarHandler(func() warDetailESI { return fake })
 	_, out, err := handler(context.Background(), nil, GetWarInput{WarID: 5000})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -72,6 +89,9 @@ func TestGetWarHandler_MapsFields_AllianceAndCorporationParties(t *testing.T) {
 	}
 	if out.Aggressor.AllianceID == nil || *out.Aggressor.AllianceID != 99000001 || out.Aggressor.CorporationID != nil {
 		t.Errorf("Aggressor = %+v, want AllianceID=99000001 CorporationID=nil", out.Aggressor)
+	}
+	if out.Aggressor.IskDestroyed != 1000000 || out.Aggressor.ShipsKilled != 5 {
+		t.Errorf("Aggressor = %+v, want IskDestroyed=1000000 ShipsKilled=5", out.Aggressor)
 	}
 	if out.Defender.CorporationID == nil || *out.Defender.CorporationID != 98000001 || out.Defender.AllianceID != nil {
 		t.Errorf("Defender = %+v, want CorporationID=98000001 AllianceID=nil", out.Defender)
@@ -88,14 +108,12 @@ func TestGetWarHandler_MapsFields_AllianceAndCorporationParties(t *testing.T) {
 }
 
 func TestGetWarHandler_PropagatesError(t *testing.T) {
-	orig := getWar
-	t.Cleanup(func() { getWar = orig })
 	wantErr := errors.New("upstream failure")
-	getWar = func(ctx context.Context, userAgent string, warID int64) (War, error) {
-		return War{}, wantErr
-	}
+	fake := fakeWarDetailESI(func(ctx context.Context, warID int64) (*esiapi.WarsWarIdGet, error) {
+		return nil, wantErr
+	})
 
-	handler := getWarHandler("v1")
+	handler := getWarHandler(func() warDetailESI { return fake })
 	_, _, err := handler(context.Background(), nil, GetWarInput{WarID: 5000})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -104,31 +122,29 @@ func TestGetWarHandler_PropagatesError(t *testing.T) {
 
 // --- list_war_killmails ---
 
-func TestListWarKillmailsHandler_MapsFields(t *testing.T) {
-	orig := listWarKillmails
-	t.Cleanup(func() { listWarKillmails = orig })
-	listWarKillmails = func(ctx context.Context, userAgent string, warID int64, page int32) ([]KillmailRef, int32, error) {
-		return []KillmailRef{{KillmailID: 90000001, KillmailHash: "abc123"}}, 2, nil
+func oneWarKillmail() fakeWarKillmailsESI {
+	return func(ctx context.Context, warID int64, page int32) ([]esiapi.CharactersCharacterIdKillmailsRecentGetInner, int32, error) {
+		return []esiapi.CharactersCharacterIdKillmailsRecentGetInner{{KillmailId: 90000001, KillmailHash: "abc123"}}, 2, nil
 	}
+}
 
-	handler := listWarKillmailsHandler("v1")
+func TestListWarKillmailsHandler_MapsFields(t *testing.T) {
+	fake := oneWarKillmail()
+
+	handler := listWarKillmailsHandler(func() warKillmailsESI { return fake })
 	_, out, err := handler(context.Background(), nil, ListWarKillmailsInput{WarID: 5000, Page: 1})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
-	if len(out.Killmails) != 1 || out.Killmails[0].KillmailID != 90000001 || out.Page != 1 || out.TotalPages != 2 {
+	if len(out.Killmails) != 1 || out.Killmails[0].KillmailID != 90000001 || out.Killmails[0].KillmailHash != "abc123" || out.Page != 1 || out.TotalPages != 2 {
 		t.Errorf("out = %+v, want one killmail KillmailID=90000001 Page=1 TotalPages=2", out)
 	}
 }
 
 func TestListWarKillmailsHandler_DefaultsPageToOne(t *testing.T) {
-	orig := listWarKillmails
-	t.Cleanup(func() { listWarKillmails = orig })
-	listWarKillmails = func(ctx context.Context, userAgent string, warID int64, page int32) ([]KillmailRef, int32, error) {
-		return []KillmailRef{{KillmailID: 90000001, KillmailHash: "abc123"}}, 2, nil
-	}
+	fake := oneWarKillmail()
 
-	handler := listWarKillmailsHandler("v1")
+	handler := listWarKillmailsHandler(func() warKillmailsESI { return fake })
 	_, out, err := handler(context.Background(), nil, ListWarKillmailsInput{WarID: 5000})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -142,13 +158,9 @@ func TestListWarKillmailsHandler_DefaultsPageToOne(t *testing.T) {
 // tool in this package: the echoed page number used to only guard against page==0, so a negative
 // input page was echoed back verbatim instead of being normalized.
 func TestListWarKillmailsHandler_NormalizesNegativePageToOne(t *testing.T) {
-	orig := listWarKillmails
-	t.Cleanup(func() { listWarKillmails = orig })
-	listWarKillmails = func(ctx context.Context, userAgent string, warID int64, page int32) ([]KillmailRef, int32, error) {
-		return []KillmailRef{{KillmailID: 90000001, KillmailHash: "abc123"}}, 2, nil
-	}
+	fake := oneWarKillmail()
 
-	handler := listWarKillmailsHandler("v1")
+	handler := listWarKillmailsHandler(func() warKillmailsESI { return fake })
 	_, out, err := handler(context.Background(), nil, ListWarKillmailsInput{WarID: 5000, Page: -5})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -159,14 +171,12 @@ func TestListWarKillmailsHandler_NormalizesNegativePageToOne(t *testing.T) {
 }
 
 func TestListWarKillmailsHandler_PropagatesError(t *testing.T) {
-	orig := listWarKillmails
-	t.Cleanup(func() { listWarKillmails = orig })
 	wantErr := errors.New("upstream failure")
-	listWarKillmails = func(ctx context.Context, userAgent string, warID int64, page int32) ([]KillmailRef, int32, error) {
+	fake := fakeWarKillmailsESI(func(ctx context.Context, warID int64, page int32) ([]esiapi.CharactersCharacterIdKillmailsRecentGetInner, int32, error) {
 		return nil, 0, wantErr
-	}
+	})
 
-	handler := listWarKillmailsHandler("v1")
+	handler := listWarKillmailsHandler(func() warKillmailsESI { return fake })
 	_, _, err := handler(context.Background(), nil, ListWarKillmailsInput{WarID: 5000})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)

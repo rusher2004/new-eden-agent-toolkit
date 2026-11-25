@@ -12,18 +12,11 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
-
-	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
-// getWalletBalance is overridable in tests so no real network/auth runs.
-var getWalletBalance = func(ctx context.Context, clientID string, characterID int32, userAgent string) (float64, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return 0, fmt.Errorf("build ESI client: %w", err)
-	}
-	return client.WalletBalance(ctx)
+// walletBalanceESI is the ESI call get_wallet_balance makes.
+type walletBalanceESI interface {
+	WalletBalance(ctx context.Context) (float64, error)
 }
 
 // GetWalletBalanceInput is get_wallet_balance's tool input.
@@ -37,7 +30,16 @@ type GetWalletBalanceOutput struct {
 	BalanceISK  float64 `json:"balanceIsk"`
 }
 
-func getWalletBalanceHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetWalletBalanceInput, GetWalletBalanceOutput] {
+// AddGetWalletBalance registers get_wallet_balance. open builds the ESI client; any client with the
+// walletBalanceESI methods will do.
+func AddGetWalletBalance[C walletBalanceESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_wallet_balance",
+		Description: "Get a logged-in EVE Online character's current ISK wallet balance.",
+	}, getWalletBalanceHandler(open, store))
+}
+
+func getWalletBalanceHandler[C walletBalanceESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[GetWalletBalanceInput, GetWalletBalanceOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetWalletBalanceInput) (*mcpsdk.CallToolResult, GetWalletBalanceOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -54,7 +56,11 @@ func getWalletBalanceHandler(version, clientID string, store ConfigStore) mcpsdk
 			return nil, GetWalletBalanceOutput{}, fmt.Errorf("get wallet balance for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
 
-		balance, err := getWalletBalance(ctx, clientID, in.CharacterID, sso.UserAgent(version))
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, GetWalletBalanceOutput{}, fmt.Errorf("build ESI client: %w", err)
+		}
+		balance, err := client.WalletBalance(ctx)
 		if err != nil {
 			return nil, GetWalletBalanceOutput{}, fmt.Errorf("get wallet balance: %w", err)
 		}
@@ -132,12 +138,9 @@ func toWalletTransactionFromCorporation(t esiapi.CorporationsCorporationIdWallet
 
 // --- list_character_wallet_journal (private, paginated) ---
 
-var listCharacterWalletJournal = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]esiapi.CharactersCharacterIdWalletJournalGetInner, int32, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, 0, fmt.Errorf("build ESI client: %w", err)
-	}
-	return client.CharacterWalletJournal(ctx, page)
+// characterWalletJournalESI is the ESI call list_character_wallet_journal makes.
+type characterWalletJournalESI interface {
+	CharacterWalletJournal(ctx context.Context, page int32) ([]esiapi.CharactersCharacterIdWalletJournalGetInner, int32, error)
 }
 
 type ListCharacterWalletJournalInput struct {
@@ -151,7 +154,16 @@ type ListCharacterWalletJournalOutput struct {
 	Entries     []WalletJournalEntry `json:"entries"`
 }
 
-func listCharacterWalletJournalHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCharacterWalletJournalInput, ListCharacterWalletJournalOutput] {
+// AddListCharacterWalletJournal registers list_character_wallet_journal. open builds the ESI client; any client with the
+// characterWalletJournalESI methods will do.
+func AddListCharacterWalletJournal[C characterWalletJournalESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_character_wallet_journal",
+		Description: "List a logged-in EVE Online character's wallet journal entries (ISK gains/losses with reasons), paginated.",
+	}, listCharacterWalletJournalHandler(open, store))
+}
+
+func listCharacterWalletJournalHandler[C characterWalletJournalESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListCharacterWalletJournalInput, ListCharacterWalletJournalOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterWalletJournalInput) (*mcpsdk.CallToolResult, ListCharacterWalletJournalOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -160,7 +172,11 @@ func listCharacterWalletJournalHandler(version, clientID string, store ConfigSto
 		if !found {
 			return nil, ListCharacterWalletJournalOutput{}, fmt.Errorf("list character wallet journal for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		entries, totalPages, err := listCharacterWalletJournal(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.Page)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCharacterWalletJournalOutput{}, fmt.Errorf("build ESI client: %w", err)
+		}
+		entries, totalPages, err := client.CharacterWalletJournal(ctx, in.Page)
 		if err != nil {
 			return nil, ListCharacterWalletJournalOutput{}, fmt.Errorf("list character wallet journal: %w", err)
 		}
@@ -178,12 +194,9 @@ func listCharacterWalletJournalHandler(version, clientID string, store ConfigSto
 
 // --- list_character_wallet_transactions (private, cursor-paginated) ---
 
-var listCharacterWalletTransactions = func(ctx context.Context, clientID string, characterID int32, userAgent string, fromID int64) ([]esiapi.CharactersCharacterIdWalletTransactionsGetInner, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
-	return client.CharacterWalletTransactions(ctx, fromID)
+// characterWalletTransactionsESI is the ESI call list_character_wallet_transactions makes.
+type characterWalletTransactionsESI interface {
+	CharacterWalletTransactions(ctx context.Context, fromID int64) ([]esiapi.CharactersCharacterIdWalletTransactionsGetInner, error)
 }
 
 type ListCharacterWalletTransactionsInput struct {
@@ -195,7 +208,16 @@ type ListCharacterWalletTransactionsOutput struct {
 	Transactions []WalletTransaction `json:"transactions"`
 }
 
-func listCharacterWalletTransactionsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCharacterWalletTransactionsInput, ListCharacterWalletTransactionsOutput] {
+// AddListCharacterWalletTransactions registers list_character_wallet_transactions. open builds the ESI client; any client with the
+// characterWalletTransactionsESI methods will do.
+func AddListCharacterWalletTransactions[C characterWalletTransactionsESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore typeNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_character_wallet_transactions",
+		Description: "List a logged-in EVE Online character's market wallet transactions (buys/sells), newest first.",
+	}, listCharacterWalletTransactionsHandler(userAgent, open, store, sdeStore))
+}
+
+func listCharacterWalletTransactionsHandler[C characterWalletTransactionsESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore typeNameCache) mcpsdk.ToolHandlerFor[ListCharacterWalletTransactionsInput, ListCharacterWalletTransactionsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterWalletTransactionsInput) (*mcpsdk.CallToolResult, ListCharacterWalletTransactionsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -204,7 +226,11 @@ func listCharacterWalletTransactionsHandler(version, clientID string, store Conf
 		if !found {
 			return nil, ListCharacterWalletTransactionsOutput{}, fmt.Errorf("list character wallet transactions for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		txns, err := listCharacterWalletTransactions(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.FromID)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCharacterWalletTransactionsOutput{}, fmt.Errorf("build ESI client: %w", err)
+		}
+		txns, err := client.CharacterWalletTransactions(ctx, in.FromID)
 		if err != nil {
 			return nil, ListCharacterWalletTransactionsOutput{}, fmt.Errorf("list character wallet transactions: %w", err)
 		}
@@ -216,7 +242,7 @@ func listCharacterWalletTransactionsHandler(version, clientID string, store Conf
 		for i, t := range out {
 			ids[i] = t.TypeID
 		}
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		names := resolveTypeNames(ctx, sdeStore, userAgent, ids)
 		for i := range out {
 			out[i].TypeName = names[out[i].TypeID]
 		}
@@ -231,12 +257,9 @@ type CorporationWalletDivision struct {
 	BalanceISK float64 `json:"balanceIsk"`
 }
 
-var listCorporationWallets = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64) ([]esiapi.CorporationsCorporationIdWalletsGetInner, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
-	return client.CorporationWallets(ctx, corporationID)
+// corporationWalletsESI is the ESI call list_corporation_wallets makes.
+type corporationWalletsESI interface {
+	CorporationWallets(ctx context.Context, corporationID int64) ([]esiapi.CorporationsCorporationIdWalletsGetInner, error)
 }
 
 type ListCorporationWalletsInput struct {
@@ -249,7 +272,16 @@ type ListCorporationWalletsOutput struct {
 	Wallets       []CorporationWalletDivision `json:"wallets"`
 }
 
-func listCorporationWalletsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationWalletsInput, ListCorporationWalletsOutput] {
+// AddListCorporationWallets registers list_corporation_wallets. open builds the ESI client; any client with the
+// corporationWalletsESI methods will do.
+func AddListCorporationWallets[C corporationWalletsESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_corporation_wallets",
+		Description: "List a corporation's wallet division balances, using a logged-in character's roles to authorize.",
+	}, listCorporationWalletsHandler(open, store))
+}
+
+func listCorporationWalletsHandler[C corporationWalletsESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListCorporationWalletsInput, ListCorporationWalletsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationWalletsInput) (*mcpsdk.CallToolResult, ListCorporationWalletsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -258,7 +290,11 @@ func listCorporationWalletsHandler(version, clientID string, store ConfigStore) 
 		if !found {
 			return nil, ListCorporationWalletsOutput{}, fmt.Errorf("list corporation wallets for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		wallets, err := listCorporationWallets(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCorporationWalletsOutput{}, fmt.Errorf("build ESI client: %w", err)
+		}
+		wallets, err := client.CorporationWallets(ctx, in.CorporationID)
 		if err != nil {
 			return nil, ListCorporationWalletsOutput{}, fmt.Errorf("list corporation wallets: %w", err)
 		}
@@ -272,12 +308,9 @@ func listCorporationWalletsHandler(version, clientID string, store ConfigStore) 
 
 // --- list_corporation_wallet_journal (private, corp-scoped, paginated) ---
 
-var listCorporationWalletJournal = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID, division int64, page int32) ([]esiapi.CorporationsCorporationIdWalletsDivisionJournalGetInner, int32, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, 0, fmt.Errorf("build ESI client: %w", err)
-	}
-	return client.CorporationWalletJournal(ctx, corporationID, division, page)
+// corporationWalletJournalESI is the ESI call list_corporation_wallet_journal makes.
+type corporationWalletJournalESI interface {
+	CorporationWalletJournal(ctx context.Context, corporationID, division int64, page int32) ([]esiapi.CorporationsCorporationIdWalletsDivisionJournalGetInner, int32, error)
 }
 
 type ListCorporationWalletJournalInput struct {
@@ -295,7 +328,16 @@ type ListCorporationWalletJournalOutput struct {
 	Entries       []WalletJournalEntry `json:"entries"`
 }
 
-func listCorporationWalletJournalHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationWalletJournalInput, ListCorporationWalletJournalOutput] {
+// AddListCorporationWalletJournal registers list_corporation_wallet_journal. open builds the ESI client; any client with the
+// corporationWalletJournalESI methods will do.
+func AddListCorporationWalletJournal[C corporationWalletJournalESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_corporation_wallet_journal",
+		Description: "List a corporation wallet division's journal entries, using a logged-in character's roles to authorize.",
+	}, listCorporationWalletJournalHandler(open, store))
+}
+
+func listCorporationWalletJournalHandler[C corporationWalletJournalESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListCorporationWalletJournalInput, ListCorporationWalletJournalOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationWalletJournalInput) (*mcpsdk.CallToolResult, ListCorporationWalletJournalOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -304,7 +346,11 @@ func listCorporationWalletJournalHandler(version, clientID string, store ConfigS
 		if !found {
 			return nil, ListCorporationWalletJournalOutput{}, fmt.Errorf("list corporation wallet journal for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		entries, totalPages, err := listCorporationWalletJournal(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.Division, in.Page)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCorporationWalletJournalOutput{}, fmt.Errorf("build ESI client: %w", err)
+		}
+		entries, totalPages, err := client.CorporationWalletJournal(ctx, in.CorporationID, in.Division, in.Page)
 		if err != nil {
 			return nil, ListCorporationWalletJournalOutput{}, fmt.Errorf("list corporation wallet journal: %w", err)
 		}
@@ -325,12 +371,9 @@ func listCorporationWalletJournalHandler(version, clientID string, store ConfigS
 
 // --- list_corporation_wallet_transactions (private, corp-scoped, cursor-paginated) ---
 
-var listCorporationWalletTransactions = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID, division, fromID int64) ([]esiapi.CorporationsCorporationIdWalletsDivisionTransactionsGetInner, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
-	return client.CorporationWalletTransactions(ctx, corporationID, division, fromID)
+// corporationWalletTransactionsESI is the ESI call list_corporation_wallet_transactions makes.
+type corporationWalletTransactionsESI interface {
+	CorporationWalletTransactions(ctx context.Context, corporationID, division, fromID int64) ([]esiapi.CorporationsCorporationIdWalletsDivisionTransactionsGetInner, error)
 }
 
 type ListCorporationWalletTransactionsInput struct {
@@ -346,7 +389,16 @@ type ListCorporationWalletTransactionsOutput struct {
 	Transactions  []WalletTransaction `json:"transactions"`
 }
 
-func listCorporationWalletTransactionsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCorporationWalletTransactionsInput, ListCorporationWalletTransactionsOutput] {
+// AddListCorporationWalletTransactions registers list_corporation_wallet_transactions. open builds the ESI client; any client with the
+// corporationWalletTransactionsESI methods will do.
+func AddListCorporationWalletTransactions[C corporationWalletTransactionsESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore typeNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_corporation_wallet_transactions",
+		Description: "List a corporation wallet division's market transactions, using a logged-in character's roles to authorize.",
+	}, listCorporationWalletTransactionsHandler(userAgent, open, store, sdeStore))
+}
+
+func listCorporationWalletTransactionsHandler[C corporationWalletTransactionsESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore typeNameCache) mcpsdk.ToolHandlerFor[ListCorporationWalletTransactionsInput, ListCorporationWalletTransactionsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationWalletTransactionsInput) (*mcpsdk.CallToolResult, ListCorporationWalletTransactionsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -355,7 +407,11 @@ func listCorporationWalletTransactionsHandler(version, clientID string, store Co
 		if !found {
 			return nil, ListCorporationWalletTransactionsOutput{}, fmt.Errorf("list corporation wallet transactions for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		txns, err := listCorporationWalletTransactions(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.Division, in.FromID)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCorporationWalletTransactionsOutput{}, fmt.Errorf("build ESI client: %w", err)
+		}
+		txns, err := client.CorporationWalletTransactions(ctx, in.CorporationID, in.Division, in.FromID)
 		if err != nil {
 			return nil, ListCorporationWalletTransactionsOutput{}, fmt.Errorf("list corporation wallet transactions: %w", err)
 		}
@@ -367,7 +423,7 @@ func listCorporationWalletTransactionsHandler(version, clientID string, store Co
 		for i, t := range out {
 			ids[i] = t.TypeID
 		}
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		names := resolveTypeNames(ctx, sdeStore, userAgent, ids)
 		for i := range out {
 			out[i].TypeName = names[out[i].TypeID]
 		}

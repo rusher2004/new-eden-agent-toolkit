@@ -5,17 +5,15 @@ import (
 	"fmt"
 	"time"
 
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-
-	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
 // --- list_wars (public) ---
 
-var listWars = func(ctx context.Context, userAgent string, maxWarID int64) ([]int64, error) {
-	client := esi.NewPublicClient(userAgent)
-	return client.Wars(ctx, maxWarID)
+// warsESI is the ESI call list_wars makes.
+type warsESI interface {
+	Wars(ctx context.Context, maxWarID int64) ([]int64, error)
 }
 
 type ListWarsInput struct {
@@ -25,9 +23,18 @@ type ListWarsOutput struct {
 	WarIDs []int64 `json:"warIds"`
 }
 
-func listWarsHandler(version string) mcpsdk.ToolHandlerFor[ListWarsInput, ListWarsOutput] {
+// AddListWars registers list_wars. open builds the ESI client; any client with the
+// warsESI methods will do.
+func AddListWars[C warsESI](s *mcpsdk.Server, open func() C) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_wars",
+		Description: "List war IDs, optionally only those older than a given war ID (public data, no character required).",
+	}, listWarsHandler(open))
+}
+
+func listWarsHandler[C warsESI](open func() C) mcpsdk.ToolHandlerFor[ListWarsInput, ListWarsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListWarsInput) (*mcpsdk.CallToolResult, ListWarsOutput, error) {
-		ids, err := listWars(ctx, sso.UserAgent(version), in.MaxWarID)
+		ids, err := open().Wars(ctx, in.MaxWarID)
 		if err != nil {
 			return nil, ListWarsOutput{}, fmt.Errorf("list wars: %w", err)
 		}
@@ -64,8 +71,12 @@ type War struct {
 	Started       *time.Time `json:"started,omitempty"`
 }
 
-var getWar = func(ctx context.Context, userAgent string, warID int64) (War, error) {
-	client := esi.NewPublicClient(userAgent)
+// warDetailESI is the ESI call get_war makes.
+type warDetailESI interface {
+	WarDetail(ctx context.Context, warID int64) (*esiapi.WarsWarIdGet, error)
+}
+
+func getWar(ctx context.Context, client warDetailESI, warID int64) (War, error) {
 	w, err := client.WarDetail(ctx, warID)
 	if err != nil {
 		return War{}, err
@@ -96,9 +107,18 @@ type GetWarInput struct {
 	WarID int64 `json:"warId" jsonschema:"the war ID to look up"`
 }
 
-func getWarHandler(version string) mcpsdk.ToolHandlerFor[GetWarInput, War] {
+// AddGetWar registers get_war. open builds the ESI client; any client with the
+// warDetailESI methods will do.
+func AddGetWar[C warDetailESI](s *mcpsdk.Server, open func() C) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_war",
+		Description: "Get a war's aggressor/defender/allies, declared/started/retracted/finished times, and mutual/open-for-allies flags (public data, no character required).",
+	}, getWarHandler(open))
+}
+
+func getWarHandler[C warDetailESI](open func() C) mcpsdk.ToolHandlerFor[GetWarInput, War] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetWarInput) (*mcpsdk.CallToolResult, War, error) {
-		out, err := getWar(ctx, sso.UserAgent(version), in.WarID)
+		out, err := getWar(ctx, open(), in.WarID)
 		if err != nil {
 			return nil, War{}, fmt.Errorf("get war: %w", err)
 		}
@@ -108,8 +128,12 @@ func getWarHandler(version string) mcpsdk.ToolHandlerFor[GetWarInput, War] {
 
 // --- list_war_killmails (public, paginated) ---
 
-var listWarKillmails = func(ctx context.Context, userAgent string, warID int64, page int32) ([]KillmailRef, int32, error) {
-	client := esi.NewPublicClient(userAgent)
+// warKillmailsESI is the ESI call list_war_killmails makes.
+type warKillmailsESI interface {
+	WarKillmails(ctx context.Context, warID int64, page int32) ([]esiapi.CharactersCharacterIdKillmailsRecentGetInner, int32, error)
+}
+
+func listWarKillmails(ctx context.Context, client warKillmailsESI, warID int64, page int32) ([]KillmailRef, int32, error) {
 	refs, totalPages, err := client.WarKillmails(ctx, warID, page)
 	if err != nil {
 		return nil, 0, err
@@ -127,9 +151,18 @@ type ListWarKillmailsOutput struct {
 	TotalPages int32         `json:"totalPages"`
 }
 
-func listWarKillmailsHandler(version string) mcpsdk.ToolHandlerFor[ListWarKillmailsInput, ListWarKillmailsOutput] {
+// AddListWarKillmails registers list_war_killmails. open builds the ESI client; any client with the
+// warKillmailsESI methods will do.
+func AddListWarKillmails[C warKillmailsESI](s *mcpsdk.Server, open func() C) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_war_killmails",
+		Description: "List killmail references for a war, paginated (public data, no character required).",
+	}, listWarKillmailsHandler(open))
+}
+
+func listWarKillmailsHandler[C warKillmailsESI](open func() C) mcpsdk.ToolHandlerFor[ListWarKillmailsInput, ListWarKillmailsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListWarKillmailsInput) (*mcpsdk.CallToolResult, ListWarKillmailsOutput, error) {
-		killmails, totalPages, err := listWarKillmails(ctx, sso.UserAgent(version), in.WarID, in.Page)
+		killmails, totalPages, err := listWarKillmails(ctx, open(), in.WarID, in.Page)
 		if err != nil {
 			return nil, ListWarKillmailsOutput{}, fmt.Errorf("list war killmails: %w", err)
 		}
