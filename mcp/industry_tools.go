@@ -46,9 +46,13 @@ func (p *planner) loadOwnership(ctx context.Context, characterID int32, corporat
 	}
 	var own ownership
 	active := map[int64]bool{}
+	client, err := p.esi(ctx, characterID)
 	if corporationID != 0 {
+		if err != nil {
+			return own, fmt.Errorf("corporation blueprints: %w", err)
+		}
 		bps, err := esi.AllPages(ctx, func(ctx context.Context, page int32) ([]CorporationBlueprint, int32, error) {
-			return listCorporationBlueprints(ctx, p.clientID, characterID, p.ua(), corporationID, page)
+			return listCorporationBlueprints(ctx, client, corporationID, page)
 		})
 		if err != nil {
 			return own, fmt.Errorf("corporation blueprints: %w", err)
@@ -57,7 +61,7 @@ func (p *planner) loadOwnership(ctx context.Context, characterID int32, corporat
 			own.blueprints = append(own.blueprints, OwnedBlueprint{ItemID: b.ItemID, BlueprintTypeID: b.TypeID, ME: int(b.MaterialEfficiency), TE: int(b.TimeEfficiency), Runs: b.Runs, Original: b.Quantity != -2, LocationID: b.LocationID, LocationFlag: b.LocationFlag})
 		}
 		jobs, err := esi.AllPages(ctx, func(ctx context.Context, page int32) ([]IndustryJob, int32, error) {
-			raw, total, err := listCorporationIndustryJobs(ctx, p.clientID, characterID, p.ua(), corporationID, false, page)
+			raw, total, err := listCorporationIndustryJobs(ctx, client, corporationID, false, page)
 			out := make([]IndustryJob, len(raw))
 			for i, j := range raw {
 				out[i] = toIndustryJobFromCorporation(j)
@@ -74,7 +78,7 @@ func (p *planner) loadOwnership(ctx context.Context, characterID int32, corporat
 		}
 		if withAssets {
 			assets, err := esi.AllPages(ctx, func(ctx context.Context, page int32) ([]AssetItem, int32, error) {
-				return listCorporationAssets(ctx, p.clientID, characterID, p.ua(), corporationID, page)
+				return listCorporationAssets(ctx, client, corporationID, page)
 			})
 			if err != nil {
 				return own, fmt.Errorf("corporation assets: %w", err)
@@ -82,8 +86,11 @@ func (p *planner) loadOwnership(ctx context.Context, characterID int32, corporat
 			own.assets = indexAssets(assets)
 		}
 	} else {
+		if err != nil {
+			return own, fmt.Errorf("character blueprints: %w", err)
+		}
 		bps, err := esi.AllPages(ctx, func(ctx context.Context, page int32) ([]Blueprint, int32, error) {
-			return listCharacterBlueprints(ctx, p.clientID, characterID, p.ua(), page)
+			return listCharacterBlueprints(ctx, client, page)
 		})
 		if err != nil {
 			return own, fmt.Errorf("character blueprints: %w", err)
@@ -91,7 +98,7 @@ func (p *planner) loadOwnership(ctx context.Context, characterID int32, corporat
 		for _, b := range bps {
 			own.blueprints = append(own.blueprints, OwnedBlueprint{ItemID: b.ItemID, BlueprintTypeID: b.TypeID, ME: int(b.MaterialEfficiency), TE: int(b.TimeEfficiency), Runs: b.Runs, Original: b.Quantity != -2, LocationID: b.LocationID, LocationFlag: b.LocationFlag})
 		}
-		jobs, err := listCharacterIndustryJobs(ctx, p.clientID, characterID, p.ua(), false)
+		jobs, err := listCharacterIndustryJobs(ctx, client, false)
 		if err != nil {
 			return own, fmt.Errorf("character jobs: %w", err)
 		}
@@ -100,7 +107,7 @@ func (p *planner) loadOwnership(ctx context.Context, characterID int32, corporat
 		}
 		if withAssets {
 			assets, err := esi.AllPages(ctx, func(ctx context.Context, page int32) ([]AssetItem, int32, error) {
-				return listAssets(ctx, p.clientID, characterID, p.ua(), page)
+				return listAssets(ctx, client, page)
 			})
 			if err != nil {
 				return own, fmt.Errorf("character assets: %w", err)
@@ -150,14 +157,21 @@ func (p *planner) containerNames(ctx context.Context, own *ownership, characterI
 	slices.Sort(ids)
 	ids = slices.Compact(ids)
 	own.names = map[int64]string{}
+	if len(ids) == 0 {
+		return
+	}
+	client, err := p.esi(ctx, characterID)
+	if err != nil {
+		return // names are a convenience; missing ones stay blank
+	}
 	for start := 0; start < len(ids); start += 1000 {
 		chunk := ids[start:min(start+1000, len(ids))]
 		var names []AssetName
 		var err error
 		if corporationID != 0 {
-			names, err = getCorporationAssetNames(ctx, p.clientID, characterID, p.ua(), corporationID, chunk)
+			names, err = getCorporationAssetNames(ctx, client, corporationID, chunk)
 		} else {
-			names, err = getAssetNames(ctx, p.clientID, characterID, p.ua(), chunk)
+			names, err = getAssetNames(ctx, client, chunk)
 		}
 		if err != nil {
 			return // names are a convenience; missing ones stay blank
@@ -189,9 +203,18 @@ type FindOwnedBlueprintsOutput struct {
 	Blueprints []OwnedBlueprint `json:"blueprints"`
 }
 
-func findOwnedBlueprintsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[FindOwnedBlueprintsInput, FindOwnedBlueprintsOutput] {
+// AddFindOwnedBlueprints registers find_owned_blueprints. openESI and openPublicESI build the ESI clients;
+// any client with the methods the planner and this tool call will do.
+func AddFindOwnedBlueprints[C plannerClient, P plannerPublicClient](s *mcpsdk.Server, userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "find_owned_blueprints",
+		Description: "Find a character's or corporation's blueprints by product or name, with ME, TE, runs, whether each is tied up in an active job, the station or structure it's in and any named container, plus per-blueprint totals.",
+	}, findOwnedBlueprintsHandler(userAgent, openESI, openPublicESI, store, sdeStore))
+}
+
+func findOwnedBlueprintsHandler[C plannerClient, P plannerPublicClient](userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) mcpsdk.ToolHandlerFor[FindOwnedBlueprintsInput, FindOwnedBlueprintsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in FindOwnedBlueprintsInput) (*mcpsdk.CallToolResult, FindOwnedBlueprintsOutput, error) {
-		p := newPlanner(version, clientID, store, sdeStore)
+		p := newPlanner(userAgent, plannerOpener(openESI), plannerPublicOpener(openPublicESI), store, sdeStore)
 		own, err := p.loadOwnership(ctx, in.CharacterID, in.CorporationID, true)
 		if err != nil {
 			return nil, FindOwnedBlueprintsOutput{}, err
@@ -326,9 +349,18 @@ type CheckMaterialStockOutput struct {
 	Lines []StockLine `json:"lines"`
 }
 
-func checkMaterialStockHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[CheckMaterialStockInput, CheckMaterialStockOutput] {
+// AddCheckMaterialStock registers check_material_stock. openESI and openPublicESI build the ESI clients;
+// any client with the methods the planner and this tool call will do.
+func AddCheckMaterialStock[C plannerClient, P plannerPublicClient](s *mcpsdk.Server, userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "check_material_stock",
+		Description: "Net a list of materials against what a character or corporation holds at a station or structure (optionally one hangar division), with the volume of stock used.",
+	}, checkMaterialStockHandler(userAgent, openESI, openPublicESI, store, sdeStore))
+}
+
+func checkMaterialStockHandler[C plannerClient, P plannerPublicClient](userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) mcpsdk.ToolHandlerFor[CheckMaterialStockInput, CheckMaterialStockOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in CheckMaterialStockInput) (*mcpsdk.CallToolResult, CheckMaterialStockOutput, error) {
-		p := newPlanner(version, clientID, store, sdeStore)
+		p := newPlanner(userAgent, plannerOpener(openESI), plannerPublicOpener(openPublicESI), store, sdeStore)
 		items, err := p.resolveItems(ctx, in.Materials)
 		if err != nil {
 			return nil, CheckMaterialStockOutput{}, err
@@ -374,9 +406,18 @@ type CheckBuildSkillsOutput struct {
 	Builders []BuilderView `json:"builders"`
 }
 
-func checkBuildSkillsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[CheckBuildSkillsInput, CheckBuildSkillsOutput] {
+// AddCheckBuildSkills registers check_build_skills. openESI and openPublicESI build the ESI clients;
+// any client with the methods the planner and this tool call will do.
+func AddCheckBuildSkills[C plannerClient, P plannerPublicClient](s *mcpsdk.Server, userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "check_build_skills",
+		Description: "For each character, show manufacturing, reaction and science slots, skill time multipliers, and which items in a product's build tree they can build or which skills they lack.",
+	}, checkBuildSkillsHandler(userAgent, openESI, openPublicESI, store, sdeStore))
+}
+
+func checkBuildSkillsHandler[C plannerClient, P plannerPublicClient](userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) mcpsdk.ToolHandlerFor[CheckBuildSkillsInput, CheckBuildSkillsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in CheckBuildSkillsInput) (*mcpsdk.CallToolResult, CheckBuildSkillsOutput, error) {
-		p := newPlanner(version, clientID, store, sdeStore)
+		p := newPlanner(userAgent, plannerOpener(openESI), plannerPublicOpener(openPublicESI), store, sdeStore)
 		pid, err := p.resolveType(ctx, in.Product)
 		if err != nil {
 			return nil, CheckBuildSkillsOutput{}, err
@@ -483,9 +524,18 @@ func (p *planner) jobFee(ctx context.Context, f industry.Facility, prof config.F
 	return out, nil
 }
 
-func estimateJobCostHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[EstimateJobCostInput, EstimateJobCostOutput] {
+// AddEstimateJobCost registers estimate_job_cost. openESI and openPublicESI build the ESI clients;
+// any client with the methods the planner and this tool call will do.
+func AddEstimateJobCost[C plannerClient, P plannerPublicClient](s *mcpsdk.Server, userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "estimate_job_cost",
+		Description: "Estimate a manufacturing or reaction job's installation fee at a facility profile: estimated item value, cost index, structure bonus, taxes, or the profile's calibrated rate.",
+	}, estimateJobCostHandler(userAgent, openESI, openPublicESI, store, sdeStore))
+}
+
+func estimateJobCostHandler[C plannerClient, P plannerPublicClient](userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) mcpsdk.ToolHandlerFor[EstimateJobCostInput, EstimateJobCostOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in EstimateJobCostInput) (*mcpsdk.CallToolResult, EstimateJobCostOutput, error) {
-		p := newPlanner(version, clientID, store, sdeStore)
+		p := newPlanner(userAgent, plannerOpener(openESI), plannerPublicOpener(openPublicESI), store, sdeStore)
 		pid, err := p.resolveType(ctx, in.Product)
 		if err != nil {
 			return nil, EstimateJobCostOutput{}, err
@@ -538,9 +588,18 @@ type EstimateResearchOutput struct {
 	FeeNote string  `json:"feeNote,omitempty"`
 }
 
-func estimateResearchHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[EstimateResearchInput, EstimateResearchOutput] {
+// AddEstimateResearch registers estimate_research. openESI and openPublicESI build the ESI clients;
+// any client with the methods the planner and this tool call will do.
+func AddEstimateResearch[C plannerClient, P plannerPublicClient](s *mcpsdk.Server, userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "estimate_research",
+		Description: "Estimate ME research, TE research or copying time and fee for a blueprint at a facility profile with a character's skills.",
+	}, estimateResearchHandler(userAgent, openESI, openPublicESI, store, sdeStore))
+}
+
+func estimateResearchHandler[C plannerClient, P plannerPublicClient](userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) mcpsdk.ToolHandlerFor[EstimateResearchInput, EstimateResearchOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in EstimateResearchInput) (*mcpsdk.CallToolResult, EstimateResearchOutput, error) {
-		p := newPlanner(version, clientID, store, sdeStore)
+		p := newPlanner(userAgent, plannerOpener(openESI), plannerPublicOpener(openPublicESI), store, sdeStore)
 		if (in.Kind == "me" || in.Kind == "te") && (in.FromLevel < 0 || in.ToLevel > 10 || in.ToLevel <= in.FromLevel) {
 			return nil, EstimateResearchOutput{}, fmt.Errorf("fromLevel and toLevel must be research levels 0-10 with fromLevel below toLevel, got %d and %d; for TE a level is the TE percent divided by 2 (TE 14 is level 7)", in.FromLevel, in.ToLevel)
 		}
@@ -637,9 +696,18 @@ type EstimateInventionOutput struct {
 	Notes       []string          `json:"notes,omitempty"`
 }
 
-func estimateInventionHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[EstimateInventionInput, EstimateInventionOutput] {
+// AddEstimateInvention registers estimate_invention. openESI and openPublicESI build the ESI clients;
+// any client with the methods the planner and this tool call will do.
+func AddEstimateInvention[C plannerClient, P plannerPublicClient](s *mcpsdk.Server, userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "estimate_invention",
+		Description: "For a T2 item, estimate invention chance, output copy (runs, ME, TE) and expected cost per success and per run for no decryptor and each decryptor, with a character's skills and hub prices.",
+	}, estimateInventionHandler(userAgent, openESI, openPublicESI, store, sdeStore))
+}
+
+func estimateInventionHandler[C plannerClient, P plannerPublicClient](userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) mcpsdk.ToolHandlerFor[EstimateInventionInput, EstimateInventionOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in EstimateInventionInput) (*mcpsdk.CallToolResult, EstimateInventionOutput, error) {
-		p := newPlanner(version, clientID, store, sdeStore)
+		p := newPlanner(userAgent, plannerOpener(openESI), plannerPublicOpener(openPublicESI), store, sdeStore)
 		pid, err := p.resolveType(ctx, in.Product)
 		if err != nil {
 			return nil, EstimateInventionOutput{}, err
@@ -839,9 +907,18 @@ func (p *planner) reprocessYield(ctx context.Context, characterID int32, prof co
 	}
 }
 
-func estimateReprocessingYieldHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[EstimateReprocessingYieldInput, EstimateReprocessingYieldOutput] {
+// AddEstimateReprocessingYield registers estimate_reprocessing_yield. openESI and openPublicESI build the ESI clients;
+// any client with the methods the planner and this tool call will do.
+func AddEstimateReprocessingYield[C plannerClient, P plannerPublicClient](s *mcpsdk.Server, userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "estimate_reprocessing_yield",
+		Description: "Reprocessing yield per ore category for a character at a facility profile (NPC station or Upwell), counting skills, structure, rigs, security and the character's implant, plus the tax.",
+	}, estimateReprocessingYieldHandler(userAgent, openESI, openPublicESI, store, sdeStore))
+}
+
+func estimateReprocessingYieldHandler[C plannerClient, P plannerPublicClient](userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) mcpsdk.ToolHandlerFor[EstimateReprocessingYieldInput, EstimateReprocessingYieldOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in EstimateReprocessingYieldInput) (*mcpsdk.CallToolResult, EstimateReprocessingYieldOutput, error) {
-		p := newPlanner(version, clientID, store, sdeStore)
+		p := newPlanner(userAgent, plannerOpener(openESI), plannerPublicOpener(openPublicESI), store, sdeStore)
 		prof, err := p.facilityProfile(in.Facility)
 		if err != nil {
 			return nil, EstimateReprocessingYieldOutput{}, err
@@ -993,9 +1070,18 @@ func (p *planner) solveOreMix(ctx context.Context, needs map[int64]int64, refine
 	return out, nil
 }
 
-func solveOreMixHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[SolveOreMixInput, SolveOreMixOutput] {
+// AddSolveOreMix registers solve_ore_mix. openESI and openPublicESI build the ESI clients;
+// any client with the methods the planner and this tool call will do.
+func AddSolveOreMix[C plannerClient, P plannerPublicClient](s *mcpsdk.Server, userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "solve_ore_mix",
+		Description: "Find the cheapest mix of compressed ore and refined minerals at a hub to cover a mineral need, counting the refiner's yield, freight per m³ and live order-book depth; returns purchases, refined output, surplus, byproducts and a Multibuy list.",
+	}, solveOreMixHandler(userAgent, openESI, openPublicESI, store, sdeStore))
+}
+
+func solveOreMixHandler[C plannerClient, P plannerPublicClient](userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) mcpsdk.ToolHandlerFor[SolveOreMixInput, SolveOreMixOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in SolveOreMixInput) (*mcpsdk.CallToolResult, SolveOreMixOutput, error) {
-		p := newPlanner(version, clientID, store, sdeStore)
+		p := newPlanner(userAgent, plannerOpener(openESI), plannerPublicOpener(openPublicESI), store, sdeStore)
 		p.fallbackMarketCharacter = in.RefinerID
 		items, err := p.resolveItems(ctx, in.Minerals)
 		if err != nil {

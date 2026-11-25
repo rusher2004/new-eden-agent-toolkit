@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	"github.com/zalando/go-keyring"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
@@ -28,19 +30,35 @@ func TestGetCharacterHandler_ReturnsDetail(t *testing.T) {
 }
 
 func TestGetCharacterAffiliationsHandler_ReturnsAffiliations(t *testing.T) {
-	orig := getCharacterAffiliations
-	t.Cleanup(func() { getCharacterAffiliations = orig })
-	getCharacterAffiliations = func(ctx context.Context, userAgent string, characterIDs []int64) ([]CharacterAffiliation, error) {
-		return []CharacterAffiliation{{CharacterID: 998877, CorporationID: 98000001}}, nil
-	}
+	var gotIDs []int64
+	fake := fakeCharacterAffiliationsESI{characterAffiliations: func(_ context.Context, ids []int64) ([]esiapi.CharactersAffiliationPostInner, error) {
+		gotIDs = ids
+		return []esiapi.CharactersAffiliationPostInner{{CharacterId: 998877, CorporationId: 98000001}}, nil
+	}}
 
-	handler := getCharacterAffiliationsHandler("v1", nil)
+	handler := getCharacterAffiliationsHandler("v1", publicNarrow[characterAffiliationsESI](fake), nil)
 	_, out, err := handler(context.Background(), nil, GetCharacterAffiliationsInput{CharacterIDs: []int64{998877}})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
-	if len(out.Affiliations) != 1 || out.Affiliations[0].CharacterID != 998877 {
-		t.Errorf("out = %+v, want one affiliation with CharacterID=998877", out)
+	if len(gotIDs) != 1 || gotIDs[0] != 998877 {
+		t.Errorf("ESI got ids = %v, want [998877]", gotIDs)
+	}
+	if len(out.Affiliations) != 1 || out.Affiliations[0].CharacterID != 998877 || out.Affiliations[0].CorporationID != 98000001 {
+		t.Errorf("out = %+v, want one affiliation with CharacterID=998877 CorporationID=98000001", out)
+	}
+}
+
+func TestGetCharacterAffiliationsHandler_PropagatesError(t *testing.T) {
+	wantErr := errors.New("upstream failure")
+	fake := fakeCharacterAffiliationsESI{characterAffiliations: func(context.Context, []int64) ([]esiapi.CharactersAffiliationPostInner, error) {
+		return nil, wantErr
+	}}
+
+	handler := getCharacterAffiliationsHandler("v1", publicNarrow[characterAffiliationsESI](fake), nil)
+	_, _, err := handler(context.Background(), nil, GetCharacterAffiliationsInput{CharacterIDs: []int64{998877}})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
 	}
 }
 
@@ -127,19 +145,40 @@ func TestListCharacterBlueprintsHandler_ReturnsBlueprints(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCharacterBlueprints
-	t.Cleanup(func() { listCharacterBlueprints = orig })
-	listCharacterBlueprints = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]Blueprint, int32, error) {
-		return []Blueprint{{ItemID: 1, TypeID: 950}}, 2, nil
-	}
+	var gotPage int32
+	fake := fakeCharacterBlueprintsESI{characterBlueprints: func(_ context.Context, page int32) ([]esiapi.CharactersCharacterIdBlueprintsGetInner, int32, error) {
+		gotPage = page
+		return []esiapi.CharactersCharacterIdBlueprintsGetInner{{ItemId: 1, TypeId: 950, LocationId: 60003760, LocationFlag: "Hangar", Quantity: -2, Runs: 10, MaterialEfficiency: 10, TimeEfficiency: 20}}, 2, nil
+	}}
 
-	handler := listCharacterBlueprintsHandler("v1", "client-id", store, nil)
+	handler := listCharacterBlueprintsHandler("v1", openNarrow[characterBlueprintsESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, ListCharacterBlueprintsInput{CharacterID: 7, Page: 1})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
+	if gotPage != 1 {
+		t.Errorf("ESI got page %d, want 1", gotPage)
+	}
 	if len(out.Blueprints) != 1 || out.Blueprints[0].TypeID != 950 || out.Page != 1 || out.TotalPages != 2 {
-		t.Errorf("out = %+v, want one blueprint with TypeID=950 Page=1 TotalPages=2", out)
+		t.Fatalf("out = %+v, want one blueprint with TypeID=950 Page=1 TotalPages=2", out)
+	}
+	if b := out.Blueprints[0]; b.ItemID != 1 || b.LocationID != 60003760 || b.LocationFlag != "Hangar" || b.Quantity != -2 || b.Runs != 10 || b.MaterialEfficiency != 10 || b.TimeEfficiency != 20 {
+		t.Errorf("Blueprints[0] = %+v, want every field mapped", b)
+	}
+}
+
+func TestListCharacterBlueprintsHandler_PropagatesOpenError(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	wantErr := errors.New("no token")
+	handler := listCharacterBlueprintsHandler("v1", failNarrow[characterBlueprintsESI](wantErr), store, nil)
+	_, _, err := handler(context.Background(), nil, ListCharacterBlueprintsInput{CharacterID: 7})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
 	}
 }
 
@@ -150,14 +189,12 @@ func TestListCharacterBlueprintsHandler_PropagatesError(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCharacterBlueprints
-	t.Cleanup(func() { listCharacterBlueprints = orig })
 	wantErr := errors.New("upstream failure")
-	listCharacterBlueprints = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]Blueprint, int32, error) {
+	fake := fakeCharacterBlueprintsESI{characterBlueprints: func(context.Context, int32) ([]esiapi.CharactersCharacterIdBlueprintsGetInner, int32, error) {
 		return nil, 0, wantErr
-	}
+	}}
 
-	handler := listCharacterBlueprintsHandler("v1", "client-id", store, nil)
+	handler := listCharacterBlueprintsHandler("v1", openNarrow[characterBlueprintsESI](fake), store, nil)
 	_, _, err := handler(context.Background(), nil, ListCharacterBlueprintsInput{CharacterID: 7})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -168,14 +205,7 @@ func TestListCharacterBlueprintsHandler_UnknownCharacter_ReturnsErrCharacterNotF
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := listCharacterBlueprints
-	t.Cleanup(func() { listCharacterBlueprints = orig })
-	listCharacterBlueprints = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]Blueprint, int32, error) {
-		t.Fatal("listCharacterBlueprints should not be called for an unknown character")
-		return nil, 0, nil
-	}
-
-	handler := listCharacterBlueprintsHandler("v1", "client-id", store, nil)
+	handler := listCharacterBlueprintsHandler("v1", noNarrow[characterBlueprintsESI](t), store, nil)
 	_, _, err := handler(context.Background(), nil, ListCharacterBlueprintsInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -189,19 +219,40 @@ func TestGetCharacterFatigueHandler_ReturnsFatigue(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCharacterFatigue
-	t.Cleanup(func() { getCharacterFatigue = orig })
-	getCharacterFatigue = func(ctx context.Context, clientID string, characterID int32, userAgent string) (GetCharacterFatigueOutput, error) {
-		return GetCharacterFatigueOutput{CharacterID: characterID}, nil
-	}
+	expires := time.Date(2026, 11, 25, 12, 0, 0, 0, time.UTC)
+	fake := fakeCharacterFatigueESI{characterFatigue: func(context.Context) (*esiapi.CharactersCharacterIdFatigueGet, error) {
+		return &esiapi.CharactersCharacterIdFatigueGet{JumpFatigueExpireDate: &expires}, nil
+	}}
 
-	handler := getCharacterFatigueHandler("v1", "client-id", store)
+	handler := getCharacterFatigueHandler(openNarrow[characterFatigueESI](fake), store)
 	_, out, err := handler(context.Background(), nil, GetCharacterFatigueInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
-	if out.CharacterID != 7 {
-		t.Errorf("out = %+v, want CharacterID=7", out)
+	if out.CharacterID != 7 || out.JumpFatigueExpireDate == nil || !out.JumpFatigueExpireDate.Equal(expires) {
+		t.Errorf("out = %+v, want CharacterID=7 with the fatigue expiry", out)
+	}
+}
+
+func TestGetCharacterFatigueHandler_PropagatesErrors(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+	wantErr := errors.New("upstream failure")
+	failing := fakeCharacterFatigueESI{characterFatigue: func(context.Context) (*esiapi.CharactersCharacterIdFatigueGet, error) { return nil, wantErr }}
+
+	for name, open := range map[string]func(context.Context, int32) (characterFatigueESI, error){
+		"ESI call": openNarrow[characterFatigueESI](failing),
+		"open":     failNarrow[characterFatigueESI](wantErr),
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, _, err := getCharacterFatigueHandler(open, store)(context.Background(), nil, GetCharacterFatigueInput{CharacterID: 7})
+			if !errors.Is(err, wantErr) {
+				t.Errorf("err = %v, want wrapping %v", err, wantErr)
+			}
+		})
 	}
 }
 
@@ -209,14 +260,7 @@ func TestGetCharacterFatigueHandler_UnknownCharacter_ReturnsErrCharacterNotFound
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := getCharacterFatigue
-	t.Cleanup(func() { getCharacterFatigue = orig })
-	getCharacterFatigue = func(ctx context.Context, clientID string, characterID int32, userAgent string) (GetCharacterFatigueOutput, error) {
-		t.Fatal("getCharacterFatigue should not be called for an unknown character")
-		return GetCharacterFatigueOutput{}, nil
-	}
-
-	handler := getCharacterFatigueHandler("v1", "client-id", store)
+	handler := getCharacterFatigueHandler(noNarrow[characterFatigueESI](t), store)
 	_, _, err := handler(context.Background(), nil, GetCharacterFatigueInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -552,11 +596,9 @@ func TestListCharacterBlueprintsHandler_ResolvesTypeName(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCharacterBlueprints
-	t.Cleanup(func() { listCharacterBlueprints = orig })
-	listCharacterBlueprints = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]Blueprint, int32, error) {
-		return []Blueprint{{ItemID: 1, TypeID: 587}}, 1, nil
-	}
+	fake := fakeCharacterBlueprintsESI{characterBlueprints: func(context.Context, int32) ([]esiapi.CharactersCharacterIdBlueprintsGetInner, int32, error) {
+		return []esiapi.CharactersCharacterIdBlueprintsGetInner{{ItemId: 1, TypeId: 587}}, 1, nil
+	}}
 
 	origResolve := resolveTypeNames
 	t.Cleanup(func() { resolveTypeNames = origResolve })
@@ -566,7 +608,7 @@ func TestListCharacterBlueprintsHandler_ResolvesTypeName(t *testing.T) {
 		return map[int64]string{587: "Rifter Blueprint"}
 	}
 
-	handler := listCharacterBlueprintsHandler("v1", "client-id", store, nil)
+	handler := listCharacterBlueprintsHandler("v1", openNarrow[characterBlueprintsESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, ListCharacterBlueprintsInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -637,12 +679,10 @@ func TestGetCharacterHandler_FactionNameEmptyWhenFactionIDNil(t *testing.T) {
 }
 
 func TestGetCharacterAffiliationsHandler_ResolvesFactionName(t *testing.T) {
-	orig := getCharacterAffiliations
-	t.Cleanup(func() { getCharacterAffiliations = orig })
 	factionID := int64(500001)
-	getCharacterAffiliations = func(ctx context.Context, userAgent string, characterIDs []int64) ([]CharacterAffiliation, error) {
-		return []CharacterAffiliation{{CharacterID: 998877, CorporationID: 98000001, FactionID: &factionID}}, nil
-	}
+	fake := fakeCharacterAffiliationsESI{characterAffiliations: func(context.Context, []int64) ([]esiapi.CharactersAffiliationPostInner, error) {
+		return []esiapi.CharactersAffiliationPostInner{{CharacterId: 998877, CorporationId: 98000001, FactionId: &factionID}}, nil
+	}}
 
 	origFaction := resolveFactionNames
 	t.Cleanup(func() { resolveFactionNames = origFaction })
@@ -650,7 +690,7 @@ func TestGetCharacterAffiliationsHandler_ResolvesFactionName(t *testing.T) {
 		return map[int64]string{500001: "Caldari State"}
 	}
 
-	handler := getCharacterAffiliationsHandler("v1", nil)
+	handler := getCharacterAffiliationsHandler("v1", publicNarrow[characterAffiliationsESI](fake), nil)
 	_, out, err := handler(context.Background(), nil, GetCharacterAffiliationsInput{CharacterIDs: []int64{998877}})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -658,4 +698,40 @@ func TestGetCharacterAffiliationsHandler_ResolvesFactionName(t *testing.T) {
 	if len(out.Affiliations) != 1 || out.Affiliations[0].FactionName != "Caldari State" {
 		t.Errorf("Affiliations = %+v, want one entry FactionName=%q", out.Affiliations, "Caldari State")
 	}
+}
+
+// fakeCharacterAffiliationsESI fakes characterAffiliationsESI; a nil characterAffiliations fails as an unfaked call.
+type fakeCharacterAffiliationsESI struct {
+	characterAffiliations func(ctx context.Context, characterIDs []int64) ([]esiapi.CharactersAffiliationPostInner, error)
+}
+
+func (f fakeCharacterAffiliationsESI) CharacterAffiliations(ctx context.Context, characterIDs []int64) ([]esiapi.CharactersAffiliationPostInner, error) {
+	if f.characterAffiliations == nil {
+		return nil, errNotFaked
+	}
+	return f.characterAffiliations(ctx, characterIDs)
+}
+
+// fakeCharacterBlueprintsESI fakes characterBlueprintsESI; a nil characterBlueprints fails as an unfaked call.
+type fakeCharacterBlueprintsESI struct {
+	characterBlueprints func(ctx context.Context, page int32) ([]esiapi.CharactersCharacterIdBlueprintsGetInner, int32, error)
+}
+
+func (f fakeCharacterBlueprintsESI) CharacterBlueprints(ctx context.Context, page int32) ([]esiapi.CharactersCharacterIdBlueprintsGetInner, int32, error) {
+	if f.characterBlueprints == nil {
+		return nil, 0, errNotFaked
+	}
+	return f.characterBlueprints(ctx, page)
+}
+
+// fakeCharacterFatigueESI fakes characterFatigueESI; a nil characterFatigue fails as an unfaked call.
+type fakeCharacterFatigueESI struct {
+	characterFatigue func(ctx context.Context) (*esiapi.CharactersCharacterIdFatigueGet, error)
+}
+
+func (f fakeCharacterFatigueESI) CharacterFatigue(ctx context.Context) (*esiapi.CharactersCharacterIdFatigueGet, error) {
+	if f.characterFatigue == nil {
+		return nil, errNotFaked
+	}
+	return f.characterFatigue(ctx)
 }

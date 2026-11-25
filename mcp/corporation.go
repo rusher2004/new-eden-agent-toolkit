@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"time"
 
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/rusher2004/new-eden-agent-toolkit/esi"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
+
+	"github.com/rusher2004/new-eden-agent-toolkit/esi"
 )
 
 // --- get_corporation (public) ---
@@ -718,11 +720,13 @@ type CorporationBlueprint struct {
 	TypeName           string `json:"typeName,omitempty"`
 }
 
-var listCorporationBlueprints = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]CorporationBlueprint, int32, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, 0, fmt.Errorf("build ESI client: %w", err)
-	}
+// corporationBlueprintsESI is the ESI call list_corporation_blueprints
+// makes; the planner family reads blueprints through it too.
+type corporationBlueprintsESI interface {
+	CorporationBlueprints(ctx context.Context, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdBlueprintsGetInner, int32, error)
+}
+
+func listCorporationBlueprints(ctx context.Context, client corporationBlueprintsESI, corporationID int64, page int32) ([]CorporationBlueprint, int32, error) {
 	bps, totalPages, err := client.CorporationBlueprints(ctx, corporationID, page)
 	if err != nil {
 		return nil, 0, err
@@ -751,7 +755,16 @@ type ListCorporationBlueprintsOutput struct {
 	Blueprints    []CorporationBlueprint `json:"blueprints"`
 }
 
-func listCorporationBlueprintsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCorporationBlueprintsInput, ListCorporationBlueprintsOutput] {
+// AddListCorporationBlueprints registers list_corporation_blueprints. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListCorporationBlueprints[C corporationBlueprintsESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore typeNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_corporation_blueprints",
+		Description: "List a corporation's blueprints, using a logged-in character's roles to authorize.",
+	}, listCorporationBlueprintsHandler(userAgent, open, store, sdeStore))
+}
+
+func listCorporationBlueprintsHandler[C corporationBlueprintsESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore typeNameCache) mcpsdk.ToolHandlerFor[ListCorporationBlueprintsInput, ListCorporationBlueprintsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationBlueprintsInput) (*mcpsdk.CallToolResult, ListCorporationBlueprintsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -760,7 +773,11 @@ func listCorporationBlueprintsHandler(version, clientID string, store ConfigStor
 		if !found {
 			return nil, ListCorporationBlueprintsOutput{}, fmt.Errorf("list corporation blueprints for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		bps, totalPages, err := listCorporationBlueprints(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.Page)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCorporationBlueprintsOutput{}, fmt.Errorf("list corporation blueprints: %w", err)
+		}
+		bps, totalPages, err := listCorporationBlueprints(ctx, client, in.CorporationID, in.Page)
 		if err != nil {
 			return nil, ListCorporationBlueprintsOutput{}, fmt.Errorf("list corporation blueprints: %w", err)
 		}
@@ -768,7 +785,7 @@ func listCorporationBlueprintsHandler(version, clientID string, store ConfigStor
 		for i := range bps {
 			ids[i] = bps[i].TypeID
 		}
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		names := resolveTypeNames(ctx, sdeStore, userAgent, ids)
 		for i := range bps {
 			bps[i].TypeName = names[bps[i].TypeID]
 		}

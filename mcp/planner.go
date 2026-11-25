@@ -16,14 +16,99 @@ import (
 	"github.com/rusher2004/new-eden-agent-toolkit/market"
 	"github.com/rusher2004/new-eden-agent-toolkit/nav"
 	"github.com/rusher2004/new-eden-agent-toolkit/sde"
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
-// fetchSellOrders returns every sell order for a type in a region. A package
-// variable so tests can fake it.
-var fetchSellOrders = func(ctx context.Context, userAgent string, regionID, typeID int64) ([]market.Order, error) {
+// plannerClient is the authenticated ESI calls the planner's reads make:
+// skills, contacts for standings, structure markets and details, implants,
+// industry jobs, blueprints and assets, each interface declared beside the
+// function that uses it. A handler whose own reads need more declares an
+// interface that embeds it.
+type plannerClient interface {
+	characterSkillsESI
+	characterContactsESI
+	corporationContactsESI
+	allianceContactsESI
+	structureMarketOrdersESI
+	universeStructureESI
+	characterImplantsESI
+	characterIndustryJobsESI
+	corporationIndustryJobsESI
+	characterBlueprintsESI
+	corporationBlueprintsESI
+	assetsESI
+	corporationAssetsESI
+	assetNamesESI
+	corporationAssetNamesESI
+}
+
+// plannerPublicClient is the public ESI calls the planner's reads make:
+// sovereignty, incursions, kills, affiliations, prices, indices, order books,
+// public contracts and name lookups.
+type plannerPublicClient interface {
+	sovereigntySystemsESI
+	incursionsESI
+	universeSystemKillsESI
+	characterAffiliationsESI
+	marketPricesESI
+	industrySystemsESI
+	marketOrdersESI
+	publicContractsESI
+	publicContractItemsESI
+	universeNamesESI
+}
+
+// plannerConfig is the config calls the planner family makes.
+type plannerConfig interface {
+	Load() (config.Config, error)
+	Path() string
+	Update(change func(*config.Config) error) ([]config.Change, error)
+}
+
+// plannerSDE is the SDE calls the planner family makes.
+type plannerSDE interface {
+	AttributeInfos(ctx context.Context, userAgent string) (map[int64]sde.AttributeInfo, error)
+	Blueprint(ctx context.Context, userAgent string, blueprintTypeID int64) (sde.Blueprint, bool, error)
+	BlueprintSourcesForActivity(ctx context.Context, userAgent string, productTypeID, activityID int64) ([]sde.BlueprintSource, error)
+	BlueprintsForProduct(ctx context.Context, userAgent string, productTypeID int64) ([]sde.BlueprintSource, error)
+	CompressedOres(ctx context.Context, userAgent string) ([]sde.Ore, error)
+	DogmaTypes(ctx context.Context, userAgent string, ids []int64) (map[int64]sde.DogmaType, error)
+	IndustryModifiers(ctx context.Context, userAgent string, typeID int64) ([]sde.IndustryModifierSource, error)
+	NPCStationIndustryData(ctx context.Context, userAgent string, stationID int64) (sde.NPCStationIndustry, bool, error)
+	PublishedTypesInGroups(ctx context.Context, userAgent string, groupIDs []int64) ([]sde.TypeBasic, error)
+	PublishedTypesWithEffect(ctx context.Context, userAgent, effectName string) ([]sde.TypeBasic, error)
+	RigInfo(ctx context.Context, userAgent string, typeID int64) (sde.Rig, bool, error)
+	RoutingSystems(ctx context.Context, userAgent string) ([]sde.RoutingSystem, error)
+	StargateConnections(ctx context.Context, userAgent string) ([][2]int64, error)
+	Station(ctx context.Context, userAgent string, id int64) (sde.Station, bool, error)
+	TargetFilters(ctx context.Context, userAgent string) (map[int64]sde.TargetFilter, error)
+	Type(ctx context.Context, userAgent string, id int64) (sde.Type, bool, error)
+	TypeAttributes(ctx context.Context, userAgent string, typeID int64) (map[int64]float64, error)
+	TypeBasics(ctx context.Context, userAgent string, ids []int64) (map[int64]sde.TypeBasic, error)
+	TypesByName(ctx context.Context, userAgent string, names []string) (map[string]int64, error)
+}
+
+// plannerOpener makes the planner's non-generic opener from a handler's
+// generic one: C is constrained to satisfy plannerClient, so the compiler
+// checks that the client a caller supplies has the calls the planner makes.
+func plannerOpener[C plannerClient](open func(ctx context.Context, characterID int32) (C, error)) func(ctx context.Context, characterID int32) (plannerClient, error) {
+	return func(ctx context.Context, characterID int32) (plannerClient, error) {
+		c, err := open(ctx, characterID)
+		if err != nil {
+			return nil, err
+		}
+		return c, nil
+	}
+}
+
+// plannerPublicOpener is plannerOpener for public clients.
+func plannerPublicOpener[C plannerPublicClient](open func() C) func() plannerPublicClient {
+	return func() plannerPublicClient { return open() }
+}
+
+// fetchSellOrders returns every sell order for a type in a region.
+func fetchSellOrders(ctx context.Context, client marketOrdersESI, regionID, typeID int64) ([]market.Order, error) {
 	raw, err := esi.AllPages(ctx, func(ctx context.Context, page int32) ([]esiapi.MarketsRegionIdOrdersGetInner, int32, error) {
-		return listMarketOrders(ctx, userAgent, regionID, "sell", typeID, page)
+		return listMarketOrders(ctx, client, regionID, "sell", typeID, page)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("sell orders for type %d: %w", typeID, err)
@@ -38,9 +123,11 @@ var fetchSellOrders = func(ctx context.Context, userAgent string, regionID, type
 // planner gathers SDE, ESI and config inputs for the industry tools and
 // caches them for the life of one tool call.
 type planner struct {
-	version, clientID string
-	store             ConfigStore
-	sde               SDEStore
+	userAgent     string
+	openESI       func(ctx context.Context, characterID int32) (plannerClient, error)
+	openPublicESI func() plannerPublicClient
+	store         plannerConfig
+	sde           plannerSDE
 
 	mu       sync.Mutex
 	recipes  map[int64]*industry.Recipe // nil value = not buildable
@@ -61,12 +148,18 @@ type planner struct {
 	fallbackMarketCharacter int32
 }
 
-func newPlanner(version, clientID string, store ConfigStore, sdeStore SDEStore) *planner {
-	return &planner{version: version, clientID: clientID, store: store, sde: sdeStore,
+func newPlanner(userAgent string, openESI func(ctx context.Context, characterID int32) (plannerClient, error), openPublicESI func() plannerPublicClient, store plannerConfig, sdeStore plannerSDE) *planner {
+	return &planner{userAgent: userAgent, openESI: openESI, openPublicESI: openPublicESI, store: store, sde: sdeStore,
 		recipes: map[int64]*industry.Recipe{}, basics: map[int64]sde.TypeBasic{}, skillsBy: map[int32]map[int64]int{}}
 }
 
-func (p *planner) ua() string { return sso.UserAgent(p.version) }
+func (p *planner) ua() string { return p.userAgent }
+
+// esi opens a character's authenticated ESI client. The opener's error
+// already says which character, so it is returned as is.
+func (p *planner) esi(ctx context.Context, characterID int32) (plannerClient, error) {
+	return p.openESI(ctx, characterID)
+}
 
 // requireCharacter fails unless the character is logged in to neat.
 func (p *planner) requireCharacter(id int32) error {
@@ -156,7 +249,7 @@ func (p *planner) sellBooks(ctx context.Context, regionID int64, typeIDs []int64
 		go func(id int64) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			orders, err := fetchSellOrders(ctx, p.ua(), regionID, id)
+			orders, err := fetchSellOrders(ctx, p.openPublicESI(), regionID, id)
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
@@ -183,7 +276,11 @@ func (p *planner) skills(ctx context.Context, characterID int32) (map[int64]int,
 	if err := p.requireCharacter(characterID); err != nil {
 		return nil, err
 	}
-	raw, _, _, err := listCharacterSkills(ctx, p.clientID, characterID, p.ua())
+	client, err := p.esi(ctx, characterID)
+	if err != nil {
+		return nil, fmt.Errorf("skills of %d: %w", characterID, err)
+	}
+	raw, _, _, err := listCharacterSkills(ctx, client)
 	if err != nil {
 		return nil, fmt.Errorf("skills of %d: %w", characterID, err)
 	}
@@ -236,6 +333,12 @@ func sortedKeys[V any](m map[int64]V) []int64 {
 	return out
 }
 
+// configUpdater is the config call the delete tools make: change saved
+// state under the store's lock.
+type configUpdater interface {
+	Update(change func(*config.Config) error) ([]config.Change, error)
+}
+
 type ProfileNameInput struct {
 	Name string `json:"name" jsonschema:"the profile's name"`
 }
@@ -244,7 +347,7 @@ type DeletedOutput struct {
 	Deleted string `json:"deleted"`
 }
 
-func deleteProfileHandler(store ConfigStore, del func(*config.Config, string) error) mcpsdk.ToolHandlerFor[ProfileNameInput, DeletedOutput] {
+func deleteProfileHandler(store configUpdater, del func(*config.Config, string) error) mcpsdk.ToolHandlerFor[ProfileNameInput, DeletedOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ProfileNameInput) (*mcpsdk.CallToolResult, DeletedOutput, error) {
 		if _, err := store.Update(func(cfg *config.Config) error { return del(cfg, in.Name) }); err != nil {
 			return nil, DeletedOutput{}, err

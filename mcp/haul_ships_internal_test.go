@@ -9,13 +9,10 @@ import (
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 )
 
-func stubHaulShipAssets(t *testing.T) {
-	t.Helper()
-	origA, origN := listAssets, getAssetNames
-	t.Cleanup(func() { listAssets, getAssetNames = origA, origN })
-	listAssets = func(_ context.Context, _ string, characterID int32, _ string, _ int32) ([]AssetItem, int32, error) {
+func stubHaulShipAssets(p *planner) {
+	stubAssets(p, func(characterID int32) ([]AssetItem, error) {
 		if characterID != reconPilot {
-			return nil, 0, errors.New("missing scope")
+			return nil, errors.New("missing scope")
 		}
 		return []AssetItem{
 			{ItemID: 1, TypeID: 23757, LocationID: 60003760, LocationType: "station", LocationFlag: "Hangar", Quantity: 1, IsSingleton: true},       // Archon
@@ -26,11 +23,11 @@ func stubHaulShipAssets(t *testing.T) {
 			{ItemID: 6, TypeID: 28352, LocationID: 30000142, LocationType: "solar_system", LocationFlag: "AutoFit", Quantity: 1, IsSingleton: true}, // Rorqual in space
 			{ItemID: 7, TypeID: 22430, LocationID: 1049345291823, LocationType: "item", LocationFlag: "Hangar", Quantity: 1, IsSingleton: true},     // Sin in a structure
 			{ItemID: 8, TypeID: 648, LocationID: 60003760, LocationType: "station", LocationFlag: "Hangar", Quantity: 1},                            // packaged Badger
-		}, 1, nil
-	}
-	getAssetNames = func(_ context.Context, _ string, _ int32, _ string, ids []int64) ([]AssetName, error) {
+		}, nil
+	})
+	stubAssetNames(p, func(int32, []int64) ([]AssetName, error) {
 		return []AssetName{{ItemID: 1, Name: "Big Brick"}}, nil
-	}
+	})
 }
 
 func TestListHaulShips_FindsHaulersCapitalsAndCynoShips(t *testing.T) {
@@ -41,9 +38,9 @@ func TestListHaulShips_FindsHaulersCapitalsAndCynoShips(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	stubHaulShipAssets(t)
+	stubHaulShipAssets(p)
 
-	_, out, err := listHaulShipsHandler("test", "client", store, p.sde)(context.Background(), nil, ListHaulShipsInput{})
+	_, out, err := listHaulShipsHandler("test", p.openESI, p.openPublicESI, store, p.sde)(context.Background(), nil, ListHaulShipsInput{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,8 +76,8 @@ func TestListHaulShips_FindsHaulersCapitalsAndCynoShips(t *testing.T) {
 
 func TestListHaulShips_FiltersByClass(t *testing.T) {
 	store, p := readinessEnv(t)
-	stubHaulShipAssets(t)
-	h := listHaulShipsHandler("test", "client", store, p.sde)
+	stubHaulShipAssets(p)
+	h := listHaulShipsHandler("test", p.openESI, p.openPublicESI, store, p.sde)
 	_, out, err := h(context.Background(), nil, ListHaulShipsInput{CharacterIDs: []int32{reconPilot}, Classes: []string{"carrier", "Cyno ship"}})
 	if err != nil {
 		t.Fatal(err)
@@ -90,6 +87,17 @@ func TestListHaulShips_FiltersByClass(t *testing.T) {
 	}
 	if _, _, err := h(context.Background(), nil, ListHaulShipsInput{Classes: []string{"Battleship"}}); err == nil || !strings.Contains(err.Error(), "Carrier") {
 		t.Errorf("unknown class: err = %v, want one listing the classes", err)
+	}
+}
+
+// A character whose client can't be opened fails like any other asset
+// read: here the only one, so the call fails naming the open error.
+func TestListHaulShips_UnopenableClient(t *testing.T) {
+	store, p := readinessEnv(t)
+	p.openESI = failOpenESI(errors.New("no refresh token"))
+	_, _, err := listHaulShipsHandler("test", p.openESI, p.openPublicESI, store, p.sde)(context.Background(), nil, ListHaulShipsInput{CharacterIDs: []int32{reconPilot}})
+	if err == nil || !strings.Contains(err.Error(), "couldn't read Recon Pilot's assets: no refresh token") {
+		t.Errorf("err = %v, want the open error", err)
 	}
 }
 

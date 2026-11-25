@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	"github.com/zalando/go-keyring"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
@@ -17,13 +18,11 @@ func TestListAssetsHandler_ReturnsAssets(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listAssets
-	t.Cleanup(func() { listAssets = orig })
-	listAssets = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]AssetItem, int32, error) {
-		return []AssetItem{{ItemID: 1, TypeID: 587, LocationID: 60003760, LocationType: "station", LocationFlag: "Hangar", Quantity: 1, IsSingleton: true}}, 3, nil
-	}
+	fake := fakeAssetsESI{assets: func(_ context.Context, page int32) ([]esiapi.CharactersCharacterIdAssetsGetInner, int32, error) {
+		return []esiapi.CharactersCharacterIdAssetsGetInner{{ItemId: 1, TypeId: 587, LocationId: 60003760, LocationType: "station", LocationFlag: "Hangar", Quantity: 1, IsSingleton: true}}, 3, nil
+	}}
 
-	handler := listAssetsHandler("v1", "client-id", store, nil)
+	handler := listAssetsHandler("v1", openNarrow[assetsESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, ListAssetsInput{CharacterID: 7, Page: 2})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -40,11 +39,9 @@ func TestListAssetsHandler_ResolvesTypeNames(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listAssets
-	t.Cleanup(func() { listAssets = orig })
-	listAssets = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]AssetItem, int32, error) {
-		return []AssetItem{{ItemID: 1, TypeID: 587}, {ItemID: 2, TypeID: 587}}, 1, nil
-	}
+	fake := fakeAssetsESI{assets: func(_ context.Context, page int32) ([]esiapi.CharactersCharacterIdAssetsGetInner, int32, error) {
+		return []esiapi.CharactersCharacterIdAssetsGetInner{{ItemId: 1, TypeId: 587}, {ItemId: 2, TypeId: 587}}, 1, nil
+	}}
 
 	origResolve := resolveTypeNames
 	t.Cleanup(func() { resolveTypeNames = origResolve })
@@ -54,7 +51,7 @@ func TestListAssetsHandler_ResolvesTypeNames(t *testing.T) {
 		return map[int64]string{587: "Rifter"}
 	}
 
-	handler := listAssetsHandler("v1", "client-id", store, nil)
+	handler := listAssetsHandler("v1", openNarrow[assetsESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, ListAssetsInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -76,14 +73,12 @@ func TestListAssetsHandler_PropagatesError(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listAssets
-	t.Cleanup(func() { listAssets = orig })
 	wantErr := errors.New("upstream failure")
-	listAssets = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]AssetItem, int32, error) {
+	fake := fakeAssetsESI{assets: func(_ context.Context, page int32) ([]esiapi.CharactersCharacterIdAssetsGetInner, int32, error) {
 		return nil, 0, wantErr
-	}
+	}}
 
-	handler := listAssetsHandler("v1", "client-id", store, nil)
+	handler := listAssetsHandler("v1", openNarrow[assetsESI](fake), store, nil)
 	_, _, err := handler(context.Background(), nil, ListAssetsInput{CharacterID: 7})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -94,14 +89,7 @@ func TestListAssetsHandler_UnknownCharacter_ReturnsErrCharacterNotFound(t *testi
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := listAssets
-	t.Cleanup(func() { listAssets = orig })
-	listAssets = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]AssetItem, int32, error) {
-		t.Fatal("listAssets should not be called for an unknown character")
-		return nil, 0, nil
-	}
-
-	handler := listAssetsHandler("v1", "client-id", store, nil)
+	handler := listAssetsHandler("v1", noNarrow[assetsESI](t), store, nil)
 	_, _, err := handler(context.Background(), nil, ListAssetsInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -159,13 +147,11 @@ func TestGetAssetNamesHandler_ReturnsNames(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getAssetNames
-	t.Cleanup(func() { getAssetNames = orig })
-	getAssetNames = func(ctx context.Context, clientID string, characterID int32, userAgent string, itemIDs []int64) ([]AssetName, error) {
-		return []AssetName{{ItemID: 1, Name: "My Renamed Ship"}}, nil
-	}
+	fake := fakeAssetNamesESI{assetNames: func(_ context.Context, itemIDs []int64) ([]esiapi.CharactersCharacterIdAssetsNamesPostInner, error) {
+		return []esiapi.CharactersCharacterIdAssetsNamesPostInner{{ItemId: 1, Name: "My Renamed Ship"}}, nil
+	}}
 
-	handler := getAssetNamesHandler("v1", "client-id", store)
+	handler := getAssetNamesHandler(openNarrow[assetNamesESI](fake), store)
 	_, out, err := handler(context.Background(), nil, GetAssetNamesInput{CharacterID: 7, ItemIDs: []int64{1}})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -179,14 +165,7 @@ func TestGetAssetNamesHandler_UnknownCharacter_ReturnsErrCharacterNotFound(t *te
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := getAssetNames
-	t.Cleanup(func() { getAssetNames = orig })
-	getAssetNames = func(ctx context.Context, clientID string, characterID int32, userAgent string, itemIDs []int64) ([]AssetName, error) {
-		t.Fatal("getAssetNames should not be called for an unknown character")
-		return nil, nil
-	}
-
-	handler := getAssetNamesHandler("v1", "client-id", store)
+	handler := getAssetNamesHandler(noNarrow[assetNamesESI](t), store)
 	_, _, err := handler(context.Background(), nil, GetAssetNamesInput{CharacterID: 999, ItemIDs: []int64{1}})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -200,16 +179,14 @@ func TestListCorporationAssetsHandler_ReturnsAssets(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationAssets
-	t.Cleanup(func() { listCorporationAssets = orig })
-	listCorporationAssets = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]AssetItem, int32, error) {
+	fake := fakeCorporationAssetsESI{corporationAssets: func(_ context.Context, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdAssetsGetInner, int32, error) {
 		if corporationID != 98000001 {
 			t.Errorf("corporationID = %d, want 98000001", corporationID)
 		}
-		return []AssetItem{{ItemID: 2, TypeID: 34, Quantity: 10}}, 5, nil
-	}
+		return []esiapi.CorporationsCorporationIdAssetsGetInner{{ItemId: 2, TypeId: 34, Quantity: 10}}, 5, nil
+	}}
 
-	handler := listCorporationAssetsHandler("v1", "client-id", store, nil)
+	handler := listCorporationAssetsHandler("v1", openNarrow[corporationAssetsESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, ListCorporationAssetsInput{CharacterID: 7, CorporationID: 98000001, Page: 2})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -226,11 +203,9 @@ func TestListCorporationAssetsHandler_ResolvesTypeNames(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationAssets
-	t.Cleanup(func() { listCorporationAssets = orig })
-	listCorporationAssets = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]AssetItem, int32, error) {
-		return []AssetItem{{ItemID: 2, TypeID: 34}}, 1, nil
-	}
+	fake := fakeCorporationAssetsESI{corporationAssets: func(_ context.Context, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdAssetsGetInner, int32, error) {
+		return []esiapi.CorporationsCorporationIdAssetsGetInner{{ItemId: 2, TypeId: 34}}, 1, nil
+	}}
 
 	origResolve := resolveTypeNames
 	t.Cleanup(func() { resolveTypeNames = origResolve })
@@ -240,7 +215,7 @@ func TestListCorporationAssetsHandler_ResolvesTypeNames(t *testing.T) {
 		return map[int64]string{34: "Tritanium"}
 	}
 
-	handler := listCorporationAssetsHandler("v1", "client-id", store, nil)
+	handler := listCorporationAssetsHandler("v1", openNarrow[corporationAssetsESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, ListCorporationAssetsInput{CharacterID: 7, CorporationID: 98000001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -260,14 +235,12 @@ func TestListCorporationAssetsHandler_PropagatesError(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationAssets
-	t.Cleanup(func() { listCorporationAssets = orig })
 	wantErr := errors.New("upstream failure")
-	listCorporationAssets = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]AssetItem, int32, error) {
+	fake := fakeCorporationAssetsESI{corporationAssets: func(_ context.Context, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdAssetsGetInner, int32, error) {
 		return nil, 0, wantErr
-	}
+	}}
 
-	handler := listCorporationAssetsHandler("v1", "client-id", store, nil)
+	handler := listCorporationAssetsHandler("v1", openNarrow[corporationAssetsESI](fake), store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationAssetsInput{CharacterID: 7, CorporationID: 98000001})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -278,14 +251,7 @@ func TestListCorporationAssetsHandler_UnknownCharacter_ReturnsErrCharacterNotFou
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := listCorporationAssets
-	t.Cleanup(func() { listCorporationAssets = orig })
-	listCorporationAssets = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]AssetItem, int32, error) {
-		t.Fatal("listCorporationAssets should not be called for an unknown character")
-		return nil, 0, nil
-	}
-
-	handler := listCorporationAssetsHandler("v1", "client-id", store, nil)
+	handler := listCorporationAssetsHandler("v1", noNarrow[corporationAssetsESI](t), store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationAssetsInput{CharacterID: 999, CorporationID: 98000001})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -340,13 +306,11 @@ func TestGetCorporationAssetNamesHandler_ReturnsNames(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCorporationAssetNames
-	t.Cleanup(func() { getCorporationAssetNames = orig })
-	getCorporationAssetNames = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, itemIDs []int64) ([]AssetName, error) {
-		return []AssetName{{ItemID: 2, Name: "Corp Hauler"}}, nil
-	}
+	fake := fakeCorporationAssetNamesESI{corporationAssetNames: func(_ context.Context, corporationID int64, itemIDs []int64) ([]esiapi.CharactersCharacterIdAssetsNamesPostInner, error) {
+		return []esiapi.CharactersCharacterIdAssetsNamesPostInner{{ItemId: 2, Name: "Corp Hauler"}}, nil
+	}}
 
-	handler := getCorporationAssetNamesHandler("v1", "client-id", store)
+	handler := getCorporationAssetNamesHandler(openNarrow[corporationAssetNamesESI](fake), store)
 	_, out, err := handler(context.Background(), nil, GetCorporationAssetNamesInput{CharacterID: 7, CorporationID: 98000001, ItemIDs: []int64{2}})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -360,16 +324,85 @@ func TestGetCorporationAssetNamesHandler_UnknownCharacter_ReturnsErrCharacterNot
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := getCorporationAssetNames
-	t.Cleanup(func() { getCorporationAssetNames = orig })
-	getCorporationAssetNames = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, itemIDs []int64) ([]AssetName, error) {
-		t.Fatal("getCorporationAssetNames should not be called for an unknown character")
-		return nil, nil
-	}
-
-	handler := getCorporationAssetNamesHandler("v1", "client-id", store)
+	handler := getCorporationAssetNamesHandler(noNarrow[corporationAssetNamesESI](t), store)
 	_, _, err := handler(context.Background(), nil, GetCorporationAssetNamesInput{CharacterID: 999, CorporationID: 98000001, ItemIDs: []int64{2}})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
+	}
+}
+
+// fakeAssetsESI fakes assetsESI; a nil assets fails as an unfaked call.
+type fakeAssetsESI struct {
+	assets func(ctx context.Context, page int32) ([]esiapi.CharactersCharacterIdAssetsGetInner, int32, error)
+}
+
+func (f fakeAssetsESI) Assets(ctx context.Context, page int32) ([]esiapi.CharactersCharacterIdAssetsGetInner, int32, error) {
+	if f.assets == nil {
+		return nil, 0, errNotFaked
+	}
+	return f.assets(ctx, page)
+}
+
+// fakeAssetNamesESI fakes assetNamesESI; a nil assetNames fails as an unfaked call.
+type fakeAssetNamesESI struct {
+	assetNames func(ctx context.Context, itemIDs []int64) ([]esiapi.CharactersCharacterIdAssetsNamesPostInner, error)
+}
+
+func (f fakeAssetNamesESI) AssetNames(ctx context.Context, itemIDs []int64) ([]esiapi.CharactersCharacterIdAssetsNamesPostInner, error) {
+	if f.assetNames == nil {
+		return nil, errNotFaked
+	}
+	return f.assetNames(ctx, itemIDs)
+}
+
+// fakeCorporationAssetsESI fakes corporationAssetsESI; a nil corporationAssets fails as an unfaked call.
+type fakeCorporationAssetsESI struct {
+	corporationAssets func(ctx context.Context, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdAssetsGetInner, int32, error)
+}
+
+func (f fakeCorporationAssetsESI) CorporationAssets(ctx context.Context, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdAssetsGetInner, int32, error) {
+	if f.corporationAssets == nil {
+		return nil, 0, errNotFaked
+	}
+	return f.corporationAssets(ctx, corporationID, page)
+}
+
+// fakeCorporationAssetNamesESI fakes corporationAssetNamesESI; a nil corporationAssetNames fails as an unfaked call.
+type fakeCorporationAssetNamesESI struct {
+	corporationAssetNames func(ctx context.Context, corporationID int64, itemIDs []int64) ([]esiapi.CharactersCharacterIdAssetsNamesPostInner, error)
+}
+
+func (f fakeCorporationAssetNamesESI) CorporationAssetNames(ctx context.Context, corporationID int64, itemIDs []int64) ([]esiapi.CharactersCharacterIdAssetsNamesPostInner, error) {
+	if f.corporationAssetNames == nil {
+		return nil, errNotFaked
+	}
+	return f.corporationAssetNames(ctx, corporationID, itemIDs)
+}
+
+// Each handler reports a client that can't be opened, wrapping the cause.
+func TestAssetsHandlers_PropagateOpenError(t *testing.T) {
+	store := characterStore(t, config.Character{ID: 7, Name: "Test Pilot"})
+	wantErr := errors.New("no refresh token")
+	for name, call := range map[string]func() error{
+		"list_assets": func() error {
+			_, _, err := listAssetsHandler("v1", failNarrow[assetsESI](wantErr), store, nil)(context.Background(), nil, ListAssetsInput{CharacterID: 7})
+			return err
+		},
+		"get_asset_names": func() error {
+			_, _, err := getAssetNamesHandler(failNarrow[assetNamesESI](wantErr), store)(context.Background(), nil, GetAssetNamesInput{CharacterID: 7, ItemIDs: []int64{1}})
+			return err
+		},
+		"list_corporation_assets": func() error {
+			_, _, err := listCorporationAssetsHandler("v1", failNarrow[corporationAssetsESI](wantErr), store, nil)(context.Background(), nil, ListCorporationAssetsInput{CharacterID: 7, CorporationID: 98000001})
+			return err
+		},
+		"get_corporation_asset_names": func() error {
+			_, _, err := getCorporationAssetNamesHandler(failNarrow[corporationAssetNamesESI](wantErr), store)(context.Background(), nil, GetCorporationAssetNamesInput{CharacterID: 7, CorporationID: 98000001, ItemIDs: []int64{1}})
+			return err
+		},
+	} {
+		if err := call(); !errors.Is(err, wantErr) {
+			t.Errorf("%s: err = %v, want wrapping %v", name, err, wantErr)
+		}
 	}
 }

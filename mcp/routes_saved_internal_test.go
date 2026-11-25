@@ -10,7 +10,7 @@ import (
 
 func TestSaveRoute_NamesSystemsAndKeepsNotes(t *testing.T) {
 	store, p := industryTestEnv(t)
-	save := saveRouteHandler("test", "client", store, p.sde)
+	save := saveRouteHandler("test", p.openESI, p.openPublicESI, store, p.sde)
 	_, out, err := save(context.Background(), nil, SaveRouteInput{Name: "Jita to PF", Systems: []string{"Jita", "Hakonen", "NL6V-7", "PF-QHK"}, ShipClass: "jump_freighter", Notes: new("Hakonen is quiet.")})
 	if err != nil {
 		t.Fatal(err)
@@ -44,7 +44,7 @@ func TestSaveRoute_NamesSystemsAndKeepsNotes(t *testing.T) {
 
 func TestSaveHaulProfile_PinsRoutesAndKeepsNotes(t *testing.T) {
 	store, p := industryTestEnv(t)
-	save := saveHaulProfileHandler("test", "client", store, p.sde)
+	save := saveHaulProfileHandler("test", p.openESI, p.openPublicESI, store, p.sde)
 	_, prof, err := save(context.Background(), nil, SaveHaulProfileInput{Name: "JF Nomad", Ship: "Nomad", PilotID: int64(testPilot), HoldM3: 158400,
 		Outbound: []string{"Jita", "Hakonen", "NL6V-7", "PF-QHK"}, Notes: new("Only under 300M ISK through Jita.")})
 	if err != nil {
@@ -67,7 +67,7 @@ func TestSaveHaulProfile_PinsRoutesAndKeepsNotes(t *testing.T) {
 
 func TestSaveFacilityProfile_KeepsNotesWhenOmitted(t *testing.T) {
 	store, p := industryTestEnv(t)
-	save := saveFacilityProfileHandler("test", "client", store, p.sde)
+	save := saveFacilityProfileHandler("test", p.openESI, p.openPublicESI, store, p.sde)
 	in := SaveFacilityProfileInput{Name: "Home Sotiyo", Kind: industry.KindUpwell, StructureType: "Sotiyo", System: "PF-QHK", Notes: new("fee measured 2026-11-17")}
 	if _, _, err := save(context.Background(), nil, in); err != nil {
 		t.Fatal(err)

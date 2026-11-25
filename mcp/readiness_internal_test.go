@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	"github.com/zalando/go-keyring"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
@@ -32,7 +33,8 @@ func readinessEnv(t *testing.T) (*config.Store, *planner) {
 		t.Fatal(err)
 	}
 	sdeStore := sdetest.NewStore(t, "testdata/industry_fixture.sql", "testdata/readiness_fixture.sql")
-	return store, newPlanner("test", "client", store, sdeStore)
+	openESI, openPublicESI := noESI()
+	return store, newPlanner("test", openESI, openPublicESI, store, sdeStore)
 }
 
 // requirementsOf gives a character exactly the skills the listed types
@@ -57,26 +59,31 @@ func requirementsOf(t *testing.T, p *planner, extra map[int64]int64, typeIDs ...
 	return out
 }
 
-func stubSkills(t *testing.T, by map[int32][]CharacterSkill) {
-	t.Helper()
-	orig := listCharacterSkills
-	t.Cleanup(func() { listCharacterSkills = orig })
-	listCharacterSkills = func(_ context.Context, _ string, characterID int32, _ string) ([]CharacterSkill, int64, *int64, error) {
-		s, ok := by[characterID]
-		if !ok {
-			return nil, 0, nil, errors.New("missing scope")
+// stubSkills gives each character in by its skills; any other character's
+// skills can't be read.
+func stubSkills(p *planner, by map[int32][]CharacterSkill) {
+	addESILayer(p, func(id int32, f *fakeESI) {
+		f.characterSkills = func(context.Context) (*esiapi.CharactersSkills, error) {
+			s, ok := by[id]
+			if !ok {
+				return nil, errors.New("missing scope")
+			}
+			out := &esiapi.CharactersSkills{Skills: []esiapi.CharactersSkillsSkill{}}
+			for _, sk := range s {
+				out.Skills = append(out.Skills, esiapi.CharactersSkillsSkill{SkillId: sk.SkillID, ActiveSkillLevel: sk.ActiveSkillLevel, TrainedSkillLevel: sk.TrainedSkillLevel, SkillpointsInSkill: sk.SkillpointsInSkill})
+			}
+			return out, nil
 		}
-		return s, 0, nil, nil
-	}
+	})
 }
 
 func TestListCharacterCapabilities_FromSDERequirements(t *testing.T) {
 	store, p := readinessEnv(t)
-	stubSkills(t, map[int32][]CharacterSkill{
+	stubSkills(p, map[int32][]CharacterSkill{
 		reconPilot:   requirementsOf(t, p, map[int64]int64{21603: 4}, 11957, 21096), // Falcon and the standard cyno, CFT IV
 		carrierPilot: requirementsOf(t, p, map[int64]int64{83094: 1}, 23757),        // Archon, Capital Jump Portal Generation I
 	})
-	_, out, err := listCharacterCapabilitiesHandler("test", "client", store, p.sde)(context.Background(), nil, ListCharacterCapabilitiesInput{IncludeMissing: true})
+	_, out, err := listCharacterCapabilitiesHandler("test", p.openESI, p.openPublicESI, store, p.sde)(context.Background(), nil, ListCharacterCapabilitiesInput{IncludeMissing: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +119,7 @@ func TestListCharacterCapabilities_FromSDERequirements(t *testing.T) {
 		t.Errorf("carrier hulls = %+v", carrier.Hulls)
 	}
 
-	_, only, err := listCharacterCapabilitiesHandler("test", "client", store, p.sde)(context.Background(), nil, ListCharacterCapabilitiesInput{CharacterIDs: []int32{reconPilot}})
+	_, only, err := listCharacterCapabilitiesHandler("test", p.openESI, p.openPublicESI, store, p.sde)(context.Background(), nil, ListCharacterCapabilitiesInput{CharacterIDs: []int32{reconPilot}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,8 +130,8 @@ func TestListCharacterCapabilities_FromSDERequirements(t *testing.T) {
 
 func TestListCharacterCapabilities_UnreadableSkillsAreAWarning(t *testing.T) {
 	store, p := readinessEnv(t)
-	stubSkills(t, map[int32][]CharacterSkill{reconPilot: nil})
-	_, out, err := listCharacterCapabilitiesHandler("test", "client", store, p.sde)(context.Background(), nil, ListCharacterCapabilitiesInput{})
+	stubSkills(p, map[int32][]CharacterSkill{reconPilot: nil})
+	_, out, err := listCharacterCapabilitiesHandler("test", p.openESI, p.openPublicESI, store, p.sde)(context.Background(), nil, ListCharacterCapabilitiesInput{})
 	if err != nil || len(out.Characters) != 1 || len(out.Warnings) != 1 || !strings.Contains(out.Warnings[0], "Carrier Pilot") {
 		t.Errorf("out = %+v, %v", out, err)
 	}
@@ -140,25 +147,25 @@ func TestListJumpClones_CooldownCapacityAndNames(t *testing.T) {
 	if err := store.Save(cfg); err != nil {
 		t.Fatal(err)
 	}
-	stubSkills(t, map[int32][]CharacterSkill{
+	stubSkills(p, map[int32][]CharacterSkill{
 		reconPilot: {{SkillID: 33399, ActiveSkillLevel: 4}, {SkillID: 24242, ActiveSkillLevel: 5}, {SkillID: 33407, ActiveSkillLevel: 2}},
 	})
-	origC, origN, origI := getCharacterClones, now, listCharacterImplants
-	t.Cleanup(func() { getCharacterClones, now, listCharacterImplants = origC, origN, origI })
-	listCharacterImplants = func(context.Context, string, int32, string) ([]int64, error) { return []int64{35}, nil }
-	stubLocations(t, map[int32]int64{reconPilot: 1049345291823})
+	origN := now
+	t.Cleanup(func() { now = origN })
+	stubImplants(p, func(int32) ([]int64, error) { return []int64{35}, nil })
+	stubLocations(p, map[int32]int64{reconPilot: 1049345291823})
 	now = func() time.Time { return time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC) }
 	last := time.Date(2026, 11, 19, 20, 0, 0, 0, time.UTC)
 	home := int64(60003760)
 	kind := "station"
-	getCharacterClones = func(_ context.Context, _ string, characterID int32, _ string) (GetCharacterClonesOutput, error) {
+	stubClones(p, func(characterID int32) (GetCharacterClonesOutput, error) {
 		if characterID != reconPilot {
 			return GetCharacterClonesOutput{}, errors.New("missing scope")
 		}
 		return GetCharacterClonesOutput{CharacterID: characterID, LastCloneJumpDate: &last, HomeLocationID: &home, HomeLocationType: &kind,
 			JumpClones: []JumpClone{{LocationID: 1049345291823, LocationType: "structure", Implants: []int64{34}}, {LocationID: 1, LocationType: "structure"}}}, nil
-	}
-	_, out, err := listJumpClonesHandler("test", "client", store, p.sde)(context.Background(), nil, ListJumpClonesInput{})
+	})
+	_, out, err := listJumpClonesHandler("test", fakeOpener(p), p.openPublicESI, store, p.sde)(context.Background(), nil, ListJumpClonesInput{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,20 +191,18 @@ func TestListJumpClones_CooldownCapacityAndNames(t *testing.T) {
 // read are left out, so neither is mistaken for the other.
 func TestListJumpClones_NoImplantsIsNotUnknownImplants(t *testing.T) {
 	store, p := readinessEnv(t)
-	stubSkills(t, map[int32][]CharacterSkill{reconPilot: nil, carrierPilot: nil})
-	stubLocations(t, map[int32]int64{})
-	origC, origI := getCharacterClones, listCharacterImplants
-	t.Cleanup(func() { getCharacterClones, listCharacterImplants = origC, origI })
-	getCharacterClones = func(_ context.Context, _ string, characterID int32, _ string) (GetCharacterClonesOutput, error) {
+	stubSkills(p, map[int32][]CharacterSkill{reconPilot: nil, carrierPilot: nil})
+	stubLocations(p, map[int32]int64{})
+	stubClones(p, func(characterID int32) (GetCharacterClonesOutput, error) {
 		return GetCharacterClonesOutput{CharacterID: characterID}, nil
-	}
-	listCharacterImplants = func(_ context.Context, _ string, characterID int32, _ string) ([]int64, error) {
+	})
+	stubImplants(p, func(characterID int32) ([]int64, error) {
 		if characterID == carrierPilot {
 			return nil, errors.New("missing scope")
 		}
 		return nil, nil
-	}
-	_, out, err := listJumpClonesHandler("test", "client", store, p.sde)(context.Background(), nil, ListJumpClonesInput{})
+	})
+	_, out, err := listJumpClonesHandler("test", fakeOpener(p), p.openPublicESI, store, p.sde)(context.Background(), nil, ListJumpClonesInput{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,21 +224,20 @@ func TestListJumpClones_NoImplantsIsNotUnknownImplants(t *testing.T) {
 
 // stubLocations docks each character at the given station or structure
 // (stations below 1e9), leaving the rest in space.
-func stubLocations(t *testing.T, docked map[int32]int64) {
-	t.Helper()
-	orig := getCharacterLocation
-	t.Cleanup(func() { getCharacterLocation = orig })
-	getCharacterLocation = func(_ context.Context, _ string, id int32, _ string) (int64, *int64, *int64, error) {
-		at, ok := docked[id]
-		switch {
-		case !ok:
-			return 30000142, nil, nil, nil
-		case at < 1e9:
-			return 30000142, &at, nil, nil
-		default:
-			return 30000142, nil, &at, nil
+func stubLocations(p *planner, docked map[int32]int64) {
+	addESILayer(p, func(id int32, f *fakeESI) {
+		f.characterLocation = func(context.Context) (*esiapi.CharactersLocation, error) {
+			at, ok := docked[id]
+			switch {
+			case !ok:
+				return &esiapi.CharactersLocation{SolarSystemId: 30000142}, nil
+			case at < 1e9:
+				return &esiapi.CharactersLocation{SolarSystemId: 30000142, StationId: &at}, nil
+			default:
+				return &esiapi.CharactersLocation{SolarSystemId: 30000142, StructureId: &at}, nil
+			}
 		}
-	}
+	})
 }
 
 // readyNow needs a clone bay where the character is docked, not just a
@@ -263,19 +267,17 @@ func TestListJumpClones_ReadyNowNeedsACloneBayHere(t *testing.T) {
 			if err := store.Save(cfg); err != nil {
 				t.Fatal(err)
 			}
-			stubSkills(t, map[int32][]CharacterSkill{reconPilot: nil, carrierPilot: nil})
-			stubLocations(t, tt.docked)
-			origC, origI := getCharacterClones, listCharacterImplants
-			t.Cleanup(func() { getCharacterClones, listCharacterImplants = origC, origI })
-			listCharacterImplants = func(context.Context, string, int32, string) ([]int64, error) { return nil, nil }
-			getCharacterClones = func(_ context.Context, _ string, id int32, _ string) (GetCharacterClonesOutput, error) {
+			stubSkills(p, map[int32][]CharacterSkill{reconPilot: nil, carrierPilot: nil})
+			stubLocations(p, tt.docked)
+			stubImplants(p, func(int32) ([]int64, error) { return nil, nil })
+			stubClones(p, func(id int32) (GetCharacterClonesOutput, error) {
 				out := GetCharacterClonesOutput{CharacterID: id}
 				if id == carrierPilot {
 					out.JumpClones = []JumpClone{{LocationID: provenBay, LocationType: "station"}}
 				}
 				return out, nil
-			}
-			_, out, err := listJumpClonesHandler("test", "client", store, p.sde)(context.Background(), nil, ListJumpClonesInput{CharacterIDs: []int32{reconPilot, carrierPilot}})
+			})
+			_, out, err := listJumpClonesHandler("test", fakeOpener(p), p.openPublicESI, store, p.sde)(context.Background(), nil, ListJumpClonesInput{CharacterIDs: []int32{reconPilot, carrierPilot}})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -292,19 +294,18 @@ func TestListJumpClones_ReadyNowNeedsACloneBayHere(t *testing.T) {
 func TestListJumpClones_UnaskedCharacterProvesCloneBay(t *testing.T) {
 	const provenBay = int64(60003760)
 	store, p := readinessEnv(t)
-	stubSkills(t, map[int32][]CharacterSkill{reconPilot: nil, carrierPilot: nil})
-	stubLocations(t, map[int32]int64{reconPilot: provenBay})
-	origC, origI := getCharacterClones, listCharacterImplants
-	t.Cleanup(func() { getCharacterClones, listCharacterImplants = origC, origI })
-	listCharacterImplants = func(context.Context, string, int32, string) ([]int64, error) { return nil, nil }
-	getCharacterClones = func(_ context.Context, _ string, id int32, _ string) (GetCharacterClonesOutput, error) {
+	stubSkills(p, map[int32][]CharacterSkill{reconPilot: nil, carrierPilot: nil})
+	stubLocations(p, map[int32]int64{reconPilot: provenBay})
+	stubImplants(p, func(int32) ([]int64, error) { return nil, nil })
+	stubClones(p, func(id int32) (GetCharacterClonesOutput, error) {
 		out := GetCharacterClonesOutput{CharacterID: id}
 		if id == carrierPilot {
 			out.JumpClones = []JumpClone{{LocationID: provenBay, LocationType: "station"}}
 		}
 		return out, nil
-	}
-	_, out, err := listJumpClonesHandler("test", "client", store, p.sde)(context.Background(), nil, ListJumpClonesInput{CharacterIDs: []int32{reconPilot}})
+	})
+
+	_, out, err := listJumpClonesHandler("test", fakeOpener(p), p.openPublicESI, store, p.sde)(context.Background(), nil, ListJumpClonesInput{CharacterIDs: []int32{reconPilot}})
 	if err != nil {
 		t.Fatal(err)
 	}

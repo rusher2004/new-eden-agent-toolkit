@@ -55,14 +55,12 @@ func TestListSovereigntyCampaignsHandler_MapsFields(t *testing.T) {
 }
 
 func TestListSovereigntySystemsHandler_MapsFieldsForAllThreeClaimKinds(t *testing.T) {
-	orig := listSovereigntySystems
-	t.Cleanup(func() { listSovereigntySystems = orig })
 	claimedSince := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	vwStart := time.Date(2026, 7, 25, 20, 0, 0, 0, time.UTC)
 	vwEnd := time.Date(2026, 7, 25, 22, 0, 0, 0, time.UTC)
 	unclaimed := true
 
-	listSovereigntySystems = func(ctx context.Context, userAgent string) ([]esiapi.SovereigntySystemsSolarsystem, error) {
+	fake := fakeSovereigntySystemsESI{sovereigntySystems: func(context.Context) ([]esiapi.SovereigntySystemsSolarsystem, error) {
 		return []esiapi.SovereigntySystemsSolarsystem{
 			{
 				SolarSystemId: 30000001,
@@ -94,9 +92,10 @@ func TestListSovereigntySystemsHandler_MapsFieldsForAllThreeClaimKinds(t *testin
 				},
 			},
 		}, nil
-	}
+	}}
 
-	handler := listSovereigntySystemsHandler("v1", nil)
+	handler := listSovereigntySystemsHandler("v1", publicNarrow[sovereigntySystemsESI](fake), nil)
+
 	_, out, err := handler(context.Background(), nil, ListSovereigntySystemsInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -181,14 +180,12 @@ func TestListSovereigntyCampaignsHandler_PropagatesError(t *testing.T) {
 }
 
 func TestListSovereigntySystemsHandler_PropagatesError(t *testing.T) {
-	orig := listSovereigntySystems
-	t.Cleanup(func() { listSovereigntySystems = orig })
 	wantErr := errors.New("upstream failure")
-	listSovereigntySystems = func(ctx context.Context, userAgent string) ([]esiapi.SovereigntySystemsSolarsystem, error) {
+	fake := fakeSovereigntySystemsESI{sovereigntySystems: func(_ context.Context) ([]esiapi.SovereigntySystemsSolarsystem, error) {
 		return nil, wantErr
-	}
+	}}
 
-	handler := listSovereigntySystemsHandler("v1", nil)
+	handler := listSovereigntySystemsHandler("v1", publicNarrow[sovereigntySystemsESI](fake), nil)
 	_, _, err := handler(context.Background(), nil, ListSovereigntySystemsInput{})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -229,11 +226,9 @@ func TestListSovereigntyCampaignsHandler_ResolvesLocationNames(t *testing.T) {
 }
 
 func TestListSovereigntySystemsHandler_ResolvesSystemName(t *testing.T) {
-	orig := listSovereigntySystems
-	t.Cleanup(func() { listSovereigntySystems = orig })
-	listSovereigntySystems = func(ctx context.Context, userAgent string) ([]esiapi.SovereigntySystemsSolarsystem, error) {
+	fake := fakeSovereigntySystemsESI{sovereigntySystems: func(_ context.Context) ([]esiapi.SovereigntySystemsSolarsystem, error) {
 		return []esiapi.SovereigntySystemsSolarsystem{{SolarSystemId: 30000142}}, nil
-	}
+	}}
 
 	origSystem := resolveSystemNames
 	t.Cleanup(func() { resolveSystemNames = origSystem })
@@ -241,7 +236,7 @@ func TestListSovereigntySystemsHandler_ResolvesSystemName(t *testing.T) {
 		return map[int64]string{30000142: "Jita"}
 	}
 
-	handler := listSovereigntySystemsHandler("v1", nil)
+	handler := listSovereigntySystemsHandler("v1", publicNarrow[sovereigntySystemsESI](fake), nil)
 	_, out, err := handler(context.Background(), nil, ListSovereigntySystemsInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -252,16 +247,14 @@ func TestListSovereigntySystemsHandler_ResolvesSystemName(t *testing.T) {
 }
 
 func TestListSovereigntySystemsHandler_ResolvesClaimFactionName(t *testing.T) {
-	orig := listSovereigntySystems
-	t.Cleanup(func() { listSovereigntySystems = orig })
 	factionID := int64(500001)
-	listSovereigntySystems = func(ctx context.Context, userAgent string) ([]esiapi.SovereigntySystemsSolarsystem, error) {
+	fake := fakeSovereigntySystemsESI{sovereigntySystems: func(_ context.Context) ([]esiapi.SovereigntySystemsSolarsystem, error) {
 		return []esiapi.SovereigntySystemsSolarsystem{
 			{SolarSystemId: 30000142, Claim: esiapi.SovereigntySystemsSolarsystemClaim{
 				Faction: &esiapi.Faction{Faction: &esiapi.SovereigntySystemsFaction{FactionId: factionID}},
 			}},
 		}, nil
-	}
+	}}
 
 	origFaction := resolveFactionNames
 	t.Cleanup(func() { resolveFactionNames = origFaction })
@@ -274,7 +267,7 @@ func TestListSovereigntySystemsHandler_ResolvesClaimFactionName(t *testing.T) {
 		return map[int64]string{30000142: "Jita"}
 	}
 
-	handler := listSovereigntySystemsHandler("v1", nil)
+	handler := listSovereigntySystemsHandler("v1", publicNarrow[sovereigntySystemsESI](fake), nil)
 	_, out, err := handler(context.Background(), nil, ListSovereigntySystemsInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -282,4 +275,16 @@ func TestListSovereigntySystemsHandler_ResolvesClaimFactionName(t *testing.T) {
 	if len(out.Systems) != 1 || out.Systems[0].Claim.FactionName != "Sansha's Nation" {
 		t.Errorf("Systems = %+v, want one entry Claim.FactionName=%q", out.Systems, "Sansha's Nation")
 	}
+}
+
+// fakeSovereigntySystemsESI fakes sovereigntySystemsESI; a nil sovereigntySystems fails as an unfaked call.
+type fakeSovereigntySystemsESI struct {
+	sovereigntySystems func(ctx context.Context) ([]esiapi.SovereigntySystemsSolarsystem, error)
+}
+
+func (f fakeSovereigntySystemsESI) SovereigntySystems(ctx context.Context) ([]esiapi.SovereigntySystemsSolarsystem, error) {
+	if f.sovereigntySystems == nil {
+		return nil, errNotFaked
+	}
+	return f.sovereigntySystems(ctx)
 }

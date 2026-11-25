@@ -30,8 +30,6 @@ func TestListCharacterIndustryJobsHandler_MapsFields(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCharacterIndustryJobs
-	t.Cleanup(func() { listCharacterIndustryJobs = orig })
 	endDate := time.Unix(1000, 0)
 	startDate := time.Unix(500, 0)
 	completedCharacterID := int64(101)
@@ -42,7 +40,7 @@ func TestListCharacterIndustryJobsHandler_MapsFields(t *testing.T) {
 	probability := 0.75
 	productTypeID := int64(950)
 	successfulRuns := int64(9)
-	listCharacterIndustryJobs = func(ctx context.Context, clientID string, characterID int32, userAgent string, includeCompleted bool) ([]esiapi.CharactersCharacterIdIndustryJobsGetInner, error) {
+	fake := fakeCharacterIndustryJobsESI{characterIndustryJobs: func(_ context.Context, includeCompleted bool) ([]esiapi.CharactersCharacterIdIndustryJobsGetInner, error) {
 		return []esiapi.CharactersCharacterIdIndustryJobsGetInner{{
 			ActivityId: 1, BlueprintId: 2, BlueprintLocationId: 3, BlueprintTypeId: 4,
 			Duration: 3600, EndDate: endDate, FacilityId: 5, InstallerId: 6, JobId: 7,
@@ -51,9 +49,9 @@ func TestListCharacterIndustryJobsHandler_MapsFields(t *testing.T) {
 			LicensedRuns: &licensedRuns, PauseDate: &pauseDate, Probability: &probability,
 			ProductTypeId: &productTypeID, SuccessfulRuns: &successfulRuns,
 		}}, nil
-	}
+	}}
 
-	handler := listCharacterIndustryJobsHandler("v1", "client-id", store, nil)
+	handler := listCharacterIndustryJobsHandler("v1", openNarrow[characterIndustryJobsESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, ListCharacterIndustryJobsInput{CharacterID: 7, IncludeCompleted: true})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -83,14 +81,7 @@ func TestListCharacterIndustryJobsHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := listCharacterIndustryJobs
-	t.Cleanup(func() { listCharacterIndustryJobs = orig })
-	listCharacterIndustryJobs = func(ctx context.Context, clientID string, characterID int32, userAgent string, includeCompleted bool) ([]esiapi.CharactersCharacterIdIndustryJobsGetInner, error) {
-		t.Fatal("listCharacterIndustryJobs should not be called for an unknown character")
-		return nil, nil
-	}
-
-	handler := listCharacterIndustryJobsHandler("v1", "client-id", store, nil)
+	handler := listCharacterIndustryJobsHandler("v1", noNarrow[characterIndustryJobsESI](t), store, nil)
 	_, _, err := handler(context.Background(), nil, ListCharacterIndustryJobsInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -298,8 +289,6 @@ func TestListCorporationIndustryJobsHandler_MapsFieldsAndDefaultsPageTo1(t *test
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationIndustryJobs
-	t.Cleanup(func() { listCorporationIndustryJobs = orig })
 	endDate := time.Unix(1000, 0)
 	startDate := time.Unix(500, 0)
 	completedCharacterID := int64(101)
@@ -310,7 +299,7 @@ func TestListCorporationIndustryJobsHandler_MapsFieldsAndDefaultsPageTo1(t *test
 	probability := 0.75
 	productTypeID := int64(950)
 	successfulRuns := int64(9)
-	listCorporationIndustryJobs = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, includeCompleted bool, page int32) ([]esiapi.CorporationsCorporationIdIndustryJobsGetInner, int32, error) {
+	fake := fakeCorporationIndustryJobsESI{corporationIndustryJobs: func(_ context.Context, corporationID int64, includeCompleted bool, page int32) ([]esiapi.CorporationsCorporationIdIndustryJobsGetInner, int32, error) {
 		return []esiapi.CorporationsCorporationIdIndustryJobsGetInner{{
 			ActivityId: 1, BlueprintId: 2, BlueprintLocationId: 3, BlueprintTypeId: 4,
 			Duration: 3600, EndDate: endDate, FacilityId: 5, InstallerId: 6, JobId: 7,
@@ -319,9 +308,9 @@ func TestListCorporationIndustryJobsHandler_MapsFieldsAndDefaultsPageTo1(t *test
 			LicensedRuns: &licensedRuns, PauseDate: &pauseDate, Probability: &probability,
 			ProductTypeId: &productTypeID, SuccessfulRuns: &successfulRuns,
 		}}, 6, nil
-	}
+	}}
 
-	handler := listCorporationIndustryJobsHandler("v1", "client-id", store, nil)
+	handler := listCorporationIndustryJobsHandler("v1", openNarrow[corporationIndustryJobsESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, ListCorporationIndustryJobsInput{CharacterID: 7, CorporationID: 98000001, IncludeCompleted: true})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -351,14 +340,7 @@ func TestListCorporationIndustryJobsHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := listCorporationIndustryJobs
-	t.Cleanup(func() { listCorporationIndustryJobs = orig })
-	listCorporationIndustryJobs = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, includeCompleted bool, page int32) ([]esiapi.CorporationsCorporationIdIndustryJobsGetInner, int32, error) {
-		t.Fatal("listCorporationIndustryJobs should not be called for an unknown character")
-		return nil, 0, nil
-	}
-
-	handler := listCorporationIndustryJobsHandler("v1", "client-id", store, nil)
+	handler := listCorporationIndustryJobsHandler("v1", noNarrow[corporationIndustryJobsESI](t), store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationIndustryJobsInput{CharacterID: 999, CorporationID: 98000001})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -391,9 +373,7 @@ func TestListIndustryFacilitiesHandler_MapsFields(t *testing.T) {
 }
 
 func TestListIndustrySystemsHandler_MapsFields(t *testing.T) {
-	orig := listIndustrySystems
-	t.Cleanup(func() { listIndustrySystems = orig })
-	listIndustrySystems = func(ctx context.Context, userAgent string) ([]esiapi.IndustrySystemsGetInner, error) {
+	fake := fakeIndustrySystemsESI{industrySystems: func(_ context.Context) ([]esiapi.IndustrySystemsGetInner, error) {
 		return []esiapi.IndustrySystemsGetInner{{
 			SolarSystemId: 30000142,
 			CostIndices: []esiapi.IndustrySystemsGetInnerCostIndicesInner{
@@ -401,9 +381,9 @@ func TestListIndustrySystemsHandler_MapsFields(t *testing.T) {
 				{Activity: "invention", CostIndex: 0.02},
 			},
 		}}, nil
-	}
+	}}
 
-	handler := listIndustrySystemsHandler("v1", nil)
+	handler := listIndustrySystemsHandler("v1", publicNarrow[industrySystemsESI](fake), nil)
 	_, out, err := handler(context.Background(), nil, ListIndustrySystemsInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -428,14 +408,12 @@ func TestListCharacterIndustryJobsHandler_PropagatesError(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCharacterIndustryJobs
-	t.Cleanup(func() { listCharacterIndustryJobs = orig })
 	wantErr := errors.New("upstream failure")
-	listCharacterIndustryJobs = func(ctx context.Context, clientID string, characterID int32, userAgent string, includeCompleted bool) ([]esiapi.CharactersCharacterIdIndustryJobsGetInner, error) {
+	fake := fakeCharacterIndustryJobsESI{characterIndustryJobs: func(_ context.Context, includeCompleted bool) ([]esiapi.CharactersCharacterIdIndustryJobsGetInner, error) {
 		return nil, wantErr
-	}
+	}}
 
-	handler := listCharacterIndustryJobsHandler("v1", "client-id", store, nil)
+	handler := listCharacterIndustryJobsHandler("v1", openNarrow[characterIndustryJobsESI](fake), store, nil)
 	_, _, err := handler(context.Background(), nil, ListCharacterIndustryJobsInput{CharacterID: 7})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -533,14 +511,12 @@ func TestListCorporationIndustryJobsHandler_PropagatesError(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationIndustryJobs
-	t.Cleanup(func() { listCorporationIndustryJobs = orig })
 	wantErr := errors.New("upstream failure")
-	listCorporationIndustryJobs = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, includeCompleted bool, page int32) ([]esiapi.CorporationsCorporationIdIndustryJobsGetInner, int32, error) {
+	fake := fakeCorporationIndustryJobsESI{corporationIndustryJobs: func(_ context.Context, corporationID int64, includeCompleted bool, page int32) ([]esiapi.CorporationsCorporationIdIndustryJobsGetInner, int32, error) {
 		return nil, 0, wantErr
-	}
+	}}
 
-	handler := listCorporationIndustryJobsHandler("v1", "client-id", store, nil)
+	handler := listCorporationIndustryJobsHandler("v1", openNarrow[corporationIndustryJobsESI](fake), store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationIndustryJobsInput{CharacterID: 7, CorporationID: 98000001})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -563,14 +539,12 @@ func TestListIndustryFacilitiesHandler_PropagatesError(t *testing.T) {
 }
 
 func TestListIndustrySystemsHandler_PropagatesError(t *testing.T) {
-	orig := listIndustrySystems
-	t.Cleanup(func() { listIndustrySystems = orig })
 	wantErr := errors.New("upstream failure")
-	listIndustrySystems = func(ctx context.Context, userAgent string) ([]esiapi.IndustrySystemsGetInner, error) {
+	fake := fakeIndustrySystemsESI{industrySystems: func(_ context.Context) ([]esiapi.IndustrySystemsGetInner, error) {
 		return nil, wantErr
-	}
+	}}
 
-	handler := listIndustrySystemsHandler("v1", nil)
+	handler := listIndustrySystemsHandler("v1", publicNarrow[industrySystemsESI](fake), nil)
 	_, _, err := handler(context.Background(), nil, ListIndustrySystemsInput{})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -580,12 +554,10 @@ func TestListIndustrySystemsHandler_PropagatesError(t *testing.T) {
 func TestListCharacterIndustryJobsHandler_ResolvesTypeNames(t *testing.T) {
 	store := industryTestStore(t)
 
-	orig := listCharacterIndustryJobs
-	t.Cleanup(func() { listCharacterIndustryJobs = orig })
 	productTypeID := int64(588)
-	listCharacterIndustryJobs = func(ctx context.Context, clientID string, characterID int32, userAgent string, includeCompleted bool) ([]esiapi.CharactersCharacterIdIndustryJobsGetInner, error) {
+	fake := fakeCharacterIndustryJobsESI{characterIndustryJobs: func(_ context.Context, includeCompleted bool) ([]esiapi.CharactersCharacterIdIndustryJobsGetInner, error) {
 		return []esiapi.CharactersCharacterIdIndustryJobsGetInner{{JobId: 1, BlueprintTypeId: 587, ProductTypeId: &productTypeID}}, nil
-	}
+	}}
 
 	origResolve := resolveTypeNames
 	t.Cleanup(func() { resolveTypeNames = origResolve })
@@ -595,7 +567,7 @@ func TestListCharacterIndustryJobsHandler_ResolvesTypeNames(t *testing.T) {
 		return map[int64]string{587: "Rifter Blueprint", 588: "Rifter"}
 	}
 
-	handler := listCharacterIndustryJobsHandler("v1", "client-id", store, nil)
+	handler := listCharacterIndustryJobsHandler("v1", openNarrow[characterIndustryJobsESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, ListCharacterIndustryJobsInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -618,11 +590,9 @@ func TestListCharacterIndustryJobsHandler_ResolvesTypeNames(t *testing.T) {
 func TestListCharacterIndustryJobsHandler_NilProductTypeIDNotEnriched(t *testing.T) {
 	store := industryTestStore(t)
 
-	orig := listCharacterIndustryJobs
-	t.Cleanup(func() { listCharacterIndustryJobs = orig })
-	listCharacterIndustryJobs = func(ctx context.Context, clientID string, characterID int32, userAgent string, includeCompleted bool) ([]esiapi.CharactersCharacterIdIndustryJobsGetInner, error) {
+	fake := fakeCharacterIndustryJobsESI{characterIndustryJobs: func(_ context.Context, includeCompleted bool) ([]esiapi.CharactersCharacterIdIndustryJobsGetInner, error) {
 		return []esiapi.CharactersCharacterIdIndustryJobsGetInner{{JobId: 1, BlueprintTypeId: 587, ProductTypeId: nil}}, nil
-	}
+	}}
 
 	origResolve := resolveTypeNames
 	t.Cleanup(func() { resolveTypeNames = origResolve })
@@ -632,7 +602,7 @@ func TestListCharacterIndustryJobsHandler_NilProductTypeIDNotEnriched(t *testing
 		return map[int64]string{587: "Rifter Blueprint"}
 	}
 
-	handler := listCharacterIndustryJobsHandler("v1", "client-id", store, nil)
+	handler := listCharacterIndustryJobsHandler("v1", openNarrow[characterIndustryJobsESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, ListCharacterIndustryJobsInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -658,12 +628,10 @@ func TestListCharacterIndustryJobsHandler_NilProductTypeIDNotEnriched(t *testing
 func TestListCorporationIndustryJobsHandler_ResolvesTypeNames(t *testing.T) {
 	store := industryTestStore(t)
 
-	orig := listCorporationIndustryJobs
-	t.Cleanup(func() { listCorporationIndustryJobs = orig })
 	productTypeID := int64(588)
-	listCorporationIndustryJobs = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, includeCompleted bool, page int32) ([]esiapi.CorporationsCorporationIdIndustryJobsGetInner, int32, error) {
+	fake := fakeCorporationIndustryJobsESI{corporationIndustryJobs: func(_ context.Context, corporationID int64, includeCompleted bool, page int32) ([]esiapi.CorporationsCorporationIdIndustryJobsGetInner, int32, error) {
 		return []esiapi.CorporationsCorporationIdIndustryJobsGetInner{{JobId: 1, BlueprintTypeId: 587, ProductTypeId: &productTypeID}}, 1, nil
-	}
+	}}
 
 	origResolve := resolveTypeNames
 	t.Cleanup(func() { resolveTypeNames = origResolve })
@@ -671,7 +639,7 @@ func TestListCorporationIndustryJobsHandler_ResolvesTypeNames(t *testing.T) {
 		return map[int64]string{587: "Rifter Blueprint", 588: "Rifter"}
 	}
 
-	handler := listCorporationIndustryJobsHandler("v1", "client-id", store, nil)
+	handler := listCorporationIndustryJobsHandler("v1", openNarrow[corporationIndustryJobsESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, ListCorporationIndustryJobsInput{CharacterID: 7, CorporationID: 98000001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -811,11 +779,9 @@ func TestListIndustryFacilitiesHandler_ResolvesLocationNames(t *testing.T) {
 }
 
 func TestListIndustrySystemsHandler_ResolvesSystemName(t *testing.T) {
-	orig := listIndustrySystems
-	t.Cleanup(func() { listIndustrySystems = orig })
-	listIndustrySystems = func(ctx context.Context, userAgent string) ([]esiapi.IndustrySystemsGetInner, error) {
+	fake := fakeIndustrySystemsESI{industrySystems: func(_ context.Context) ([]esiapi.IndustrySystemsGetInner, error) {
 		return []esiapi.IndustrySystemsGetInner{{SolarSystemId: 30000142}}, nil
-	}
+	}}
 
 	origSystem := resolveSystemNames
 	t.Cleanup(func() { resolveSystemNames = origSystem })
@@ -823,7 +789,7 @@ func TestListIndustrySystemsHandler_ResolvesSystemName(t *testing.T) {
 		return map[int64]string{30000142: "Jita"}
 	}
 
-	handler := listIndustrySystemsHandler("v1", nil)
+	handler := listIndustrySystemsHandler("v1", publicNarrow[industrySystemsESI](fake), nil)
 	_, out, err := handler(context.Background(), nil, ListIndustrySystemsInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -895,11 +861,9 @@ func TestListCorporationMiningExtractionsHandler_ResolvesMoonName(t *testing.T) 
 func TestListCharacterIndustryJobsHandler_ResolvesStationName(t *testing.T) {
 	store := industryTestStore(t)
 
-	orig := listCharacterIndustryJobs
-	t.Cleanup(func() { listCharacterIndustryJobs = orig })
-	listCharacterIndustryJobs = func(ctx context.Context, clientID string, characterID int32, userAgent string, includeCompleted bool) ([]esiapi.CharactersCharacterIdIndustryJobsGetInner, error) {
+	fake := fakeCharacterIndustryJobsESI{characterIndustryJobs: func(_ context.Context, includeCompleted bool) ([]esiapi.CharactersCharacterIdIndustryJobsGetInner, error) {
 		return []esiapi.CharactersCharacterIdIndustryJobsGetInner{{JobId: 1, BlueprintTypeId: 587, StationId: 60003760}}, nil
-	}
+	}}
 
 	origStation := resolveStationNames
 	t.Cleanup(func() { resolveStationNames = origStation })
@@ -907,7 +871,7 @@ func TestListCharacterIndustryJobsHandler_ResolvesStationName(t *testing.T) {
 		return map[int64]string{60003760: "Jita IV - Moon 4 - Caldari Navy Assembly Plant"}
 	}
 
-	handler := listCharacterIndustryJobsHandler("v1", "client-id", store, nil)
+	handler := listCharacterIndustryJobsHandler("v1", openNarrow[characterIndustryJobsESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, ListCharacterIndustryJobsInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -923,12 +887,10 @@ func TestListCharacterIndustryJobsHandler_ResolvesStationName(t *testing.T) {
 func TestListCorporationIndustryJobsHandler_StationNameEmptyWhenStationIDZero(t *testing.T) {
 	store := industryTestStore(t)
 
-	orig := listCorporationIndustryJobs
-	t.Cleanup(func() { listCorporationIndustryJobs = orig })
-	listCorporationIndustryJobs = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, includeCompleted bool, page int32) ([]esiapi.CorporationsCorporationIdIndustryJobsGetInner, int32, error) {
+	fake := fakeCorporationIndustryJobsESI{corporationIndustryJobs: func(_ context.Context, corporationID int64, includeCompleted bool, page int32) ([]esiapi.CorporationsCorporationIdIndustryJobsGetInner, int32, error) {
 		// StationID is never populated on the corp mapper (LocationID is used instead), so it's left zero here to match reality.
 		return []esiapi.CorporationsCorporationIdIndustryJobsGetInner{{JobId: 1, BlueprintTypeId: 587}}, 1, nil
-	}
+	}}
 
 	origStation := resolveStationNames
 	t.Cleanup(func() { resolveStationNames = origStation })
@@ -936,7 +898,7 @@ func TestListCorporationIndustryJobsHandler_StationNameEmptyWhenStationIDZero(t 
 		return map[int64]string{0: "should never be assigned"}
 	}
 
-	handler := listCorporationIndustryJobsHandler("v1", "client-id", store, nil)
+	handler := listCorporationIndustryJobsHandler("v1", openNarrow[corporationIndustryJobsESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, ListCorporationIndustryJobsInput{CharacterID: 7, CorporationID: 98000001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -946,5 +908,61 @@ func TestListCorporationIndustryJobsHandler_StationNameEmptyWhenStationIDZero(t 
 	}
 	if out.Jobs[0].StationName != "" {
 		t.Errorf("StationName = %q, want empty (StationID is 0 for corp-scoped jobs)", out.Jobs[0].StationName)
+	}
+}
+
+// fakeCharacterIndustryJobsESI fakes characterIndustryJobsESI; a nil characterIndustryJobs fails as an unfaked call.
+type fakeCharacterIndustryJobsESI struct {
+	characterIndustryJobs func(ctx context.Context, includeCompleted bool) ([]esiapi.CharactersCharacterIdIndustryJobsGetInner, error)
+}
+
+func (f fakeCharacterIndustryJobsESI) CharacterIndustryJobs(ctx context.Context, includeCompleted bool) ([]esiapi.CharactersCharacterIdIndustryJobsGetInner, error) {
+	if f.characterIndustryJobs == nil {
+		return nil, errNotFaked
+	}
+	return f.characterIndustryJobs(ctx, includeCompleted)
+}
+
+// fakeCorporationIndustryJobsESI fakes corporationIndustryJobsESI; a nil corporationIndustryJobs fails as an unfaked call.
+type fakeCorporationIndustryJobsESI struct {
+	corporationIndustryJobs func(ctx context.Context, corporationID int64, includeCompleted bool, page int32) ([]esiapi.CorporationsCorporationIdIndustryJobsGetInner, int32, error)
+}
+
+func (f fakeCorporationIndustryJobsESI) CorporationIndustryJobs(ctx context.Context, corporationID int64, includeCompleted bool, page int32) ([]esiapi.CorporationsCorporationIdIndustryJobsGetInner, int32, error) {
+	if f.corporationIndustryJobs == nil {
+		return nil, 0, errNotFaked
+	}
+	return f.corporationIndustryJobs(ctx, corporationID, includeCompleted, page)
+}
+
+// fakeIndustrySystemsESI fakes industrySystemsESI; a nil industrySystems fails as an unfaked call.
+type fakeIndustrySystemsESI struct {
+	industrySystems func(ctx context.Context) ([]esiapi.IndustrySystemsGetInner, error)
+}
+
+func (f fakeIndustrySystemsESI) IndustrySystems(ctx context.Context) ([]esiapi.IndustrySystemsGetInner, error) {
+	if f.industrySystems == nil {
+		return nil, errNotFaked
+	}
+	return f.industrySystems(ctx)
+}
+
+// Each handler reports a client that can't be opened, wrapping the cause.
+func TestIndustryJobsHandlers_PropagateOpenError(t *testing.T) {
+	store := characterStore(t, config.Character{ID: 7, Name: "Test Pilot"})
+	wantErr := errors.New("no refresh token")
+	for name, call := range map[string]func() error{
+		"list_character_industry_jobs": func() error {
+			_, _, err := listCharacterIndustryJobsHandler("v1", failNarrow[characterIndustryJobsESI](wantErr), store, nil)(context.Background(), nil, ListCharacterIndustryJobsInput{CharacterID: 7})
+			return err
+		},
+		"list_corporation_industry_jobs": func() error {
+			_, _, err := listCorporationIndustryJobsHandler("v1", failNarrow[corporationIndustryJobsESI](wantErr), store, nil)(context.Background(), nil, ListCorporationIndustryJobsInput{CharacterID: 7, CorporationID: 98000001})
+			return err
+		},
+	} {
+		if err := call(); !errors.Is(err, wantErr) {
+			t.Errorf("%s: err = %v, want wrapping %v", name, err, wantErr)
+		}
 	}
 }

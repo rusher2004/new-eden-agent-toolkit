@@ -100,18 +100,36 @@ type overviewReads struct {
 	skillsErr                        error
 }
 
+// overviewClient is the authenticated ESI calls get_logistics_overview makes
+// for each character: the planner's (skills) and its own location, ship,
+// online status, clones and fatigue.
+type overviewClient interface {
+	plannerClient
+	characterLocationESI
+	characterShipESI
+	characterOnlineESI
+	characterClonesESI
+	characterFatigueESI
+}
+
 // readOverview fetches one character's location, ship, online status,
 // clones, fatigue and skills in parallel. These calls share no planner
-// state, so they're safe to run together.
-func readOverview(ctx context.Context, clientID, ua string, id int32) overviewReads {
+// state, so they're safe to run together. A client that can't be opened
+// fails every read with the same error.
+func readOverview[C overviewClient](ctx context.Context, open func(ctx context.Context, characterID int32) (C, error), id int32) overviewReads {
 	var r overviewReads
+	client, err := open(ctx, id)
+	if err != nil {
+		r.locErr, r.shipErr, r.onlineErr, r.clonesErr, r.fatigueErr, r.skillsErr = err, err, err, err, err, err
+		return r
+	}
 	var wg sync.WaitGroup
 	run := func(f func()) {
 		wg.Go(func() { ; f() })
 	}
 	run(func() {
 		var st, sr *int64
-		r.systemID, st, sr, r.locErr = getCharacterLocation(ctx, clientID, id, ua)
+		r.systemID, st, sr, r.locErr = getCharacterLocation(ctx, client)
 		if st != nil {
 			r.stationID = *st
 		}
@@ -119,11 +137,11 @@ func readOverview(ctx context.Context, clientID, ua string, id int32) overviewRe
 			r.structureID = *sr
 		}
 	})
-	run(func() { r.shipItem, r.shipName, r.shipType, r.shipErr = getCharacterShip(ctx, clientID, id, ua) })
-	run(func() { r.online, r.onlineErr = getCharacterOnline(ctx, clientID, id, ua) })
-	run(func() { r.clones, r.clonesErr = getCharacterClones(ctx, clientID, id, ua) })
-	run(func() { r.fatigue, r.fatigueErr = getCharacterFatigue(ctx, clientID, id, ua) })
-	run(func() { r.skills, _, _, r.skillsErr = listCharacterSkills(ctx, clientID, id, ua) })
+	run(func() { r.shipItem, r.shipName, r.shipType, r.shipErr = getCharacterShip(ctx, client) })
+	run(func() { r.online, r.onlineErr = getCharacterOnline(ctx, client) })
+	run(func() { r.clones, r.clonesErr = getCharacterClones(ctx, client, id) })
+	run(func() { r.fatigue, r.fatigueErr = getCharacterFatigue(ctx, client, id) })
+	run(func() { r.skills, _, _, r.skillsErr = listCharacterSkills(ctx, client) })
 	wg.Wait()
 	return r
 }
@@ -140,7 +158,16 @@ func (p *planner) placeName(ctx context.Context, cfg config.Config, id int64) st
 	return fmt.Sprintf("structure %d", id)
 }
 
-func getLogisticsOverviewHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetLogisticsOverviewInput, GetLogisticsOverviewOutput] {
+// AddGetLogisticsOverview registers get_logistics_overview. openESI and openPublicESI build the ESI clients;
+// any client with the methods the planner and this tool call will do.
+func AddGetLogisticsOverview[C overviewClient, P plannerPublicClient](s *mcpsdk.Server, userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_logistics_overview",
+		Description: "Start here for any move of ships, cargo or characters. One call gives, for each logged-in character: their account label, whether they're online, where they are (system with its displayed security, and the station or structure they're docked in), their ship, the cynos, bridges and conduits they can use with the hulls for each, the hauling and capital hulls they can fly, when they can next clone jump, whether they can clone jump from where they're docked, and where their jump clones are, and their jump fatigue. It also groups characters by account, flags labels the game contradicts (two characters labelled alike online at once; when one of them logged in within the last minute, it waits about a minute and checks again, since ESI can still show a character who just switched off as online), and warns about unknown accounts. Parts ESI won't give are named per character, not dropped silently.",
+	}, getLogisticsOverviewHandler(userAgent, openESI, openPublicESI, store, sdeStore))
+}
+
+func getLogisticsOverviewHandler[C overviewClient, P plannerPublicClient](userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) mcpsdk.ToolHandlerFor[GetLogisticsOverviewInput, GetLogisticsOverviewOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetLogisticsOverviewInput) (*mcpsdk.CallToolResult, GetLogisticsOverviewOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -150,7 +177,7 @@ func getLogisticsOverviewHandler(version, clientID string, store ConfigStore, sd
 		if err != nil {
 			return nil, GetLogisticsOverviewOutput{}, err
 		}
-		p := newPlanner(version, clientID, store, sdeStore)
+		p := newPlanner(userAgent, plannerOpener(openESI), plannerPublicOpener(openPublicESI), store, sdeStore)
 		catalog, err := p.abilityCatalog(ctx)
 		if err != nil {
 			return nil, GetLogisticsOverviewOutput{}, err
@@ -172,7 +199,7 @@ func getLogisticsOverviewHandler(version, clientID string, store ConfigStore, sd
 		online := map[int32]*esi.CharacterOnlineStatus{} // characters reported online
 		var allClones []GetCharacterClonesOutput
 		for _, c := range chars {
-			r := readOverview(ctx, clientID, p.ua(), c.ID)
+			r := readOverview(ctx, openESI, c.ID)
 			oc := OverviewCharacter{CharacterID: c.ID, CharacterName: c.Name, Account: c.Account, Abilities: []string{}, Hulls: []HullClass{}}
 			unread := func(part string, err error) { oc.Unread = append(oc.Unread, fmt.Sprintf("%s: %v", part, err)) }
 
@@ -256,7 +283,7 @@ func getLogisticsOverviewHandler(version, clientID string, store ConfigStore, sd
 		// Clone bays are judged once every character's jump clones are read,
 		// since one character's clone proves a bay for all, including
 		// characters that weren't asked about.
-		others, warnings := otherCharactersClones(ctx, clientID, p.ua(), cfg, chars)
+		others, warnings := otherCharactersClones(ctx, openESI, cfg, chars)
 		out.Warnings = append(out.Warnings, warnings...)
 		proven := provenCloneBays(append(allClones, others...)...)
 		for i := range out.Characters {
@@ -296,7 +323,7 @@ func getLogisticsOverviewHandler(version, clientID string, store ConfigStore, sd
 				suspect[l] = on
 			}
 		}
-		confirmed, err := confirmOnlineConflicts(ctx, clientID, p.ua(), suspect, online)
+		confirmed, err := confirmOnlineConflicts(ctx, openESI, suspect, online)
 		if err != nil {
 			return nil, GetLogisticsOverviewOutput{}, err
 		}
@@ -338,7 +365,7 @@ var sleepCtx = func(ctx context.Context, d time.Duration) error {
 // it waits until the cache has expired and checks those characters again,
 // keeping only the ones still online. A character whose re-check fails is
 // left out, since a conflict it can't confirm isn't reported.
-func confirmOnlineConflicts(ctx context.Context, clientID, ua string, suspect map[string][]config.Character, online map[int32]*esi.CharacterOnlineStatus) (map[string][]string, error) {
+func confirmOnlineConflicts[C characterOnlineESI](ctx context.Context, open func(ctx context.Context, characterID int32) (C, error), suspect map[string][]config.Character, online map[int32]*esi.CharacterOnlineStatus) (map[string][]string, error) {
 	confirmed := map[string][]string{}
 	recheck := map[string][]config.Character{}
 	var wait time.Duration
@@ -373,7 +400,11 @@ func confirmOnlineConflicts(ctx context.Context, clientID, ua string, suspect ma
 	}
 	for l, chars := range recheck {
 		for _, c := range chars {
-			if st, err := getCharacterOnline(ctx, clientID, c.ID, ua); err == nil && st != nil && st.Online {
+			client, err := open(ctx, c.ID)
+			if err != nil {
+				continue
+			}
+			if st, err := getCharacterOnline(ctx, client); err == nil && st != nil && st.Online {
 				confirmed[l] = append(confirmed[l], c.Name)
 			}
 		}

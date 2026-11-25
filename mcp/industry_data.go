@@ -190,7 +190,7 @@ func (p *planner) adjustedPrices(ctx context.Context) (map[int64]float64, error)
 	if p.adjusted != nil {
 		return p.adjusted, nil
 	}
-	raw, err := listMarketPrices(ctx, p.ua())
+	raw, err := listMarketPrices(ctx, p.openPublicESI())
 	if err != nil {
 		return nil, fmt.Errorf("adjusted prices: %w", err)
 	}
@@ -206,7 +206,7 @@ func (p *planner) adjustedPrices(ctx context.Context) (map[int64]float64, error)
 // costIndex returns a system's cost index for an activity.
 func (p *planner) costIndex(ctx context.Context, systemID int64, activity string) (float64, error) {
 	if p.indices == nil {
-		raw, err := listIndustrySystems(ctx, p.ua())
+		raw, err := listIndustrySystems(ctx, p.openPublicESI())
 		if err != nil {
 			return 0, fmt.Errorf("cost indices: %w", err)
 		}
@@ -226,8 +226,13 @@ func (p *planner) costIndex(ctx context.Context, systemID int64, activity string
 
 // implantRefiningBonus is the character's reprocessing implant bonus (0–1).
 func (p *planner) implantRefiningBonus(ctx context.Context, characterID int32) (float64, string, error) {
-	ids, err := listCharacterImplants(ctx, p.clientID, characterID, p.ua())
+	client, err := p.esi(ctx, characterID)
 	if err != nil {
+		return 0, "", fmt.Errorf("implants of %d: %w", characterID, err)
+	}
+	ids, err := listCharacterImplants(ctx, client)
+	if err != nil {
+
 		return 0, "", fmt.Errorf("implants of %d: %w", characterID, err)
 	}
 	best, name := 0.0, ""

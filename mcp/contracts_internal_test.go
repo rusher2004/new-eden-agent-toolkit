@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	"github.com/zalando/go-keyring"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
@@ -261,13 +262,11 @@ func TestListCorporationContractItemsHandler_UnknownCharacter_ReturnsErrCharacte
 }
 
 func TestListPublicContractsHandler_ReturnsContractsAndPagination(t *testing.T) {
-	orig := listPublicContracts
-	t.Cleanup(func() { listPublicContracts = orig })
-	listPublicContracts = func(ctx context.Context, userAgent string, regionID int64, page int32) ([]Contract, int32, error) {
-		return []Contract{{ContractID: 10}}, 5, nil
-	}
+	fake := fakePublicContractsESI{publicContracts: func(_ context.Context, regionID int64, page int32) ([]esiapi.ContractsPublicRegionIdGetInner, int32, error) {
+		return []esiapi.ContractsPublicRegionIdGetInner{{ContractId: 10}}, 5, nil
+	}}
 
-	handler := listPublicContractsHandler("v1")
+	handler := listPublicContractsHandler(publicNarrow[publicContractsESI](fake))
 	_, out, err := handler(context.Background(), nil, ListPublicContractsInput{RegionID: 10000002})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -295,13 +294,11 @@ func TestListPublicContractBidsHandler_ReturnsBids(t *testing.T) {
 }
 
 func TestListPublicContractItemsHandler_ReturnsItems(t *testing.T) {
-	orig := listPublicContractItems
-	t.Cleanup(func() { listPublicContractItems = orig })
-	listPublicContractItems = func(ctx context.Context, userAgent string, contractID int64, page int32) ([]ContractItem, int32, error) {
-		return []ContractItem{{RecordID: 1, TypeID: 34}}, 1, nil
-	}
+	fake := fakePublicContractItemsESI{publicContractItems: func(_ context.Context, contractID int64, page int32) ([]esiapi.ContractsPublicItemsContractIdGetInner, int32, error) {
+		return []esiapi.ContractsPublicItemsContractIdGetInner{{RecordId: 1, TypeId: 34}}, 1, nil
+	}}
 
-	handler := listPublicContractItemsHandler("v1", nil)
+	handler := listPublicContractItemsHandler("v1", publicNarrow[publicContractItemsESI](fake), nil)
 	_, out, err := handler(context.Background(), nil, ListPublicContractItemsInput{ContractID: 10})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -438,14 +435,12 @@ func TestListCorporationContractItemsHandler_PropagatesError(t *testing.T) {
 }
 
 func TestListPublicContractsHandler_PropagatesError(t *testing.T) {
-	orig := listPublicContracts
-	t.Cleanup(func() { listPublicContracts = orig })
 	wantErr := errors.New("upstream failure")
-	listPublicContracts = func(ctx context.Context, userAgent string, regionID int64, page int32) ([]Contract, int32, error) {
+	fake := fakePublicContractsESI{publicContracts: func(_ context.Context, regionID int64, page int32) ([]esiapi.ContractsPublicRegionIdGetInner, int32, error) {
 		return nil, 0, wantErr
-	}
+	}}
 
-	handler := listPublicContractsHandler("v1")
+	handler := listPublicContractsHandler(publicNarrow[publicContractsESI](fake))
 	_, _, err := handler(context.Background(), nil, ListPublicContractsInput{RegionID: 10000002})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -468,14 +463,12 @@ func TestListPublicContractBidsHandler_PropagatesError(t *testing.T) {
 }
 
 func TestListPublicContractItemsHandler_PropagatesError(t *testing.T) {
-	orig := listPublicContractItems
-	t.Cleanup(func() { listPublicContractItems = orig })
 	wantErr := errors.New("upstream failure")
-	listPublicContractItems = func(ctx context.Context, userAgent string, contractID int64, page int32) ([]ContractItem, int32, error) {
+	fake := fakePublicContractItemsESI{publicContractItems: func(_ context.Context, contractID int64, page int32) ([]esiapi.ContractsPublicItemsContractIdGetInner, int32, error) {
 		return nil, 0, wantErr
-	}
+	}}
 
-	handler := listPublicContractItemsHandler("v1", nil)
+	handler := listPublicContractItemsHandler("v1", publicNarrow[publicContractItemsESI](fake), nil)
 	_, _, err := handler(context.Background(), nil, ListPublicContractItemsInput{ContractID: 10})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -541,11 +534,9 @@ func TestListCorporationContractItemsHandler_ResolvesTypeName(t *testing.T) {
 }
 
 func TestListPublicContractItemsHandler_ResolvesTypeName(t *testing.T) {
-	orig := listPublicContractItems
-	t.Cleanup(func() { listPublicContractItems = orig })
-	listPublicContractItems = func(ctx context.Context, userAgent string, contractID int64, page int32) ([]ContractItem, int32, error) {
-		return []ContractItem{{RecordID: 1, TypeID: 34}}, 1, nil
-	}
+	fake := fakePublicContractItemsESI{publicContractItems: func(_ context.Context, contractID int64, page int32) ([]esiapi.ContractsPublicItemsContractIdGetInner, int32, error) {
+		return []esiapi.ContractsPublicItemsContractIdGetInner{{RecordId: 1, TypeId: 34}}, 1, nil
+	}}
 
 	origResolve := resolveTypeNames
 	t.Cleanup(func() { resolveTypeNames = origResolve })
@@ -553,7 +544,7 @@ func TestListPublicContractItemsHandler_ResolvesTypeName(t *testing.T) {
 		return map[int64]string{34: "Tritanium"}
 	}
 
-	handler := listPublicContractItemsHandler("v1", nil)
+	handler := listPublicContractItemsHandler("v1", publicNarrow[publicContractItemsESI](fake), nil)
 	_, out, err := handler(context.Background(), nil, ListPublicContractItemsInput{ContractID: 10})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -561,4 +552,28 @@ func TestListPublicContractItemsHandler_ResolvesTypeName(t *testing.T) {
 	if out.Items[0].TypeName != "Tritanium" {
 		t.Errorf("TypeName = %q, want %q", out.Items[0].TypeName, "Tritanium")
 	}
+}
+
+// fakePublicContractsESI fakes publicContractsESI; a nil publicContracts fails as an unfaked call.
+type fakePublicContractsESI struct {
+	publicContracts func(ctx context.Context, regionID int64, page int32) ([]esiapi.ContractsPublicRegionIdGetInner, int32, error)
+}
+
+func (f fakePublicContractsESI) PublicContracts(ctx context.Context, regionID int64, page int32) ([]esiapi.ContractsPublicRegionIdGetInner, int32, error) {
+	if f.publicContracts == nil {
+		return nil, 0, errNotFaked
+	}
+	return f.publicContracts(ctx, regionID, page)
+}
+
+// fakePublicContractItemsESI fakes publicContractItemsESI; a nil publicContractItems fails as an unfaked call.
+type fakePublicContractItemsESI struct {
+	publicContractItems func(ctx context.Context, contractID int64, page int32) ([]esiapi.ContractsPublicItemsContractIdGetInner, int32, error)
+}
+
+func (f fakePublicContractItemsESI) PublicContractItems(ctx context.Context, contractID int64, page int32) ([]esiapi.ContractsPublicItemsContractIdGetInner, int32, error) {
+	if f.publicContractItems == nil {
+		return nil, 0, errNotFaked
+	}
+	return f.publicContractItems(ctx, contractID, page)
 }

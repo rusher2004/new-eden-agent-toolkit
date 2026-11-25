@@ -201,7 +201,16 @@ type ListCharacterCapabilitiesOutput struct {
 	Warnings   []string                `json:"warnings,omitempty"`
 }
 
-func listCharacterCapabilitiesHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCharacterCapabilitiesInput, ListCharacterCapabilitiesOutput] {
+// AddListCharacterCapabilities registers list_character_capabilities. openESI and openPublicESI build the ESI clients;
+// any client with the methods the planner and this tool call will do.
+func AddListCharacterCapabilities[C plannerClient, P plannerPublicClient](s *mcpsdk.Server, userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_character_capabilities",
+		Description: "For each logged-in character, what their skills let them do in moving ships and cargo, worked out from the game's static data: which cynos they can light (standard, industrial, covert) and on which hulls they can fly, which jump bridges and conduit jumps they can open (covert, industrial, titan bridges; covert, industrial and carrier conduits), and which hauling, jump-capable and capital hulls they can fly by class. Use it to pick pilots and cyno lighters instead of reading skills yourself.",
+	}, listCharacterCapabilitiesHandler(userAgent, openESI, openPublicESI, store, sdeStore))
+}
+
+func listCharacterCapabilitiesHandler[C plannerClient, P plannerPublicClient](userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) mcpsdk.ToolHandlerFor[ListCharacterCapabilitiesInput, ListCharacterCapabilitiesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterCapabilitiesInput) (*mcpsdk.CallToolResult, ListCharacterCapabilitiesOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -211,7 +220,7 @@ func listCharacterCapabilitiesHandler(version, clientID string, store ConfigStor
 		if err != nil {
 			return nil, ListCharacterCapabilitiesOutput{}, err
 		}
-		p := newPlanner(version, clientID, store, sdeStore)
+		p := newPlanner(userAgent, plannerOpener(openESI), plannerPublicOpener(openPublicESI), store, sdeStore)
 		catalog, err := p.abilityCatalog(ctx)
 		if err != nil {
 			return nil, ListCharacterCapabilitiesOutput{}, fmt.Errorf("ability catalog: %w", err)
@@ -328,7 +337,7 @@ func provenCloneBays(clones ...GetCharacterClonesOutput) map[int64]bool {
 // not in chars, since any character's jump clone proves a clone bay even
 // when only some characters were asked about. A character whose clones
 // can't be read is named in the returned warnings.
-func otherCharactersClones(ctx context.Context, clientID, userAgent string, cfg config.Config, chars []config.Character) ([]GetCharacterClonesOutput, []string) {
+func otherCharactersClones[C characterClonesESI](ctx context.Context, open func(ctx context.Context, characterID int32) (C, error), cfg config.Config, chars []config.Character) ([]GetCharacterClonesOutput, []string) {
 	asked := make(map[int32]bool, len(chars))
 	for _, c := range chars {
 		asked[c.ID] = true
@@ -339,7 +348,7 @@ func otherCharactersClones(ctx context.Context, clientID, userAgent string, cfg 
 		if asked[c.ID] {
 			continue
 		}
-		cl, err := getCharacterClones(ctx, clientID, c.ID, userAgent)
+		cl, err := readClones(ctx, open, c.ID)
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("couldn't read %s's jump clones, so clone bays they'd prove aren't counted: %v", c.Name, err))
 			continue
@@ -347,6 +356,15 @@ func otherCharactersClones(ctx context.Context, clientID, userAgent string, cfg 
 		clones = append(clones, cl)
 	}
 	return clones, warnings
+}
+
+// readClones opens a character's client and reads their clones.
+func readClones[C characterClonesESI](ctx context.Context, open func(ctx context.Context, characterID int32) (C, error), characterID int32) (GetCharacterClonesOutput, error) {
+	client, err := open(ctx, characterID)
+	if err != nil {
+		return GetCharacterClonesOutput{}, err
+	}
+	return getCharacterClones(ctx, client, characterID)
 }
 
 // jumpFromHere says whether a clone jump can start at dockedAt (0 when in
@@ -397,7 +415,24 @@ func (p *planner) cloneLocation(ctx context.Context, cfg config.Config, id int64
 	return l
 }
 
-func listJumpClonesHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListJumpClonesInput, ListJumpClonesOutput] {
+// jumpClonesClient is the authenticated ESI calls list_jump_clones makes for
+// each character: the planner's (skills) and their clones and location.
+type jumpClonesClient interface {
+	plannerClient
+	characterClonesESI
+	characterLocationESI
+}
+
+// AddListJumpClones registers list_jump_clones. openESI and openPublicESI build the ESI clients;
+// any client with the methods the planner and this tool call will do.
+func AddListJumpClones[C jumpClonesClient, P plannerPublicClient](s *mcpsdk.Server, userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_jump_clones",
+		Description: "For each logged-in character, their jump clones (where, and which implants each carries), the implants in the clone they're in now, their home station, when they can next clone jump, worked out from their last clone jump and Infomorph Synchronizing, and whether they can start one where they're docked now (jumpFromHere: yes, no, unknown or not_docked, from structures.yaml and every character's jump clones; readyNow needs both the cooldown and a known clone bay there), with how many jump clones their skills allow. Check it before planning gate travel to get a character somewhere: a clone jump is often faster.",
+	}, listJumpClonesHandler(userAgent, openESI, openPublicESI, store, sdeStore))
+}
+
+func listJumpClonesHandler[C jumpClonesClient, P plannerPublicClient](userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) mcpsdk.ToolHandlerFor[ListJumpClonesInput, ListJumpClonesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListJumpClonesInput) (*mcpsdk.CallToolResult, ListJumpClonesOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -407,19 +442,24 @@ func listJumpClonesHandler(version, clientID string, store ConfigStore, sdeStore
 		if err != nil {
 			return nil, ListJumpClonesOutput{}, err
 		}
-		p := newPlanner(version, clientID, store, sdeStore)
+		p := newPlanner(userAgent, plannerOpener(openESI), plannerPublicOpener(openPublicESI), store, sdeStore)
 		out := ListJumpClonesOutput{Characters: []CharacterClones{}}
 		var allClones []GetCharacterClonesOutput
 		docked := map[int32]int64{} // character → where they're docked
 		located := map[int32]bool{}
 		for _, c := range chars {
-			clones, err := getCharacterClones(ctx, clientID, c.ID, p.ua())
+			client, err := openESI(ctx, c.ID)
+			if err != nil {
+				out.Warnings = append(out.Warnings, fmt.Sprintf("couldn't read %s's clones: %v", c.Name, err))
+				continue
+			}
+			clones, err := getCharacterClones(ctx, client, c.ID)
 			if err != nil {
 				out.Warnings = append(out.Warnings, fmt.Sprintf("couldn't read %s's clones: %v", c.Name, err))
 				continue
 			}
 			allClones = append(allClones, clones)
-			if _, st, sr, err := getCharacterLocation(ctx, clientID, c.ID, p.ua()); err != nil {
+			if _, st, sr, err := getCharacterLocation(ctx, client); err != nil {
 				out.Warnings = append(out.Warnings, fmt.Sprintf("couldn't read %s's location, so whether they can clone jump from there is unknown: %v", c.Name, err))
 			} else {
 				located[c.ID] = true
@@ -456,7 +496,7 @@ func listJumpClonesHandler(version, clientID string, store ConfigStore, sdeStore
 			for _, jc := range clones.JumpClones {
 				cc.JumpClones = append(cc.JumpClones, p.cloneLocation(ctx, cfg, jc.LocationID, jc.LocationType, jc.Implants))
 			}
-			if implants, err := listCharacterImplants(ctx, clientID, c.ID, p.ua()); err != nil {
+			if implants, err := listCharacterImplants(ctx, client); err != nil {
 				out.Warnings = append(out.Warnings, fmt.Sprintf("couldn't read the implants in %s's current clone, so they're unknown, not none: %v", c.Name, err))
 			} else {
 				names := []string{}
@@ -470,7 +510,7 @@ func listJumpClonesHandler(version, clientID string, store ConfigStore, sdeStore
 		// Every character's jump clones are read before any clone bay is
 		// judged, since one character's clone proves a bay for all, including
 		// characters that weren't asked about.
-		others, warnings := otherCharactersClones(ctx, clientID, p.ua(), cfg, chars)
+		others, warnings := otherCharactersClones(ctx, openESI, cfg, chars)
 		out.Warnings = append(out.Warnings, warnings...)
 		proven := provenCloneBays(append(allClones, others...)...)
 		for i := range out.Characters {

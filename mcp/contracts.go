@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"time"
 
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/rusher2004/new-eden-agent-toolkit/esi"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
+
+	"github.com/rusher2004/new-eden-agent-toolkit/esi"
 )
 
 // Contract is one contract entry, shared by character/corporation/public listings. Status is
@@ -396,8 +398,13 @@ func listCorporationContractItemsHandler(version, clientID string, store ConfigS
 
 // --- list_public_contracts ---
 
-var listPublicContracts = func(ctx context.Context, userAgent string, regionID int64, page int32) ([]Contract, int32, error) {
-	client := esi.NewPublicClient(userAgent)
+// publicContractsESI is the public ESI call list_public_contracts makes;
+// validate_trade_hub reads a hub's contracts through it too.
+type publicContractsESI interface {
+	PublicContracts(ctx context.Context, regionID int64, page int32) ([]esiapi.ContractsPublicRegionIdGetInner, int32, error)
+}
+
+func listPublicContracts(ctx context.Context, client publicContractsESI, regionID int64, page int32) ([]Contract, int32, error) {
 	contracts, totalPages, err := client.PublicContracts(ctx, regionID, page)
 	if err != nil {
 		return nil, 0, err
@@ -429,9 +436,18 @@ type ListPublicContractsOutput struct {
 	Contracts  []Contract `json:"contracts"`
 }
 
-func listPublicContractsHandler(version string) mcpsdk.ToolHandlerFor[ListPublicContractsInput, ListPublicContractsOutput] {
+// AddListPublicContracts registers list_public_contracts. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListPublicContracts[C publicContractsESI](s *mcpsdk.Server, open func() C) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_public_contracts",
+		Description: "List public contracts in a region (public data, no character required).",
+	}, listPublicContractsHandler(open))
+}
+
+func listPublicContractsHandler[C publicContractsESI](open func() C) mcpsdk.ToolHandlerFor[ListPublicContractsInput, ListPublicContractsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListPublicContractsInput) (*mcpsdk.CallToolResult, ListPublicContractsOutput, error) {
-		contracts, totalPages, err := listPublicContracts(ctx, sso.UserAgent(version), in.RegionID, in.Page)
+		contracts, totalPages, err := listPublicContracts(ctx, open(), in.RegionID, in.Page)
 		if err != nil {
 			return nil, ListPublicContractsOutput{}, fmt.Errorf("list public contracts: %w", err)
 		}
@@ -485,8 +501,13 @@ func listPublicContractBidsHandler(version string) mcpsdk.ToolHandlerFor[ListPub
 
 // --- list_public_contract_items ---
 
-var listPublicContractItems = func(ctx context.Context, userAgent string, contractID int64, page int32) ([]ContractItem, int32, error) {
-	client := esi.NewPublicClient(userAgent)
+// publicContractItemsESI is the public ESI call list_public_contract_items
+// makes; validate_trade_hub reads contract items through it too.
+type publicContractItemsESI interface {
+	PublicContractItems(ctx context.Context, contractID int64, page int32) ([]esiapi.ContractsPublicItemsContractIdGetInner, int32, error)
+}
+
+func listPublicContractItems(ctx context.Context, client publicContractItemsESI, contractID int64, page int32) ([]ContractItem, int32, error) {
 	items, totalPages, err := client.PublicContractItems(ctx, contractID, page)
 	if err != nil {
 		return nil, 0, err
@@ -513,9 +534,18 @@ type ListPublicContractItemsOutput struct {
 	Items      []ContractItem `json:"items"`
 }
 
-func listPublicContractItemsHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListPublicContractItemsInput, ListPublicContractItemsOutput] {
+// AddListPublicContractItems registers list_public_contract_items. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListPublicContractItems[C publicContractItemsESI](s *mcpsdk.Server, userAgent string, open func() C, sdeStore typeNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_public_contract_items",
+		Description: "List the items on a public contract (public data, no character required).",
+	}, listPublicContractItemsHandler(userAgent, open, sdeStore))
+}
+
+func listPublicContractItemsHandler[C publicContractItemsESI](userAgent string, open func() C, sdeStore typeNameCache) mcpsdk.ToolHandlerFor[ListPublicContractItemsInput, ListPublicContractItemsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListPublicContractItemsInput) (*mcpsdk.CallToolResult, ListPublicContractItemsOutput, error) {
-		items, totalPages, err := listPublicContractItems(ctx, sso.UserAgent(version), in.ContractID, in.Page)
+		items, totalPages, err := listPublicContractItems(ctx, open(), in.ContractID, in.Page)
 		if err != nil {
 			return nil, ListPublicContractItemsOutput{}, fmt.Errorf("list public contract items: %w", err)
 		}
@@ -523,7 +553,7 @@ func listPublicContractItemsHandler(version string, sdeStore SDEStore) mcpsdk.To
 		for i, it := range items {
 			ids[i] = it.TypeID
 		}
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		names := resolveTypeNames(ctx, sdeStore, userAgent, ids)
 		for i := range items {
 			items[i].TypeName = names[items[i].TypeID]
 		}

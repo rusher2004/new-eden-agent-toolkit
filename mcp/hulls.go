@@ -77,9 +77,18 @@ type CompareHaulHullsOutput struct {
 	Hulls []HaulHull `json:"hulls"`
 }
 
-func compareHaulHullsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[CompareHaulHullsInput, CompareHaulHullsOutput] {
+// AddCompareHaulHulls registers compare_haul_hulls. openESI and openPublicESI build the ESI clients;
+// any client with the methods the planner and this tool call will do.
+func AddCompareHaulHulls[C plannerClient, P plannerPublicClient](s *mcpsdk.Server, userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "compare_haul_hulls",
+		Description: "Compare hulls for moving cargo or ships, from the game's static data: every hold by base capacity (cargo, ship maintenance bay, fleet hangar, fuel bay and special holds), warp speed, align time, warp core strength, whether it can fit a covert ops cloak or has or can fit interdiction nullification, whether it can travel into highsec, where it can dock, its jump drive (range, fuel, fatigue and the cyno types it can use), and which bridges and conduits it can ride. Give classes (such as Jump Freighter or Deep Space Transport) or hulls; with pilotId, also which the pilot can fly and their jump range and fuel with their skills. Values are before modules and rigs.",
+	}, compareHaulHullsHandler(userAgent, openESI, openPublicESI, store, sdeStore))
+}
+
+func compareHaulHullsHandler[C plannerClient, P plannerPublicClient](userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) mcpsdk.ToolHandlerFor[CompareHaulHullsInput, CompareHaulHullsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in CompareHaulHullsInput) (*mcpsdk.CallToolResult, CompareHaulHullsOutput, error) {
-		p := newPlanner(version, clientID, store, sdeStore)
+		p := newPlanner(userAgent, plannerOpener(openESI), plannerPublicOpener(openPublicESI), store, sdeStore)
 		classTypes, err := sdeStore.PublishedTypesInGroups(ctx, p.ua(), hullClassGroups)
 		if err != nil {
 			return nil, CompareHaulHullsOutput{}, fmt.Errorf("hull classes: %w", err)

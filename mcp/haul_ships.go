@@ -83,7 +83,16 @@ func rootOf(byID map[int64]AssetItem, a AssetItem) (loc int64, kind string, hold
 	return cur.LocationID, cur.LocationType, holder
 }
 
-func listHaulShipsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListHaulShipsInput, ListHaulShipsOutput] {
+// AddListHaulShips registers list_haul_ships. openESI and openPublicESI build the ESI clients;
+// any client with the methods the planner and this tool call will do.
+func AddListHaulShips[C plannerClient, P plannerPublicClient](s *mcpsdk.Server, userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_haul_ships",
+		Description: "Find where the user's hauling, jump-capable and capital ships are: every assembled hauler, jump freighter, freighter, transport, blockade runner, industrial command ship, Rorqual, Black Ops, carrier, dreadnought, force auxiliary, supercarrier and titan the logged-in characters own (and a corporation's, through a character with the roles), plus any other ship with a cyno generator fitted. Each comes with its owner, item ID, class, name, the station, structure or system it's in with its displayed security, the ship it's carried in if any, and its fitted cyno generator. Use it instead of reading full asset lists to find haulers and cyno ships; pass its itemId as shipItemId and its ownerId as ownerId to estimate_ship_hold or estimate_cyno, or as shipOwnerId to save_haul_profile.",
+	}, listHaulShipsHandler(userAgent, openESI, openPublicESI, store, sdeStore))
+}
+
+func listHaulShipsHandler[C plannerClient, P plannerPublicClient](userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) mcpsdk.ToolHandlerFor[ListHaulShipsInput, ListHaulShipsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListHaulShipsInput) (*mcpsdk.CallToolResult, ListHaulShipsOutput, error) {
 		if (in.CorporationID == 0) != (in.CorporationCharacterID == 0) {
 			return nil, ListHaulShipsOutput{}, fmt.Errorf("list haul ships: corporationId and corporationCharacterId go together")
@@ -101,7 +110,7 @@ func listHaulShipsHandler(version, clientID string, store ConfigStore, sdeStore 
 				return nil, ListHaulShipsOutput{}, fmt.Errorf("list haul ships for character %d: %w", in.CorporationCharacterID, ErrCharacterNotFound)
 			}
 		}
-		p := newPlanner(version, clientID, store, sdeStore)
+		p := newPlanner(userAgent, plannerOpener(openESI), plannerPublicOpener(openPublicESI), store, sdeStore)
 
 		classTypes, err := sdeStore.PublishedTypesInGroups(ctx, p.ua(), hullClassGroups)
 		if err != nil {
@@ -137,7 +146,12 @@ func listHaulShipsHandler(version, clientID string, store ConfigStore, sdeStore 
 		var owners []haulShipOwner
 		var warnings []string
 		for _, c := range chars {
-			assets, truncated, err := allAssetPages(func(page int32) ([]AssetItem, int32, error) { return listAssets(ctx, clientID, c.ID, p.ua(), page) })
+			client, err := p.esi(ctx, c.ID)
+			if err != nil {
+				warnings = append(warnings, fmt.Sprintf("couldn't read %s's assets: %v", c.Name, err))
+				continue
+			}
+			assets, truncated, err := allAssetPages(func(page int32) ([]AssetItem, int32, error) { return listAssets(ctx, client, page) })
 			if err != nil {
 				warnings = append(warnings, fmt.Sprintf("couldn't read %s's assets: %v", c.Name, err))
 				continue
@@ -148,9 +162,14 @@ func listHaulShipsHandler(version, clientID string, store ConfigStore, sdeStore 
 			owners = append(owners, haulShipOwner{c.ID, c.Name, assets})
 		}
 		if in.CorporationID != 0 {
-			assets, truncated, err := allAssetPages(func(page int32) ([]AssetItem, int32, error) {
-				return listCorporationAssets(ctx, clientID, in.CorporationCharacterID, p.ua(), in.CorporationID, page)
-			})
+			var assets []AssetItem
+			var truncated bool
+			client, err := p.esi(ctx, in.CorporationCharacterID)
+			if err == nil {
+				assets, truncated, err = allAssetPages(func(page int32) ([]AssetItem, int32, error) {
+					return listCorporationAssets(ctx, client, in.CorporationID, page)
+				})
+			}
 			corp := fmt.Sprintf("corporation %d", in.CorporationID)
 			if err != nil {
 				warnings = append(warnings, fmt.Sprintf("couldn't read %s's assets: %v", corp, err))
@@ -258,12 +277,19 @@ func (p *planner) haulShips(ctx context.Context, cfg config.Config, o haulShipOw
 	// asset names need roles this tool doesn't ask for.
 	if o.id != 0 && len(ships) > 0 {
 		names := map[int64]string{}
+		client, err := p.esi(ctx, o.id)
+		if err != nil {
+			warning = fmt.Sprintf("couldn't read the names of %s's ships, so they're left out: %v", o.name, err)
+		}
 		for chunk := range slices.Chunk(ships, maxAssetNameIDs) {
+			if client == nil {
+				break
+			}
 			var shipIDs []int64
 			for _, s := range chunk {
 				shipIDs = append(shipIDs, s.ItemID)
 			}
-			got, err := getAssetNames(ctx, p.clientID, o.id, p.ua(), shipIDs)
+			got, err := getAssetNames(ctx, client, shipIDs)
 			if err != nil {
 				warning = fmt.Sprintf("couldn't read the names of %s's ships, so they're left out: %v", o.name, err)
 				continue

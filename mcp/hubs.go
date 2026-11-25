@@ -44,8 +44,12 @@ func (p *planner) hubCharacter(hub config.HubProfile) (int32, error) {
 
 // structureOrders reads every order in a structure's market.
 func (p *planner) structureOrders(ctx context.Context, characterID int32, structureID int64) ([]esiapi.MarketsStructuresStructureIdGetInner, error) {
+	client, err := p.esi(ctx, characterID)
+	if err != nil {
+		return nil, fmt.Errorf("read structure %d's market through character %d (it needs docking access and the market scope group): %w", structureID, characterID, err)
+	}
 	orders, err := esi.AllPages(ctx, func(ctx context.Context, page int32) ([]esiapi.MarketsStructuresStructureIdGetInner, int32, error) {
-		return listStructureMarketOrders(ctx, p.clientID, characterID, p.ua(), structureID, page)
+		return listStructureMarketOrders(ctx, client, structureID, page)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("read structure %d's market through character %d (it needs docking access and the market scope group): %w", structureID, characterID, err)
@@ -107,7 +111,15 @@ type ListHubProfilesOutput struct {
 	Hubs []HubView `json:"hubs" jsonschema:"saved hubs; the first is the default"`
 }
 
-func listHubProfilesHandler(store ConfigStore) mcpsdk.ToolHandlerFor[struct{}, ListHubProfilesOutput] {
+// AddListHubProfiles registers list_hub_profiles.
+func AddListHubProfiles(s *mcpsdk.Server, store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_hub_profiles",
+		Description: "List the trade hubs to buy and sell at (~/.neat/hubs.yaml): the five NPC hubs, the player markets near Jita and the Amamake Keepstar to start with, plus any the user saved. Each has its kind (NPC station or player structure), tier, system and region, what it's good for, its latest validation, and whether that validation is stale. The first hub is the default for pricing.",
+	}, listHubProfilesHandler(store))
+}
+
+func listHubProfilesHandler(store configLoader) mcpsdk.ToolHandlerFor[struct{}, ListHubProfilesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, _ struct{}) (*mcpsdk.CallToolResult, ListHubProfilesOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -150,7 +162,11 @@ func (p *planner) hubFacts(ctx context.Context, id int64, characterID int32) (co
 		if characterID == 0 {
 			return h, fmt.Errorf("%d isn't an NPC station, so it's read as a player structure, which needs characterId: a logged-in character with docking access", id)
 		}
-		us, err := getUniverseStructure(ctx, p.clientID, characterID, p.ua(), id)
+		client, err := p.esi(ctx, characterID)
+		if err != nil {
+			return h, fmt.Errorf("read structure %d through character %d (it needs docking access and the structures scope group): %w", id, characterID, err)
+		}
+		us, err := getUniverseStructure(ctx, client, id)
 		if err != nil {
 			return h, fmt.Errorf("read structure %d through character %d (it needs docking access and the structures scope group): %w", id, characterID, err)
 		}
@@ -165,7 +181,16 @@ func (p *planner) hubFacts(ctx context.Context, id int64, characterID int32) (co
 	return h, nil
 }
 
-func saveHubProfileHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[SaveHubProfileInput, SaveHubProfileOutput] {
+// AddSaveHubProfile registers save_hub_profile. openESI and openPublicESI build the ESI clients;
+// any client with the methods the planner and this tool call will do.
+func AddSaveHubProfile[C plannerClient, P plannerPublicClient](s *mcpsdk.Server, userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "save_hub_profile",
+		Description: "Save a trade hub, or update one: its name, system and region are read from the game (a player structure needs a character with docking access, which neat then uses to read its market). Records the user's tier, traits and notes. Returns every value it changed. Writes to ~/.neat/hubs.yaml only.",
+	}, saveHubProfileHandler(userAgent, openESI, openPublicESI, store, sdeStore))
+}
+
+func saveHubProfileHandler[C plannerClient, P plannerPublicClient](userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) mcpsdk.ToolHandlerFor[SaveHubProfileInput, SaveHubProfileOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in SaveHubProfileInput) (*mcpsdk.CallToolResult, SaveHubProfileOutput, error) {
 		if in.ID == 0 {
 			return nil, SaveHubProfileOutput{}, fmt.Errorf("save hub profile: id is required")
@@ -179,7 +204,7 @@ func saveHubProfileHandler(version, clientID string, store ConfigStore, sdeStore
 				return nil, SaveHubProfileOutput{}, fmt.Errorf("save hub profile through character %d: %w", in.CharacterID, ErrCharacterNotFound)
 			}
 		}
-		p := newPlanner(version, clientID, store, sdeStore)
+		p := newPlanner(userAgent, plannerOpener(openESI), plannerPublicOpener(openPublicESI), store, sdeStore)
 		facts, factsErr := p.hubFacts(ctx, in.ID, in.CharacterID)
 		// The lookup above goes over the network, so the hub is merged into
 		// whatever is saved now, under Update's lock, rather than saved over
@@ -236,7 +261,15 @@ type DeleteHubProfileInput struct {
 	Hub string `json:"hub" jsonschema:"the hub's name or ID"`
 }
 
-func deleteHubProfileHandler(store ConfigStore) mcpsdk.ToolHandlerFor[DeleteHubProfileInput, DeletedOutput] {
+// AddDeleteHubProfile registers delete_hub_profile.
+func AddDeleteHubProfile(s *mcpsdk.Server, store configUpdater) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "delete_hub_profile",
+		Description: "Delete a trade hub from ~/.neat/hubs.yaml. A built-in hub the user deletes stays deleted.",
+	}, deleteHubProfileHandler(store))
+}
+
+func deleteHubProfileHandler(store configUpdater) mcpsdk.ToolHandlerFor[DeleteHubProfileInput, DeletedOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in DeleteHubProfileInput) (*mcpsdk.CallToolResult, DeletedOutput, error) {
 		if strings.TrimSpace(in.Hub) == "" {
 			return nil, DeletedOutput{}, fmt.Errorf("no hub named %q", in.Hub)
@@ -273,7 +306,16 @@ type ValidateTradeHubOutput struct {
 	Changes []config.Change   `json:"changes"`
 }
 
-func validateTradeHubHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ValidateTradeHubInput, ValidateTradeHubOutput] {
+// AddValidateTradeHub registers validate_trade_hub. openESI and openPublicESI build the ESI clients;
+// any client with the methods the planner and this tool call will do.
+func AddValidateTradeHub[C plannerClient, P plannerPublicClient](s *mcpsdk.Server, userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "validate_trade_hub",
+		Description: "Measure how good a trade hub is on live ESI data and record the dated result on it: how many of a basket of 24 everyday goods it has for sale (or a basket you give), with its sell and buy order counts, and optionally its public contracts by value with the capital ship groups on offer (the check for a capital market). Works for a saved hub or a new station or structure ID, which it then saves. Run it before relying on a hub whose validation is stale. Writes to ~/.neat/hubs.yaml only.",
+	}, validateTradeHubHandler(userAgent, openESI, openPublicESI, store, sdeStore))
+}
+
+func validateTradeHubHandler[C plannerClient, P plannerPublicClient](userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) mcpsdk.ToolHandlerFor[ValidateTradeHubInput, ValidateTradeHubOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ValidateTradeHubInput) (*mcpsdk.CallToolResult, ValidateTradeHubOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -284,7 +326,7 @@ func validateTradeHubHandler(version, clientID string, store ConfigStore, sdeSto
 				return nil, ValidateTradeHubOutput{}, fmt.Errorf("validate trade hub through character %d: %w", in.CharacterID, ErrCharacterNotFound)
 			}
 		}
-		p := newPlanner(version, clientID, store, sdeStore)
+		p := newPlanner(userAgent, plannerOpener(openESI), plannerPublicOpener(openPublicESI), store, sdeStore)
 		p.marketCharacter = in.CharacterID
 		hub, ok := cfg.HubProfile(in.Hub)
 		if !ok || strings.TrimSpace(in.Hub) == "" {
@@ -389,7 +431,7 @@ func (p *planner) allOrders(ctx context.Context, hub config.HubProfile, typeIDs 
 	}
 	for _, id := range typeIDs {
 		orders, err := esi.AllPages(ctx, func(ctx context.Context, page int32) ([]esiapi.MarketsRegionIdOrdersGetInner, int32, error) {
-			return listMarketOrders(ctx, p.ua(), hub.RegionID(), "all", id, page)
+			return listMarketOrders(ctx, p.openPublicESI(), hub.RegionID(), "all", id, page)
 		})
 		if err != nil {
 			return nil, fmt.Errorf("orders for type %d: %w", id, err)
@@ -405,7 +447,7 @@ func (p *planner) allOrders(ctx context.Context, hub config.HubProfile, typeIDs 
 // capital ship groups in the priciest ones.
 func (p *planner) contractCheck(ctx context.Context, hub config.HubProfile) (*config.ContractCheck, error) {
 	all, err := esi.AllPages(ctx, func(ctx context.Context, page int32) ([]Contract, int32, error) {
-		return listPublicContracts(ctx, p.ua(), hub.RegionID(), page)
+		return listPublicContracts(ctx, p.openPublicESI(), hub.RegionID(), page)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("public contracts in %s: %w", hub.Region.Name, err)
@@ -426,7 +468,7 @@ func (p *planner) contractCheck(ctx context.Context, hub config.HubProfile) (*co
 	var typeIDs []int64
 	for _, id := range bands.Priciest {
 		items, err := esi.AllPages(ctx, func(ctx context.Context, page int32) ([]ContractItem, int32, error) {
-			return listPublicContractItems(ctx, p.ua(), id, page)
+			return listPublicContractItems(ctx, p.openPublicESI(), id, page)
 		})
 		if err != nil {
 			if ctx.Err() != nil {
@@ -482,7 +524,16 @@ type CompareTradeHubsOutput struct {
 	Warnings []string        `json:"warnings,omitempty"`
 }
 
-func compareTradeHubsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[CompareTradeHubsInput, CompareTradeHubsOutput] {
+// AddCompareTradeHubs registers compare_trade_hubs. openESI and openPublicESI build the ESI clients;
+// any client with the methods the planner and this tool call will do.
+func AddCompareTradeHubs[C plannerClient, P plannerPublicClient](s *mcpsdk.Server, userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "compare_trade_hubs",
+		Description: "Rank trade hubs for a shopping list: how many items each supplies in full, the total walking each hub's live order book, and, with from, the gate jumps from a system such as the staging system. Use it to find the nearest hub that actually stocks what a plan needs.",
+	}, compareTradeHubsHandler(userAgent, openESI, openPublicESI, store, sdeStore))
+}
+
+func compareTradeHubsHandler[C plannerClient, P plannerPublicClient](userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) mcpsdk.ToolHandlerFor[CompareTradeHubsInput, CompareTradeHubsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in CompareTradeHubsInput) (*mcpsdk.CallToolResult, CompareTradeHubsOutput, error) {
 		if len(in.Items) == 0 {
 			return nil, CompareTradeHubsOutput{}, fmt.Errorf("compare trade hubs: give at least one item")
@@ -491,7 +542,7 @@ func compareTradeHubsHandler(version, clientID string, store ConfigStore, sdeSto
 		if err != nil {
 			return nil, CompareTradeHubsOutput{}, err
 		}
-		p := newPlanner(version, clientID, store, sdeStore)
+		p := newPlanner(userAgent, plannerOpener(openESI), plannerPublicOpener(openPublicESI), store, sdeStore)
 		// characterId is for structure hubs no character has read yet; a
 		// hub's own read_via still wins.
 		p.fallbackMarketCharacter = in.CharacterID

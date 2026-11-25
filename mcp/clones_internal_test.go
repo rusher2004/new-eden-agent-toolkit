@@ -5,32 +5,42 @@ import (
 	"errors"
 	"testing"
 
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	"github.com/zalando/go-keyring"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 )
 
-func TestGetCharacterClonesHandler_ReturnsClones(t *testing.T) {
+func clonesTestStore(t *testing.T) *config.Store {
+	t.Helper()
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
 		t.Fatalf("store.Save: %v", err)
 	}
+	return store
+}
 
-	orig := getCharacterClones
-	t.Cleanup(func() { getCharacterClones = orig })
+func TestGetCharacterClonesHandler_ReturnsClones(t *testing.T) {
+	store := clonesTestStore(t)
 	locID := int64(60003760)
-	getCharacterClones = func(ctx context.Context, clientID string, characterID int32, userAgent string) (GetCharacterClonesOutput, error) {
-		return GetCharacterClonesOutput{CharacterID: characterID, HomeLocationID: &locID, JumpClones: []JumpClone{{JumpCloneID: 1}}}, nil
-	}
+	fake := fakeCharacterClonesESI{characterClones: func(context.Context) (*esiapi.CharactersCharacterIdClonesGet, error) {
+		return &esiapi.CharactersCharacterIdClonesGet{
+			HomeLocation: &esiapi.CharactersCharacterIdClonesGetHomeLocation{LocationId: &locID},
+			JumpClones:   []esiapi.CharactersCharacterIdClonesGetJumpClonesInner{{JumpCloneId: 1, LocationId: 60008494, LocationType: "station", Implants: []int64{19540}}},
+		}, nil
+	}}
 
-	handler := getCharacterClonesHandler("v1", "client-id", store)
+	handler := getCharacterClonesHandler(openNarrow[characterClonesESI](fake), store)
 	_, out, err := handler(context.Background(), nil, GetCharacterClonesInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
-	if out.HomeLocationID == nil || *out.HomeLocationID != 60003760 || len(out.JumpClones) != 1 {
-		t.Errorf("out = %+v, want HomeLocationID=*60003760 and one jump clone", out)
+	if out.CharacterID != 7 || out.HomeLocationID == nil || *out.HomeLocationID != 60003760 || len(out.JumpClones) != 1 {
+		t.Fatalf("out = %+v, want CharacterID=7, HomeLocationID=*60003760 and one jump clone", out)
+	}
+	if jc := out.JumpClones[0]; jc.JumpCloneID != 1 || jc.LocationID != 60008494 || jc.LocationType != "station" || len(jc.Implants) != 1 {
+		t.Errorf("JumpClones[0] = %+v, want clone 1 at station 60008494 with one implant", jc)
 	}
 }
 
@@ -38,34 +48,41 @@ func TestGetCharacterClonesHandler_UnknownCharacter_ReturnsErrCharacterNotFound(
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := getCharacterClones
-	t.Cleanup(func() { getCharacterClones = orig })
-	getCharacterClones = func(ctx context.Context, clientID string, characterID int32, userAgent string) (GetCharacterClonesOutput, error) {
-		t.Fatal("getCharacterClones should not be called for an unknown character")
-		return GetCharacterClonesOutput{}, nil
-	}
-
-	handler := getCharacterClonesHandler("v1", "client-id", store)
+	handler := getCharacterClonesHandler(noNarrow[characterClonesESI](t), store)
 	_, _, err := handler(context.Background(), nil, GetCharacterClonesInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
 	}
 }
 
+func TestGetCharacterClonesHandler_PropagatesError(t *testing.T) {
+	store := clonesTestStore(t)
+	wantErr := errors.New("upstream failure")
+	fake := fakeCharacterClonesESI{characterClones: func(context.Context) (*esiapi.CharactersCharacterIdClonesGet, error) { return nil, wantErr }}
+
+	handler := getCharacterClonesHandler(openNarrow[characterClonesESI](fake), store)
+	_, _, err := handler(context.Background(), nil, GetCharacterClonesInput{CharacterID: 7})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestGetCharacterClonesHandler_PropagatesOpenError(t *testing.T) {
+	store := clonesTestStore(t)
+	wantErr := errors.New("no token")
+
+	handler := getCharacterClonesHandler(failNarrow[characterClonesESI](wantErr), store)
+	_, _, err := handler(context.Background(), nil, GetCharacterClonesInput{CharacterID: 7})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
 func TestListCharacterImplantsHandler_ReturnsImplants(t *testing.T) {
-	keyring.MockInit()
-	store := config.NewStoreAt(t.TempDir() + "/config.json")
-	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
-		t.Fatalf("store.Save: %v", err)
-	}
+	store := clonesTestStore(t)
+	fake := fakeCharacterImplantsESI{characterImplants: func(context.Context) ([]int64, error) { return []int64{19540, 19551}, nil }}
 
-	orig := listCharacterImplants
-	t.Cleanup(func() { listCharacterImplants = orig })
-	listCharacterImplants = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]int64, error) {
-		return []int64{19540, 19551}, nil
-	}
-
-	handler := listCharacterImplantsHandler("v1", "client-id", store)
+	handler := listCharacterImplantsHandler(openNarrow[characterImplantsESI](fake), store)
 	_, out, err := handler(context.Background(), nil, ListCharacterImplantsInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -79,58 +96,56 @@ func TestListCharacterImplantsHandler_UnknownCharacter_ReturnsErrCharacterNotFou
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := listCharacterImplants
-	t.Cleanup(func() { listCharacterImplants = orig })
-	listCharacterImplants = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]int64, error) {
-		t.Fatal("listCharacterImplants should not be called for an unknown character")
-		return nil, nil
-	}
-
-	handler := listCharacterImplantsHandler("v1", "client-id", store)
+	handler := listCharacterImplantsHandler(noNarrow[characterImplantsESI](t), store)
 	_, _, err := handler(context.Background(), nil, ListCharacterImplantsInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
 	}
 }
 
-func TestGetCharacterClonesHandler_PropagatesError(t *testing.T) {
-	keyring.MockInit()
-	store := config.NewStoreAt(t.TempDir() + "/config.json")
-	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
-		t.Fatalf("store.Save: %v", err)
-	}
-
-	orig := getCharacterClones
-	t.Cleanup(func() { getCharacterClones = orig })
+func TestListCharacterImplantsHandler_PropagatesError(t *testing.T) {
+	store := clonesTestStore(t)
 	wantErr := errors.New("upstream failure")
-	getCharacterClones = func(ctx context.Context, clientID string, characterID int32, userAgent string) (GetCharacterClonesOutput, error) {
-		return GetCharacterClonesOutput{}, wantErr
-	}
+	fake := fakeCharacterImplantsESI{characterImplants: func(context.Context) ([]int64, error) { return nil, wantErr }}
 
-	handler := getCharacterClonesHandler("v1", "client-id", store)
-	_, _, err := handler(context.Background(), nil, GetCharacterClonesInput{CharacterID: 7})
+	handler := listCharacterImplantsHandler(openNarrow[characterImplantsESI](fake), store)
+	_, _, err := handler(context.Background(), nil, ListCharacterImplantsInput{CharacterID: 7})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
 	}
 }
 
-func TestListCharacterImplantsHandler_PropagatesError(t *testing.T) {
-	keyring.MockInit()
-	store := config.NewStoreAt(t.TempDir() + "/config.json")
-	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
-		t.Fatalf("store.Save: %v", err)
-	}
+func TestListCharacterImplantsHandler_PropagatesOpenError(t *testing.T) {
+	store := clonesTestStore(t)
+	wantErr := errors.New("no token")
 
-	orig := listCharacterImplants
-	t.Cleanup(func() { listCharacterImplants = orig })
-	wantErr := errors.New("upstream failure")
-	listCharacterImplants = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]int64, error) {
-		return nil, wantErr
-	}
-
-	handler := listCharacterImplantsHandler("v1", "client-id", store)
+	handler := listCharacterImplantsHandler(failNarrow[characterImplantsESI](wantErr), store)
 	_, _, err := handler(context.Background(), nil, ListCharacterImplantsInput{CharacterID: 7})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
 	}
+}
+
+// fakeCharacterClonesESI fakes characterClonesESI; a nil characterClones fails as an unfaked call.
+type fakeCharacterClonesESI struct {
+	characterClones func(ctx context.Context) (*esiapi.CharactersCharacterIdClonesGet, error)
+}
+
+func (f fakeCharacterClonesESI) CharacterClones(ctx context.Context) (*esiapi.CharactersCharacterIdClonesGet, error) {
+	if f.characterClones == nil {
+		return nil, errNotFaked
+	}
+	return f.characterClones(ctx)
+}
+
+// fakeCharacterImplantsESI fakes characterImplantsESI; a nil characterImplants fails as an unfaked call.
+type fakeCharacterImplantsESI struct {
+	characterImplants func(ctx context.Context) ([]int64, error)
+}
+
+func (f fakeCharacterImplantsESI) CharacterImplants(ctx context.Context) ([]int64, error) {
+	if f.characterImplants == nil {
+		return nil, errNotFaked
+	}
+	return f.characterImplants(ctx)
 }

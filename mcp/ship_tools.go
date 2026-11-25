@@ -50,7 +50,11 @@ func (p *planner) resolveShip(ctx context.Context, s ShipSpec, pilot int32) (res
 		if err := p.requireCharacter(owner); err != nil {
 			return out, err
 		}
-		assets, truncated, err := allAssetPages(func(page int32) ([]AssetItem, int32, error) { return listAssets(ctx, p.clientID, owner, p.ua(), page) })
+		client, err := p.esi(ctx, owner)
+		if err != nil {
+			return out, fmt.Errorf("read the owner's assets: %w", err)
+		}
+		assets, truncated, err := allAssetPages(func(page int32) ([]AssetItem, int32, error) { return listAssets(ctx, client, page) })
 		if err != nil {
 			return out, fmt.Errorf("read the owner's assets: %w", err)
 		}
@@ -75,7 +79,7 @@ func (p *planner) resolveShip(ctx context.Context, s ShipSpec, pilot int32) (res
 		if basics[out.hull].CategoryID != shipCategoryID {
 			return out, fmt.Errorf("item %d is a %s, not a ship", s.ShipItemID, basics[out.hull].Name)
 		}
-		if names, err := getAssetNames(ctx, p.clientID, owner, p.ua(), []int64{s.ShipItemID}); err == nil && len(names) == 1 {
+		if names, err := getAssetNames(ctx, client, []int64{s.ShipItemID}); err == nil && len(names) == 1 {
 			out.shipName = names[0].Name
 		}
 		for _, a := range assets {
@@ -204,9 +208,18 @@ func (p *planner) shipHold(ctx context.Context, ship resolvedShip, pilot int32) 
 	return out, f, nil
 }
 
-func estimateShipHoldHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[EstimateShipHoldInput, EstimateShipHoldOutput] {
+// AddEstimateShipHold registers estimate_ship_hold. openESI and openPublicESI build the ESI clients;
+// any client with the methods the planner and this tool call will do.
+func AddEstimateShipHold[C plannerClient, P plannerPublicClient](s *mcpsdk.Server, userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "estimate_ship_hold",
+		Description: "Work out a ship's fitted holds the way the game does, from its hull, fitted modules and rigs, and the pilot's skills: every hold before and after, what's already in the cargo hold and what's free, and its fitted warp speed, top speed, align time and jump range and fuel. Give an owned ship by shipItemId (its real fit and cargo are read from assets) or a hull and modules by name. Use it instead of asking the user for their cargo hold.",
+	}, estimateShipHoldHandler(userAgent, openESI, openPublicESI, store, sdeStore))
+}
+
+func estimateShipHoldHandler[C plannerClient, P plannerPublicClient](userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) mcpsdk.ToolHandlerFor[EstimateShipHoldInput, EstimateShipHoldOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in EstimateShipHoldInput) (*mcpsdk.CallToolResult, EstimateShipHoldOutput, error) {
-		p := newPlanner(version, clientID, store, sdeStore)
+		p := newPlanner(userAgent, plannerOpener(openESI), plannerPublicOpener(openPublicESI), store, sdeStore)
 		pilot := in.PilotID
 		if pilot == 0 {
 			pilot = in.OwnerID
@@ -266,7 +279,16 @@ type EstimateCynoOutput struct {
 	GeneratorNotFits bool               `json:"generatorDoesntFit,omitempty" jsonschema:"the generator can't be fitted to this hull"`
 }
 
-func estimateCynoHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[EstimateCynoInput, EstimateCynoOutput] {
+// AddEstimateCyno registers estimate_cyno. openESI and openPublicESI build the ESI clients;
+// any client with the methods the planner and this tool call will do.
+func AddEstimateCyno[C plannerClient, P plannerPublicClient](s *mcpsdk.Server, userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "estimate_cyno",
+		Description: "Work out what lighting cynos with a ship takes, the way the game does: fuel per light and cycle length with the lighter's Cynosural Field Theory and the hull's bonuses, the fuel's volume, the fitted cargo hold, how many lights one load of fuel covers (fuel already aboard doesn't count against the hold), for an owned ship the fuel already aboard and the lights it covers, and for a number of lights the fuel needed and every load of fuel the lights take, in order: before which light and how many units to add, the fuel aboard burned first. Also says whether the generator fits the hull and which skills the lighter still needs.",
+	}, estimateCynoHandler(userAgent, openESI, openPublicESI, store, sdeStore))
+}
+
+func estimateCynoHandler[C plannerClient, P plannerPublicClient](userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) mcpsdk.ToolHandlerFor[EstimateCynoInput, EstimateCynoOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in EstimateCynoInput) (*mcpsdk.CallToolResult, EstimateCynoOutput, error) {
 		gen, ok := cynoGenerators[strings.ToLower(strings.TrimSpace(in.Cyno))]
 		if !ok {
@@ -275,7 +297,7 @@ func estimateCynoHandler(version, clientID string, store ConfigStore, sdeStore S
 		if in.LighterID == 0 {
 			return nil, EstimateCynoOutput{}, fmt.Errorf("estimate cyno: lighterId is required")
 		}
-		p := newPlanner(version, clientID, store, sdeStore)
+		p := newPlanner(userAgent, plannerOpener(openESI), plannerPublicOpener(openPublicESI), store, sdeStore)
 		ship, err := p.resolveShip(ctx, in.ShipSpec, in.LighterID)
 		if err != nil {
 			return nil, EstimateCynoOutput{}, fmt.Errorf("estimate cyno: %w", err)

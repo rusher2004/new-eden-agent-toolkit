@@ -31,9 +31,8 @@ func routeChecksEnv(t *testing.T) (*config.Store, *planner) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	fakeIndustryESI(t)
 	s := sdetest.NewStore(t, "testdata/industry_fixture.sql", "testdata/readiness_fixture.sql")
-	return store, newPlanner("test", "client", store, s)
+	return store, newPlanner("test", openFakeESI(fakeIndustryESI()), openFakePublicESI(fakeIndustryESI()), store, s)
 }
 
 var jfPath = []int64{jitaSys, hakonen, nl6v7, pfqhk}

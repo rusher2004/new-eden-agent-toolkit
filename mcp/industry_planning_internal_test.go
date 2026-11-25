@@ -12,7 +12,6 @@ import (
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/industry"
-	"github.com/rusher2004/new-eden-agent-toolkit/market"
 	"github.com/rusher2004/new-eden-agent-toolkit/sde/sdetest"
 )
 
@@ -29,12 +28,13 @@ func industryTestEnv(t *testing.T) (*config.Store, *planner) {
 		t.Fatal(err)
 	}
 	sdeStore := sdetest.NewStore(t, "testdata/industry_fixture.sql")
-	return store, newPlanner("test", "client", store, sdeStore)
+	openESI, openPublicESI := noESI()
+	return store, newPlanner("test", openESI, openPublicESI, store, sdeStore)
 }
 
 func TestSaveAndDescribeFacility_NullsecSotiyo(t *testing.T) {
 	store, p := industryTestEnv(t)
-	save := saveFacilityProfileHandler("test", "client", store, p.sde)
+	save := saveFacilityProfileHandler("test", p.openESI, p.openPublicESI, store, p.sde)
 	_, view, err := save(context.Background(), nil, SaveFacilityProfileInput{
 		Name: "Home Sotiyo", Kind: industry.KindUpwell, StructureType: "Sotiyo", System: "PF-QHK",
 		Rigs:     []string{"Standup XL-Set Ship Manufacturing Efficiency I", "Standup XL-Set Structure and Component Manufacturing Efficiency I"},
@@ -46,7 +46,7 @@ func TestSaveAndDescribeFacility_NullsecSotiyo(t *testing.T) {
 	if view.Band != "nullsec" || len(view.Modifiers) == 0 {
 		t.Errorf("view = %+v", view)
 	}
-	describe := describeFacilityHandler("test", "client", store, p.sde)
+	describe := describeFacilityHandler("test", p.openESI, p.openPublicESI, store, p.sde)
 	_, d, err := describe(context.Background(), nil, DescribeFacilityInput{Name: "home sotiyo", ProductName: "Capital Siege Array"})
 	if err != nil {
 		t.Fatal(err)
@@ -63,54 +63,63 @@ func TestSaveAndDescribeFacility_NullsecSotiyo(t *testing.T) {
 	}
 }
 
-func fakeIndustryESI(t *testing.T) {
-	t.Helper()
-	origBP, origJobs, origPrices, origIdx, origSkills, origImpl, origKills, origBooks :=
-		listCorporationBlueprints, listCorporationIndustryJobs, listMarketPrices, listIndustrySystems, listCharacterSkills, listCharacterImplants, listUniverseSystemKills, fetchSellOrders
-	t.Cleanup(func() {
-		listCorporationBlueprints, listCorporationIndustryJobs, listMarketPrices, listIndustrySystems, listCharacterSkills, listCharacterImplants, listUniverseSystemKills, fetchSellOrders =
-			origBP, origJobs, origPrices, origIdx, origSkills, origImpl, origKills, origBooks
-	})
-	listCorporationBlueprints = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]CorporationBlueprint, int32, error) {
-		return []CorporationBlueprint{{ItemID: 1, TypeID: 21040, MaterialEfficiency: 10, TimeEfficiency: 20, Runs: 10, Quantity: -2, LocationID: 99, LocationFlag: "CorpSAG6"}}, 1, nil
-	}
-	listCorporationIndustryJobs = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, includeCompleted bool, page int32) ([]esiapi.CorporationsCorporationIdIndustryJobsGetInner, int32, error) {
-		return nil, 1, nil
-	}
+// fakeIndustryESI is the ESI the industry planning tests read: one owned
+// 10-run copy, adjusted prices, a cost index, a builder's skills, and sell
+// orders at Jita 4-4.
+func fakeIndustryESI() fakeESI {
 	price := func(id int64, p float64) esiapi.MarketsPricesGetInner {
 		return esiapi.MarketsPricesGetInner{TypeId: id, AdjustedPrice: &p}
 	}
-	listMarketPrices = func(ctx context.Context, userAgent string) ([]esiapi.MarketsPricesGetInner, error) {
-		return []esiapi.MarketsPricesGetInner{price(34, 4), price(35, 16), price(36, 55), price(37, 206), price(38, 780), price(39, 1079), price(40, 2094), price(2876, 2.1e6), price(57457, 3466)}, nil
-	}
-	listIndustrySystems = func(ctx context.Context, userAgent string) ([]esiapi.IndustrySystemsGetInner, error) {
-		return []esiapi.IndustrySystemsGetInner{{SolarSystemId: 30001324, CostIndices: []esiapi.IndustrySystemsGetInnerCostIndicesInner{{Activity: "manufacturing", CostIndex: 0.03}}}}, nil
-	}
-	listCharacterSkills = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]CharacterSkill, int64, *int64, error) {
-		lv := map[int64]int64{3380: 5, 3388: 5, 3387: 5, 24625: 4, 22242: 4, 3385: 5, 3389: 5, 60379: 4, 21611: 5, 21610: 5, 29029: 4}
-		var out []CharacterSkill
-		for id, l := range lv {
-			out = append(out, CharacterSkill{SkillID: id, ActiveSkillLevel: l, TrainedSkillLevel: l})
-		}
-		return out, 0, nil, nil
-	}
-	listCharacterImplants = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]int64, error) {
-		return nil, nil
-	}
-	listUniverseSystemKills = func(ctx context.Context, userAgent string) ([]UniverseSystemKills, error) { return nil, nil }
 	book := map[int64]float64{34: 4, 35: 16, 36: 55, 37: 206, 38: 780, 39: 1079, 40: 2094, 2876: 2.14e6, 57457: 3466, 62555: 2000, 17889: 590, 21039: 11.88e6}
-	fetchSellOrders = func(ctx context.Context, userAgent string, regionID, typeID int64) ([]market.Order, error) {
-		p, ok := book[typeID]
-		if !ok {
+	return fakeESI{
+		fakeCorporationBlueprintsESI: fakeCorporationBlueprintsESI{corporationBlueprints: func(context.Context, int64, int32) ([]esiapi.CorporationsCorporationIdBlueprintsGetInner, int32, error) {
+			return []esiapi.CorporationsCorporationIdBlueprintsGetInner{{ItemId: 1, TypeId: 21040, MaterialEfficiency: 10, TimeEfficiency: 20, Runs: 10, Quantity: -2, LocationId: 99, LocationFlag: "CorpSAG6"}}, 1, nil
+		}},
+		fakeCorporationIndustryJobsESI: fakeCorporationIndustryJobsESI{corporationIndustryJobs: func(context.Context, int64, bool, int32) ([]esiapi.CorporationsCorporationIdIndustryJobsGetInner, int32, error) {
+			return nil, 1, nil
+		}},
+		fakeMarketPricesESI: fakeMarketPricesESI{marketPrices: func(context.Context) ([]esiapi.MarketsPricesGetInner, error) {
+			return []esiapi.MarketsPricesGetInner{price(34, 4), price(35, 16), price(36, 55), price(37, 206), price(38, 780), price(39, 1079), price(40, 2094), price(2876, 2.1e6), price(57457, 3466)}, nil
+		}},
+		fakeIndustrySystemsESI: fakeIndustrySystemsESI{industrySystems: func(context.Context) ([]esiapi.IndustrySystemsGetInner, error) {
+			return []esiapi.IndustrySystemsGetInner{{SolarSystemId: 30001324, CostIndices: []esiapi.IndustrySystemsGetInnerCostIndicesInner{{Activity: "manufacturing", CostIndex: 0.03}}}}, nil
+		}},
+		fakeCharacterSkillsESI: fakeCharacterSkillsESI{characterSkills: func(context.Context) (*esiapi.CharactersSkills, error) {
+			lv := map[int64]int64{3380: 5, 3388: 5, 3387: 5, 24625: 4, 22242: 4, 3385: 5, 3389: 5, 60379: 4, 21611: 5, 21610: 5, 29029: 4}
+			out := &esiapi.CharactersSkills{}
+			for id, l := range lv {
+				out.Skills = append(out.Skills, esiapi.CharactersSkillsSkill{SkillId: id, ActiveSkillLevel: l, TrainedSkillLevel: l})
+			}
+			return out, nil
+		}},
+		fakeCharacterImplantsESI: fakeCharacterImplantsESI{characterImplants: func(context.Context) ([]int64, error) { return nil, nil }},
+		fakeUniverseSystemKillsESI: fakeUniverseSystemKillsESI{universeSystemKills: func(context.Context) ([]esiapi.UniverseSystemKillsGetInner, error) {
 			return nil, nil
-		}
-		return []market.Order{{Price: p, Volume: 1e9, LocationID: 60003760}}, nil
+		}},
+		fakeMarketOrdersESI: fakeMarketOrdersESI{marketOrders: sellBook(book)},
 	}
+}
+
+// sellBook fakes a region's order book: one deep sell order at Jita 4-4
+// for each type priced in book.
+func sellBook(book map[int64]float64) func(context.Context, int64, string, int64, int32) ([]esiapi.MarketsRegionIdOrdersGetInner, int32, error) {
+	return func(_ context.Context, _ int64, orderType string, typeID int64, _ int32) ([]esiapi.MarketsRegionIdOrdersGetInner, int32, error) {
+		p, ok := book[typeID]
+		if !ok || orderType == "buy" {
+			return nil, 1, nil
+		}
+		return []esiapi.MarketsRegionIdOrdersGetInner{{TypeId: typeID, Price: p, VolumeRemain: 1e9, LocationId: 60003760}}, 1, nil
+	}
+}
+
+// useFakeESI points the planner's openers at f.
+func useFakeESI(p *planner, f fakeESI) {
+	p.openESI, p.openPublicESI = openFakeESI(f), openFakePublicESI(f)
 }
 
 func TestPlanBuild_EndToEnd(t *testing.T) {
 	store, p := industryTestEnv(t)
-	fakeIndustryESI(t)
+	useFakeESI(p, fakeIndustryESI())
 	cfg, _ := store.Load()
 	cfg.UpsertFacilityProfile(config.FacilityProfile{Name: "Home Sotiyo", Kind: industry.KindUpwell, StructureType: 35827, SystemID: 30001324, RigTypeIDs: []int64{37180, 43704}, Services: []string{"manufacturing", "capital_shipyard"}})
 	cfg.UpsertFacilityProfile(config.FacilityProfile{Name: "Home Tatara", Kind: industry.KindUpwell, StructureType: 35836, SystemID: 30001324, Services: []string{"reprocessing"}, ReprocessingRigTier: 1})
@@ -161,7 +170,7 @@ func TestPlanBuild_EndToEnd(t *testing.T) {
 
 func TestPlanBuild_QuantityStillUsesOwnedCopies(t *testing.T) {
 	store, p := industryTestEnv(t)
-	fakeIndustryESI(t)
+	useFakeESI(p, fakeIndustryESI())
 	cfg, _ := store.Load()
 	cfg.UpsertFacilityProfile(config.FacilityProfile{Name: "Home Sotiyo", Kind: industry.KindUpwell, StructureType: 35827, SystemID: 30001324, Services: []string{"manufacturing", "capital_shipyard"}})
 	if err := store.Save(cfg); err != nil {
@@ -183,10 +192,11 @@ func TestPlanBuild_QuantityStillUsesOwnedCopies(t *testing.T) {
 
 func TestPlanBuild_NoCopiesNeedsQuantity(t *testing.T) {
 	store, p := industryTestEnv(t)
-	fakeIndustryESI(t)
-	listCorporationBlueprints = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]CorporationBlueprint, int32, error) {
+	fake := fakeIndustryESI()
+	fake.fakeCorporationBlueprintsESI.corporationBlueprints = func(context.Context, int64, int32) ([]esiapi.CorporationsCorporationIdBlueprintsGetInner, int32, error) {
 		return nil, 1, nil
 	}
+	useFakeESI(p, fake)
 	cfg, _ := store.Load()
 	cfg.UpsertFacilityProfile(config.FacilityProfile{Name: "Home Sotiyo", Kind: industry.KindUpwell, StructureType: 35827, SystemID: 30001324, Services: []string{"manufacturing"}})
 	if err := store.Save(cfg); err != nil {

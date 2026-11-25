@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	"github.com/zalando/go-keyring"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
@@ -579,16 +580,14 @@ func TestListCorporationBlueprintsHandler_MapsFields(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationBlueprints
-	t.Cleanup(func() { listCorporationBlueprints = orig })
-	listCorporationBlueprints = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]CorporationBlueprint, int32, error) {
-		return []CorporationBlueprint{{
-			ItemID: 1001, LocationFlag: "Hangar", LocationID: 60003760,
-			MaterialEfficiency: 10, Quantity: -1, Runs: -1, TimeEfficiency: 20, TypeID: 950,
+	fake := fakeCorporationBlueprintsESI{corporationBlueprints: func(_ context.Context, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdBlueprintsGetInner, int32, error) {
+		return []esiapi.CorporationsCorporationIdBlueprintsGetInner{{
+			ItemId: 1001, LocationFlag: "Hangar", LocationId: 60003760,
+			MaterialEfficiency: 10, Quantity: -1, Runs: -1, TimeEfficiency: 20, TypeId: 950,
 		}}, 2, nil
-	}
+	}}
 
-	handler := listCorporationBlueprintsHandler("v1", "client-id", store, nil)
+	handler := listCorporationBlueprintsHandler("v1", openNarrow[corporationBlueprintsESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, ListCorporationBlueprintsInput{CharacterID: 7, CorporationID: 98000001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -610,11 +609,9 @@ func TestListCorporationBlueprintsHandler_ResolvesTypeName(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationBlueprints
-	t.Cleanup(func() { listCorporationBlueprints = orig })
-	listCorporationBlueprints = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]CorporationBlueprint, int32, error) {
-		return []CorporationBlueprint{{ItemID: 1, TypeID: 587}}, 1, nil
-	}
+	fake := fakeCorporationBlueprintsESI{corporationBlueprints: func(_ context.Context, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdBlueprintsGetInner, int32, error) {
+		return []esiapi.CorporationsCorporationIdBlueprintsGetInner{{ItemId: 1, TypeId: 587}}, 1, nil
+	}}
 
 	origResolve := resolveTypeNames
 	t.Cleanup(func() { resolveTypeNames = origResolve })
@@ -622,7 +619,7 @@ func TestListCorporationBlueprintsHandler_ResolvesTypeName(t *testing.T) {
 		return map[int64]string{587: "Rifter"}
 	}
 
-	handler := listCorporationBlueprintsHandler("v1", "client-id", store, nil)
+	handler := listCorporationBlueprintsHandler("v1", openNarrow[corporationBlueprintsESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, ListCorporationBlueprintsInput{CharacterID: 7, CorporationID: 98000001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -636,14 +633,7 @@ func TestListCorporationBlueprintsHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := listCorporationBlueprints
-	t.Cleanup(func() { listCorporationBlueprints = orig })
-	listCorporationBlueprints = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]CorporationBlueprint, int32, error) {
-		t.Fatal("listCorporationBlueprints should not be called for an unknown character")
-		return nil, 0, nil
-	}
-
-	handler := listCorporationBlueprintsHandler("v1", "client-id", store, nil)
+	handler := listCorporationBlueprintsHandler("v1", noNarrow[corporationBlueprintsESI](t), store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationBlueprintsInput{CharacterID: 999, CorporationID: 98000001})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -1592,14 +1582,12 @@ func TestListCorporationBlueprintsHandler_PropagatesError(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationBlueprints
-	t.Cleanup(func() { listCorporationBlueprints = orig })
 	wantErr := errors.New("upstream failure")
-	listCorporationBlueprints = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]CorporationBlueprint, int32, error) {
+	fake := fakeCorporationBlueprintsESI{corporationBlueprints: func(_ context.Context, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdBlueprintsGetInner, int32, error) {
 		return nil, 0, wantErr
-	}
+	}}
 
-	handler := listCorporationBlueprintsHandler("v1", "client-id", store, nil)
+	handler := listCorporationBlueprintsHandler("v1", openNarrow[corporationBlueprintsESI](fake), store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationBlueprintsInput{CharacterID: 7, CorporationID: 98000001})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -1750,5 +1738,33 @@ func TestListCorporationStructuresHandler_PropagatesError(t *testing.T) {
 	_, _, err := handler(context.Background(), nil, ListCorporationStructuresInput{CharacterID: 7, CorporationID: 98000001})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+// fakeCorporationBlueprintsESI fakes corporationBlueprintsESI; a nil corporationBlueprints fails as an unfaked call.
+type fakeCorporationBlueprintsESI struct {
+	corporationBlueprints func(ctx context.Context, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdBlueprintsGetInner, int32, error)
+}
+
+func (f fakeCorporationBlueprintsESI) CorporationBlueprints(ctx context.Context, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdBlueprintsGetInner, int32, error) {
+	if f.corporationBlueprints == nil {
+		return nil, 0, errNotFaked
+	}
+	return f.corporationBlueprints(ctx, corporationID, page)
+}
+
+// Each handler reports a client that can't be opened, wrapping the cause.
+func TestCorporationBlueprintsHandlers_PropagateOpenError(t *testing.T) {
+	store := characterStore(t, config.Character{ID: 7, Name: "Test Pilot"})
+	wantErr := errors.New("no refresh token")
+	for name, call := range map[string]func() error{
+		"list_corporation_blueprints": func() error {
+			_, _, err := listCorporationBlueprintsHandler("v1", failNarrow[corporationBlueprintsESI](wantErr), store, nil)(context.Background(), nil, ListCorporationBlueprintsInput{CharacterID: 7, CorporationID: 98000001})
+			return err
+		},
+	} {
+		if err := call(); !errors.Is(err, wantErr) {
+			t.Errorf("%s: err = %v, want wrapping %v", name, err, wantErr)
+		}
 	}
 }

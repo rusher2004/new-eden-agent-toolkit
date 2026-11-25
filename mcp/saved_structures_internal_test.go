@@ -8,24 +8,29 @@ import (
 	"sync"
 	"testing"
 
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 )
 
-func stubStructureESI(t *testing.T, docking map[int32]bool, clones map[int32][]int64) {
+// stubStructureESI fakes p's structure lookups (they need docking), jump
+// clones (each character in clones), and owner names.
+func stubStructureESI(t *testing.T, p *planner, docking map[int32]bool, clones map[int32][]int64) {
 	t.Helper()
-	origS, origC, origN, origT := getUniverseStructure, getCharacterClones, resolveUniverseNames, today
-	t.Cleanup(func() {
-		getUniverseStructure, getCharacterClones, resolveUniverseNames, today = origS, origC, origN, origT
-	})
+	origT := today
+	t.Cleanup(func() { today = origT })
 	today = func() string { return "2026-11-20" }
-	getUniverseStructure = func(_ context.Context, _ string, characterID int32, _ string, id int64) (UniverseStructure, error) {
-		if !docking[characterID] {
-			return UniverseStructure{}, errors.New("403 Forbidden")
+	addESILayer(p, func(characterID int32, f *fakeESI) {
+		f.universeStructureDetail = func(context.Context, int64) (*esiapi.UniverseStructuresStructureIdGet, error) {
+			if !docking[characterID] {
+				return nil, errors.New("403 Forbidden")
+			}
+			typ := int64(35827)
+			return &esiapi.UniverseStructuresStructureIdGet{Name: "CX7-70 - Sugar Daddy's Stronghold", OwnerId: 98435559, SolarSystemId: 30001324, TypeId: &typ}, nil
 		}
-		typ := int64(35827)
-		return UniverseStructure{Name: "CX7-70 - Sugar Daddy's Stronghold", OwnerID: 98435559, SolarSystemID: 30001324, TypeID: &typ}, nil
-	}
-	getCharacterClones = func(_ context.Context, _ string, characterID int32, _ string) (GetCharacterClonesOutput, error) {
+	})
+	stubClones(p, func(characterID int32) (GetCharacterClonesOutput, error) {
 		locs, ok := clones[characterID]
 		if !ok {
 			return GetCharacterClonesOutput{}, errors.New("missing scope")
@@ -35,18 +40,25 @@ func stubStructureESI(t *testing.T, docking map[int32]bool, clones map[int32][]i
 			out.JumpClones = append(out.JumpClones, JumpClone{LocationID: l})
 		}
 		return out, nil
-	}
-	resolveUniverseNames = func(_ context.Context, _ string, ids []int64) ([]ResolvedName, error) {
-		return []ResolvedName{{Category: "corporation", ID: ids[0], Name: "The Blue Donut"}}, nil
-	}
+	})
+	addPublicESILayer(p, func(f *fakeESI) {
+		f.universeNamesByID = func(_ context.Context, ids []int64) ([]esiapi.UniverseNamesPostInner, error) {
+			return []esiapi.UniverseNamesPostInner{{Category: "corporation", Id: ids[0], Name: "The Blue Donut"}}, nil
+		}
+	})
+}
+
+// listStructures builds list_structures over p's fakes.
+func listStructures(store structureStore, p *planner) mcpsdk.ToolHandlerFor[ListStructuresInput, ListStructuresOutput] {
+	return listStructuresHandler(fakeOpener(p), store)
 }
 
 const sotiyo = int64(1049345291823)
 
 func TestSaveStructure_UpwellFromESIWithUserFacts(t *testing.T) {
 	store, p := industryTestEnv(t)
-	stubStructureESI(t, map[int32]bool{testPilot: true}, nil)
-	save := saveStructureHandler("test", "client", store, p.sde)
+	stubStructureESI(t, p, map[int32]bool{testPilot: true}, nil)
+	save := saveStructureHandler("test", p.openESI, p.openPublicESI, store, p.sde)
 
 	if _, _, err := save(context.Background(), nil, SaveStructureInput{ID: sotiyo}); err == nil || !strings.Contains(err.Error(), "needs characterId") {
 		t.Errorf("an Upwell structure without a character: err = %v", err)
@@ -81,8 +93,8 @@ func TestSaveStructure_UpwellFromESIWithUserFacts(t *testing.T) {
 
 func TestSaveStructure_NPCStationFromSDE(t *testing.T) {
 	store, p := industryTestEnv(t)
-	stubStructureESI(t, nil, nil)
-	_, out, err := saveStructureHandler("test", "client", store, p.sde)(context.Background(), nil, SaveStructureInput{ID: 60003760, Uses: []string{"market"}})
+	stubStructureESI(t, p, nil, nil)
+	_, out, err := saveStructureHandler("test", p.openESI, p.openPublicESI, store, p.sde)(context.Background(), nil, SaveStructureInput{ID: 60003760, Uses: []string{"market"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,8 +105,8 @@ func TestSaveStructure_NPCStationFromSDE(t *testing.T) {
 
 func TestSaveStructure_RejectsBadInput(t *testing.T) {
 	store, p := industryTestEnv(t)
-	stubStructureESI(t, nil, nil)
-	save := saveStructureHandler("test", "client", store, p.sde)
+	stubStructureESI(t, p, nil, nil)
+	save := saveStructureHandler("test", p.openESI, p.openPublicESI, store, p.sde)
 	for name, in := range map[string]SaveStructureInput{
 		"no id":             {},
 		"bad clone bay":     {ID: 60003760, CloneBay: "maybe"},
@@ -120,9 +132,9 @@ func TestListStructures_ProvesCloneBaysAndChecksDocking(t *testing.T) {
 	if err := store.Save(cfg); err != nil {
 		t.Fatal(err)
 	}
-	stubStructureESI(t, map[int32]bool{testPilot: true}, map[int32][]int64{testPilot: {sotiyo}})
+	stubStructureESI(t, p, map[int32]bool{testPilot: true}, map[int32][]int64{testPilot: {sotiyo}})
 
-	_, out, err := listStructuresHandler("test", "client", store, p.sde)(context.Background(), nil, ListStructuresInput{CharacterIDs: []int32{testPilot, 7}})
+	_, out, err := listStructures(store, p)(context.Background(), nil, ListStructuresInput{CharacterIDs: []int32{testPilot, 7}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +157,7 @@ func TestListStructures_ProvesCloneBaysAndChecksDocking(t *testing.T) {
 		t.Errorf("warnings = %v", out.Warnings)
 	}
 
-	_, again, err := listStructuresHandler("test", "client", store, p.sde)(context.Background(), nil, ListStructuresInput{})
+	_, again, err := listStructures(store, p)(context.Background(), nil, ListStructuresInput{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,21 +195,23 @@ func TestListStructures_KeepsWritesMadeDuringLookups(t *testing.T) {
 	if err := store.Save(cfg); err != nil {
 		t.Fatal(err)
 	}
-	stubStructureESI(t, nil, map[int32][]int64{testPilot: {sotiyo}})
-	clones := getCharacterClones
-	getCharacterClones = func(ctx context.Context, clientID string, characterID int32, ua string) (GetCharacterClonesOutput, error) {
-		// Another tool saves a structure while this call waits on ESI.
-		c, err := store.Load()
-		if err != nil {
-			t.Fatal(err)
+	stubStructureESI(t, p, nil, map[int32][]int64{testPilot: {sotiyo}})
+	addESILayer(p, func(_ int32, f *fakeESI) {
+		clones := f.characterClones
+		f.characterClones = func(ctx context.Context) (*esiapi.CharactersCharacterIdClonesGet, error) {
+			// Another tool saves a structure while this call waits on ESI.
+			c, err := store.Load()
+			if err != nil {
+				t.Fatal(err)
+			}
+			c.UpsertStructure(config.Structure{ID: 60003760, Name: "Jita 4-4", Kind: config.StructureNPCStation})
+			if err := store.Save(c); err != nil {
+				t.Fatal(err)
+			}
+			return clones(ctx)
 		}
-		c.UpsertStructure(config.Structure{ID: 60003760, Name: "Jita 4-4", Kind: config.StructureNPCStation})
-		if err := store.Save(c); err != nil {
-			t.Fatal(err)
-		}
-		return clones(ctx, clientID, characterID, ua)
-	}
-	if _, _, err := listStructuresHandler("test", "client", store, p.sde)(context.Background(), nil, ListStructuresInput{}); err != nil {
+	})
+	if _, _, err := listStructures(store, p)(context.Background(), nil, ListStructuresInput{}); err != nil {
 		t.Fatal(err)
 	}
 	after, err := store.Load()
@@ -224,13 +238,15 @@ func TestListStructures_StopsDockingChecksAfterRefusals(t *testing.T) {
 	if err := store.Save(cfg); err != nil {
 		t.Fatal(err)
 	}
-	stubStructureESI(t, nil, map[int32][]int64{testPilot: nil})
+	stubStructureESI(t, p, nil, map[int32][]int64{testPilot: nil})
 	calls := 0
-	getUniverseStructure = func(context.Context, string, int32, string, int64) (UniverseStructure, error) {
-		calls++
-		return UniverseStructure{}, errors.New("403 Forbidden")
-	}
-	_, out, err := listStructuresHandler("test", "client", store, p.sde)(context.Background(), nil, ListStructuresInput{CharacterIDs: []int32{testPilot}})
+	addESILayer(p, func(_ int32, f *fakeESI) {
+		f.universeStructureDetail = func(context.Context, int64) (*esiapi.UniverseStructuresStructureIdGet, error) {
+			calls++
+			return nil, errors.New("403 Forbidden")
+		}
+	})
+	_, out, err := listStructures(store, p)(context.Background(), nil, ListStructuresInput{CharacterIDs: []int32{testPilot}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,10 +272,44 @@ func TestListStructures_StopsDockingChecksAfterRefusals(t *testing.T) {
 	}
 }
 
+// A character whose ESI client can't be opened counts as a refused
+// docking check and an unread set of jump clones, like any other failure.
+func TestListStructures_UnopenableClient(t *testing.T) {
+	store, p := industryTestEnv(t)
+	cfg, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.UpsertStructure(config.Structure{ID: sotiyo, Name: "Sotiyo", Kind: config.StructureUpwell})
+	if err := store.Save(cfg); err != nil {
+		t.Fatal(err)
+	}
+	p.openESI = failOpenESI(errors.New("no refresh token"))
+	_, out, err := listStructures(store, p)(context.Background(), nil, ListStructuresInput{CharacterIDs: []int32{testPilot}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Warnings) != 1 || !strings.Contains(out.Warnings[0], "no refresh token") {
+		t.Errorf("warnings = %v, want the jump clones unread with the open error", out.Warnings)
+	}
+	if d := out.Structures[0].Docking; len(d) != 1 || d[0].Access != "unknown" || !strings.Contains(d[0].Detail, "no refresh token") {
+		t.Errorf("docking = %+v, want unknown with the open error", d)
+	}
+}
+
+func TestSaveStructure_UnopenableClient(t *testing.T) {
+	store, p := industryTestEnv(t)
+	p.openESI = failOpenESI(errors.New("no refresh token"))
+	_, _, err := saveStructureHandler("test", p.openESI, p.openPublicESI, store, p.sde)(context.Background(), nil, SaveStructureInput{ID: sotiyo, CharacterID: testPilot})
+	if err == nil || !strings.Contains(err.Error(), "no refresh token") {
+		t.Errorf("err = %v, want the open error", err)
+	}
+}
+
 func TestSaveStructure_ConcurrentSavesKeepEveryStructure(t *testing.T) {
 	store, p := industryTestEnv(t)
-	stubStructureESI(t, map[int32]bool{testPilot: true}, nil)
-	save := saveStructureHandler("test", "client", store, p.sde)
+	stubStructureESI(t, p, map[int32]bool{testPilot: true}, nil)
+	save := saveStructureHandler("test", p.openESI, p.openPublicESI, store, p.sde)
 	const n = 10
 	var wg sync.WaitGroup
 	errs := make(chan error, n)
