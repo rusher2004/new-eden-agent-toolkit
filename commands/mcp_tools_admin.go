@@ -56,7 +56,7 @@ func (l ssoLogin) AddCharacters(ctx context.Context, opts mcp.LoginOptions) ([]m
 		ssoOpts.SavedCharacters = func() ([]sso.Character, error) {
 			saved, err := opts.SavedCharacters()
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("list saved characters for the login page: %w", err)
 			}
 			out := make([]sso.Character, len(saved))
 			for i, c := range saved {
