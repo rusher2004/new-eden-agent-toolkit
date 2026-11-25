@@ -235,7 +235,6 @@ func AddGetSkinr[C skinrDetailESI](s *mcpsdk.Server, userAgent string, open func
 
 func getSkinrHandler[C skinrDetailESI](userAgent string, open func() C, sdeStore skinrNameCache) mcpsdk.ToolHandlerFor[GetSkinrInput, GetSkinrOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetSkinrInput) (*mcpsdk.CallToolResult, GetSkinrOutput, error) {
-		userAgent := userAgent
 		client := open()
 		s, err := client.SkinrDetail(ctx, in.SkinrID)
 		if err != nil {
