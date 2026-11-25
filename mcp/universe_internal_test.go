@@ -3,46 +3,14 @@ package mcp
 import (
 	"context"
 	"errors"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 
-	goesi "github.com/fnt-eve/goesi-openapi"
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	"github.com/zalando/go-keyring"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
-	"github.com/rusher2004/new-eden-agent-toolkit/esi"
 	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 )
-
-// fakeESIJSONServer serves body (with an optional X-Pages header, "" to
-// omit) to any request, for tests exercising the cache-miss/ESI-fallback
-// path -- the underlying esi/ package's own tests already verify each
-// endpoint's exact URL, so these only need a plausible response body.
-func fakeESIJSONServer(t *testing.T, body, totalPages string) *httptest.Server {
-	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		if totalPages != "" {
-			w.Header().Set("X-Pages", totalPages)
-		}
-		_, _ = w.Write([]byte(body))
-	}))
-	t.Cleanup(srv.Close)
-	return srv
-}
-
-// useFakeESIClient points newPublicESIClient at srv for the duration of
-// the test, restoring the real constructor afterward.
-func useFakeESIClient(t *testing.T, srv *httptest.Server) {
-	t.Helper()
-	orig := newPublicESIClient
-	t.Cleanup(func() { newPublicESIClient = orig })
-	newPublicESIClient = func(userAgent string) *esi.Client {
-		return esi.ExportedNewPublicClientWithOptions(srv.Client(), goesi.ClientOptions{BaseURL: srv.URL, UserAgent: userAgent})
-	}
-}
 
 // --- list_universe_ancestries / list_universe_bloodlines / list_universe_races /
 // list_universe_factions ---
@@ -93,7 +61,7 @@ func TestListUniverseAncestries_CacheHit_MapsFields(t *testing.T) {
 		{ID: 1, BloodlineID: 5, Description: "Holders are...", Name: "Liberal Holders", IconID: &iconID, ShortDescription: &shortDesc},
 	}}
 
-	got, err := listUniverseAncestries(context.Background(), cache, "test-agent")
+	got, err := listUniverseAncestries(context.Background(), cache, nil, "test-agent")
 	if err != nil {
 		t.Fatalf("listUniverseAncestries returned error: %v", err)
 	}
@@ -108,43 +76,9 @@ func TestListUniverseAncestries_CacheHit_MapsFields(t *testing.T) {
 func TestListUniverseAncestries_CacheError_ReturnsError(t *testing.T) {
 	cache := &fakeAncestryCache{err: errors.New("boom")}
 
-	_, err := listUniverseAncestries(context.Background(), cache, "test-agent")
+	_, err := listUniverseAncestries(context.Background(), cache, nil, "test-agent")
 	if err == nil {
 		t.Fatal("listUniverseAncestries returned nil error, want the wrapped cache error")
-	}
-}
-
-func TestListUniverseAncestriesHandler_MapsFields(t *testing.T) {
-	orig := listUniverseAncestries
-	t.Cleanup(func() { listUniverseAncestries = orig })
-	iconID := int64(100)
-	shortDesc := "short"
-	listUniverseAncestries = func(ctx context.Context, sdeStore ancestryCache, userAgent string) ([]UniverseAncestry, error) {
-		return []UniverseAncestry{{ID: 11, BloodlineID: 1, Description: "desc", Name: "Tribal", IconID: &iconID, ShortDescription: &shortDesc}}, nil
-	}
-
-	handler := listUniverseAncestriesHandler("v1", nil)
-	_, out, err := handler(context.Background(), nil, ListUniverseAncestriesInput{})
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-	if len(out.Ancestries) != 1 || out.Ancestries[0].ID != 11 || out.Ancestries[0].Name != "Tribal" {
-		t.Errorf("out = %+v, want one entry ID=11 Name=Tribal", out)
-	}
-}
-
-func TestListUniverseAncestriesHandler_PropagatesError(t *testing.T) {
-	orig := listUniverseAncestries
-	t.Cleanup(func() { listUniverseAncestries = orig })
-	wantErr := errors.New("upstream failure")
-	listUniverseAncestries = func(ctx context.Context, sdeStore ancestryCache, userAgent string) ([]UniverseAncestry, error) {
-		return nil, wantErr
-	}
-
-	handler := listUniverseAncestriesHandler("v1", nil)
-	_, _, err := handler(context.Background(), nil, ListUniverseAncestriesInput{})
-	if !errors.Is(err, wantErr) {
-		t.Errorf("err = %v, want wrapping %v", err, wantErr)
 	}
 }
 
@@ -153,44 +87,12 @@ func TestListUniverseBloodlines_CacheHit_MapsFieldsAndDefaultsMissingShipTypeID(
 		{ID: 1, Charisma: 6, CorporationID: 1000006, Description: "The Deteis are...", Intelligence: 7, Memory: 7, Name: "Deteis", Perception: 5, RaceID: 1, Willpower: 5},
 	}}
 
-	got, err := listUniverseBloodlines(context.Background(), cache, "test-agent")
+	got, err := listUniverseBloodlines(context.Background(), cache, nil, "test-agent")
 	if err != nil {
 		t.Fatalf("listUniverseBloodlines returned error: %v", err)
 	}
 	if len(got) != 1 || got[0].ID != 1 || got[0].Name != "Deteis" || got[0].ShipTypeID != 0 {
 		t.Errorf("got = %+v, want one entry ID=1 Name=Deteis ShipTypeID=0 (no SDE source for this record)", got)
-	}
-}
-
-func TestListUniverseBloodlinesHandler_MapsFields(t *testing.T) {
-	orig := listUniverseBloodlines
-	t.Cleanup(func() { listUniverseBloodlines = orig })
-	listUniverseBloodlines = func(ctx context.Context, sdeStore bloodlineCache, userAgent string) ([]UniverseBloodline, error) {
-		return []UniverseBloodline{{ID: 1, Name: "Deteis", RaceID: 1, CorporationID: 1000166}}, nil
-	}
-
-	handler := listUniverseBloodlinesHandler("v1", nil)
-	_, out, err := handler(context.Background(), nil, ListUniverseBloodlinesInput{})
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-	if len(out.Bloodlines) != 1 || out.Bloodlines[0].ID != 1 || out.Bloodlines[0].Name != "Deteis" {
-		t.Errorf("out = %+v, want one entry ID=1 Name=Deteis", out)
-	}
-}
-
-func TestListUniverseBloodlinesHandler_PropagatesError(t *testing.T) {
-	orig := listUniverseBloodlines
-	t.Cleanup(func() { listUniverseBloodlines = orig })
-	wantErr := errors.New("upstream failure")
-	listUniverseBloodlines = func(ctx context.Context, sdeStore bloodlineCache, userAgent string) ([]UniverseBloodline, error) {
-		return nil, wantErr
-	}
-
-	handler := listUniverseBloodlinesHandler("v1", nil)
-	_, _, err := handler(context.Background(), nil, ListUniverseBloodlinesInput{})
-	if !errors.Is(err, wantErr) {
-		t.Errorf("err = %v, want wrapping %v", err, wantErr)
 	}
 }
 
@@ -200,7 +102,7 @@ func TestListUniverseRaces_CacheHit_ReturnsAllianceID(t *testing.T) {
 		{ID: 1, AllianceID: &allianceID, Description: "Founded on the tenets...", Name: "Caldari"},
 	}}
 
-	got, err := listUniverseRaces(context.Background(), cache, "test-agent")
+	got, err := listUniverseRaces(context.Background(), cache, nil, "test-agent")
 	if err != nil {
 		t.Fatalf("listUniverseRaces returned error: %v", err)
 	}
@@ -214,45 +116,12 @@ func TestListUniverseRaces_CacheHit_NoAllianceID_ReturnsNil(t *testing.T) {
 		{ID: 1, Description: "Founded on the tenets...", Name: "Caldari"},
 	}}
 
-	got, err := listUniverseRaces(context.Background(), cache, "test-agent")
+	got, err := listUniverseRaces(context.Background(), cache, nil, "test-agent")
 	if err != nil {
 		t.Fatalf("listUniverseRaces returned error: %v", err)
 	}
 	if len(got) != 1 || got[0].AllianceID != nil {
 		t.Errorf("got = %+v, want AllianceID=nil when sde.Race.AllianceID is nil (distinguishable from a confirmed-no-alliance race, which ESI's schema never actually returns)", got)
-	}
-}
-
-func TestListUniverseRacesHandler_MapsFields(t *testing.T) {
-	orig := listUniverseRaces
-	t.Cleanup(func() { listUniverseRaces = orig })
-	allianceID := int64(500001)
-	listUniverseRaces = func(ctx context.Context, sdeStore raceCache, userAgent string) ([]UniverseRace, error) {
-		return []UniverseRace{{RaceID: 1, AllianceID: &allianceID, Name: "Caldari"}}, nil
-	}
-
-	handler := listUniverseRacesHandler("v1", nil)
-	_, out, err := handler(context.Background(), nil, ListUniverseRacesInput{})
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-	if len(out.Races) != 1 || out.Races[0].RaceID != 1 || out.Races[0].Name != "Caldari" {
-		t.Errorf("out = %+v, want one entry RaceID=1 Name=Caldari", out)
-	}
-}
-
-func TestListUniverseRacesHandler_PropagatesError(t *testing.T) {
-	orig := listUniverseRaces
-	t.Cleanup(func() { listUniverseRaces = orig })
-	wantErr := errors.New("upstream failure")
-	listUniverseRaces = func(ctx context.Context, sdeStore raceCache, userAgent string) ([]UniverseRace, error) {
-		return nil, wantErr
-	}
-
-	handler := listUniverseRacesHandler("v1", nil)
-	_, _, err := handler(context.Background(), nil, ListUniverseRacesInput{})
-	if !errors.Is(err, wantErr) {
-		t.Errorf("err = %v, want wrapping %v", err, wantErr)
 	}
 }
 
@@ -264,7 +133,7 @@ func TestListUniverseFactions_CacheHit_MapsFieldsIncludingStationCounts(t *testi
 		{ID: 500001, Name: "Caldari State", Description: "The Caldari State...", SizeFactor: 5.0, CorporationID: &corpID, StationCount: 120, StationSystemCount: 45},
 	}}
 
-	got, err := listUniverseFactions(context.Background(), cache, "test-agent")
+	got, err := listUniverseFactions(context.Background(), cache, nil, "test-agent")
 	if err != nil {
 		t.Fatalf("listUniverseFactions returned error: %v", err)
 	}
@@ -273,43 +142,6 @@ func TestListUniverseFactions_CacheHit_MapsFieldsIncludingStationCounts(t *testi
 	}
 	if got[0].IsUnique != nil {
 		t.Errorf("IsUnique = %v, want nil on a cache hit (chrFactions has no source for it)", *got[0].IsUnique)
-	}
-}
-
-func TestListUniverseFactionsHandler_MapsFields(t *testing.T) {
-	orig := listUniverseFactions
-	t.Cleanup(func() { listUniverseFactions = orig })
-	corpID := int64(1000035)
-	isUnique := true
-	listUniverseFactions = func(ctx context.Context, sdeStore factionCache, userAgent string) ([]UniverseFaction, error) {
-		return []UniverseFaction{{FactionID: 500001, Name: "Caldari State", IsUnique: &isUnique, CorporationID: &corpID}}, nil
-	}
-
-	handler := listUniverseFactionsHandler("v1", nil)
-	_, out, err := handler(context.Background(), nil, ListUniverseFactionsInput{})
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-	if len(out.Factions) != 1 || out.Factions[0].FactionID != 500001 || out.Factions[0].IsUnique == nil || !*out.Factions[0].IsUnique {
-		t.Errorf("out = %+v, want one entry FactionID=500001 IsUnique=true", out)
-	}
-	if out.Factions[0].CorporationID == nil || *out.Factions[0].CorporationID != 1000035 {
-		t.Errorf("CorporationID = %v, want 1000035", out.Factions[0].CorporationID)
-	}
-}
-
-func TestListUniverseFactionsHandler_PropagatesError(t *testing.T) {
-	orig := listUniverseFactions
-	t.Cleanup(func() { listUniverseFactions = orig })
-	wantErr := errors.New("upstream failure")
-	listUniverseFactions = func(ctx context.Context, sdeStore factionCache, userAgent string) ([]UniverseFaction, error) {
-		return nil, wantErr
-	}
-
-	handler := listUniverseFactionsHandler("v1", nil)
-	_, _, err := handler(context.Background(), nil, ListUniverseFactionsInput{})
-	if !errors.Is(err, wantErr) {
-		t.Errorf("err = %v, want wrapping %v", err, wantErr)
 	}
 }
 
@@ -388,7 +220,7 @@ func (f *fakeTypeCache) TypeIDs(ctx context.Context, userAgent string) ([]int64,
 func TestListUniverseCategories_CacheHit_ReturnsCachedIDs(t *testing.T) {
 	cache := &fakeCategoryCache{ids: []int64{4, 6}}
 
-	ids, err := listUniverseCategories(context.Background(), cache, "test-agent")
+	ids, err := listUniverseCategories(context.Background(), cache, nil, "test-agent")
 	if err != nil {
 		t.Fatalf("listUniverseCategories returned error: %v", err)
 	}
@@ -400,41 +232,9 @@ func TestListUniverseCategories_CacheHit_ReturnsCachedIDs(t *testing.T) {
 func TestListUniverseCategories_CacheError_ReturnsError(t *testing.T) {
 	cache := &fakeCategoryCache{idsErr: errors.New("boom")}
 
-	_, err := listUniverseCategories(context.Background(), cache, "test-agent")
+	_, err := listUniverseCategories(context.Background(), cache, nil, "test-agent")
 	if err == nil {
 		t.Fatal("listUniverseCategories returned nil error, want the wrapped cache error")
-	}
-}
-
-func TestListUniverseCategoriesHandler_MapsFields(t *testing.T) {
-	orig := listUniverseCategories
-	t.Cleanup(func() { listUniverseCategories = orig })
-	listUniverseCategories = func(ctx context.Context, sdeStore categoryCache, userAgent string) ([]int64, error) {
-		return []int64{6, 7}, nil
-	}
-
-	handler := listUniverseCategoriesHandler("v1", nil)
-	_, out, err := handler(context.Background(), nil, ListUniverseCategoriesInput{})
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-	if len(out.IDs) != 2 || out.IDs[0] != 6 {
-		t.Errorf("out = %+v, want IDs=[6 7]", out)
-	}
-}
-
-func TestListUniverseCategoriesHandler_PropagatesError(t *testing.T) {
-	orig := listUniverseCategories
-	t.Cleanup(func() { listUniverseCategories = orig })
-	wantErr := errors.New("upstream failure")
-	listUniverseCategories = func(ctx context.Context, sdeStore categoryCache, userAgent string) ([]int64, error) {
-		return nil, wantErr
-	}
-
-	handler := listUniverseCategoriesHandler("v1", nil)
-	_, _, err := handler(context.Background(), nil, ListUniverseCategoriesInput{})
-	if !errors.Is(err, wantErr) {
-		t.Errorf("err = %v, want wrapping %v", err, wantErr)
 	}
 }
 
@@ -444,7 +244,7 @@ func TestGetUniverseCategory_CacheHit_MapsFields(t *testing.T) {
 		categoryOK: true,
 	}
 
-	got, err := getUniverseCategory(context.Background(), cache, "test-agent", 6)
+	got, err := getUniverseCategory(context.Background(), cache, nil, "test-agent", 6)
 	if err != nil {
 		t.Fatalf("getUniverseCategory returned error: %v", err)
 	}
@@ -459,41 +259,9 @@ func TestGetUniverseCategory_CacheHit_MapsFields(t *testing.T) {
 func TestGetUniverseCategory_CacheError_ReturnsError(t *testing.T) {
 	cache := &fakeCategoryCache{categoryErr: errors.New("boom")}
 
-	_, err := getUniverseCategory(context.Background(), cache, "test-agent", 6)
+	_, err := getUniverseCategory(context.Background(), cache, nil, "test-agent", 6)
 	if err == nil {
 		t.Fatal("getUniverseCategory returned nil error, want the wrapped cache error")
-	}
-}
-
-func TestGetUniverseCategoryHandler_MapsFields(t *testing.T) {
-	orig := getUniverseCategory
-	t.Cleanup(func() { getUniverseCategory = orig })
-	getUniverseCategory = func(ctx context.Context, sdeStore categoryCache, userAgent string, categoryID int64) (UniverseCategory, error) {
-		return UniverseCategory{CategoryID: 6, Name: "Ship", Published: true, GroupIDs: []int64{25, 26}}, nil
-	}
-
-	handler := getUniverseCategoryHandler("v1", nil)
-	_, out, err := handler(context.Background(), nil, GetUniverseCategoryInput{CategoryID: 6})
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-	if out.CategoryID != 6 || out.Name != "Ship" || !out.Published || len(out.GroupIDs) != 2 {
-		t.Errorf("out = %+v, want CategoryID=6 Name=Ship Published=true GroupIDs=[25 26]", out)
-	}
-}
-
-func TestGetUniverseCategoryHandler_PropagatesError(t *testing.T) {
-	orig := getUniverseCategory
-	t.Cleanup(func() { getUniverseCategory = orig })
-	wantErr := errors.New("upstream failure")
-	getUniverseCategory = func(ctx context.Context, sdeStore categoryCache, userAgent string, categoryID int64) (UniverseCategory, error) {
-		return UniverseCategory{}, wantErr
-	}
-
-	handler := getUniverseCategoryHandler("v1", nil)
-	_, _, err := handler(context.Background(), nil, GetUniverseCategoryInput{CategoryID: 6})
-	if !errors.Is(err, wantErr) {
-		t.Errorf("err = %v, want wrapping %v", err, wantErr)
 	}
 }
 
@@ -504,7 +272,7 @@ func TestListUniverseGroups_CacheHit_PaginatesAt1000(t *testing.T) {
 	}
 	cache := &fakeGroupCache{ids: ids}
 
-	page1, totalPages, err := listUniverseGroups(context.Background(), cache, "test-agent", 1)
+	page1, totalPages, err := listUniverseGroups(context.Background(), cache, nil, "test-agent", 1)
 	if err != nil {
 		t.Fatalf("listUniverseGroups page 1 returned error: %v", err)
 	}
@@ -515,7 +283,7 @@ func TestListUniverseGroups_CacheHit_PaginatesAt1000(t *testing.T) {
 		t.Errorf("totalPages = %d, want 2", totalPages)
 	}
 
-	page2, _, err := listUniverseGroups(context.Background(), cache, "test-agent", 2)
+	page2, _, err := listUniverseGroups(context.Background(), cache, nil, "test-agent", 2)
 	if err != nil {
 		t.Fatalf("listUniverseGroups page 2 returned error: %v", err)
 	}
@@ -527,61 +295,12 @@ func TestListUniverseGroups_CacheHit_PaginatesAt1000(t *testing.T) {
 func TestListUniverseGroups_CacheHit_PageZeroDefaultsToOne(t *testing.T) {
 	cache := &fakeGroupCache{ids: []int64{25, 26}}
 
-	ids, totalPages, err := listUniverseGroups(context.Background(), cache, "test-agent", 0)
+	ids, totalPages, err := listUniverseGroups(context.Background(), cache, nil, "test-agent", 0)
 	if err != nil {
 		t.Fatalf("listUniverseGroups returned error: %v", err)
 	}
 	if len(ids) != 2 || totalPages != 1 {
 		t.Errorf("ids = %v, totalPages = %d, want [25 26], 1", ids, totalPages)
-	}
-}
-
-func TestListUniverseGroupsHandler_MapsFields(t *testing.T) {
-	orig := listUniverseGroups
-	t.Cleanup(func() { listUniverseGroups = orig })
-	listUniverseGroups = func(ctx context.Context, sdeStore groupCache, userAgent string, page int32) ([]int64, int32, error) {
-		return []int64{25, 26}, 3, nil
-	}
-
-	handler := listUniverseGroupsHandler("v1", nil)
-	_, out, err := handler(context.Background(), nil, ListUniverseGroupsInput{Page: 2})
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-	if len(out.IDs) != 2 || out.Page != 2 || out.TotalPages != 3 {
-		t.Errorf("out = %+v, want IDs=[25 26] Page=2 TotalPages=3", out)
-	}
-}
-
-func TestListUniverseGroupsHandler_DefaultsPageToOne(t *testing.T) {
-	orig := listUniverseGroups
-	t.Cleanup(func() { listUniverseGroups = orig })
-	listUniverseGroups = func(ctx context.Context, sdeStore groupCache, userAgent string, page int32) ([]int64, int32, error) {
-		return []int64{25}, 3, nil
-	}
-
-	handler := listUniverseGroupsHandler("v1", nil)
-	_, out, err := handler(context.Background(), nil, ListUniverseGroupsInput{})
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-	if out.Page != 1 {
-		t.Errorf("Page = %d, want 1", out.Page)
-	}
-}
-
-func TestListUniverseGroupsHandler_PropagatesError(t *testing.T) {
-	orig := listUniverseGroups
-	t.Cleanup(func() { listUniverseGroups = orig })
-	wantErr := errors.New("upstream failure")
-	listUniverseGroups = func(ctx context.Context, sdeStore groupCache, userAgent string, page int32) ([]int64, int32, error) {
-		return nil, 0, wantErr
-	}
-
-	handler := listUniverseGroupsHandler("v1", nil)
-	_, _, err := handler(context.Background(), nil, ListUniverseGroupsInput{})
-	if !errors.Is(err, wantErr) {
-		t.Errorf("err = %v, want wrapping %v", err, wantErr)
 	}
 }
 
@@ -591,7 +310,7 @@ func TestGetUniverseGroup_CacheHit_MapsFields(t *testing.T) {
 		groupOK: true,
 	}
 
-	got, err := getUniverseGroup(context.Background(), cache, "test-agent", 25)
+	got, err := getUniverseGroup(context.Background(), cache, nil, "test-agent", 25)
 	if err != nil {
 		t.Fatalf("getUniverseGroup returned error: %v", err)
 	}
@@ -601,79 +320,15 @@ func TestGetUniverseGroup_CacheHit_MapsFields(t *testing.T) {
 	}
 }
 
-func TestGetUniverseGroupHandler_MapsFields(t *testing.T) {
-	orig := getUniverseGroup
-	t.Cleanup(func() { getUniverseGroup = orig })
-	getUniverseGroup = func(ctx context.Context, sdeStore groupCache, userAgent string, groupID int64) (UniverseGroup, error) {
-		return UniverseGroup{GroupID: 25, CategoryID: 6, Name: "Frigate", Published: true, TypeIDs: []int64{587, 588}}, nil
-	}
-
-	handler := getUniverseGroupHandler("v1", nil)
-	_, out, err := handler(context.Background(), nil, GetUniverseGroupInput{GroupID: 25})
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-	if out.GroupID != 25 || out.CategoryID != 6 || out.Name != "Frigate" || len(out.TypeIDs) != 2 {
-		t.Errorf("out = %+v, want GroupID=25 CategoryID=6 Name=Frigate TypeIDs=[587 588]", out)
-	}
-}
-
-func TestGetUniverseGroupHandler_PropagatesError(t *testing.T) {
-	orig := getUniverseGroup
-	t.Cleanup(func() { getUniverseGroup = orig })
-	wantErr := errors.New("upstream failure")
-	getUniverseGroup = func(ctx context.Context, sdeStore groupCache, userAgent string, groupID int64) (UniverseGroup, error) {
-		return UniverseGroup{}, wantErr
-	}
-
-	handler := getUniverseGroupHandler("v1", nil)
-	_, _, err := handler(context.Background(), nil, GetUniverseGroupInput{GroupID: 25})
-	if !errors.Is(err, wantErr) {
-		t.Errorf("err = %v, want wrapping %v", err, wantErr)
-	}
-}
-
 func TestListUniverseTypes_CacheHit_Paginates(t *testing.T) {
 	cache := &fakeTypeCache{ids: []int64{587, 588}}
 
-	ids, totalPages, err := listUniverseTypes(context.Background(), cache, "test-agent", 1)
+	ids, totalPages, err := listUniverseTypes(context.Background(), cache, nil, "test-agent", 1)
 	if err != nil {
 		t.Fatalf("listUniverseTypes returned error: %v", err)
 	}
 	if len(ids) != 2 || totalPages != 1 {
 		t.Errorf("ids = %v, totalPages = %d, want [587 588], 1", ids, totalPages)
-	}
-}
-
-func TestListUniverseTypesHandler_MapsFields(t *testing.T) {
-	orig := listUniverseTypes
-	t.Cleanup(func() { listUniverseTypes = orig })
-	listUniverseTypes = func(ctx context.Context, sdeStore typeCache, userAgent string, page int32) ([]int64, int32, error) {
-		return []int64{587, 588}, 5, nil
-	}
-
-	handler := listUniverseTypesHandler("v1", nil)
-	_, out, err := handler(context.Background(), nil, ListUniverseTypesInput{Page: 1})
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-	if len(out.IDs) != 2 || out.Page != 1 || out.TotalPages != 5 {
-		t.Errorf("out = %+v, want IDs=[587 588] Page=1 TotalPages=5", out)
-	}
-}
-
-func TestListUniverseTypesHandler_PropagatesError(t *testing.T) {
-	orig := listUniverseTypes
-	t.Cleanup(func() { listUniverseTypes = orig })
-	wantErr := errors.New("upstream failure")
-	listUniverseTypes = func(ctx context.Context, sdeStore typeCache, userAgent string, page int32) ([]int64, int32, error) {
-		return nil, 0, wantErr
-	}
-
-	handler := listUniverseTypesHandler("v1", nil)
-	_, _, err := handler(context.Background(), nil, ListUniverseTypesInput{})
-	if !errors.Is(err, wantErr) {
-		t.Errorf("err = %v, want wrapping %v", err, wantErr)
 	}
 }
 
@@ -690,7 +345,7 @@ func TestGetUniverseType_CacheHit_MapsFieldsIncludingPackagedVolume(t *testing.T
 		typeOK: true,
 	}
 
-	got, err := getUniverseType(context.Background(), cache, "test-agent", 587)
+	got, err := getUniverseType(context.Background(), cache, nil, "test-agent", 587)
 	if err != nil {
 		t.Fatalf("getUniverseType returned error: %v", err)
 	}
@@ -711,52 +366,6 @@ func TestGetUniverseType_CacheHit_MapsFieldsIncludingPackagedVolume(t *testing.T
 	}
 	if len(cache.putCalls) != 0 {
 		t.Errorf("PutType called %d times on a cache hit, want 0", len(cache.putCalls))
-	}
-}
-
-func TestGetUniverseTypeHandler_MapsFields(t *testing.T) {
-	orig := getUniverseType
-	t.Cleanup(func() { getUniverseType = orig })
-	mass := 1200000.0
-	getUniverseType = func(ctx context.Context, sdeStore typeCache, userAgent string, typeID int64) (UniverseType, error) {
-		return UniverseType{
-			TypeID: 587, Name: "Rifter", GroupID: 25, Published: true, Mass: &mass,
-			DogmaAttributes: []DynamicItemAttribute{{AttributeID: 9, Value: 2500}},
-			DogmaEffects:    []DynamicItemEffect{{EffectID: 1, IsDefault: true}},
-		}, nil
-	}
-
-	handler := getUniverseTypeHandler("v1", nil)
-	_, out, err := handler(context.Background(), nil, GetUniverseTypeInput{TypeID: 587})
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-	if out.TypeID != 587 || out.Name != "Rifter" || out.GroupID != 25 || !out.Published {
-		t.Errorf("out = %+v, want TypeID=587 Name=Rifter GroupID=25 Published=true", out)
-	}
-	if out.Mass == nil || *out.Mass != 1200000 {
-		t.Errorf("Mass = %v, want 1200000", out.Mass)
-	}
-	if len(out.DogmaAttributes) != 1 || out.DogmaAttributes[0].AttributeID != 9 || out.DogmaAttributes[0].Value != 2500 {
-		t.Errorf("DogmaAttributes = %+v, want one entry AttributeID=9 Value=2500", out.DogmaAttributes)
-	}
-	if len(out.DogmaEffects) != 1 || out.DogmaEffects[0].EffectID != 1 || !out.DogmaEffects[0].IsDefault {
-		t.Errorf("DogmaEffects = %+v, want one entry EffectID=1 IsDefault=true", out.DogmaEffects)
-	}
-}
-
-func TestGetUniverseTypeHandler_PropagatesError(t *testing.T) {
-	orig := getUniverseType
-	t.Cleanup(func() { getUniverseType = orig })
-	wantErr := errors.New("upstream failure")
-	getUniverseType = func(ctx context.Context, sdeStore typeCache, userAgent string, typeID int64) (UniverseType, error) {
-		return UniverseType{}, wantErr
-	}
-
-	handler := getUniverseTypeHandler("v1", nil)
-	_, _, err := handler(context.Background(), nil, GetUniverseTypeInput{TypeID: 587})
-	if !errors.Is(err, wantErr) {
-		t.Errorf("err = %v, want wrapping %v", err, wantErr)
 	}
 }
 
@@ -832,44 +441,12 @@ func (f *fakeSystemCache) SystemIDs(ctx context.Context, userAgent string) ([]in
 func TestListUniverseRegions_CacheHit_ReturnsCachedIDs(t *testing.T) {
 	cache := &fakeRegionCache{ids: []int64{10000001, 10000002}}
 
-	ids, err := listUniverseRegions(context.Background(), cache, "test-agent")
+	ids, err := listUniverseRegions(context.Background(), cache, nil, "test-agent")
 	if err != nil {
 		t.Fatalf("listUniverseRegions returned error: %v", err)
 	}
 	if len(ids) != 2 || ids[0] != 10000001 {
 		t.Errorf("ids = %v, want [10000001 10000002]", ids)
-	}
-}
-
-func TestListUniverseRegionsHandler_MapsFields(t *testing.T) {
-	orig := listUniverseRegions
-	t.Cleanup(func() { listUniverseRegions = orig })
-	listUniverseRegions = func(ctx context.Context, sdeStore regionCache, userAgent string) ([]int64, error) {
-		return []int64{10000002, 10000043}, nil
-	}
-
-	handler := listUniverseRegionsHandler("v1", nil)
-	_, out, err := handler(context.Background(), nil, ListUniverseRegionsInput{})
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-	if len(out.IDs) != 2 || out.IDs[0] != 10000002 {
-		t.Errorf("out = %+v, want IDs=[10000002 10000043]", out)
-	}
-}
-
-func TestListUniverseRegionsHandler_PropagatesError(t *testing.T) {
-	orig := listUniverseRegions
-	t.Cleanup(func() { listUniverseRegions = orig })
-	wantErr := errors.New("upstream failure")
-	listUniverseRegions = func(ctx context.Context, sdeStore regionCache, userAgent string) ([]int64, error) {
-		return nil, wantErr
-	}
-
-	handler := listUniverseRegionsHandler("v1", nil)
-	_, _, err := handler(context.Background(), nil, ListUniverseRegionsInput{})
-	if !errors.Is(err, wantErr) {
-		t.Errorf("err = %v, want wrapping %v", err, wantErr)
 	}
 }
 
@@ -882,7 +459,7 @@ func TestGetUniverseRegion_CacheHit_MapsFields(t *testing.T) {
 		regionOK: true,
 	}
 
-	got, err := getUniverseRegion(context.Background(), cache, "test-agent", 10000001)
+	got, err := getUniverseRegion(context.Background(), cache, nil, "test-agent", 10000001)
 	if err != nil {
 		t.Fatalf("getUniverseRegion returned error: %v", err)
 	}
@@ -903,77 +480,12 @@ func TestGetUniverseRegion_CacheHit_NoDescription_ReturnsNilDescription(t *testi
 		regionOK: true,
 	}
 
-	got, err := getUniverseRegion(context.Background(), cache, "test-agent", 10000002)
+	got, err := getUniverseRegion(context.Background(), cache, nil, "test-agent", 10000002)
 	if err != nil {
 		t.Fatalf("getUniverseRegion returned error: %v", err)
 	}
 	if got.Description != nil {
 		t.Errorf("Description = %v, want nil", got.Description)
-	}
-}
-
-func TestGetUniverseRegionHandler_MapsFields(t *testing.T) {
-	orig := getUniverseRegion
-	t.Cleanup(func() { getUniverseRegion = orig })
-	desc := "desc"
-	getUniverseRegion = func(ctx context.Context, sdeStore regionCache, userAgent string, regionID int64) (UniverseRegion, error) {
-		return UniverseRegion{RegionID: 10000002, Name: "The Forge", Description: &desc, ConstellationIDs: []int64{20000020}}, nil
-	}
-
-	handler := getUniverseRegionHandler("v1", nil)
-	_, out, err := handler(context.Background(), nil, GetUniverseRegionInput{RegionID: 10000002})
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-	if out.RegionID != 10000002 || out.Name != "The Forge" || len(out.ConstellationIDs) != 1 {
-		t.Errorf("out = %+v, want RegionID=10000002 Name=The Forge ConstellationIDs=[20000020]", out)
-	}
-}
-
-func TestGetUniverseRegionHandler_PropagatesError(t *testing.T) {
-	orig := getUniverseRegion
-	t.Cleanup(func() { getUniverseRegion = orig })
-	wantErr := errors.New("upstream failure")
-	getUniverseRegion = func(ctx context.Context, sdeStore regionCache, userAgent string, regionID int64) (UniverseRegion, error) {
-		return UniverseRegion{}, wantErr
-	}
-
-	handler := getUniverseRegionHandler("v1", nil)
-	_, _, err := handler(context.Background(), nil, GetUniverseRegionInput{RegionID: 10000002})
-	if !errors.Is(err, wantErr) {
-		t.Errorf("err = %v, want wrapping %v", err, wantErr)
-	}
-}
-
-func TestListUniverseConstellationsHandler_MapsFields(t *testing.T) {
-	orig := listUniverseConstellations
-	t.Cleanup(func() { listUniverseConstellations = orig })
-	listUniverseConstellations = func(ctx context.Context, sdeStore constellationCache, userAgent string) ([]int64, error) {
-		return []int64{20000020}, nil
-	}
-
-	handler := listUniverseConstellationsHandler("v1", nil)
-	_, out, err := handler(context.Background(), nil, ListUniverseConstellationsInput{})
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-	if len(out.IDs) != 1 || out.IDs[0] != 20000020 {
-		t.Errorf("out = %+v, want IDs=[20000020]", out)
-	}
-}
-
-func TestListUniverseConstellationsHandler_PropagatesError(t *testing.T) {
-	orig := listUniverseConstellations
-	t.Cleanup(func() { listUniverseConstellations = orig })
-	wantErr := errors.New("upstream failure")
-	listUniverseConstellations = func(ctx context.Context, sdeStore constellationCache, userAgent string) ([]int64, error) {
-		return nil, wantErr
-	}
-
-	handler := listUniverseConstellationsHandler("v1", nil)
-	_, _, err := handler(context.Background(), nil, ListUniverseConstellationsInput{})
-	if !errors.Is(err, wantErr) {
-		t.Errorf("err = %v, want wrapping %v", err, wantErr)
 	}
 }
 
@@ -986,7 +498,7 @@ func TestGetUniverseConstellation_CacheHit_MapsFields(t *testing.T) {
 		constellationOK: true,
 	}
 
-	got, err := getUniverseConstellation(context.Background(), cache, "test-agent", 20000001)
+	got, err := getUniverseConstellation(context.Background(), cache, nil, "test-agent", 20000001)
 	if err != nil {
 		t.Fatalf("getUniverseConstellation returned error: %v", err)
 	}
@@ -998,76 +510,6 @@ func TestGetUniverseConstellation_CacheHit_MapsFields(t *testing.T) {
 	}
 	if len(got.SystemIDs) != 1 || got.SystemIDs[0] != 30000001 {
 		t.Errorf("SystemIDs = %v, want [30000001]", got.SystemIDs)
-	}
-}
-
-func TestGetUniverseConstellationHandler_MapsFields(t *testing.T) {
-	orig := getUniverseConstellation
-	t.Cleanup(func() { getUniverseConstellation = orig })
-	getUniverseConstellation = func(ctx context.Context, sdeStore constellationCache, userAgent string, constellationID int64) (UniverseConstellation, error) {
-		return UniverseConstellation{
-			ConstellationID: 20000020, RegionID: 10000002, Name: "Kimotoro",
-			Position: Position{X: 1, Y: 2, Z: 3}, SystemIDs: []int64{30000142, 30000144},
-		}, nil
-	}
-
-	handler := getUniverseConstellationHandler("v1", nil)
-	_, out, err := handler(context.Background(), nil, GetUniverseConstellationInput{ConstellationID: 20000020})
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-	if out.ConstellationID != 20000020 || out.RegionID != 10000002 || out.Name != "Kimotoro" || len(out.SystemIDs) != 2 {
-		t.Errorf("out = %+v, want ConstellationID=20000020 RegionID=10000002 Name=Kimotoro SystemIDs=[30000142 30000144]", out)
-	}
-	if out.Position.X != 1 || out.Position.Y != 2 || out.Position.Z != 3 {
-		t.Errorf("Position = %+v, want X=1 Y=2 Z=3", out.Position)
-	}
-}
-
-func TestGetUniverseConstellationHandler_PropagatesError(t *testing.T) {
-	orig := getUniverseConstellation
-	t.Cleanup(func() { getUniverseConstellation = orig })
-	wantErr := errors.New("upstream failure")
-	getUniverseConstellation = func(ctx context.Context, sdeStore constellationCache, userAgent string, constellationID int64) (UniverseConstellation, error) {
-		return UniverseConstellation{}, wantErr
-	}
-
-	handler := getUniverseConstellationHandler("v1", nil)
-	_, _, err := handler(context.Background(), nil, GetUniverseConstellationInput{ConstellationID: 20000020})
-	if !errors.Is(err, wantErr) {
-		t.Errorf("err = %v, want wrapping %v", err, wantErr)
-	}
-}
-
-func TestListUniverseSystemsHandler_MapsFields(t *testing.T) {
-	orig := listUniverseSystems
-	t.Cleanup(func() { listUniverseSystems = orig })
-	listUniverseSystems = func(ctx context.Context, sdeStore systemCache, userAgent string) ([]int64, error) {
-		return []int64{30000142}, nil
-	}
-
-	handler := listUniverseSystemsHandler("v1", nil)
-	_, out, err := handler(context.Background(), nil, ListUniverseSystemsInput{})
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-	if len(out.IDs) != 1 || out.IDs[0] != 30000142 {
-		t.Errorf("out = %+v, want IDs=[30000142]", out)
-	}
-}
-
-func TestListUniverseSystemsHandler_PropagatesError(t *testing.T) {
-	orig := listUniverseSystems
-	t.Cleanup(func() { listUniverseSystems = orig })
-	wantErr := errors.New("upstream failure")
-	listUniverseSystems = func(ctx context.Context, sdeStore systemCache, userAgent string) ([]int64, error) {
-		return nil, wantErr
-	}
-
-	handler := listUniverseSystemsHandler("v1", nil)
-	_, _, err := handler(context.Background(), nil, ListUniverseSystemsInput{})
-	if !errors.Is(err, wantErr) {
-		t.Errorf("err = %v, want wrapping %v", err, wantErr)
 	}
 }
 
@@ -1084,7 +526,7 @@ func TestGetUniverseSystem_CacheHit_MapsFieldsIncludingPlanets(t *testing.T) {
 		systemOK: true,
 	}
 
-	got, err := getUniverseSystem(context.Background(), cache, "test-agent", 30000001)
+	got, err := getUniverseSystem(context.Background(), cache, nil, "test-agent", 30000001)
 	if err != nil {
 		t.Fatalf("getUniverseSystem returned error: %v", err)
 	}
@@ -1108,51 +550,6 @@ func TestGetUniverseSystem_CacheHit_MapsFieldsIncludingPlanets(t *testing.T) {
 	}
 }
 
-func TestGetUniverseSystemHandler_MapsFields(t *testing.T) {
-	orig := getUniverseSystem
-	t.Cleanup(func() { getUniverseSystem = orig })
-	starID := int64(40000001)
-	secClass := "B"
-	getUniverseSystem = func(ctx context.Context, sdeStore systemCache, userAgent string, systemID int64) (UniverseSystem, error) {
-		return UniverseSystem{
-			SystemID: 30000142, ConstellationID: 20000020, Name: "Jita",
-			Position: Position{X: 1, Y: 2, Z: 3}, SecurityStatus: 0.9459, SecurityClass: &secClass,
-			StarID: &starID, StargateIDs: []int64{50000342}, StationIDs: []int64{60003760},
-			Planets: []UniverseSystemPlanet{{PlanetID: 40000004, AsteroidBeltIDs: []int64{40000002}, MoonIDs: []int64{40000003}}},
-		}, nil
-	}
-
-	handler := getUniverseSystemHandler("v1", nil)
-	_, out, err := handler(context.Background(), nil, GetUniverseSystemInput{SystemID: 30000142})
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-	if out.SystemID != 30000142 || out.Name != "Jita" || out.ConstellationID != 20000020 {
-		t.Errorf("out = %+v, want SystemID=30000142 Name=Jita ConstellationID=20000020", out)
-	}
-	if out.SecurityStatus != 0.9459 || out.SecurityClass == nil || *out.SecurityClass != "B" {
-		t.Errorf("SecurityStatus/Class = %v/%v, want 0.9459/B", out.SecurityStatus, out.SecurityClass)
-	}
-	if len(out.Planets) != 1 || out.Planets[0].PlanetID != 40000004 || len(out.Planets[0].AsteroidBeltIDs) != 1 || len(out.Planets[0].MoonIDs) != 1 {
-		t.Errorf("Planets = %+v, want one entry PlanetID=40000004 with one asteroid belt and one moon", out.Planets)
-	}
-}
-
-func TestGetUniverseSystemHandler_PropagatesError(t *testing.T) {
-	orig := getUniverseSystem
-	t.Cleanup(func() { getUniverseSystem = orig })
-	wantErr := errors.New("upstream failure")
-	getUniverseSystem = func(ctx context.Context, sdeStore systemCache, userAgent string, systemID int64) (UniverseSystem, error) {
-		return UniverseSystem{}, wantErr
-	}
-
-	handler := getUniverseSystemHandler("v1", nil)
-	_, _, err := handler(context.Background(), nil, GetUniverseSystemInput{SystemID: 30000142})
-	if !errors.Is(err, wantErr) {
-		t.Errorf("err = %v, want wrapping %v", err, wantErr)
-	}
-}
-
 // --- get_universe_asteroid_belt ---
 
 type fakeAsteroidBeltCache struct {
@@ -1173,7 +570,7 @@ func (f *fakeAsteroidBeltCache) PutAsteroidBelt(b sde.AsteroidBelt) error {
 
 func TestGetUniverseAsteroidBelt_CacheHit_ReturnsRecordWithoutESICall(t *testing.T) {
 	cache := &fakeAsteroidBeltCache{belt: sde.AsteroidBelt{ID: 40000003, Name: "Tanoo I - Asteroid Belt 1", SystemID: 30000001}, ok: true}
-	out, err := getUniverseAsteroidBelt(context.Background(), cache, "test-agent", 40000003)
+	out, err := getUniverseAsteroidBelt(context.Background(), cache, nil, "test-agent", 40000003)
 	if err != nil {
 		t.Fatalf("getUniverseAsteroidBelt returned error: %v", err)
 	}
@@ -1184,41 +581,9 @@ func TestGetUniverseAsteroidBelt_CacheHit_ReturnsRecordWithoutESICall(t *testing
 
 func TestGetUniverseAsteroidBelt_CacheReadError_ReturnsError(t *testing.T) {
 	cache := &fakeAsteroidBeltCache{err: errors.New("boom")}
-	_, err := getUniverseAsteroidBelt(context.Background(), cache, "test-agent", 40000003)
+	_, err := getUniverseAsteroidBelt(context.Background(), cache, nil, "test-agent", 40000003)
 	if err == nil {
 		t.Fatal("getUniverseAsteroidBelt returned nil error, want the cache read error surfaced")
-	}
-}
-
-func TestGetUniverseAsteroidBeltHandler_MapsFields(t *testing.T) {
-	orig := getUniverseAsteroidBelt
-	t.Cleanup(func() { getUniverseAsteroidBelt = orig })
-	getUniverseAsteroidBelt = func(ctx context.Context, sdeStore asteroidBeltCache, userAgent string, asteroidBeltID int64) (UniverseAsteroidBelt, error) {
-		return UniverseAsteroidBelt{Name: "Jita IV - Asteroid Belt 1", Position: Position{X: 1, Y: 2, Z: 3}, SystemID: 30000142}, nil
-	}
-
-	handler := getUniverseAsteroidBeltHandler("v1", nil)
-	_, out, err := handler(context.Background(), nil, GetUniverseAsteroidBeltInput{AsteroidBeltID: 40000002})
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-	if out.Name != "Jita IV - Asteroid Belt 1" || out.SystemID != 30000142 {
-		t.Errorf("out = %+v, want Name=Jita IV - Asteroid Belt 1 SystemID=30000142", out)
-	}
-}
-
-func TestGetUniverseAsteroidBeltHandler_PropagatesError(t *testing.T) {
-	orig := getUniverseAsteroidBelt
-	t.Cleanup(func() { getUniverseAsteroidBelt = orig })
-	wantErr := errors.New("upstream failure")
-	getUniverseAsteroidBelt = func(ctx context.Context, sdeStore asteroidBeltCache, userAgent string, asteroidBeltID int64) (UniverseAsteroidBelt, error) {
-		return UniverseAsteroidBelt{}, wantErr
-	}
-
-	handler := getUniverseAsteroidBeltHandler("v1", nil)
-	_, _, err := handler(context.Background(), nil, GetUniverseAsteroidBeltInput{AsteroidBeltID: 40000002})
-	if !errors.Is(err, wantErr) {
-		t.Errorf("err = %v, want wrapping %v", err, wantErr)
 	}
 }
 
@@ -1242,44 +607,12 @@ func (f *fakeMoonCache) PutMoon(m sde.Moon) error {
 
 func TestGetUniverseMoon_CacheHit_ReturnsRecordWithoutESICall(t *testing.T) {
 	cache := &fakeMoonCache{moon: sde.Moon{ID: 40000004, Name: "Tanoo I - Moon 1", SystemID: 30000001}, ok: true}
-	out, err := getUniverseMoon(context.Background(), cache, "test-agent", 40000004)
+	out, err := getUniverseMoon(context.Background(), cache, nil, "test-agent", 40000004)
 	if err != nil {
 		t.Fatalf("getUniverseMoon returned error: %v", err)
 	}
 	if out.MoonID != 40000004 || out.Name != "Tanoo I - Moon 1" {
 		t.Errorf("got %+v, want MoonID=40000004 Name=\"Tanoo I - Moon 1\"", out)
-	}
-}
-
-func TestGetUniverseMoonHandler_MapsFields(t *testing.T) {
-	orig := getUniverseMoon
-	t.Cleanup(func() { getUniverseMoon = orig })
-	getUniverseMoon = func(ctx context.Context, sdeStore moonCache, userAgent string, moonID int64) (UniverseMoon, error) {
-		return UniverseMoon{MoonID: 40000003, SystemID: 30000142, Name: "Jita IV - Moon 1", Position: Position{X: 1, Y: 2, Z: 3}}, nil
-	}
-
-	handler := getUniverseMoonHandler("v1", nil)
-	_, out, err := handler(context.Background(), nil, GetUniverseMoonInput{MoonID: 40000003})
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-	if out.MoonID != 40000003 || out.SystemID != 30000142 || out.Name != "Jita IV - Moon 1" {
-		t.Errorf("out = %+v, want MoonID=40000003 SystemID=30000142 Name=Jita IV - Moon 1", out)
-	}
-}
-
-func TestGetUniverseMoonHandler_PropagatesError(t *testing.T) {
-	orig := getUniverseMoon
-	t.Cleanup(func() { getUniverseMoon = orig })
-	wantErr := errors.New("upstream failure")
-	getUniverseMoon = func(ctx context.Context, sdeStore moonCache, userAgent string, moonID int64) (UniverseMoon, error) {
-		return UniverseMoon{}, wantErr
-	}
-
-	handler := getUniverseMoonHandler("v1", nil)
-	_, _, err := handler(context.Background(), nil, GetUniverseMoonInput{MoonID: 40000003})
-	if !errors.Is(err, wantErr) {
-		t.Errorf("err = %v, want wrapping %v", err, wantErr)
 	}
 }
 
@@ -1303,44 +636,12 @@ func (f *fakePlanetCache) PutPlanet(p sde.Planet) error {
 
 func TestGetUniversePlanet_CacheHit_ReturnsRecordWithoutESICall(t *testing.T) {
 	cache := &fakePlanetCache{planet: sde.Planet{ID: 40000002, Name: "Tanoo I", TypeID: 11, SystemID: 30000001}, ok: true}
-	out, err := getUniversePlanet(context.Background(), cache, "test-agent", 40000002)
+	out, err := getUniversePlanet(context.Background(), cache, nil, "test-agent", 40000002)
 	if err != nil {
 		t.Fatalf("getUniversePlanet returned error: %v", err)
 	}
 	if out.Name != "Tanoo I" || out.TypeID != 11 {
 		t.Errorf("got %+v, want Name=\"Tanoo I\" TypeID=11", out)
-	}
-}
-
-func TestGetUniversePlanetHandler_MapsFields(t *testing.T) {
-	orig := getUniversePlanet
-	t.Cleanup(func() { getUniversePlanet = orig })
-	getUniversePlanet = func(ctx context.Context, sdeStore planetCache, userAgent string, planetID int64) (UniversePlanet, error) {
-		return UniversePlanet{PlanetID: 40000004, SystemID: 30000142, TypeID: 2016, Name: "Jita IV", Position: Position{X: 1, Y: 2, Z: 3}}, nil
-	}
-
-	handler := getUniversePlanetHandler("v1", nil)
-	_, out, err := handler(context.Background(), nil, GetUniversePlanetInput{PlanetID: 40000004})
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-	if out.PlanetID != 40000004 || out.SystemID != 30000142 || out.TypeID != 2016 || out.Name != "Jita IV" {
-		t.Errorf("out = %+v, want PlanetID=40000004 SystemID=30000142 TypeID=2016 Name=Jita IV", out)
-	}
-}
-
-func TestGetUniversePlanetHandler_PropagatesError(t *testing.T) {
-	orig := getUniversePlanet
-	t.Cleanup(func() { getUniversePlanet = orig })
-	wantErr := errors.New("upstream failure")
-	getUniversePlanet = func(ctx context.Context, sdeStore planetCache, userAgent string, planetID int64) (UniversePlanet, error) {
-		return UniversePlanet{}, wantErr
-	}
-
-	handler := getUniversePlanetHandler("v1", nil)
-	_, _, err := handler(context.Background(), nil, GetUniversePlanetInput{PlanetID: 40000004})
-	if !errors.Is(err, wantErr) {
-		t.Errorf("err = %v, want wrapping %v", err, wantErr)
 	}
 }
 
@@ -1364,50 +665,12 @@ func (f *fakeStargateCache) PutStargate(g sde.Stargate) error {
 
 func TestGetUniverseStargate_CacheHit_ReturnsRecordWithoutESICall(t *testing.T) {
 	cache := &fakeStargateCache{stargate: sde.Stargate{ID: 50000001, Name: "Stargate (G-EURJ)", DestinationStargateID: 50000482}, ok: true}
-	out, err := getUniverseStargate(context.Background(), cache, "test-agent", 50000001)
+	out, err := getUniverseStargate(context.Background(), cache, nil, "test-agent", 50000001)
 	if err != nil {
 		t.Fatalf("getUniverseStargate returned error: %v", err)
 	}
 	if out.Name != "Stargate (G-EURJ)" || out.DestinationStargateID != 50000482 {
 		t.Errorf("got %+v, want Name=\"Stargate (G-EURJ)\" DestinationStargateID=50000482", out)
-	}
-}
-
-func TestGetUniverseStargateHandler_MapsFields(t *testing.T) {
-	orig := getUniverseStargate
-	t.Cleanup(func() { getUniverseStargate = orig })
-	getUniverseStargate = func(ctx context.Context, sdeStore stargateCache, userAgent string, stargateID int64) (UniverseStargate, error) {
-		return UniverseStargate{
-			StargateID: 50000342, SystemID: 30000142, TypeID: 16, Name: "Stargate (Perimeter)",
-			Position: Position{X: 1, Y: 2, Z: 3}, DestinationStargateID: 50000343, DestinationSystemID: 30000144,
-		}, nil
-	}
-
-	handler := getUniverseStargateHandler("v1", nil)
-	_, out, err := handler(context.Background(), nil, GetUniverseStargateInput{StargateID: 50000342})
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-	if out.StargateID != 50000342 || out.SystemID != 30000142 || out.TypeID != 16 {
-		t.Errorf("out = %+v, want StargateID=50000342 SystemID=30000142 TypeID=16", out)
-	}
-	if out.DestinationStargateID != 50000343 || out.DestinationSystemID != 30000144 {
-		t.Errorf("Destination = %d/%d, want 50000343/30000144", out.DestinationStargateID, out.DestinationSystemID)
-	}
-}
-
-func TestGetUniverseStargateHandler_PropagatesError(t *testing.T) {
-	orig := getUniverseStargate
-	t.Cleanup(func() { getUniverseStargate = orig })
-	wantErr := errors.New("upstream failure")
-	getUniverseStargate = func(ctx context.Context, sdeStore stargateCache, userAgent string, stargateID int64) (UniverseStargate, error) {
-		return UniverseStargate{}, wantErr
-	}
-
-	handler := getUniverseStargateHandler("v1", nil)
-	_, _, err := handler(context.Background(), nil, GetUniverseStargateInput{StargateID: 50000342})
-	if !errors.Is(err, wantErr) {
-		t.Errorf("err = %v, want wrapping %v", err, wantErr)
 	}
 }
 
@@ -1431,47 +694,12 @@ func (f *fakeStarCache) PutStar(s sde.Star) error {
 
 func TestGetUniverseStar_CacheHit_ReturnsRecordWithoutESICall(t *testing.T) {
 	cache := &fakeStarCache{star: sde.Star{ID: 40000001, Name: "Tanoo - Star", SpectralClass: "K2 V"}, ok: true}
-	out, err := getUniverseStar(context.Background(), cache, "test-agent", 40000001)
+	out, err := getUniverseStar(context.Background(), cache, nil, "test-agent", 40000001)
 	if err != nil {
 		t.Fatalf("getUniverseStar returned error: %v", err)
 	}
 	if out.Name != "Tanoo - Star" || out.SpectralClass != "K2 V" {
 		t.Errorf("got %+v, want Name=\"Tanoo - Star\" SpectralClass=\"K2 V\"", out)
-	}
-}
-
-func TestGetUniverseStarHandler_MapsFields(t *testing.T) {
-	orig := getUniverseStar
-	t.Cleanup(func() { getUniverseStar = orig })
-	getUniverseStar = func(ctx context.Context, sdeStore starCache, userAgent string, starID int64) (UniverseStar, error) {
-		return UniverseStar{
-			StarID: 40000001, Age: 15000000000, Luminosity: 0.02, Name: "Jita - Star", Radius: 100000,
-			SolarSystemID: 30000142, SpectralClass: "K2 V", Temperature: 4465, TypeID: 3796,
-		}, nil
-	}
-
-	handler := getUniverseStarHandler("v1", nil)
-	_, out, err := handler(context.Background(), nil, GetUniverseStarInput{StarID: 40000001})
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-	if out.StarID != 40000001 || out.SolarSystemID != 30000142 || out.Name != "Jita - Star" || out.SpectralClass != "K2 V" {
-		t.Errorf("out = %+v, want StarID=40000001 SolarSystemID=30000142 Name=Jita - Star SpectralClass=K2 V", out)
-	}
-}
-
-func TestGetUniverseStarHandler_PropagatesError(t *testing.T) {
-	orig := getUniverseStar
-	t.Cleanup(func() { getUniverseStar = orig })
-	wantErr := errors.New("upstream failure")
-	getUniverseStar = func(ctx context.Context, sdeStore starCache, userAgent string, starID int64) (UniverseStar, error) {
-		return UniverseStar{}, wantErr
-	}
-
-	handler := getUniverseStarHandler("v1", nil)
-	_, _, err := handler(context.Background(), nil, GetUniverseStarInput{StarID: 40000001})
-	if !errors.Is(err, wantErr) {
-		t.Errorf("err = %v, want wrapping %v", err, wantErr)
 	}
 }
 
@@ -1495,57 +723,12 @@ func (f *fakeStationCache) PutStation(s sde.Station) error {
 
 func TestGetUniverseStation_CacheHit_ReturnsRecordWithoutESICall(t *testing.T) {
 	cache := &fakeStationCache{station: sde.Station{ID: 60000001, Name: "Test Station", SystemID: 30000001}, ok: true}
-	out, err := getUniverseStation(context.Background(), cache, "test-agent", 60000001)
+	out, err := getUniverseStation(context.Background(), cache, nil, "test-agent", 60000001)
 	if err != nil {
 		t.Fatalf("getUniverseStation returned error: %v", err)
 	}
 	if out.Name != "Test Station" || out.SystemID != 30000001 {
 		t.Errorf("got %+v, want Name=\"Test Station\" SystemID=30000001", out)
-	}
-}
-
-func TestGetUniverseStationHandler_MapsFields(t *testing.T) {
-	orig := getUniverseStation
-	t.Cleanup(func() { getUniverseStation = orig })
-	owner := int64(1000035)
-	services := []string{"market", "repair-facilities"}
-	getUniverseStation = func(ctx context.Context, sdeStore stationCache, userAgent string, stationID int64) (UniverseStation, error) {
-		return UniverseStation{
-			StationID: 60003760, SystemID: 30000142, TypeID: 1529,
-			Name: "Jita IV - Moon 4 - Caldari Navy Assembly Plant", Position: Position{X: 1, Y: 2, Z: 3},
-			MaxDockableShipVolume: 50000000, OfficeRentalCost: 10000, Owner: &owner,
-			ReprocessingEfficiency: 0.5, ReprocessingStationsTake: 0.05, Services: &services,
-		}, nil
-	}
-
-	handler := getUniverseStationHandler("v1", nil)
-	_, out, err := handler(context.Background(), nil, GetUniverseStationInput{StationID: 60003760})
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-	if out.StationID != 60003760 || out.SystemID != 30000142 || out.TypeID != 1529 {
-		t.Errorf("out = %+v, want StationID=60003760 SystemID=30000142 TypeID=1529", out)
-	}
-	if out.Owner == nil || *out.Owner != 1000035 {
-		t.Errorf("Owner = %v, want 1000035", out.Owner)
-	}
-	if out.Services == nil || len(*out.Services) != 2 {
-		t.Errorf("Services = %v, want 2 entries", out.Services)
-	}
-}
-
-func TestGetUniverseStationHandler_PropagatesError(t *testing.T) {
-	orig := getUniverseStation
-	t.Cleanup(func() { getUniverseStation = orig })
-	wantErr := errors.New("upstream failure")
-	getUniverseStation = func(ctx context.Context, sdeStore stationCache, userAgent string, stationID int64) (UniverseStation, error) {
-		return UniverseStation{}, wantErr
-	}
-
-	handler := getUniverseStationHandler("v1", nil)
-	_, _, err := handler(context.Background(), nil, GetUniverseStationInput{StationID: 60003760})
-	if !errors.Is(err, wantErr) {
-		t.Errorf("err = %v, want wrapping %v", err, wantErr)
 	}
 }
 
@@ -1575,44 +758,12 @@ func (f *fakeGraphicCache) GraphicIDs(ctx context.Context, userAgent string) ([]
 func TestListUniverseGraphics_CacheHit_ReturnsCachedIDs(t *testing.T) {
 	cache := &fakeGraphicCache{ids: []int64{10, 38}}
 
-	ids, err := listUniverseGraphics(context.Background(), cache, "test-agent")
+	ids, err := listUniverseGraphics(context.Background(), cache, nil, "test-agent")
 	if err != nil {
 		t.Fatalf("listUniverseGraphics returned error: %v", err)
 	}
 	if len(ids) != 2 || ids[0] != 10 {
 		t.Errorf("ids = %v, want [10 38]", ids)
-	}
-}
-
-func TestListUniverseGraphicsHandler_MapsFields(t *testing.T) {
-	orig := listUniverseGraphics
-	t.Cleanup(func() { listUniverseGraphics = orig })
-	listUniverseGraphics = func(ctx context.Context, sdeStore graphicCache, userAgent string) ([]int64, error) {
-		return []int64{1, 2, 3}, nil
-	}
-
-	handler := listUniverseGraphicsHandler("v1", nil)
-	_, out, err := handler(context.Background(), nil, ListUniverseGraphicsInput{})
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-	if len(out.IDs) != 3 || out.IDs[0] != 1 {
-		t.Errorf("out = %+v, want IDs=[1 2 3]", out)
-	}
-}
-
-func TestListUniverseGraphicsHandler_PropagatesError(t *testing.T) {
-	orig := listUniverseGraphics
-	t.Cleanup(func() { listUniverseGraphics = orig })
-	wantErr := errors.New("upstream failure")
-	listUniverseGraphics = func(ctx context.Context, sdeStore graphicCache, userAgent string) ([]int64, error) {
-		return nil, wantErr
-	}
-
-	handler := listUniverseGraphicsHandler("v1", nil)
-	_, _, err := handler(context.Background(), nil, ListUniverseGraphicsInput{})
-	if !errors.Is(err, wantErr) {
-		t.Errorf("err = %v, want wrapping %v", err, wantErr)
 	}
 }
 
@@ -1625,7 +776,7 @@ func TestGetUniverseGraphic_CacheHit_MapsFieldsIncludingSofDNA(t *testing.T) {
 		graphicOK: true,
 	}
 
-	got, err := getUniverseGraphic(context.Background(), cache, "test-agent", 38)
+	got, err := getUniverseGraphic(context.Background(), cache, nil, "test-agent", 38)
 	if err != nil {
 		t.Fatalf("getUniverseGraphic returned error: %v", err)
 	}
@@ -1640,93 +791,6 @@ func TestGetUniverseGraphic_CacheHit_MapsFieldsIncludingSofDNA(t *testing.T) {
 	}
 	if len(cache.putCalls) != 0 {
 		t.Errorf("PutGraphic called %d times on a cache hit, want 0", len(cache.putCalls))
-	}
-}
-
-func TestGetUniverseGraphicHandler_MapsFields(t *testing.T) {
-	orig := getUniverseGraphic
-	t.Cleanup(func() { getUniverseGraphic = orig })
-	graphicFile := "file.gr2"
-	getUniverseGraphic = func(ctx context.Context, sdeStore graphicCache, userAgent string, graphicID int64) (UniverseGraphic, error) {
-		return UniverseGraphic{GraphicID: 1234, GraphicFile: &graphicFile}, nil
-	}
-
-	handler := getUniverseGraphicHandler("v1", nil)
-	_, out, err := handler(context.Background(), nil, GetUniverseGraphicInput{GraphicID: 1234})
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-	if out.GraphicID != 1234 || out.GraphicFile == nil || *out.GraphicFile != "file.gr2" {
-		t.Errorf("out = %+v, want GraphicID=1234 GraphicFile=file.gr2", out)
-	}
-}
-
-func TestGetUniverseGraphicHandler_PropagatesError(t *testing.T) {
-	orig := getUniverseGraphic
-	t.Cleanup(func() { getUniverseGraphic = orig })
-	wantErr := errors.New("upstream failure")
-	getUniverseGraphic = func(ctx context.Context, sdeStore graphicCache, userAgent string, graphicID int64) (UniverseGraphic, error) {
-		return UniverseGraphic{}, wantErr
-	}
-
-	handler := getUniverseGraphicHandler("v1", nil)
-	_, _, err := handler(context.Background(), nil, GetUniverseGraphicInput{GraphicID: 1234})
-	if !errors.Is(err, wantErr) {
-		t.Errorf("err = %v, want wrapping %v", err, wantErr)
-	}
-}
-
-// --- list_universe_structures ---
-
-func TestListUniverseStructuresHandler_MapsFields(t *testing.T) {
-	orig := listUniverseStructures
-	t.Cleanup(func() { listUniverseStructures = orig })
-	var gotFilter string
-	listUniverseStructures = func(ctx context.Context, userAgent string, filter string) ([]int64, error) {
-		gotFilter = filter
-		return []int64{1000000000001}, nil
-	}
-
-	handler := listUniverseStructuresHandler("v1")
-	_, out, err := handler(context.Background(), nil, ListUniverseStructuresInput{Filter: "market"})
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-	if gotFilter != "market" {
-		t.Errorf("captured filter = %q, want market", gotFilter)
-	}
-	if len(out.IDs) != 1 || out.IDs[0] != 1000000000001 {
-		t.Errorf("out = %+v, want IDs=[1000000000001]", out)
-	}
-}
-
-func TestListUniverseStructuresHandler_RejectsInvalidFilter(t *testing.T) {
-	orig := listUniverseStructures
-	t.Cleanup(func() { listUniverseStructures = orig })
-	listUniverseStructures = func(ctx context.Context, userAgent string, filter string) ([]int64, error) {
-		t.Fatal("listUniverseStructures should not be called with an invalid filter")
-		return nil, nil
-	}
-
-	handler := listUniverseStructuresHandler("v1")
-	_, _, err := handler(context.Background(), nil, ListUniverseStructuresInput{Filter: "bogus"})
-	if err == nil {
-		t.Fatal("expected error for invalid filter")
-	}
-}
-
-func TestListUniverseStructuresHandler_PropagatesError(t *testing.T) {
-	orig := listUniverseStructures
-	t.Cleanup(func() { listUniverseStructures = orig })
-	wantErr := errors.New("upstream failure")
-	listUniverseStructures = func(ctx context.Context, userAgent string, filter string) ([]int64, error) {
-		return nil, wantErr
-	}
-
-	handler := listUniverseStructuresHandler("v1")
-	_, _, err := handler(context.Background(), nil, ListUniverseStructuresInput{})
-	if !errors.Is(err, wantErr) {
-		t.Errorf("err = %v, want wrapping %v", err, wantErr)
 	}
 }
 
@@ -1786,40 +850,6 @@ func TestGetUniverseStructureHandler_PropagatesError(t *testing.T) {
 	}
 }
 
-// --- list_universe_system_jumps ---
-
-func TestListUniverseSystemJumpsHandler_MapsFields(t *testing.T) {
-	orig := listUniverseSystemJumps
-	t.Cleanup(func() { listUniverseSystemJumps = orig })
-	listUniverseSystemJumps = func(ctx context.Context, userAgent string) ([]UniverseSystemJumps, error) {
-		return []UniverseSystemJumps{{SystemID: 30000142, ShipJumps: 10}}, nil
-	}
-
-	handler := listUniverseSystemJumpsHandler("v1")
-	_, out, err := handler(context.Background(), nil, ListUniverseSystemJumpsInput{})
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-	if len(out.SystemJumps) != 1 || out.SystemJumps[0].SystemID != 30000142 || out.SystemJumps[0].ShipJumps != 10 {
-		t.Errorf("out = %+v, want one entry SystemID=30000142 ShipJumps=10", out)
-	}
-}
-
-func TestListUniverseSystemJumpsHandler_PropagatesError(t *testing.T) {
-	orig := listUniverseSystemJumps
-	t.Cleanup(func() { listUniverseSystemJumps = orig })
-	wantErr := errors.New("upstream failure")
-	listUniverseSystemJumps = func(ctx context.Context, userAgent string) ([]UniverseSystemJumps, error) {
-		return nil, wantErr
-	}
-
-	handler := listUniverseSystemJumpsHandler("v1")
-	_, _, err := handler(context.Background(), nil, ListUniverseSystemJumpsInput{})
-	if !errors.Is(err, wantErr) {
-		t.Errorf("err = %v, want wrapping %v", err, wantErr)
-	}
-}
-
 // --- list_universe_system_kills ---
 
 func TestListUniverseSystemKillsHandler_MapsFields(t *testing.T) {
@@ -1845,87 +875,6 @@ func TestListUniverseSystemKillsHandler_PropagatesError(t *testing.T) {
 
 	handler := listUniverseSystemKillsHandler(publicNarrow[universeSystemKillsESI](fake))
 	_, _, err := handler(context.Background(), nil, ListUniverseSystemKillsInput{})
-	if !errors.Is(err, wantErr) {
-		t.Errorf("err = %v, want wrapping %v", err, wantErr)
-	}
-}
-
-// --- resolve_universe_ids ---
-
-func TestResolveUniverseIDsHandler_MapsFields_FullFixture(t *testing.T) {
-	orig := resolveUniverseIDs
-	t.Cleanup(func() { resolveUniverseIDs = orig })
-	charID := int64(12345)
-	charName := "Test Pilot"
-	sysID := int64(30000142)
-	sysName := "Jita"
-	resolveUniverseIDs = func(ctx context.Context, userAgent string, names []string) (ResolveUniverseIDsOutput, error) {
-		return ResolveUniverseIDsOutput{
-			Characters: []IDNamePair{{ID: &charID, Name: &charName}},
-			Systems:    []IDNamePair{{ID: &sysID, Name: &sysName}},
-		}, nil
-	}
-
-	handler := resolveUniverseIDsHandler("v1")
-	_, out, err := handler(context.Background(), nil, ResolveUniverseIDsInput{Names: []string{"Test Pilot", "Jita"}})
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-	if len(out.Characters) != 1 || out.Characters[0].ID == nil || *out.Characters[0].ID != 12345 {
-		t.Errorf("Characters = %+v, want one entry ID=12345", out.Characters)
-	}
-	if len(out.Systems) != 1 || out.Systems[0].Name == nil || *out.Systems[0].Name != "Jita" {
-		t.Errorf("Systems = %+v, want one entry Name=Jita", out.Systems)
-	}
-	if len(out.Alliances) != 0 || len(out.Corporations) != 0 || len(out.Factions) != 0 || len(out.Regions) != 0 || len(out.Stations) != 0 || len(out.Agents) != 0 || len(out.Constellations) != 0 || len(out.InventoryTypes) != 0 {
-		t.Errorf("out = %+v, want only Characters and Systems populated", out)
-	}
-}
-
-func TestResolveUniverseIDsHandler_RejectsEmptyNames(t *testing.T) {
-	orig := resolveUniverseIDs
-	t.Cleanup(func() { resolveUniverseIDs = orig })
-	resolveUniverseIDs = func(ctx context.Context, userAgent string, names []string) (ResolveUniverseIDsOutput, error) {
-		t.Fatal("resolveUniverseIDs should not be called with empty names")
-		return ResolveUniverseIDsOutput{}, nil
-	}
-
-	handler := resolveUniverseIDsHandler("v1")
-	_, _, err := handler(context.Background(), nil, ResolveUniverseIDsInput{Names: []string{}})
-	if err == nil {
-		t.Fatal("expected error for empty names")
-	}
-}
-
-func TestResolveUniverseIDsHandler_RejectsOverCapNames(t *testing.T) {
-	orig := resolveUniverseIDs
-	t.Cleanup(func() { resolveUniverseIDs = orig })
-	resolveUniverseIDs = func(ctx context.Context, userAgent string, names []string) (ResolveUniverseIDsOutput, error) {
-		t.Fatal("resolveUniverseIDs should not be called with over-cap names")
-		return ResolveUniverseIDsOutput{}, nil
-	}
-
-	names := make([]string, 501)
-	for i := range names {
-		names[i] = "x"
-	}
-	handler := resolveUniverseIDsHandler("v1")
-	_, _, err := handler(context.Background(), nil, ResolveUniverseIDsInput{Names: names})
-	if err == nil {
-		t.Fatal("expected error for over-cap names (501 > ESI's 500 max)")
-	}
-}
-
-func TestResolveUniverseIDsHandler_PropagatesError(t *testing.T) {
-	orig := resolveUniverseIDs
-	t.Cleanup(func() { resolveUniverseIDs = orig })
-	wantErr := errors.New("upstream failure")
-	resolveUniverseIDs = func(ctx context.Context, userAgent string, names []string) (ResolveUniverseIDsOutput, error) {
-		return ResolveUniverseIDsOutput{}, wantErr
-	}
-
-	handler := resolveUniverseIDsHandler("v1")
-	_, _, err := handler(context.Background(), nil, ResolveUniverseIDsInput{Names: []string{"Jita"}})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
 	}
@@ -1988,444 +937,6 @@ func TestResolveUniverseNamesHandler_PropagatesError(t *testing.T) {
 	}
 }
 
-// --- Cache-miss/ESI-fallback/write-back coverage for all 24 sde/-backed
-// Universe tools ---
-//
-// Every test above that swaps a getUniverseX/listUniverseX var only ever
-// exercises the cache-HIT branch (a pre-populated fake). These tests call
-// the real, unswapped functions with a cache miss (ok=false / empty IDs)
-// and a fake ESI server via newPublicESIClient, proving: (1) the ESI
-// response maps onto the sde.* struct correctly, (2) Put* is called with
-// that value, and (3) a Put* failure is logged-and-swallowed rather than
-// failing the tool call.
-
-func TestGetUniverseCategory_CacheMiss_FetchesFromESIAndWritesBack(t *testing.T) {
-	srv := fakeESIJSONServer(t, `{"category_id":6,"groups":[25,26],"name":"Ship","published":true}`, "")
-	useFakeESIClient(t, srv)
-	cache := &fakeCategoryCache{categoryOK: false, putErr: errors.New("put failed")}
-
-	got, err := getUniverseCategory(context.Background(), cache, "test-agent", 6)
-	if err != nil {
-		t.Fatalf("getUniverseCategory returned error: %v", err)
-	}
-	if got.CategoryID != 6 || got.Name != "Ship" || !got.Published || len(got.GroupIDs) != 2 {
-		t.Errorf("got = %+v, want CategoryID=6 Name=Ship Published=true GroupIDs len=2", got)
-	}
-	if len(cache.putCalls) != 1 || cache.putCalls[0].ID != 6 {
-		t.Errorf("PutCategory calls = %+v, want one call with ID=6", cache.putCalls)
-	}
-}
-
-func TestListUniverseCategories_CacheMiss_FetchesFromESI(t *testing.T) {
-	srv := fakeESIJSONServer(t, `[6,7,8]`, "")
-	useFakeESIClient(t, srv)
-	cache := &fakeCategoryCache{ids: nil}
-
-	got, err := listUniverseCategories(context.Background(), cache, "test-agent")
-	if err != nil {
-		t.Fatalf("listUniverseCategories returned error: %v", err)
-	}
-	if len(got) != 3 || got[0] != 6 {
-		t.Errorf("got = %v, want [6 7 8]", got)
-	}
-}
-
-func TestGetUniverseGroup_CacheMiss_FetchesFromESIAndWritesBack(t *testing.T) {
-	srv := fakeESIJSONServer(t, `{"category_id":6,"group_id":25,"name":"Frigate","published":true,"types":[587,588]}`, "")
-	useFakeESIClient(t, srv)
-	cache := &fakeGroupCache{groupOK: false, putErr: errors.New("put failed")}
-
-	got, err := getUniverseGroup(context.Background(), cache, "test-agent", 25)
-	if err != nil {
-		t.Fatalf("getUniverseGroup returned error: %v", err)
-	}
-	if got.GroupID != 25 || got.CategoryID != 6 || got.Name != "Frigate" || len(got.TypeIDs) != 2 {
-		t.Errorf("got = %+v, want GroupID=25 CategoryID=6 Name=Frigate TypeIDs len=2", got)
-	}
-	if len(cache.putCalls) != 1 || cache.putCalls[0].ID != 25 {
-		t.Errorf("PutGroup calls = %+v, want one call with ID=25", cache.putCalls)
-	}
-}
-
-func TestListUniverseGroups_CacheMiss_FetchesFromESIWithPagination(t *testing.T) {
-	srv := fakeESIJSONServer(t, `[25,26,27]`, "3")
-	useFakeESIClient(t, srv)
-	cache := &fakeGroupCache{ids: nil}
-
-	got, totalPages, err := listUniverseGroups(context.Background(), cache, "test-agent", 2)
-	if err != nil {
-		t.Fatalf("listUniverseGroups returned error: %v", err)
-	}
-	if len(got) != 3 || got[0] != 25 || totalPages != 3 {
-		t.Errorf("got = %v, totalPages = %d, want [25 26 27] totalPages=3", got, totalPages)
-	}
-}
-
-func TestGetUniverseType_CacheMiss_FetchesFromESIAndWritesBack(t *testing.T) {
-	srv := fakeESIJSONServer(t, `{
-		"capacity": 400, "description": "desc", "graphic_id": 1234, "group_id": 25,
-		"icon_id": 100, "market_group_id": 5, "mass": 1200000, "name": "Rifter",
-		"packaged_volume": 2500, "portion_size": 1, "published": true, "radius": 40,
-		"type_id": 587, "volume": 27289,
-		"dogma_attributes": [{"attribute_id": 9, "value": 2500}],
-		"dogma_effects": [{"effect_id": 1, "is_default": true}]
-	}`, "")
-	useFakeESIClient(t, srv)
-	cache := &fakeTypeCache{typeOK: false, putErr: errors.New("put failed")}
-
-	got, err := getUniverseType(context.Background(), cache, "test-agent", 587)
-	if err != nil {
-		t.Fatalf("getUniverseType returned error: %v", err)
-	}
-	if got.TypeID != 587 || got.Name != "Rifter" || got.GroupID != 25 || !got.Published {
-		t.Errorf("got = %+v, want TypeID=587 Name=Rifter GroupID=25 Published=true", got)
-	}
-	if got.PackagedVolume == nil || *got.PackagedVolume != 2500 {
-		t.Errorf("PackagedVolume = %v, want 2500 (fresh off ESI on a cache miss)", got.PackagedVolume)
-	}
-	if len(got.DogmaAttributes) != 1 || got.DogmaAttributes[0].AttributeID != 9 {
-		t.Errorf("DogmaAttributes = %+v, want one entry AttributeID=9", got.DogmaAttributes)
-	}
-	if len(cache.putCalls) != 1 || cache.putCalls[0].ID != 587 {
-		t.Errorf("PutType calls = %+v, want one call with ID=587", cache.putCalls)
-	}
-}
-
-func TestListUniverseTypes_CacheMiss_FetchesFromESIWithPagination(t *testing.T) {
-	srv := fakeESIJSONServer(t, `[587,588]`, "5")
-	useFakeESIClient(t, srv)
-	cache := &fakeTypeCache{ids: nil}
-
-	got, totalPages, err := listUniverseTypes(context.Background(), cache, "test-agent", 1)
-	if err != nil {
-		t.Fatalf("listUniverseTypes returned error: %v", err)
-	}
-	if len(got) != 2 || totalPages != 5 {
-		t.Errorf("got = %v, totalPages = %d, want [587 588] totalPages=5", got, totalPages)
-	}
-}
-
-func TestGetUniverseRegion_CacheMiss_FetchesFromESIAndWritesBack(t *testing.T) {
-	srv := fakeESIJSONServer(t, `{"constellations":[20000020,20000021],"description":"desc","name":"The Forge","region_id":10000002}`, "")
-	useFakeESIClient(t, srv)
-	cache := &fakeRegionCache{regionOK: false, putErr: errors.New("put failed")}
-
-	got, err := getUniverseRegion(context.Background(), cache, "test-agent", 10000002)
-	if err != nil {
-		t.Fatalf("getUniverseRegion returned error: %v", err)
-	}
-	if got.RegionID != 10000002 || got.Name != "The Forge" || len(got.ConstellationIDs) != 2 {
-		t.Errorf("got = %+v, want RegionID=10000002 Name=The Forge ConstellationIDs len=2", got)
-	}
-	if got.Description == nil || *got.Description != "desc" {
-		t.Errorf("Description = %v, want desc", got.Description)
-	}
-	if len(cache.putCalls) != 1 || cache.putCalls[0].ID != 10000002 {
-		t.Errorf("PutRegion calls = %+v, want one call with ID=10000002", cache.putCalls)
-	}
-}
-
-func TestListUniverseRegions_CacheMiss_FetchesFromESI(t *testing.T) {
-	srv := fakeESIJSONServer(t, `[10000002,10000043]`, "")
-	useFakeESIClient(t, srv)
-	cache := &fakeRegionCache{ids: nil}
-
-	got, err := listUniverseRegions(context.Background(), cache, "test-agent")
-	if err != nil {
-		t.Fatalf("listUniverseRegions returned error: %v", err)
-	}
-	if len(got) != 2 || got[0] != 10000002 {
-		t.Errorf("got = %v, want [10000002 10000043]", got)
-	}
-}
-
-func TestGetUniverseConstellation_CacheMiss_FetchesFromESIAndWritesBack(t *testing.T) {
-	srv := fakeESIJSONServer(t, `{"constellation_id":20000020,"name":"Kimotoro","position":{"x":1,"y":2,"z":3},"region_id":10000002,"systems":[30000142,30000144]}`, "")
-	useFakeESIClient(t, srv)
-	cache := &fakeConstellationCache{constellationOK: false, putErr: errors.New("put failed")}
-
-	got, err := getUniverseConstellation(context.Background(), cache, "test-agent", 20000020)
-	if err != nil {
-		t.Fatalf("getUniverseConstellation returned error: %v", err)
-	}
-	if got.ConstellationID != 20000020 || got.Name != "Kimotoro" || got.RegionID != 10000002 || len(got.SystemIDs) != 2 {
-		t.Errorf("got = %+v, want ConstellationID=20000020 Name=Kimotoro RegionID=10000002 SystemIDs len=2", got)
-	}
-	if len(cache.putCalls) != 1 || cache.putCalls[0].ID != 20000020 {
-		t.Errorf("PutConstellation calls = %+v, want one call with ID=20000020", cache.putCalls)
-	}
-}
-
-func TestListUniverseConstellations_CacheMiss_FetchesFromESI(t *testing.T) {
-	srv := fakeESIJSONServer(t, `[20000020,20000021]`, "")
-	useFakeESIClient(t, srv)
-	cache := &fakeConstellationCache{ids: nil}
-
-	got, err := listUniverseConstellations(context.Background(), cache, "test-agent")
-	if err != nil {
-		t.Fatalf("listUniverseConstellations returned error: %v", err)
-	}
-	if len(got) != 2 || got[0] != 20000020 {
-		t.Errorf("got = %v, want [20000020 20000021]", got)
-	}
-}
-
-func TestGetUniverseSystem_CacheMiss_FetchesFromESIAndWritesBack(t *testing.T) {
-	srv := fakeESIJSONServer(t, `{
-		"constellation_id": 20000020, "name": "Jita", "position": {"x":1,"y":2,"z":3},
-		"security_class": "B", "security_status": 0.9459, "star_id": 40000001,
-		"stargates": [50000342], "stations": [60003760], "system_id": 30000142,
-		"planets": [{"asteroid_belts": [40000002], "moons": [40000003], "planet_id": 40000004}]
-	}`, "")
-	useFakeESIClient(t, srv)
-	cache := &fakeSystemCache{systemOK: false, putErr: errors.New("put failed")}
-
-	got, err := getUniverseSystem(context.Background(), cache, "test-agent", 30000142)
-	if err != nil {
-		t.Fatalf("getUniverseSystem returned error: %v", err)
-	}
-	if got.SystemID != 30000142 || got.Name != "Jita" || got.ConstellationID != 20000020 {
-		t.Errorf("got = %+v, want SystemID=30000142 Name=Jita ConstellationID=20000020", got)
-	}
-	if len(got.Planets) != 1 || got.Planets[0].PlanetID != 40000004 || len(got.Planets[0].AsteroidBeltIDs) != 1 || len(got.Planets[0].MoonIDs) != 1 {
-		t.Errorf("Planets = %+v, want one entry PlanetID=40000004 with one belt and one moon (fresh off ESI on a cache miss)", got.Planets)
-	}
-	if len(cache.putCalls) != 1 || cache.putCalls[0].ID != 30000142 {
-		t.Errorf("PutSystem calls = %+v, want one call with ID=30000142", cache.putCalls)
-	}
-}
-
-func TestListUniverseSystems_CacheMiss_FetchesFromESI(t *testing.T) {
-	srv := fakeESIJSONServer(t, `[30000142,30000144]`, "")
-	useFakeESIClient(t, srv)
-	cache := &fakeSystemCache{ids: nil}
-
-	got, err := listUniverseSystems(context.Background(), cache, "test-agent")
-	if err != nil {
-		t.Fatalf("listUniverseSystems returned error: %v", err)
-	}
-	if len(got) != 2 || got[0] != 30000142 {
-		t.Errorf("got = %v, want [30000142 30000144]", got)
-	}
-}
-
-func TestGetUniverseAsteroidBelt_CacheMiss_FetchesFromESIAndWritesBack(t *testing.T) {
-	srv := fakeESIJSONServer(t, `{"name":"Jita IV - Asteroid Belt 1","position":{"x":1,"y":2,"z":3},"system_id":30000142}`, "")
-	useFakeESIClient(t, srv)
-	cache := &fakeAsteroidBeltCache{ok: false, putErr: errors.New("put failed")}
-
-	got, err := getUniverseAsteroidBelt(context.Background(), cache, "test-agent", 40000002)
-	if err != nil {
-		t.Fatalf("getUniverseAsteroidBelt returned error: %v", err)
-	}
-	if got.Name != "Jita IV - Asteroid Belt 1" || got.SystemID != 30000142 {
-		t.Errorf("got = %+v, want Name=Jita IV - Asteroid Belt 1 SystemID=30000142", got)
-	}
-	if cache.putCall == nil || cache.putCall.ID != 40000002 {
-		t.Errorf("PutAsteroidBelt call = %v, want one call with ID=40000002", cache.putCall)
-	}
-}
-
-func TestGetUniverseMoon_CacheMiss_FetchesFromESIAndWritesBack(t *testing.T) {
-	srv := fakeESIJSONServer(t, `{"moon_id":40000003,"name":"Jita IV - Moon 1","position":{"x":1,"y":2,"z":3},"system_id":30000142}`, "")
-	useFakeESIClient(t, srv)
-	cache := &fakeMoonCache{ok: false, putErr: errors.New("put failed")}
-
-	got, err := getUniverseMoon(context.Background(), cache, "test-agent", 40000003)
-	if err != nil {
-		t.Fatalf("getUniverseMoon returned error: %v", err)
-	}
-	if got.MoonID != 40000003 || got.Name != "Jita IV - Moon 1" || got.SystemID != 30000142 {
-		t.Errorf("got = %+v, want MoonID=40000003 Name=Jita IV - Moon 1 SystemID=30000142", got)
-	}
-	if cache.putCall == nil || cache.putCall.ID != 40000003 {
-		t.Errorf("PutMoon call = %v, want one call with ID=40000003", cache.putCall)
-	}
-}
-
-func TestGetUniversePlanet_CacheMiss_FetchesFromESIAndWritesBack(t *testing.T) {
-	srv := fakeESIJSONServer(t, `{"name":"Jita IV","planet_id":40000004,"position":{"x":1,"y":2,"z":3},"system_id":30000142,"type_id":2016}`, "")
-	useFakeESIClient(t, srv)
-	cache := &fakePlanetCache{ok: false, putErr: errors.New("put failed")}
-
-	got, err := getUniversePlanet(context.Background(), cache, "test-agent", 40000004)
-	if err != nil {
-		t.Fatalf("getUniversePlanet returned error: %v", err)
-	}
-	if got.PlanetID != 40000004 || got.Name != "Jita IV" || got.SystemID != 30000142 || got.TypeID != 2016 {
-		t.Errorf("got = %+v, want PlanetID=40000004 Name=Jita IV SystemID=30000142 TypeID=2016", got)
-	}
-	if cache.putCall == nil || cache.putCall.ID != 40000004 {
-		t.Errorf("PutPlanet call = %v, want one call with ID=40000004", cache.putCall)
-	}
-}
-
-func TestGetUniverseStargate_CacheMiss_FetchesFromESIAndWritesBack(t *testing.T) {
-	srv := fakeESIJSONServer(t, `{
-		"destination": {"stargate_id": 50000343, "system_id": 30000144},
-		"name": "Stargate (Perimeter)", "position": {"x":1,"y":2,"z":3},
-		"stargate_id": 50000342, "system_id": 30000142, "type_id": 16
-	}`, "")
-	useFakeESIClient(t, srv)
-	cache := &fakeStargateCache{ok: false, putErr: errors.New("put failed")}
-
-	got, err := getUniverseStargate(context.Background(), cache, "test-agent", 50000342)
-	if err != nil {
-		t.Fatalf("getUniverseStargate returned error: %v", err)
-	}
-	if got.StargateID != 50000342 || got.SystemID != 30000142 || got.TypeID != 16 {
-		t.Errorf("got = %+v, want StargateID=50000342 SystemID=30000142 TypeID=16", got)
-	}
-	if got.DestinationStargateID != 50000343 || got.DestinationSystemID != 30000144 {
-		t.Errorf("Destination = %d/%d, want 50000343/30000144", got.DestinationStargateID, got.DestinationSystemID)
-	}
-	if cache.putCall == nil || cache.putCall.ID != 50000342 {
-		t.Errorf("PutStargate call = %v, want one call with ID=50000342", cache.putCall)
-	}
-}
-
-func TestGetUniverseStar_CacheMiss_FetchesFromESIAndWritesBack(t *testing.T) {
-	srv := fakeESIJSONServer(t, `{
-		"age": 15000000000, "luminosity": 0.02, "name": "Jita - Star",
-		"radius": 100000, "solar_system_id": 30000142, "spectral_class": "K2 V",
-		"temperature": 4465, "type_id": 3796
-	}`, "")
-	useFakeESIClient(t, srv)
-	cache := &fakeStarCache{ok: false, putErr: errors.New("put failed")}
-
-	got, err := getUniverseStar(context.Background(), cache, "test-agent", 40000001)
-	if err != nil {
-		t.Fatalf("getUniverseStar returned error: %v", err)
-	}
-	if got.SolarSystemID != 30000142 || got.Name != "Jita - Star" || got.SpectralClass != "K2 V" || got.TypeID != 3796 {
-		t.Errorf("got = %+v, want SolarSystemID=30000142 Name=Jita - Star SpectralClass=K2 V TypeID=3796", got)
-	}
-	if cache.putCall == nil || cache.putCall.ID != 40000001 {
-		t.Errorf("PutStar call = %v, want one call with ID=40000001", cache.putCall)
-	}
-}
-
-func TestGetUniverseStation_CacheMiss_FetchesFromESIAndWritesBack(t *testing.T) {
-	srv := fakeESIJSONServer(t, `{
-		"max_dockable_ship_volume": 50000000, "name": "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
-		"office_rental_cost": 10000, "owner": 1000035, "position": {"x":1,"y":2,"z":3},
-		"race_id": 1, "reprocessing_efficiency": 0.5, "reprocessing_stations_take": 0.05,
-		"services": ["market","repair-facilities"], "station_id": 60003760, "system_id": 30000142, "type_id": 1529
-	}`, "")
-	useFakeESIClient(t, srv)
-	cache := &fakeStationCache{ok: false, putErr: errors.New("put failed")}
-
-	got, err := getUniverseStation(context.Background(), cache, "test-agent", 60003760)
-	if err != nil {
-		t.Fatalf("getUniverseStation returned error: %v", err)
-	}
-	if got.StationID != 60003760 || got.SystemID != 30000142 || got.TypeID != 1529 {
-		t.Errorf("got = %+v, want StationID=60003760 SystemID=30000142 TypeID=1529", got)
-	}
-	if got.Owner == nil || *got.Owner != 1000035 {
-		t.Errorf("Owner = %v, want 1000035", got.Owner)
-	}
-	if got.Services == nil || len(*got.Services) != 2 {
-		t.Errorf("Services = %v, want 2 entries", got.Services)
-	}
-	if cache.putCall == nil || cache.putCall.ID != 60003760 {
-		t.Errorf("PutStation call = %v, want one call with ID=60003760", cache.putCall)
-	}
-}
-
-func TestGetUniverseGraphic_CacheMiss_FetchesFromESIAndWritesBack(t *testing.T) {
-	srv := fakeESIJSONServer(t, `{"graphic_file":"file.gr2","graphic_id":1234,"sof_hull_name":"caldari_frigate"}`, "")
-	useFakeESIClient(t, srv)
-	cache := &fakeGraphicCache{graphicOK: false, putErr: errors.New("put failed")}
-
-	got, err := getUniverseGraphic(context.Background(), cache, "test-agent", 1234)
-	if err != nil {
-		t.Fatalf("getUniverseGraphic returned error: %v", err)
-	}
-	if got.GraphicID != 1234 || got.GraphicFile == nil || *got.GraphicFile != "file.gr2" {
-		t.Errorf("got = %+v, want GraphicID=1234 GraphicFile=file.gr2", got)
-	}
-	if len(cache.putCalls) != 1 || cache.putCalls[0].ID != 1234 {
-		t.Errorf("PutGraphic calls = %+v, want one call with ID=1234", cache.putCalls)
-	}
-}
-
-func TestListUniverseGraphics_CacheMiss_FetchesFromESI(t *testing.T) {
-	srv := fakeESIJSONServer(t, `[1,2,3]`, "")
-	useFakeESIClient(t, srv)
-	cache := &fakeGraphicCache{ids: nil}
-
-	got, err := listUniverseGraphics(context.Background(), cache, "test-agent")
-	if err != nil {
-		t.Fatalf("listUniverseGraphics returned error: %v", err)
-	}
-	if len(got) != 3 || got[0] != 1 {
-		t.Errorf("got = %v, want [1 2 3]", got)
-	}
-}
-
-func TestListUniverseAncestries_CacheMiss_FetchesFromESI(t *testing.T) {
-	srv := fakeESIJSONServer(t, `[{"bloodline_id":1,"description":"desc","icon_id":100,"id":11,"name":"Tribal","short_description":"short"}]`, "")
-	useFakeESIClient(t, srv)
-	cache := &fakeAncestryCache{ancestries: nil}
-
-	got, err := listUniverseAncestries(context.Background(), cache, "test-agent")
-	if err != nil {
-		t.Fatalf("listUniverseAncestries returned error: %v", err)
-	}
-	if len(got) != 1 || got[0].ID != 11 || got[0].BloodlineID != 1 || got[0].Name != "Tribal" {
-		t.Errorf("got = %+v, want one entry ID=11 BloodlineID=1 Name=Tribal", got)
-	}
-}
-
-func TestListUniverseBloodlines_CacheMiss_FetchesFromESI(t *testing.T) {
-	srv := fakeESIJSONServer(t, `[{"bloodline_id":1,"charisma":6,"corporation_id":1000166,"description":"desc","intelligence":7,"memory":5,"name":"Deteis","perception":5,"race_id":1,"ship_type_id":601,"willpower":5}]`, "")
-	useFakeESIClient(t, srv)
-	cache := &fakeBloodlineCache{bloodlines: nil}
-
-	got, err := listUniverseBloodlines(context.Background(), cache, "test-agent")
-	if err != nil {
-		t.Fatalf("listUniverseBloodlines returned error: %v", err)
-	}
-	if len(got) != 1 || got[0].ID != 1 || got[0].Name != "Deteis" || got[0].RaceID != 1 {
-		t.Errorf("got = %+v, want one entry ID=1 Name=Deteis RaceID=1", got)
-	}
-}
-
-func TestListUniverseRaces_CacheMiss_FetchesFromESI(t *testing.T) {
-	srv := fakeESIJSONServer(t, `[{"alliance_id":500001,"description":"desc","name":"Caldari","race_id":1}]`, "")
-	useFakeESIClient(t, srv)
-	cache := &fakeRaceCache{races: nil}
-
-	got, err := listUniverseRaces(context.Background(), cache, "test-agent")
-	if err != nil {
-		t.Fatalf("listUniverseRaces returned error: %v", err)
-	}
-	if len(got) != 1 || got[0].RaceID != 1 || got[0].Name != "Caldari" {
-		t.Errorf("got = %+v, want one entry RaceID=1 Name=Caldari", got)
-	}
-	if got[0].AllianceID == nil || *got[0].AllianceID != 500001 {
-		t.Errorf("AllianceID = %v, want 500001 (ESI's schema always returns a real value)", got[0].AllianceID)
-	}
-}
-
-func TestListUniverseFactions_CacheMiss_FetchesFromESI(t *testing.T) {
-	srv := fakeESIJSONServer(t, `[{"corporation_id":1000035,"description":"desc","faction_id":500001,"is_unique":true,"militia_corporation_id":1000180,"name":"Caldari State","size_factor":5,"solar_system_id":30000144,"station_count":100,"station_system_count":50}]`, "")
-	useFakeESIClient(t, srv)
-	cache := &fakeFactionCache{factions: nil}
-
-	got, err := listUniverseFactions(context.Background(), cache, "test-agent")
-	if err != nil {
-		t.Fatalf("listUniverseFactions returned error: %v", err)
-	}
-	if len(got) != 1 || got[0].FactionID != 500001 || got[0].IsUnique == nil || !*got[0].IsUnique || got[0].Name != "Caldari State" {
-		t.Errorf("got = %+v, want one entry FactionID=500001 IsUnique=true Name=Caldari State", got)
-	}
-	if got[0].CorporationID == nil || *got[0].CorporationID != 1000035 {
-		t.Errorf("CorporationID = %v, want 1000035", got[0].CorporationID)
-	}
-}
-
 // fakeUniverseStructureESI fakes universeStructureESI; a nil universeStructureDetail fails as an unfaked call.
 type fakeUniverseStructureESI struct {
 	universeStructureDetail func(ctx context.Context, structureID int64) (*esiapi.UniverseStructuresStructureIdGet, error)
@@ -2475,5 +986,1470 @@ func TestUniverseStructureHandlers_PropagateOpenError(t *testing.T) {
 		if err := call(); !errors.Is(err, wantErr) {
 			t.Errorf("%s: err = %v, want wrapping %v", name, err, wantErr)
 		}
+	}
+}
+
+// fakeUniverseReadESI fakes every public universe ESI interface the SDE
+// read-through tools fall back to; a nil func field fails as an unfaked call.
+type fakeUniverseReadESI struct {
+	ancestries          func(ctx context.Context) ([]esiapi.UniverseAncestriesGetInner, error)
+	bloodlines          func(ctx context.Context) ([]esiapi.UniverseBloodlinesGetInner, error)
+	races               func(ctx context.Context) ([]esiapi.UniverseRacesGetInner, error)
+	factions            func(ctx context.Context) ([]esiapi.UniverseFactionsGetInner, error)
+	categories          func(ctx context.Context) ([]int64, error)
+	categoryDetail      func(ctx context.Context, categoryID int64) (*esiapi.UniverseCategoriesCategoryIdGet, error)
+	groups              func(ctx context.Context, page int32) ([]int64, int32, error)
+	groupDetail         func(ctx context.Context, groupID int64) (*esiapi.UniverseGroupsGroupIdGet, error)
+	types               func(ctx context.Context, page int32) ([]int64, int32, error)
+	typeDetail          func(ctx context.Context, typeID int64) (*esiapi.UniverseTypesTypeIdGet, error)
+	regions             func(ctx context.Context) ([]int64, error)
+	regionDetail        func(ctx context.Context, regionID int64) (*esiapi.UniverseRegionsRegionIdGet, error)
+	constellations      func(ctx context.Context) ([]int64, error)
+	constellationDetail func(ctx context.Context, constellationID int64) (*esiapi.UniverseConstellationsConstellationIdGet, error)
+	systems             func(ctx context.Context) ([]int64, error)
+	systemDetail        func(ctx context.Context, systemID int64) (*esiapi.UniverseSystemsSystemIdGet, error)
+	asteroidBeltDetail  func(ctx context.Context, asteroidBeltID int64) (*esiapi.UniverseAsteroidBeltsAsteroidBeltIdGet, error)
+	moonDetail          func(ctx context.Context, moonID int64) (*esiapi.UniverseMoonsMoonIdGet, error)
+	planetDetail        func(ctx context.Context, planetID int64) (*esiapi.UniversePlanetsPlanetIdGet, error)
+	stargateDetail      func(ctx context.Context, stargateID int64) (*esiapi.UniverseStargatesStargateIdGet, error)
+	starDetail          func(ctx context.Context, starID int64) (*esiapi.UniverseStarsStarIdGet, error)
+	stationDetail       func(ctx context.Context, stationID int64) (*esiapi.UniverseStationsStationIdGet, error)
+	graphics            func(ctx context.Context) ([]int64, error)
+	graphicDetail       func(ctx context.Context, graphicID int64) (*esiapi.UniverseGraphicsGraphicIdGet, error)
+	structures          func(ctx context.Context, filter string) ([]int64, error)
+	systemJumps         func(ctx context.Context) ([]esiapi.UniverseSystemJumpsGetInner, error)
+	idsByName           func(ctx context.Context, names []string) (*esiapi.UniverseIdsPost, error)
+}
+
+func (f fakeUniverseReadESI) UniverseAncestries(ctx context.Context) ([]esiapi.UniverseAncestriesGetInner, error) {
+	if f.ancestries == nil {
+		return nil, errNotFaked
+	}
+	return f.ancestries(ctx)
+}
+
+func (f fakeUniverseReadESI) UniverseBloodlines(ctx context.Context) ([]esiapi.UniverseBloodlinesGetInner, error) {
+	if f.bloodlines == nil {
+		return nil, errNotFaked
+	}
+	return f.bloodlines(ctx)
+}
+
+func (f fakeUniverseReadESI) UniverseRaces(ctx context.Context) ([]esiapi.UniverseRacesGetInner, error) {
+	if f.races == nil {
+		return nil, errNotFaked
+	}
+	return f.races(ctx)
+}
+
+func (f fakeUniverseReadESI) UniverseFactions(ctx context.Context) ([]esiapi.UniverseFactionsGetInner, error) {
+	if f.factions == nil {
+		return nil, errNotFaked
+	}
+	return f.factions(ctx)
+}
+
+func (f fakeUniverseReadESI) UniverseCategories(ctx context.Context) ([]int64, error) {
+	if f.categories == nil {
+		return nil, errNotFaked
+	}
+	return f.categories(ctx)
+}
+
+func (f fakeUniverseReadESI) UniverseCategoryDetail(ctx context.Context, categoryID int64) (*esiapi.UniverseCategoriesCategoryIdGet, error) {
+	if f.categoryDetail == nil {
+		return nil, errNotFaked
+	}
+	return f.categoryDetail(ctx, categoryID)
+}
+
+func (f fakeUniverseReadESI) UniverseGroups(ctx context.Context, page int32) ([]int64, int32, error) {
+	if f.groups == nil {
+		return nil, 0, errNotFaked
+	}
+	return f.groups(ctx, page)
+}
+
+func (f fakeUniverseReadESI) UniverseGroupDetail(ctx context.Context, groupID int64) (*esiapi.UniverseGroupsGroupIdGet, error) {
+	if f.groupDetail == nil {
+		return nil, errNotFaked
+	}
+	return f.groupDetail(ctx, groupID)
+}
+
+func (f fakeUniverseReadESI) UniverseTypes(ctx context.Context, page int32) ([]int64, int32, error) {
+	if f.types == nil {
+		return nil, 0, errNotFaked
+	}
+	return f.types(ctx, page)
+}
+
+func (f fakeUniverseReadESI) UniverseTypeDetail(ctx context.Context, typeID int64) (*esiapi.UniverseTypesTypeIdGet, error) {
+	if f.typeDetail == nil {
+		return nil, errNotFaked
+	}
+	return f.typeDetail(ctx, typeID)
+}
+
+func (f fakeUniverseReadESI) UniverseRegions(ctx context.Context) ([]int64, error) {
+	if f.regions == nil {
+		return nil, errNotFaked
+	}
+	return f.regions(ctx)
+}
+
+func (f fakeUniverseReadESI) UniverseRegionDetail(ctx context.Context, regionID int64) (*esiapi.UniverseRegionsRegionIdGet, error) {
+	if f.regionDetail == nil {
+		return nil, errNotFaked
+	}
+	return f.regionDetail(ctx, regionID)
+}
+
+func (f fakeUniverseReadESI) UniverseConstellations(ctx context.Context) ([]int64, error) {
+	if f.constellations == nil {
+		return nil, errNotFaked
+	}
+	return f.constellations(ctx)
+}
+
+func (f fakeUniverseReadESI) UniverseConstellationDetail(ctx context.Context, constellationID int64) (*esiapi.UniverseConstellationsConstellationIdGet, error) {
+	if f.constellationDetail == nil {
+		return nil, errNotFaked
+	}
+	return f.constellationDetail(ctx, constellationID)
+}
+
+func (f fakeUniverseReadESI) UniverseSystems(ctx context.Context) ([]int64, error) {
+	if f.systems == nil {
+		return nil, errNotFaked
+	}
+	return f.systems(ctx)
+}
+
+func (f fakeUniverseReadESI) UniverseSystemDetail(ctx context.Context, systemID int64) (*esiapi.UniverseSystemsSystemIdGet, error) {
+	if f.systemDetail == nil {
+		return nil, errNotFaked
+	}
+	return f.systemDetail(ctx, systemID)
+}
+
+func (f fakeUniverseReadESI) UniverseAsteroidBeltDetail(ctx context.Context, asteroidBeltID int64) (*esiapi.UniverseAsteroidBeltsAsteroidBeltIdGet, error) {
+	if f.asteroidBeltDetail == nil {
+		return nil, errNotFaked
+	}
+	return f.asteroidBeltDetail(ctx, asteroidBeltID)
+}
+
+func (f fakeUniverseReadESI) UniverseMoonDetail(ctx context.Context, moonID int64) (*esiapi.UniverseMoonsMoonIdGet, error) {
+	if f.moonDetail == nil {
+		return nil, errNotFaked
+	}
+	return f.moonDetail(ctx, moonID)
+}
+
+func (f fakeUniverseReadESI) UniversePlanetDetail(ctx context.Context, planetID int64) (*esiapi.UniversePlanetsPlanetIdGet, error) {
+	if f.planetDetail == nil {
+		return nil, errNotFaked
+	}
+	return f.planetDetail(ctx, planetID)
+}
+
+func (f fakeUniverseReadESI) UniverseStargateDetail(ctx context.Context, stargateID int64) (*esiapi.UniverseStargatesStargateIdGet, error) {
+	if f.stargateDetail == nil {
+		return nil, errNotFaked
+	}
+	return f.stargateDetail(ctx, stargateID)
+}
+
+func (f fakeUniverseReadESI) UniverseStarDetail(ctx context.Context, starID int64) (*esiapi.UniverseStarsStarIdGet, error) {
+	if f.starDetail == nil {
+		return nil, errNotFaked
+	}
+	return f.starDetail(ctx, starID)
+}
+
+func (f fakeUniverseReadESI) UniverseStationDetail(ctx context.Context, stationID int64) (*esiapi.UniverseStationsStationIdGet, error) {
+	if f.stationDetail == nil {
+		return nil, errNotFaked
+	}
+	return f.stationDetail(ctx, stationID)
+}
+
+func (f fakeUniverseReadESI) UniverseGraphics(ctx context.Context) ([]int64, error) {
+	if f.graphics == nil {
+		return nil, errNotFaked
+	}
+	return f.graphics(ctx)
+}
+
+func (f fakeUniverseReadESI) UniverseGraphicDetail(ctx context.Context, graphicID int64) (*esiapi.UniverseGraphicsGraphicIdGet, error) {
+	if f.graphicDetail == nil {
+		return nil, errNotFaked
+	}
+	return f.graphicDetail(ctx, graphicID)
+}
+
+func (f fakeUniverseReadESI) UniverseStructures(ctx context.Context, filter string) ([]int64, error) {
+	if f.structures == nil {
+		return nil, errNotFaked
+	}
+	return f.structures(ctx, filter)
+}
+
+func (f fakeUniverseReadESI) UniverseSystemJumps(ctx context.Context) ([]esiapi.UniverseSystemJumpsGetInner, error) {
+	if f.systemJumps == nil {
+		return nil, errNotFaked
+	}
+	return f.systemJumps(ctx)
+}
+
+func (f fakeUniverseReadESI) UniverseIDsByName(ctx context.Context, names []string) (*esiapi.UniverseIdsPost, error) {
+	if f.idsByName == nil {
+		return nil, errNotFaked
+	}
+	return f.idsByName(ctx, names)
+}
+
+// pos3 is the position every ESI fixture below carries.
+var pos3 = esiapi.CharactersCharacterIdAssetsLocationsPostInnerPosition{X: 1, Y: 2, Z: 3}
+
+// --- Handlers: each tool reads through its SDE cache (a hit never calls ESI,
+// so the ESI fake is left empty) and reports a cache failure wrapped. ---
+
+func TestListUniverseAncestriesHandler_MapsFields(t *testing.T) {
+	iconID := int64(100)
+	shortDesc := "short"
+	cache := &fakeAncestryCache{ancestries: []sde.Ancestry{{ID: 11, BloodlineID: 1, Description: "desc", Name: "Tribal", IconID: &iconID, ShortDescription: &shortDesc}}}
+
+	handler := listUniverseAncestriesHandler("v1", publicNarrow[universeAncestriesESI](fakeUniverseReadESI{}), cache)
+	_, out, err := handler(context.Background(), nil, ListUniverseAncestriesInput{})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Ancestries) != 1 || out.Ancestries[0].ID != 11 || out.Ancestries[0].Name != "Tribal" {
+		t.Errorf("out = %+v, want one entry ID=11 Name=Tribal", out)
+	}
+}
+
+func TestListUniverseAncestriesHandler_PropagatesError(t *testing.T) {
+	wantErr := errors.New("upstream failure")
+	handler := listUniverseAncestriesHandler("v1", publicNarrow[universeAncestriesESI](fakeUniverseReadESI{}), &fakeAncestryCache{err: wantErr})
+	_, _, err := handler(context.Background(), nil, ListUniverseAncestriesInput{})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestListUniverseBloodlinesHandler_MapsFields(t *testing.T) {
+	cache := &fakeBloodlineCache{bloodlines: []sde.Bloodline{{ID: 1, Name: "Deteis", RaceID: 1, CorporationID: 1000166}}}
+
+	handler := listUniverseBloodlinesHandler("v1", publicNarrow[universeBloodlinesESI](fakeUniverseReadESI{}), cache)
+	_, out, err := handler(context.Background(), nil, ListUniverseBloodlinesInput{})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Bloodlines) != 1 || out.Bloodlines[0].ID != 1 || out.Bloodlines[0].Name != "Deteis" {
+		t.Errorf("out = %+v, want one entry ID=1 Name=Deteis", out)
+	}
+}
+
+func TestListUniverseBloodlinesHandler_PropagatesError(t *testing.T) {
+	wantErr := errors.New("upstream failure")
+	handler := listUniverseBloodlinesHandler("v1", publicNarrow[universeBloodlinesESI](fakeUniverseReadESI{}), &fakeBloodlineCache{err: wantErr})
+	_, _, err := handler(context.Background(), nil, ListUniverseBloodlinesInput{})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestListUniverseRacesHandler_MapsFields(t *testing.T) {
+	allianceID := int64(500001)
+	cache := &fakeRaceCache{races: []sde.Race{{ID: 1, AllianceID: &allianceID, Name: "Caldari"}}}
+
+	handler := listUniverseRacesHandler("v1", publicNarrow[universeRacesESI](fakeUniverseReadESI{}), cache)
+	_, out, err := handler(context.Background(), nil, ListUniverseRacesInput{})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Races) != 1 || out.Races[0].RaceID != 1 || out.Races[0].Name != "Caldari" {
+		t.Errorf("out = %+v, want one entry RaceID=1 Name=Caldari", out)
+	}
+}
+
+func TestListUniverseRacesHandler_PropagatesError(t *testing.T) {
+	wantErr := errors.New("upstream failure")
+	handler := listUniverseRacesHandler("v1", publicNarrow[universeRacesESI](fakeUniverseReadESI{}), &fakeRaceCache{err: wantErr})
+	_, _, err := handler(context.Background(), nil, ListUniverseRacesInput{})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestListUniverseFactionsHandler_MapsFields(t *testing.T) {
+	corpID := int64(1000035)
+	cache := &fakeFactionCache{factions: []sde.Faction{{ID: 500001, Name: "Caldari State", CorporationID: &corpID}}}
+
+	handler := listUniverseFactionsHandler("v1", publicNarrow[universeFactionsESI](fakeUniverseReadESI{}), cache)
+	_, out, err := handler(context.Background(), nil, ListUniverseFactionsInput{})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.Factions) != 1 || out.Factions[0].FactionID != 500001 {
+		t.Errorf("out = %+v, want one entry FactionID=500001", out)
+	}
+	if out.Factions[0].CorporationID == nil || *out.Factions[0].CorporationID != 1000035 {
+		t.Errorf("CorporationID = %v, want 1000035", out.Factions[0].CorporationID)
+	}
+}
+
+func TestListUniverseFactionsHandler_PropagatesError(t *testing.T) {
+	wantErr := errors.New("upstream failure")
+	handler := listUniverseFactionsHandler("v1", publicNarrow[universeFactionsESI](fakeUniverseReadESI{}), &fakeFactionCache{err: wantErr})
+	_, _, err := handler(context.Background(), nil, ListUniverseFactionsInput{})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestListUniverseCategoriesHandler_MapsFields(t *testing.T) {
+	handler := listUniverseCategoriesHandler("v1", publicNarrow[universeCategoriesESI](fakeUniverseReadESI{}), &fakeCategoryCache{ids: []int64{6, 7}})
+	_, out, err := handler(context.Background(), nil, ListUniverseCategoriesInput{})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.IDs) != 2 || out.IDs[0] != 6 {
+		t.Errorf("out = %+v, want IDs=[6 7]", out)
+	}
+}
+
+func TestListUniverseCategoriesHandler_PropagatesError(t *testing.T) {
+	wantErr := errors.New("upstream failure")
+	handler := listUniverseCategoriesHandler("v1", publicNarrow[universeCategoriesESI](fakeUniverseReadESI{}), &fakeCategoryCache{idsErr: wantErr})
+	_, _, err := handler(context.Background(), nil, ListUniverseCategoriesInput{})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestGetUniverseCategoryHandler_MapsFields(t *testing.T) {
+	cache := &fakeCategoryCache{category: sde.Category{ID: 6, Name: "Ship", Published: true, GroupIDs: []int64{25, 26}}, categoryOK: true}
+
+	handler := getUniverseCategoryHandler("v1", publicNarrow[universeCategoriesESI](fakeUniverseReadESI{}), cache)
+	_, out, err := handler(context.Background(), nil, GetUniverseCategoryInput{CategoryID: 6})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.CategoryID != 6 || out.Name != "Ship" || !out.Published || len(out.GroupIDs) != 2 {
+		t.Errorf("out = %+v, want CategoryID=6 Name=Ship Published=true GroupIDs=[25 26]", out)
+	}
+}
+
+func TestGetUniverseCategoryHandler_PropagatesError(t *testing.T) {
+	wantErr := errors.New("upstream failure")
+	handler := getUniverseCategoryHandler("v1", publicNarrow[universeCategoriesESI](fakeUniverseReadESI{}), &fakeCategoryCache{categoryErr: wantErr})
+	_, _, err := handler(context.Background(), nil, GetUniverseCategoryInput{CategoryID: 6})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestListUniverseGroupsHandler_MapsFields(t *testing.T) {
+	handler := listUniverseGroupsHandler("v1", publicNarrow[universeGroupsESI](fakeUniverseReadESI{}), &fakeGroupCache{ids: []int64{25, 26}})
+	_, out, err := handler(context.Background(), nil, ListUniverseGroupsInput{Page: 1})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.IDs) != 2 || out.Page != 1 || out.TotalPages != 1 {
+		t.Errorf("out = %+v, want IDs=[25 26] Page=1 TotalPages=1", out)
+	}
+}
+
+func TestListUniverseGroupsHandler_ReportsPageAndTotalFromESIOnCacheMiss(t *testing.T) {
+	fake := fakeUniverseReadESI{groups: func(_ context.Context, page int32) ([]int64, int32, error) {
+		return []int64{25, 26}, 3, nil
+	}}
+
+	handler := listUniverseGroupsHandler("v1", publicNarrow[universeGroupsESI](fake), &fakeGroupCache{})
+	_, out, err := handler(context.Background(), nil, ListUniverseGroupsInput{Page: 2})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.IDs) != 2 || out.Page != 2 || out.TotalPages != 3 {
+		t.Errorf("out = %+v, want IDs=[25 26] Page=2 TotalPages=3", out)
+	}
+}
+
+func TestListUniverseGroupsHandler_DefaultsPageToOne(t *testing.T) {
+	handler := listUniverseGroupsHandler("v1", publicNarrow[universeGroupsESI](fakeUniverseReadESI{}), &fakeGroupCache{ids: []int64{25}})
+	_, out, err := handler(context.Background(), nil, ListUniverseGroupsInput{})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.Page != 1 {
+		t.Errorf("Page = %d, want 1", out.Page)
+	}
+}
+
+func TestListUniverseGroupsHandler_PropagatesError(t *testing.T) {
+	wantErr := errors.New("upstream failure")
+	handler := listUniverseGroupsHandler("v1", publicNarrow[universeGroupsESI](fakeUniverseReadESI{}), &fakeGroupCache{idsErr: wantErr})
+	_, _, err := handler(context.Background(), nil, ListUniverseGroupsInput{})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestGetUniverseGroupHandler_MapsFields(t *testing.T) {
+	cache := &fakeGroupCache{group: sde.Group{ID: 25, CategoryID: 6, Name: "Frigate", Published: true, TypeIDs: []int64{587, 588}}, groupOK: true}
+
+	handler := getUniverseGroupHandler("v1", publicNarrow[universeGroupsESI](fakeUniverseReadESI{}), cache)
+	_, out, err := handler(context.Background(), nil, GetUniverseGroupInput{GroupID: 25})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.GroupID != 25 || out.CategoryID != 6 || out.Name != "Frigate" || len(out.TypeIDs) != 2 {
+		t.Errorf("out = %+v, want GroupID=25 CategoryID=6 Name=Frigate TypeIDs=[587 588]", out)
+	}
+}
+
+func TestGetUniverseGroupHandler_PropagatesError(t *testing.T) {
+	wantErr := errors.New("upstream failure")
+	handler := getUniverseGroupHandler("v1", publicNarrow[universeGroupsESI](fakeUniverseReadESI{}), &fakeGroupCache{groupErr: wantErr})
+	_, _, err := handler(context.Background(), nil, GetUniverseGroupInput{GroupID: 25})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestListUniverseTypesHandler_MapsFields(t *testing.T) {
+	handler := listUniverseTypesHandler("v1", publicNarrow[universeTypesESI](fakeUniverseReadESI{}), &fakeTypeCache{ids: []int64{587, 588}})
+	_, out, err := handler(context.Background(), nil, ListUniverseTypesInput{Page: 1})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.IDs) != 2 || out.Page != 1 || out.TotalPages != 1 {
+		t.Errorf("out = %+v, want IDs=[587 588] Page=1 TotalPages=1", out)
+	}
+}
+
+func TestListUniverseTypesHandler_PropagatesError(t *testing.T) {
+	wantErr := errors.New("upstream failure")
+	handler := listUniverseTypesHandler("v1", publicNarrow[universeTypesESI](fakeUniverseReadESI{}), &fakeTypeCache{idsErr: wantErr})
+	_, _, err := handler(context.Background(), nil, ListUniverseTypesInput{})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestGetUniverseTypeHandler_MapsFields(t *testing.T) {
+	mass := 1200000.0
+	cache := &fakeTypeCache{typ: sde.Type{
+		ID: 587, Name: "Rifter", GroupID: 25, Published: true, Mass: &mass,
+		DogmaAttributes: []sde.TypeDogmaAttribute{{AttributeID: 9, Value: 2500}},
+		DogmaEffects:    []sde.TypeDogmaEffect{{EffectID: 1, IsDefault: true}},
+	}, typeOK: true}
+
+	handler := getUniverseTypeHandler("v1", publicNarrow[universeTypesESI](fakeUniverseReadESI{}), cache)
+	_, out, err := handler(context.Background(), nil, GetUniverseTypeInput{TypeID: 587})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.TypeID != 587 || out.Name != "Rifter" || out.GroupID != 25 || !out.Published {
+		t.Errorf("out = %+v, want TypeID=587 Name=Rifter GroupID=25 Published=true", out)
+	}
+	if out.Mass == nil || *out.Mass != 1200000 {
+		t.Errorf("Mass = %v, want 1200000", out.Mass)
+	}
+	if len(out.DogmaAttributes) != 1 || out.DogmaAttributes[0].AttributeID != 9 || out.DogmaAttributes[0].Value != 2500 {
+		t.Errorf("DogmaAttributes = %+v, want one entry AttributeID=9 Value=2500", out.DogmaAttributes)
+	}
+	if len(out.DogmaEffects) != 1 || out.DogmaEffects[0].EffectID != 1 || !out.DogmaEffects[0].IsDefault {
+		t.Errorf("DogmaEffects = %+v, want one entry EffectID=1 IsDefault=true", out.DogmaEffects)
+	}
+}
+
+func TestGetUniverseTypeHandler_PropagatesError(t *testing.T) {
+	wantErr := errors.New("upstream failure")
+	handler := getUniverseTypeHandler("v1", publicNarrow[universeTypesESI](fakeUniverseReadESI{}), &fakeTypeCache{typeErr: wantErr})
+	_, _, err := handler(context.Background(), nil, GetUniverseTypeInput{TypeID: 587})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestListUniverseRegionsHandler_MapsFields(t *testing.T) {
+	handler := listUniverseRegionsHandler("v1", publicNarrow[universeRegionsESI](fakeUniverseReadESI{}), &fakeRegionCache{ids: []int64{10000002, 10000043}})
+	_, out, err := handler(context.Background(), nil, ListUniverseRegionsInput{})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.IDs) != 2 || out.IDs[0] != 10000002 {
+		t.Errorf("out = %+v, want IDs=[10000002 10000043]", out)
+	}
+}
+
+func TestListUniverseRegionsHandler_PropagatesError(t *testing.T) {
+	wantErr := errors.New("upstream failure")
+	handler := listUniverseRegionsHandler("v1", publicNarrow[universeRegionsESI](fakeUniverseReadESI{}), &fakeRegionCache{idsErr: wantErr})
+	_, _, err := handler(context.Background(), nil, ListUniverseRegionsInput{})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestGetUniverseRegionHandler_MapsFields(t *testing.T) {
+	desc := "desc"
+	cache := &fakeRegionCache{region: sde.Region{ID: 10000002, Name: "The Forge", Description: &desc, ConstellationIDs: []int64{20000020}}, regionOK: true}
+
+	handler := getUniverseRegionHandler("v1", publicNarrow[universeRegionsESI](fakeUniverseReadESI{}), cache)
+	_, out, err := handler(context.Background(), nil, GetUniverseRegionInput{RegionID: 10000002})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.RegionID != 10000002 || out.Name != "The Forge" || len(out.ConstellationIDs) != 1 {
+		t.Errorf("out = %+v, want RegionID=10000002 Name=The Forge ConstellationIDs=[20000020]", out)
+	}
+}
+
+func TestGetUniverseRegionHandler_PropagatesError(t *testing.T) {
+	wantErr := errors.New("upstream failure")
+	handler := getUniverseRegionHandler("v1", publicNarrow[universeRegionsESI](fakeUniverseReadESI{}), &fakeRegionCache{regionErr: wantErr})
+	_, _, err := handler(context.Background(), nil, GetUniverseRegionInput{RegionID: 10000002})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestListUniverseConstellationsHandler_MapsFields(t *testing.T) {
+	handler := listUniverseConstellationsHandler("v1", publicNarrow[universeConstellationsESI](fakeUniverseReadESI{}), &fakeConstellationCache{ids: []int64{20000020}})
+	_, out, err := handler(context.Background(), nil, ListUniverseConstellationsInput{})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.IDs) != 1 || out.IDs[0] != 20000020 {
+		t.Errorf("out = %+v, want IDs=[20000020]", out)
+	}
+}
+
+func TestListUniverseConstellationsHandler_PropagatesError(t *testing.T) {
+	wantErr := errors.New("upstream failure")
+	handler := listUniverseConstellationsHandler("v1", publicNarrow[universeConstellationsESI](fakeUniverseReadESI{}), &fakeConstellationCache{idsErr: wantErr})
+	_, _, err := handler(context.Background(), nil, ListUniverseConstellationsInput{})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestGetUniverseConstellationHandler_MapsFields(t *testing.T) {
+	cache := &fakeConstellationCache{constellation: sde.Constellation{
+		ID: 20000020, RegionID: 10000002, Name: "Kimotoro",
+		Position: sde.Position{X: 1, Y: 2, Z: 3}, SystemIDs: []int64{30000142, 30000144},
+	}, constellationOK: true}
+
+	handler := getUniverseConstellationHandler("v1", publicNarrow[universeConstellationsESI](fakeUniverseReadESI{}), cache)
+	_, out, err := handler(context.Background(), nil, GetUniverseConstellationInput{ConstellationID: 20000020})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.ConstellationID != 20000020 || out.RegionID != 10000002 || out.Name != "Kimotoro" || len(out.SystemIDs) != 2 {
+		t.Errorf("out = %+v, want ConstellationID=20000020 RegionID=10000002 Name=Kimotoro SystemIDs=[30000142 30000144]", out)
+	}
+	if out.Position.X != 1 || out.Position.Y != 2 || out.Position.Z != 3 {
+		t.Errorf("Position = %+v, want X=1 Y=2 Z=3", out.Position)
+	}
+}
+
+func TestGetUniverseConstellationHandler_PropagatesError(t *testing.T) {
+	wantErr := errors.New("upstream failure")
+	handler := getUniverseConstellationHandler("v1", publicNarrow[universeConstellationsESI](fakeUniverseReadESI{}), &fakeConstellationCache{err: wantErr})
+	_, _, err := handler(context.Background(), nil, GetUniverseConstellationInput{ConstellationID: 20000020})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestListUniverseSystemsHandler_MapsFields(t *testing.T) {
+	handler := listUniverseSystemsHandler("v1", publicNarrow[universeSystemsESI](fakeUniverseReadESI{}), &fakeSystemCache{ids: []int64{30000142}})
+	_, out, err := handler(context.Background(), nil, ListUniverseSystemsInput{})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.IDs) != 1 || out.IDs[0] != 30000142 {
+		t.Errorf("out = %+v, want IDs=[30000142]", out)
+	}
+}
+
+func TestListUniverseSystemsHandler_PropagatesError(t *testing.T) {
+	wantErr := errors.New("upstream failure")
+	handler := listUniverseSystemsHandler("v1", publicNarrow[universeSystemsESI](fakeUniverseReadESI{}), &fakeSystemCache{idsErr: wantErr})
+	_, _, err := handler(context.Background(), nil, ListUniverseSystemsInput{})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestGetUniverseSystemHandler_MapsFields(t *testing.T) {
+	starID := int64(40000001)
+	secClass := "B"
+	cache := &fakeSystemCache{system: sde.System{
+		ID: 30000142, ConstellationID: 20000020, Name: "Jita",
+		Position: sde.Position{X: 1, Y: 2, Z: 3}, SecurityStatus: 0.9459, SecurityClass: &secClass,
+		StarID: &starID, StargateIDs: []int64{50000342}, StationIDs: []int64{60003760},
+		Planets: []sde.SystemPlanet{{PlanetID: 40000004, AsteroidBeltIDs: []int64{40000002}, MoonIDs: []int64{40000003}}},
+	}, systemOK: true}
+
+	handler := getUniverseSystemHandler("v1", publicNarrow[universeSystemsESI](fakeUniverseReadESI{}), cache)
+	_, out, err := handler(context.Background(), nil, GetUniverseSystemInput{SystemID: 30000142})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.SystemID != 30000142 || out.Name != "Jita" || out.ConstellationID != 20000020 {
+		t.Errorf("out = %+v, want SystemID=30000142 Name=Jita ConstellationID=20000020", out)
+	}
+	if out.SecurityStatus != 0.9459 || out.SecurityClass == nil || *out.SecurityClass != "B" {
+		t.Errorf("SecurityStatus/Class = %v/%v, want 0.9459/B", out.SecurityStatus, out.SecurityClass)
+	}
+	if len(out.Planets) != 1 || out.Planets[0].PlanetID != 40000004 || len(out.Planets[0].AsteroidBeltIDs) != 1 || len(out.Planets[0].MoonIDs) != 1 {
+		t.Errorf("Planets = %+v, want one entry PlanetID=40000004 with one asteroid belt and one moon", out.Planets)
+	}
+}
+
+func TestGetUniverseSystemHandler_PropagatesError(t *testing.T) {
+	wantErr := errors.New("upstream failure")
+	handler := getUniverseSystemHandler("v1", publicNarrow[universeSystemsESI](fakeUniverseReadESI{}), &fakeSystemCache{err: wantErr})
+	_, _, err := handler(context.Background(), nil, GetUniverseSystemInput{SystemID: 30000142})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestGetUniverseAsteroidBeltHandler_MapsFields(t *testing.T) {
+	cache := &fakeAsteroidBeltCache{belt: sde.AsteroidBelt{ID: 40000002, Name: "Jita IV - Asteroid Belt 1", Position: sde.Position{X: 1, Y: 2, Z: 3}, SystemID: 30000142}, ok: true}
+
+	handler := getUniverseAsteroidBeltHandler("v1", publicNarrow[universeAsteroidBeltESI](fakeUniverseReadESI{}), cache)
+	_, out, err := handler(context.Background(), nil, GetUniverseAsteroidBeltInput{AsteroidBeltID: 40000002})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.Name != "Jita IV - Asteroid Belt 1" || out.SystemID != 30000142 {
+		t.Errorf("out = %+v, want Name=Jita IV - Asteroid Belt 1 SystemID=30000142", out)
+	}
+}
+
+func TestGetUniverseAsteroidBeltHandler_PropagatesError(t *testing.T) {
+	wantErr := errors.New("upstream failure")
+	handler := getUniverseAsteroidBeltHandler("v1", publicNarrow[universeAsteroidBeltESI](fakeUniverseReadESI{}), &fakeAsteroidBeltCache{err: wantErr})
+	_, _, err := handler(context.Background(), nil, GetUniverseAsteroidBeltInput{AsteroidBeltID: 40000002})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestGetUniverseMoonHandler_MapsFields(t *testing.T) {
+	cache := &fakeMoonCache{moon: sde.Moon{ID: 40000003, SystemID: 30000142, Name: "Jita IV - Moon 1", Position: sde.Position{X: 1, Y: 2, Z: 3}}, ok: true}
+
+	handler := getUniverseMoonHandler("v1", publicNarrow[universeMoonESI](fakeUniverseReadESI{}), cache)
+	_, out, err := handler(context.Background(), nil, GetUniverseMoonInput{MoonID: 40000003})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.MoonID != 40000003 || out.SystemID != 30000142 || out.Name != "Jita IV - Moon 1" {
+		t.Errorf("out = %+v, want MoonID=40000003 SystemID=30000142 Name=Jita IV - Moon 1", out)
+	}
+}
+
+func TestGetUniverseMoonHandler_PropagatesError(t *testing.T) {
+	wantErr := errors.New("upstream failure")
+	handler := getUniverseMoonHandler("v1", publicNarrow[universeMoonESI](fakeUniverseReadESI{}), &fakeMoonCache{err: wantErr})
+	_, _, err := handler(context.Background(), nil, GetUniverseMoonInput{MoonID: 40000003})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestGetUniversePlanetHandler_MapsFields(t *testing.T) {
+	cache := &fakePlanetCache{planet: sde.Planet{ID: 40000004, SystemID: 30000142, TypeID: 2016, Name: "Jita IV", Position: sde.Position{X: 1, Y: 2, Z: 3}}, ok: true}
+
+	handler := getUniversePlanetHandler("v1", publicNarrow[universePlanetESI](fakeUniverseReadESI{}), cache)
+	_, out, err := handler(context.Background(), nil, GetUniversePlanetInput{PlanetID: 40000004})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.PlanetID != 40000004 || out.SystemID != 30000142 || out.TypeID != 2016 || out.Name != "Jita IV" {
+		t.Errorf("out = %+v, want PlanetID=40000004 SystemID=30000142 TypeID=2016 Name=Jita IV", out)
+	}
+}
+
+func TestGetUniversePlanetHandler_PropagatesError(t *testing.T) {
+	wantErr := errors.New("upstream failure")
+	handler := getUniversePlanetHandler("v1", publicNarrow[universePlanetESI](fakeUniverseReadESI{}), &fakePlanetCache{err: wantErr})
+	_, _, err := handler(context.Background(), nil, GetUniversePlanetInput{PlanetID: 40000004})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestGetUniverseStargateHandler_MapsFields(t *testing.T) {
+	cache := &fakeStargateCache{stargate: sde.Stargate{
+		ID: 50000342, SystemID: 30000142, TypeID: 16, Name: "Stargate (Perimeter)",
+		Position: sde.Position{X: 1, Y: 2, Z: 3}, DestinationStargateID: 50000343, DestinationSystemID: 30000144,
+	}, ok: true}
+
+	handler := getUniverseStargateHandler("v1", publicNarrow[universeStargateESI](fakeUniverseReadESI{}), cache)
+	_, out, err := handler(context.Background(), nil, GetUniverseStargateInput{StargateID: 50000342})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.StargateID != 50000342 || out.SystemID != 30000142 || out.TypeID != 16 {
+		t.Errorf("out = %+v, want StargateID=50000342 SystemID=30000142 TypeID=16", out)
+	}
+	if out.DestinationStargateID != 50000343 || out.DestinationSystemID != 30000144 {
+		t.Errorf("Destination = %d/%d, want 50000343/30000144", out.DestinationStargateID, out.DestinationSystemID)
+	}
+}
+
+func TestGetUniverseStargateHandler_PropagatesError(t *testing.T) {
+	wantErr := errors.New("upstream failure")
+	handler := getUniverseStargateHandler("v1", publicNarrow[universeStargateESI](fakeUniverseReadESI{}), &fakeStargateCache{err: wantErr})
+	_, _, err := handler(context.Background(), nil, GetUniverseStargateInput{StargateID: 50000342})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestGetUniverseStarHandler_MapsFields(t *testing.T) {
+	cache := &fakeStarCache{star: sde.Star{
+		ID: 40000001, Age: 15000000000, Luminosity: 0.02, Name: "Jita - Star", Radius: 100000,
+		SolarSystemID: 30000142, SpectralClass: "K2 V", Temperature: 4465, TypeID: 3796,
+	}, ok: true}
+
+	handler := getUniverseStarHandler("v1", publicNarrow[universeStarESI](fakeUniverseReadESI{}), cache)
+	_, out, err := handler(context.Background(), nil, GetUniverseStarInput{StarID: 40000001})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.StarID != 40000001 || out.SolarSystemID != 30000142 || out.Name != "Jita - Star" || out.SpectralClass != "K2 V" {
+		t.Errorf("out = %+v, want StarID=40000001 SolarSystemID=30000142 Name=Jita - Star SpectralClass=K2 V", out)
+	}
+}
+
+func TestGetUniverseStarHandler_PropagatesError(t *testing.T) {
+	wantErr := errors.New("upstream failure")
+	handler := getUniverseStarHandler("v1", publicNarrow[universeStarESI](fakeUniverseReadESI{}), &fakeStarCache{err: wantErr})
+	_, _, err := handler(context.Background(), nil, GetUniverseStarInput{StarID: 40000001})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestGetUniverseStationHandler_MapsFields(t *testing.T) {
+	owner := int64(1000035)
+	services := []string{"market", "repair-facilities"}
+	cache := &fakeStationCache{station: sde.Station{
+		ID: 60003760, SystemID: 30000142, TypeID: 1529,
+		Name: "Jita IV - Moon 4 - Caldari Navy Assembly Plant", Position: sde.Position{X: 1, Y: 2, Z: 3},
+		MaxDockableShipVolume: 50000000, OfficeRentalCost: 10000, Owner: &owner,
+		ReprocessingEfficiency: 0.5, ReprocessingStationsTake: 0.05, Services: &services,
+	}, ok: true}
+
+	handler := getUniverseStationHandler("v1", publicNarrow[universeStationESI](fakeUniverseReadESI{}), cache)
+	_, out, err := handler(context.Background(), nil, GetUniverseStationInput{StationID: 60003760})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.StationID != 60003760 || out.SystemID != 30000142 || out.TypeID != 1529 {
+		t.Errorf("out = %+v, want StationID=60003760 SystemID=30000142 TypeID=1529", out)
+	}
+	if out.Owner == nil || *out.Owner != 1000035 {
+		t.Errorf("Owner = %v, want 1000035", out.Owner)
+	}
+	if out.Services == nil || len(*out.Services) != 2 {
+		t.Errorf("Services = %v, want 2 entries", out.Services)
+	}
+}
+
+func TestGetUniverseStationHandler_PropagatesError(t *testing.T) {
+	wantErr := errors.New("upstream failure")
+	handler := getUniverseStationHandler("v1", publicNarrow[universeStationESI](fakeUniverseReadESI{}), &fakeStationCache{err: wantErr})
+	_, _, err := handler(context.Background(), nil, GetUniverseStationInput{StationID: 60003760})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestListUniverseGraphicsHandler_MapsFields(t *testing.T) {
+	handler := listUniverseGraphicsHandler("v1", publicNarrow[universeGraphicsESI](fakeUniverseReadESI{}), &fakeGraphicCache{ids: []int64{1, 2, 3}})
+	_, out, err := handler(context.Background(), nil, ListUniverseGraphicsInput{})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.IDs) != 3 || out.IDs[0] != 1 {
+		t.Errorf("out = %+v, want IDs=[1 2 3]", out)
+	}
+}
+
+func TestListUniverseGraphicsHandler_PropagatesError(t *testing.T) {
+	wantErr := errors.New("upstream failure")
+	handler := listUniverseGraphicsHandler("v1", publicNarrow[universeGraphicsESI](fakeUniverseReadESI{}), &fakeGraphicCache{idsErr: wantErr})
+	_, _, err := handler(context.Background(), nil, ListUniverseGraphicsInput{})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestGetUniverseGraphicHandler_MapsFields(t *testing.T) {
+	graphicFile := "file.gr2"
+	cache := &fakeGraphicCache{graphic: sde.Graphic{ID: 1234, GraphicFile: &graphicFile}, graphicOK: true}
+
+	handler := getUniverseGraphicHandler("v1", publicNarrow[universeGraphicsESI](fakeUniverseReadESI{}), cache)
+	_, out, err := handler(context.Background(), nil, GetUniverseGraphicInput{GraphicID: 1234})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.GraphicID != 1234 || out.GraphicFile == nil || *out.GraphicFile != "file.gr2" {
+		t.Errorf("out = %+v, want GraphicID=1234 GraphicFile=file.gr2", out)
+	}
+}
+
+func TestGetUniverseGraphicHandler_PropagatesError(t *testing.T) {
+	wantErr := errors.New("upstream failure")
+	handler := getUniverseGraphicHandler("v1", publicNarrow[universeGraphicsESI](fakeUniverseReadESI{}), &fakeGraphicCache{err: wantErr})
+	_, _, err := handler(context.Background(), nil, GetUniverseGraphicInput{GraphicID: 1234})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+// --- list_universe_structures ---
+
+func TestListUniverseStructuresHandler_MapsFields(t *testing.T) {
+	var gotFilter string
+	fake := fakeUniverseReadESI{structures: func(_ context.Context, filter string) ([]int64, error) {
+		gotFilter = filter
+		return []int64{1000000000001}, nil
+	}}
+
+	handler := listUniverseStructuresHandler(publicNarrow[universeStructuresESI](fake))
+	_, out, err := handler(context.Background(), nil, ListUniverseStructuresInput{Filter: "market"})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if gotFilter != "market" {
+		t.Errorf("captured filter = %q, want market", gotFilter)
+	}
+	if len(out.IDs) != 1 || out.IDs[0] != 1000000000001 {
+		t.Errorf("out = %+v, want IDs=[1000000000001]", out)
+	}
+}
+
+func TestListUniverseStructuresHandler_RejectsInvalidFilter(t *testing.T) {
+	fake := fakeUniverseReadESI{structures: func(context.Context, string) ([]int64, error) {
+		t.Fatal("list structures should not be called with an invalid filter")
+		return nil, nil
+	}}
+
+	handler := listUniverseStructuresHandler(publicNarrow[universeStructuresESI](fake))
+	_, _, err := handler(context.Background(), nil, ListUniverseStructuresInput{Filter: "bogus"})
+	if err == nil {
+		t.Fatal("expected error for invalid filter")
+	}
+}
+
+func TestListUniverseStructuresHandler_PropagatesError(t *testing.T) {
+	wantErr := errors.New("upstream failure")
+	fake := fakeUniverseReadESI{structures: func(context.Context, string) ([]int64, error) { return nil, wantErr }}
+
+	handler := listUniverseStructuresHandler(publicNarrow[universeStructuresESI](fake))
+	_, _, err := handler(context.Background(), nil, ListUniverseStructuresInput{})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+// --- list_universe_system_jumps ---
+
+func TestListUniverseSystemJumpsHandler_MapsFields(t *testing.T) {
+	fake := fakeUniverseReadESI{systemJumps: func(context.Context) ([]esiapi.UniverseSystemJumpsGetInner, error) {
+		return []esiapi.UniverseSystemJumpsGetInner{{SystemId: 30000142, ShipJumps: 10}}, nil
+	}}
+
+	handler := listUniverseSystemJumpsHandler(publicNarrow[universeSystemJumpsESI](fake))
+	_, out, err := handler(context.Background(), nil, ListUniverseSystemJumpsInput{})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(out.SystemJumps) != 1 || out.SystemJumps[0].SystemID != 30000142 || out.SystemJumps[0].ShipJumps != 10 {
+		t.Errorf("out = %+v, want one entry SystemID=30000142 ShipJumps=10", out)
+	}
+}
+
+func TestListUniverseSystemJumpsHandler_PropagatesError(t *testing.T) {
+	wantErr := errors.New("upstream failure")
+	fake := fakeUniverseReadESI{systemJumps: func(context.Context) ([]esiapi.UniverseSystemJumpsGetInner, error) { return nil, wantErr }}
+
+	handler := listUniverseSystemJumpsHandler(publicNarrow[universeSystemJumpsESI](fake))
+	_, _, err := handler(context.Background(), nil, ListUniverseSystemJumpsInput{})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+// --- resolve_universe_ids ---
+
+func TestResolveUniverseIDsHandler_MapsFields_FullFixture(t *testing.T) {
+	charID := int64(12345)
+	charName := "Test Pilot"
+	sysID := int64(30000142)
+	sysName := "Jita"
+	var gotNames []string
+	fake := fakeUniverseReadESI{idsByName: func(_ context.Context, names []string) (*esiapi.UniverseIdsPost, error) {
+		gotNames = names
+		return &esiapi.UniverseIdsPost{
+			Characters: []esiapi.UniverseIdsPostCharactersInner{{Id: &charID, Name: &charName}},
+			Systems:    []esiapi.UniverseIdsPostSystemsInner{{Id: &sysID, Name: &sysName}},
+		}, nil
+	}}
+
+	handler := resolveUniverseIDsHandler(publicNarrow[universeIDsESI](fake))
+	_, out, err := handler(context.Background(), nil, ResolveUniverseIDsInput{Names: []string{"Test Pilot", "Jita"}})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(gotNames) != 2 || gotNames[0] != "Test Pilot" {
+		t.Errorf("ESI names = %v, want [Test Pilot Jita]", gotNames)
+	}
+	if len(out.Characters) != 1 || out.Characters[0].ID == nil || *out.Characters[0].ID != 12345 {
+		t.Errorf("Characters = %+v, want one entry ID=12345", out.Characters)
+	}
+	if len(out.Systems) != 1 || out.Systems[0].Name == nil || *out.Systems[0].Name != "Jita" {
+		t.Errorf("Systems = %+v, want one entry Name=Jita", out.Systems)
+	}
+	if len(out.Alliances) != 0 || len(out.Corporations) != 0 || len(out.Factions) != 0 || len(out.Regions) != 0 || len(out.Stations) != 0 || len(out.Agents) != 0 || len(out.Constellations) != 0 || len(out.InventoryTypes) != 0 {
+		t.Errorf("out = %+v, want only Characters and Systems populated", out)
+	}
+}
+
+func TestResolveUniverseIDsHandler_RejectsEmptyNames(t *testing.T) {
+	fake := fakeUniverseReadESI{idsByName: func(context.Context, []string) (*esiapi.UniverseIdsPost, error) {
+		t.Fatal("UniverseIDsByName should not be called with empty names")
+		return nil, nil
+	}}
+
+	handler := resolveUniverseIDsHandler(publicNarrow[universeIDsESI](fake))
+	_, _, err := handler(context.Background(), nil, ResolveUniverseIDsInput{Names: []string{}})
+	if err == nil {
+		t.Fatal("expected error for empty names")
+	}
+}
+
+func TestResolveUniverseIDsHandler_RejectsOverCapNames(t *testing.T) {
+	fake := fakeUniverseReadESI{idsByName: func(context.Context, []string) (*esiapi.UniverseIdsPost, error) {
+		t.Fatal("UniverseIDsByName should not be called with over-cap names")
+		return nil, nil
+	}}
+
+	names := make([]string, 501)
+	for i := range names {
+		names[i] = "x"
+	}
+	handler := resolveUniverseIDsHandler(publicNarrow[universeIDsESI](fake))
+	_, _, err := handler(context.Background(), nil, ResolveUniverseIDsInput{Names: names})
+	if err == nil {
+		t.Fatal("expected error for over-cap names (501 > ESI's 500 max)")
+	}
+}
+
+func TestResolveUniverseIDsHandler_PropagatesError(t *testing.T) {
+	wantErr := errors.New("upstream failure")
+	fake := fakeUniverseReadESI{idsByName: func(context.Context, []string) (*esiapi.UniverseIdsPost, error) { return nil, wantErr }}
+
+	handler := resolveUniverseIDsHandler(publicNarrow[universeIDsESI](fake))
+	_, _, err := handler(context.Background(), nil, ResolveUniverseIDsInput{Names: []string{"Jita"}})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+// --- Cache-miss/ESI-fallback/write-back coverage for all 24 sde/-backed
+// Universe tools ---
+//
+// Every cache-hit test above only exercises a pre-populated fake. These tests
+// call the functions with a cache miss (ok=false / empty IDs) and a fake ESI,
+// proving: (1) the ESI response maps onto the sde.* struct correctly, (2) Put*
+// is called with that value, and (3) a Put* failure is logged-and-swallowed
+// rather than failing the tool call.
+
+func TestGetUniverseCategory_CacheMiss_FetchesFromESIAndWritesBack(t *testing.T) {
+	fake := fakeUniverseReadESI{categoryDetail: func(_ context.Context, id int64) (*esiapi.UniverseCategoriesCategoryIdGet, error) {
+		return &esiapi.UniverseCategoriesCategoryIdGet{CategoryId: 6, Groups: []int64{25, 26}, Name: "Ship", Published: true}, nil
+	}}
+	cache := &fakeCategoryCache{categoryOK: false, putErr: errors.New("put failed")}
+
+	got, err := getUniverseCategory(context.Background(), cache, fake, "test-agent", 6)
+	if err != nil {
+		t.Fatalf("getUniverseCategory returned error: %v", err)
+	}
+	if got.CategoryID != 6 || got.Name != "Ship" || !got.Published || len(got.GroupIDs) != 2 {
+		t.Errorf("got = %+v, want CategoryID=6 Name=Ship Published=true GroupIDs len=2", got)
+	}
+	if len(cache.putCalls) != 1 || cache.putCalls[0].ID != 6 {
+		t.Errorf("PutCategory calls = %+v, want one call with ID=6", cache.putCalls)
+	}
+}
+
+func TestGetUniverseCategory_CacheMiss_ESIError(t *testing.T) {
+	wantErr := errors.New("esi down")
+	fake := fakeUniverseReadESI{categoryDetail: func(context.Context, int64) (*esiapi.UniverseCategoriesCategoryIdGet, error) { return nil, wantErr }}
+	cache := &fakeCategoryCache{}
+
+	_, err := getUniverseCategory(context.Background(), cache, fake, "test-agent", 6)
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+	if len(cache.putCalls) != 0 {
+		t.Errorf("PutCategory calls = %+v, want none after an ESI failure", cache.putCalls)
+	}
+}
+
+func TestListUniverseCategories_CacheMiss_FetchesFromESI(t *testing.T) {
+	fake := fakeUniverseReadESI{categories: func(context.Context) ([]int64, error) { return []int64{6, 7, 8}, nil }}
+	cache := &fakeCategoryCache{ids: nil}
+
+	got, err := listUniverseCategories(context.Background(), cache, fake, "test-agent")
+	if err != nil {
+		t.Fatalf("listUniverseCategories returned error: %v", err)
+	}
+	if len(got) != 3 || got[0] != 6 {
+		t.Errorf("got = %v, want [6 7 8]", got)
+	}
+}
+
+func TestGetUniverseGroup_CacheMiss_FetchesFromESIAndWritesBack(t *testing.T) {
+	fake := fakeUniverseReadESI{groupDetail: func(_ context.Context, id int64) (*esiapi.UniverseGroupsGroupIdGet, error) {
+		return &esiapi.UniverseGroupsGroupIdGet{CategoryId: 6, GroupId: 25, Name: "Frigate", Published: true, Types: []int64{587, 588}}, nil
+	}}
+	cache := &fakeGroupCache{groupOK: false, putErr: errors.New("put failed")}
+
+	got, err := getUniverseGroup(context.Background(), cache, fake, "test-agent", 25)
+	if err != nil {
+		t.Fatalf("getUniverseGroup returned error: %v", err)
+	}
+	if got.GroupID != 25 || got.CategoryID != 6 || got.Name != "Frigate" || len(got.TypeIDs) != 2 {
+		t.Errorf("got = %+v, want GroupID=25 CategoryID=6 Name=Frigate TypeIDs len=2", got)
+	}
+	if len(cache.putCalls) != 1 || cache.putCalls[0].ID != 25 {
+		t.Errorf("PutGroup calls = %+v, want one call with ID=25", cache.putCalls)
+	}
+}
+
+func TestListUniverseGroups_CacheMiss_FetchesFromESIWithPagination(t *testing.T) {
+	var gotPage int32
+	fake := fakeUniverseReadESI{groups: func(_ context.Context, page int32) ([]int64, int32, error) {
+		gotPage = page
+		return []int64{25, 26, 27}, 3, nil
+	}}
+	cache := &fakeGroupCache{ids: nil}
+
+	got, totalPages, err := listUniverseGroups(context.Background(), cache, fake, "test-agent", 2)
+	if err != nil {
+		t.Fatalf("listUniverseGroups returned error: %v", err)
+	}
+	if len(got) != 3 || got[0] != 25 || totalPages != 3 || gotPage != 2 {
+		t.Errorf("got = %v, totalPages = %d, ESI page = %d, want [25 26 27] totalPages=3 page=2", got, totalPages, gotPage)
+	}
+}
+
+func TestGetUniverseType_CacheMiss_FetchesFromESIAndWritesBack(t *testing.T) {
+	capacity, mass, packaged, radius, volume := 400.0, 1200000.0, 2500.0, 40.0, 27289.0
+	graphicID, iconID, marketGroupID, portionSize := int64(1234), int64(100), int64(5), int64(1)
+	fake := fakeUniverseReadESI{typeDetail: func(_ context.Context, id int64) (*esiapi.UniverseTypesTypeIdGet, error) {
+		return &esiapi.UniverseTypesTypeIdGet{
+			Capacity: &capacity, Description: "desc", GraphicId: &graphicID, GroupId: 25,
+			IconId: &iconID, MarketGroupId: &marketGroupID, Mass: &mass, Name: "Rifter",
+			PackagedVolume: &packaged, PortionSize: &portionSize, Published: true, Radius: &radius,
+			TypeId: 587, Volume: &volume,
+			DogmaAttributes: []esiapi.DogmaDynamicItemsTypeIdItemIdGetDogmaAttributesInner{{AttributeId: 9, Value: 2500}},
+			DogmaEffects:    []esiapi.DogmaDynamicItemsTypeIdItemIdGetDogmaEffectsInner{{EffectId: 1, IsDefault: true}},
+		}, nil
+	}}
+	cache := &fakeTypeCache{typeOK: false, putErr: errors.New("put failed")}
+
+	got, err := getUniverseType(context.Background(), cache, fake, "test-agent", 587)
+	if err != nil {
+		t.Fatalf("getUniverseType returned error: %v", err)
+	}
+	if got.TypeID != 587 || got.Name != "Rifter" || got.GroupID != 25 || !got.Published {
+		t.Errorf("got = %+v, want TypeID=587 Name=Rifter GroupID=25 Published=true", got)
+	}
+	if got.PackagedVolume == nil || *got.PackagedVolume != 2500 {
+		t.Errorf("PackagedVolume = %v, want 2500 (fresh off ESI on a cache miss)", got.PackagedVolume)
+	}
+	if len(got.DogmaAttributes) != 1 || got.DogmaAttributes[0].AttributeID != 9 {
+		t.Errorf("DogmaAttributes = %+v, want one entry AttributeID=9", got.DogmaAttributes)
+	}
+	if len(got.DogmaEffects) != 1 || got.DogmaEffects[0].EffectID != 1 || !got.DogmaEffects[0].IsDefault {
+		t.Errorf("DogmaEffects = %+v, want one entry EffectID=1 IsDefault=true", got.DogmaEffects)
+	}
+	if len(cache.putCalls) != 1 || cache.putCalls[0].ID != 587 {
+		t.Errorf("PutType calls = %+v, want one call with ID=587", cache.putCalls)
+	}
+}
+
+func TestListUniverseTypes_CacheMiss_FetchesFromESIWithPagination(t *testing.T) {
+	fake := fakeUniverseReadESI{types: func(_ context.Context, page int32) ([]int64, int32, error) {
+		return []int64{587, 588}, 5, nil
+	}}
+	cache := &fakeTypeCache{ids: nil}
+
+	got, totalPages, err := listUniverseTypes(context.Background(), cache, fake, "test-agent", 1)
+	if err != nil {
+		t.Fatalf("listUniverseTypes returned error: %v", err)
+	}
+	if len(got) != 2 || totalPages != 5 {
+		t.Errorf("got = %v, totalPages = %d, want [587 588] totalPages=5", got, totalPages)
+	}
+}
+
+func TestGetUniverseRegion_CacheMiss_FetchesFromESIAndWritesBack(t *testing.T) {
+	desc := "desc"
+	fake := fakeUniverseReadESI{regionDetail: func(_ context.Context, id int64) (*esiapi.UniverseRegionsRegionIdGet, error) {
+		return &esiapi.UniverseRegionsRegionIdGet{Constellations: []int64{20000020, 20000021}, Description: &desc, Name: "The Forge", RegionId: 10000002}, nil
+	}}
+	cache := &fakeRegionCache{regionOK: false, putErr: errors.New("put failed")}
+
+	got, err := getUniverseRegion(context.Background(), cache, fake, "test-agent", 10000002)
+	if err != nil {
+		t.Fatalf("getUniverseRegion returned error: %v", err)
+	}
+	if got.RegionID != 10000002 || got.Name != "The Forge" || len(got.ConstellationIDs) != 2 {
+		t.Errorf("got = %+v, want RegionID=10000002 Name=The Forge ConstellationIDs len=2", got)
+	}
+	if got.Description == nil || *got.Description != "desc" {
+		t.Errorf("Description = %v, want desc", got.Description)
+	}
+	if len(cache.putCalls) != 1 || cache.putCalls[0].ID != 10000002 {
+		t.Errorf("PutRegion calls = %+v, want one call with ID=10000002", cache.putCalls)
+	}
+}
+
+func TestListUniverseRegions_CacheMiss_FetchesFromESI(t *testing.T) {
+	fake := fakeUniverseReadESI{regions: func(context.Context) ([]int64, error) { return []int64{10000002, 10000043}, nil }}
+	cache := &fakeRegionCache{ids: nil}
+
+	got, err := listUniverseRegions(context.Background(), cache, fake, "test-agent")
+	if err != nil {
+		t.Fatalf("listUniverseRegions returned error: %v", err)
+	}
+	if len(got) != 2 || got[0] != 10000002 {
+		t.Errorf("got = %v, want [10000002 10000043]", got)
+	}
+}
+
+func TestGetUniverseConstellation_CacheMiss_FetchesFromESIAndWritesBack(t *testing.T) {
+	fake := fakeUniverseReadESI{constellationDetail: func(_ context.Context, id int64) (*esiapi.UniverseConstellationsConstellationIdGet, error) {
+		return &esiapi.UniverseConstellationsConstellationIdGet{ConstellationId: 20000020, Name: "Kimotoro", Position: pos3, RegionId: 10000002, Systems: []int64{30000142, 30000144}}, nil
+	}}
+	cache := &fakeConstellationCache{constellationOK: false, putErr: errors.New("put failed")}
+
+	got, err := getUniverseConstellation(context.Background(), cache, fake, "test-agent", 20000020)
+	if err != nil {
+		t.Fatalf("getUniverseConstellation returned error: %v", err)
+	}
+	if got.ConstellationID != 20000020 || got.Name != "Kimotoro" || got.RegionID != 10000002 || len(got.SystemIDs) != 2 {
+		t.Errorf("got = %+v, want ConstellationID=20000020 Name=Kimotoro RegionID=10000002 SystemIDs len=2", got)
+	}
+	if got.Position != (Position{X: 1, Y: 2, Z: 3}) {
+		t.Errorf("Position = %+v, want {1 2 3}", got.Position)
+	}
+	if len(cache.putCalls) != 1 || cache.putCalls[0].ID != 20000020 {
+		t.Errorf("PutConstellation calls = %+v, want one call with ID=20000020", cache.putCalls)
+	}
+}
+
+func TestListUniverseConstellations_CacheMiss_FetchesFromESI(t *testing.T) {
+	fake := fakeUniverseReadESI{constellations: func(context.Context) ([]int64, error) { return []int64{20000020, 20000021}, nil }}
+	cache := &fakeConstellationCache{ids: nil}
+
+	got, err := listUniverseConstellations(context.Background(), cache, fake, "test-agent")
+	if err != nil {
+		t.Fatalf("listUniverseConstellations returned error: %v", err)
+	}
+	if len(got) != 2 || got[0] != 20000020 {
+		t.Errorf("got = %v, want [20000020 20000021]", got)
+	}
+}
+
+func TestGetUniverseSystem_CacheMiss_FetchesFromESIAndWritesBack(t *testing.T) {
+	secClass := "B"
+	starID := int64(40000001)
+	fake := fakeUniverseReadESI{systemDetail: func(_ context.Context, id int64) (*esiapi.UniverseSystemsSystemIdGet, error) {
+		return &esiapi.UniverseSystemsSystemIdGet{
+			ConstellationId: 20000020, Name: "Jita", Position: pos3, SecurityClass: &secClass, SecurityStatus: 0.9459,
+			StarId: &starID, Stargates: []int64{50000342}, Stations: []int64{60003760}, SystemId: 30000142,
+			Planets: []esiapi.UniverseSystemsSystemIdGetPlanetsInner{{AsteroidBelts: []int64{40000002}, Moons: []int64{40000003}, PlanetId: 40000004}},
+		}, nil
+	}}
+	cache := &fakeSystemCache{systemOK: false, putErr: errors.New("put failed")}
+
+	got, err := getUniverseSystem(context.Background(), cache, fake, "test-agent", 30000142)
+	if err != nil {
+		t.Fatalf("getUniverseSystem returned error: %v", err)
+	}
+	if got.SystemID != 30000142 || got.Name != "Jita" || got.ConstellationID != 20000020 {
+		t.Errorf("got = %+v, want SystemID=30000142 Name=Jita ConstellationID=20000020", got)
+	}
+	if len(got.Planets) != 1 || got.Planets[0].PlanetID != 40000004 || len(got.Planets[0].AsteroidBeltIDs) != 1 || len(got.Planets[0].MoonIDs) != 1 {
+		t.Errorf("Planets = %+v, want one entry PlanetID=40000004 with one belt and one moon (fresh off ESI on a cache miss)", got.Planets)
+	}
+	if len(cache.putCalls) != 1 || cache.putCalls[0].ID != 30000142 {
+		t.Errorf("PutSystem calls = %+v, want one call with ID=30000142", cache.putCalls)
+	}
+}
+
+func TestListUniverseSystems_CacheMiss_FetchesFromESI(t *testing.T) {
+	fake := fakeUniverseReadESI{systems: func(context.Context) ([]int64, error) { return []int64{30000142, 30000144}, nil }}
+	cache := &fakeSystemCache{ids: nil}
+
+	got, err := listUniverseSystems(context.Background(), cache, fake, "test-agent")
+	if err != nil {
+		t.Fatalf("listUniverseSystems returned error: %v", err)
+	}
+	if len(got) != 2 || got[0] != 30000142 {
+		t.Errorf("got = %v, want [30000142 30000144]", got)
+	}
+}
+
+func TestGetUniverseAsteroidBelt_CacheMiss_FetchesFromESIAndWritesBack(t *testing.T) {
+	fake := fakeUniverseReadESI{asteroidBeltDetail: func(_ context.Context, id int64) (*esiapi.UniverseAsteroidBeltsAsteroidBeltIdGet, error) {
+		return &esiapi.UniverseAsteroidBeltsAsteroidBeltIdGet{Name: "Jita IV - Asteroid Belt 1", Position: pos3, SystemId: 30000142}, nil
+	}}
+	cache := &fakeAsteroidBeltCache{ok: false, putErr: errors.New("put failed")}
+
+	got, err := getUniverseAsteroidBelt(context.Background(), cache, fake, "test-agent", 40000002)
+	if err != nil {
+		t.Fatalf("getUniverseAsteroidBelt returned error: %v", err)
+	}
+	if got.Name != "Jita IV - Asteroid Belt 1" || got.SystemID != 30000142 {
+		t.Errorf("got = %+v, want Name=Jita IV - Asteroid Belt 1 SystemID=30000142", got)
+	}
+	if cache.putCall == nil || cache.putCall.ID != 40000002 {
+		t.Errorf("PutAsteroidBelt call = %v, want one call with ID=40000002", cache.putCall)
+	}
+}
+
+func TestGetUniverseMoon_CacheMiss_FetchesFromESIAndWritesBack(t *testing.T) {
+	fake := fakeUniverseReadESI{moonDetail: func(_ context.Context, id int64) (*esiapi.UniverseMoonsMoonIdGet, error) {
+		return &esiapi.UniverseMoonsMoonIdGet{MoonId: 40000003, Name: "Jita IV - Moon 1", Position: pos3, SystemId: 30000142}, nil
+	}}
+	cache := &fakeMoonCache{ok: false, putErr: errors.New("put failed")}
+
+	got, err := getUniverseMoon(context.Background(), cache, fake, "test-agent", 40000003)
+	if err != nil {
+		t.Fatalf("getUniverseMoon returned error: %v", err)
+	}
+	if got.MoonID != 40000003 || got.Name != "Jita IV - Moon 1" || got.SystemID != 30000142 {
+		t.Errorf("got = %+v, want MoonID=40000003 Name=Jita IV - Moon 1 SystemID=30000142", got)
+	}
+	if cache.putCall == nil || cache.putCall.ID != 40000003 {
+		t.Errorf("PutMoon call = %v, want one call with ID=40000003", cache.putCall)
+	}
+}
+
+func TestGetUniversePlanet_CacheMiss_FetchesFromESIAndWritesBack(t *testing.T) {
+	fake := fakeUniverseReadESI{planetDetail: func(_ context.Context, id int64) (*esiapi.UniversePlanetsPlanetIdGet, error) {
+		return &esiapi.UniversePlanetsPlanetIdGet{Name: "Jita IV", PlanetId: 40000004, Position: pos3, SystemId: 30000142, TypeId: 2016}, nil
+	}}
+	cache := &fakePlanetCache{ok: false, putErr: errors.New("put failed")}
+
+	got, err := getUniversePlanet(context.Background(), cache, fake, "test-agent", 40000004)
+	if err != nil {
+		t.Fatalf("getUniversePlanet returned error: %v", err)
+	}
+	if got.PlanetID != 40000004 || got.Name != "Jita IV" || got.SystemID != 30000142 || got.TypeID != 2016 {
+		t.Errorf("got = %+v, want PlanetID=40000004 Name=Jita IV SystemID=30000142 TypeID=2016", got)
+	}
+	if cache.putCall == nil || cache.putCall.ID != 40000004 {
+		t.Errorf("PutPlanet call = %v, want one call with ID=40000004", cache.putCall)
+	}
+}
+
+func TestGetUniverseStargate_CacheMiss_FetchesFromESIAndWritesBack(t *testing.T) {
+	fake := fakeUniverseReadESI{stargateDetail: func(_ context.Context, id int64) (*esiapi.UniverseStargatesStargateIdGet, error) {
+		return &esiapi.UniverseStargatesStargateIdGet{
+			Destination: esiapi.UniverseStargatesStargateIdGetDestination{StargateId: 50000343, SystemId: 30000144},
+			Name:        "Stargate (Perimeter)", Position: pos3, StargateId: 50000342, SystemId: 30000142, TypeId: 16,
+		}, nil
+	}}
+	cache := &fakeStargateCache{ok: false, putErr: errors.New("put failed")}
+
+	got, err := getUniverseStargate(context.Background(), cache, fake, "test-agent", 50000342)
+	if err != nil {
+		t.Fatalf("getUniverseStargate returned error: %v", err)
+	}
+	if got.StargateID != 50000342 || got.SystemID != 30000142 || got.TypeID != 16 {
+		t.Errorf("got = %+v, want StargateID=50000342 SystemID=30000142 TypeID=16", got)
+	}
+	if got.DestinationStargateID != 50000343 || got.DestinationSystemID != 30000144 {
+		t.Errorf("Destination = %d/%d, want 50000343/30000144", got.DestinationStargateID, got.DestinationSystemID)
+	}
+	if cache.putCall == nil || cache.putCall.ID != 50000342 {
+		t.Errorf("PutStargate call = %v, want one call with ID=50000342", cache.putCall)
+	}
+}
+
+func TestGetUniverseStar_CacheMiss_FetchesFromESIAndWritesBack(t *testing.T) {
+	fake := fakeUniverseReadESI{starDetail: func(_ context.Context, id int64) (*esiapi.UniverseStarsStarIdGet, error) {
+		return &esiapi.UniverseStarsStarIdGet{
+			Age: 15000000000, Luminosity: 0.02, Name: "Jita - Star", Radius: 100000,
+			SolarSystemId: 30000142, SpectralClass: "K2 V", Temperature: 4465, TypeId: 3796,
+		}, nil
+	}}
+	cache := &fakeStarCache{ok: false, putErr: errors.New("put failed")}
+
+	got, err := getUniverseStar(context.Background(), cache, fake, "test-agent", 40000001)
+	if err != nil {
+		t.Fatalf("getUniverseStar returned error: %v", err)
+	}
+	if got.SolarSystemID != 30000142 || got.Name != "Jita - Star" || got.SpectralClass != "K2 V" || got.TypeID != 3796 {
+		t.Errorf("got = %+v, want SolarSystemID=30000142 Name=Jita - Star SpectralClass=K2 V TypeID=3796", got)
+	}
+	if cache.putCall == nil || cache.putCall.ID != 40000001 {
+		t.Errorf("PutStar call = %v, want one call with ID=40000001", cache.putCall)
+	}
+}
+
+func TestGetUniverseStation_CacheMiss_FetchesFromESIAndWritesBack(t *testing.T) {
+	owner, raceID := int64(1000035), int64(1)
+	fake := fakeUniverseReadESI{stationDetail: func(_ context.Context, id int64) (*esiapi.UniverseStationsStationIdGet, error) {
+		return &esiapi.UniverseStationsStationIdGet{
+			MaxDockableShipVolume: 50000000, Name: "Jita IV - Moon 4 - Caldari Navy Assembly Plant",
+			OfficeRentalCost: 10000, Owner: &owner, Position: pos3, RaceId: &raceID,
+			ReprocessingEfficiency: 0.5, ReprocessingStationsTake: 0.05,
+			Services: []string{"market", "repair-facilities"}, StationId: 60003760, SystemId: 30000142, TypeId: 1529,
+		}, nil
+	}}
+	cache := &fakeStationCache{ok: false, putErr: errors.New("put failed")}
+
+	got, err := getUniverseStation(context.Background(), cache, fake, "test-agent", 60003760)
+	if err != nil {
+		t.Fatalf("getUniverseStation returned error: %v", err)
+	}
+	if got.StationID != 60003760 || got.SystemID != 30000142 || got.TypeID != 1529 {
+		t.Errorf("got = %+v, want StationID=60003760 SystemID=30000142 TypeID=1529", got)
+	}
+	if got.Owner == nil || *got.Owner != 1000035 {
+		t.Errorf("Owner = %v, want 1000035", got.Owner)
+	}
+	if got.Services == nil || len(*got.Services) != 2 {
+		t.Errorf("Services = %v, want 2 entries", got.Services)
+	}
+	if cache.putCall == nil || cache.putCall.ID != 60003760 {
+		t.Errorf("PutStation call = %v, want one call with ID=60003760", cache.putCall)
+	}
+}
+
+func TestGetUniverseGraphic_CacheMiss_FetchesFromESIAndWritesBack(t *testing.T) {
+	graphicFile, hullName, collision := "file.gr2", "caldari_frigate", "collision.gr2"
+	fake := fakeUniverseReadESI{graphicDetail: func(_ context.Context, id int64) (*esiapi.UniverseGraphicsGraphicIdGet, error) {
+		return &esiapi.UniverseGraphicsGraphicIdGet{GraphicFile: &graphicFile, GraphicId: 1234, SofHullName: &hullName, CollisionFile: &collision}, nil
+	}}
+	cache := &fakeGraphicCache{graphicOK: false, putErr: errors.New("put failed")}
+
+	got, err := getUniverseGraphic(context.Background(), cache, fake, "test-agent", 1234)
+	if err != nil {
+		t.Fatalf("getUniverseGraphic returned error: %v", err)
+	}
+	if got.GraphicID != 1234 || got.GraphicFile == nil || *got.GraphicFile != "file.gr2" {
+		t.Errorf("got = %+v, want GraphicID=1234 GraphicFile=file.gr2", got)
+	}
+	if got.CollisionFile == nil || *got.CollisionFile != "collision.gr2" {
+		t.Errorf("CollisionFile = %v, want collision.gr2 (fresh off ESI on a cache miss)", got.CollisionFile)
+	}
+	if len(cache.putCalls) != 1 || cache.putCalls[0].ID != 1234 {
+		t.Errorf("PutGraphic calls = %+v, want one call with ID=1234", cache.putCalls)
+	}
+}
+
+func TestListUniverseGraphics_CacheMiss_FetchesFromESI(t *testing.T) {
+	fake := fakeUniverseReadESI{graphics: func(context.Context) ([]int64, error) { return []int64{1, 2, 3}, nil }}
+	cache := &fakeGraphicCache{ids: nil}
+
+	got, err := listUniverseGraphics(context.Background(), cache, fake, "test-agent")
+	if err != nil {
+		t.Fatalf("listUniverseGraphics returned error: %v", err)
+	}
+	if len(got) != 3 || got[0] != 1 {
+		t.Errorf("got = %v, want [1 2 3]", got)
+	}
+}
+
+func TestListUniverseAncestries_CacheMiss_FetchesFromESI(t *testing.T) {
+	iconID, shortDesc := int64(100), "short"
+	fake := fakeUniverseReadESI{ancestries: func(context.Context) ([]esiapi.UniverseAncestriesGetInner, error) {
+		return []esiapi.UniverseAncestriesGetInner{{BloodlineId: 1, Description: "desc", IconId: &iconID, Id: 11, Name: "Tribal", ShortDescription: &shortDesc}}, nil
+	}}
+	cache := &fakeAncestryCache{ancestries: nil}
+
+	got, err := listUniverseAncestries(context.Background(), cache, fake, "test-agent")
+	if err != nil {
+		t.Fatalf("listUniverseAncestries returned error: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != 11 || got[0].BloodlineID != 1 || got[0].Name != "Tribal" {
+		t.Errorf("got = %+v, want one entry ID=11 BloodlineID=1 Name=Tribal", got)
+	}
+}
+
+func TestListUniverseBloodlines_CacheMiss_FetchesFromESI(t *testing.T) {
+	fake := fakeUniverseReadESI{bloodlines: func(context.Context) ([]esiapi.UniverseBloodlinesGetInner, error) {
+		return []esiapi.UniverseBloodlinesGetInner{{BloodlineId: 1, Charisma: 6, CorporationId: 1000166, Description: "desc", Intelligence: 7, Memory: 5, Name: "Deteis", Perception: 5, RaceId: 1, ShipTypeId: 601, Willpower: 5}}, nil
+	}}
+	cache := &fakeBloodlineCache{bloodlines: nil}
+
+	got, err := listUniverseBloodlines(context.Background(), cache, fake, "test-agent")
+	if err != nil {
+		t.Fatalf("listUniverseBloodlines returned error: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != 1 || got[0].Name != "Deteis" || got[0].RaceID != 1 || got[0].ShipTypeID != 601 {
+		t.Errorf("got = %+v, want one entry ID=1 Name=Deteis RaceID=1 ShipTypeID=601", got)
+	}
+}
+
+func TestListUniverseRaces_CacheMiss_FetchesFromESI(t *testing.T) {
+	fake := fakeUniverseReadESI{races: func(context.Context) ([]esiapi.UniverseRacesGetInner, error) {
+		return []esiapi.UniverseRacesGetInner{{AllianceId: 500001, Description: "desc", Name: "Caldari", RaceId: 1}}, nil
+	}}
+	cache := &fakeRaceCache{races: nil}
+
+	got, err := listUniverseRaces(context.Background(), cache, fake, "test-agent")
+	if err != nil {
+		t.Fatalf("listUniverseRaces returned error: %v", err)
+	}
+	if len(got) != 1 || got[0].RaceID != 1 || got[0].Name != "Caldari" {
+		t.Errorf("got = %+v, want one entry RaceID=1 Name=Caldari", got)
+	}
+	if got[0].AllianceID == nil || *got[0].AllianceID != 500001 {
+		t.Errorf("AllianceID = %v, want 500001 (ESI's schema always returns a real value)", got[0].AllianceID)
+	}
+}
+
+func TestListUniverseFactions_CacheMiss_FetchesFromESI(t *testing.T) {
+	corpID, militiaID, systemID := int64(1000035), int64(1000180), int64(30000144)
+	fake := fakeUniverseReadESI{factions: func(context.Context) ([]esiapi.UniverseFactionsGetInner, error) {
+		return []esiapi.UniverseFactionsGetInner{{
+			CorporationId: &corpID, Description: "desc", FactionId: 500001, IsUnique: true, MilitiaCorporationId: &militiaID,
+			Name: "Caldari State", SizeFactor: 5, SolarSystemId: &systemID, StationCount: 100, StationSystemCount: 50,
+		}}, nil
+	}}
+	cache := &fakeFactionCache{factions: nil}
+
+	got, err := listUniverseFactions(context.Background(), cache, fake, "test-agent")
+	if err != nil {
+		t.Fatalf("listUniverseFactions returned error: %v", err)
+	}
+	if len(got) != 1 || got[0].FactionID != 500001 || got[0].IsUnique == nil || !*got[0].IsUnique || got[0].Name != "Caldari State" {
+		t.Errorf("got = %+v, want one entry FactionID=500001 IsUnique=true Name=Caldari State", got)
+	}
+	if got[0].CorporationID == nil || *got[0].CorporationID != 1000035 {
+		t.Errorf("CorporationID = %v, want 1000035", got[0].CorporationID)
 	}
 }

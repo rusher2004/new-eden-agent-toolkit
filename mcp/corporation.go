@@ -7,10 +7,6 @@ import (
 
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
-
-	"github.com/rusher2004/new-eden-agent-toolkit/esi"
 )
 
 // --- get_corporation (public) ---
@@ -41,8 +37,12 @@ type GetCorporationOutput struct {
 	Type                string     `json:"type"`
 }
 
-var getCorporationDetail = func(ctx context.Context, userAgent string, corporationID int64) (GetCorporationOutput, error) {
-	client := esi.NewPublicClient(userAgent)
+// corporationDetailESI is the public ESI call get_corporation makes.
+type corporationDetailESI interface {
+	CorporationDetail(ctx context.Context, corporationID int64) (*esiapi.CorporationsDetail, error)
+}
+
+func getCorporationDetail(ctx context.Context, client corporationDetailESI, corporationID int64) (GetCorporationOutput, error) {
 	detail, err := client.CorporationDetail(ctx, corporationID)
 	if err != nil {
 		return GetCorporationOutput{}, err
@@ -66,16 +66,47 @@ type GetCorporationInput struct {
 	CorporationID int64 `json:"corporationId" jsonschema:"the corporation ID to look up"`
 }
 
-func getCorporationHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetCorporationInput, GetCorporationOutput] {
+// corporationNameCache is the SDE reads get_corporation names its home station
+// and faction with.
+type corporationNameCache interface {
+	stationNameCache
+	factionNameCache
+}
+
+// corporationFacilityNameCache is the SDE reads list_corporation_facilities and
+// list_corporation_structures name their types and systems with.
+type corporationFacilityNameCache interface {
+	typeNameCache
+	systemNameCache
+}
+
+// corporationStarbaseNameCache is the SDE reads list_corporation_starbases names
+// its types, systems and moons with.
+type corporationStarbaseNameCache interface {
+	typeNameCache
+	systemNameCache
+	moonNameCache
+}
+
+// AddGetCorporation registers get_corporation. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddGetCorporation[C corporationDetailESI](s *mcpsdk.Server, userAgent string, open func() C, sdeStore corporationNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_corporation",
+		Description: "Get a corporation's public info (public data, no character required).",
+	}, getCorporationHandler(userAgent, open, sdeStore))
+}
+
+func getCorporationHandler[C corporationDetailESI](userAgent string, open func() C, sdeStore corporationNameCache) mcpsdk.ToolHandlerFor[GetCorporationInput, GetCorporationOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCorporationInput) (*mcpsdk.CallToolResult, GetCorporationOutput, error) {
-		out, err := getCorporationDetail(ctx, sso.UserAgent(version), in.CorporationID)
+		out, err := getCorporationDetail(ctx, open(), in.CorporationID)
 		if err != nil {
 			return nil, GetCorporationOutput{}, fmt.Errorf("get corporation: %w", err)
 		}
-		names := resolveStationNames(ctx, sdeStore, sso.UserAgent(version), []int64{out.HomeStationID})
+		names := resolveStationNames(ctx, sdeStore, userAgent, []int64{out.HomeStationID})
 		out.HomeStationName = names[out.HomeStationID]
 		if out.FactionID != nil {
-			factionNames := resolveFactionNames(ctx, sdeStore, sso.UserAgent(version), []int64{*out.FactionID})
+			factionNames := resolveFactionNames(ctx, sdeStore, userAgent, []int64{*out.FactionID})
 			out.FactionName = factionNames[*out.FactionID]
 		}
 		return nil, out, nil
@@ -91,8 +122,12 @@ type AllianceHistoryEntry struct {
 	IsDeleted  *bool     `json:"isDeleted,omitempty"`
 }
 
-var listCorporationAllianceHistory = func(ctx context.Context, userAgent string, corporationID int64) ([]AllianceHistoryEntry, error) {
-	client := esi.NewPublicClient(userAgent)
+// corporationAllianceHistoryESI is the public ESI call list_corporation_alliance_history makes.
+type corporationAllianceHistoryESI interface {
+	CorporationAllianceHistory(ctx context.Context, corporationID int64) ([]esiapi.CorporationsCorporationIdAlliancehistoryGetInner, error)
+}
+
+func listCorporationAllianceHistory(ctx context.Context, client corporationAllianceHistoryESI, corporationID int64) ([]AllianceHistoryEntry, error) {
 	hist, err := client.CorporationAllianceHistory(ctx, corporationID)
 	if err != nil {
 		return nil, err
@@ -112,9 +147,18 @@ type ListCorporationAllianceHistoryOutput struct {
 	History       []AllianceHistoryEntry `json:"history"`
 }
 
-func listCorporationAllianceHistoryHandler(version string) mcpsdk.ToolHandlerFor[ListCorporationAllianceHistoryInput, ListCorporationAllianceHistoryOutput] {
+// AddListCorporationAllianceHistory registers list_corporation_alliance_history. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListCorporationAllianceHistory[C corporationAllianceHistoryESI](s *mcpsdk.Server, open func() C) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_corporation_alliance_history",
+		Description: "List a corporation's alliance membership history (public data, no character required).",
+	}, listCorporationAllianceHistoryHandler(open))
+}
+
+func listCorporationAllianceHistoryHandler[C corporationAllianceHistoryESI](open func() C) mcpsdk.ToolHandlerFor[ListCorporationAllianceHistoryInput, ListCorporationAllianceHistoryOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationAllianceHistoryInput) (*mcpsdk.CallToolResult, ListCorporationAllianceHistoryOutput, error) {
-		hist, err := listCorporationAllianceHistory(ctx, sso.UserAgent(version), in.CorporationID)
+		hist, err := listCorporationAllianceHistory(ctx, open(), in.CorporationID)
 		if err != nil {
 			return nil, ListCorporationAllianceHistoryOutput{}, fmt.Errorf("list corporation alliance history: %w", err)
 		}
@@ -131,8 +175,12 @@ type GetCorporationIconsOutput struct {
 	Px256x256     *string `json:"px256x256,omitempty"`
 }
 
-var getCorporationIcons = func(ctx context.Context, userAgent string, corporationID int64) (GetCorporationIconsOutput, error) {
-	client := esi.NewPublicClient(userAgent)
+// corporationIconsESI is the public ESI call get_corporation_icons makes.
+type corporationIconsESI interface {
+	CorporationIcons(ctx context.Context, corporationID int64) (*esiapi.CorporationsCorporationIdIconsGet, error)
+}
+
+func getCorporationIcons(ctx context.Context, client corporationIconsESI, corporationID int64) (GetCorporationIconsOutput, error) {
 	icons, err := client.CorporationIcons(ctx, corporationID)
 	if err != nil {
 		return GetCorporationIconsOutput{}, err
@@ -144,9 +192,18 @@ type GetCorporationIconsInput struct {
 	CorporationID int64 `json:"corporationId" jsonschema:"the corporation ID to look up"`
 }
 
-func getCorporationIconsHandler(version string) mcpsdk.ToolHandlerFor[GetCorporationIconsInput, GetCorporationIconsOutput] {
+// AddGetCorporationIcons registers get_corporation_icons. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddGetCorporationIcons[C corporationIconsESI](s *mcpsdk.Server, open func() C) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_corporation_icons",
+		Description: "Get a corporation's icon URLs (public data, no character required).",
+	}, getCorporationIconsHandler(open))
+}
+
+func getCorporationIconsHandler[C corporationIconsESI](open func() C) mcpsdk.ToolHandlerFor[GetCorporationIconsInput, GetCorporationIconsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCorporationIconsInput) (*mcpsdk.CallToolResult, GetCorporationIconsOutput, error) {
-		out, err := getCorporationIcons(ctx, sso.UserAgent(version), in.CorporationID)
+		out, err := getCorporationIcons(ctx, open(), in.CorporationID)
 		if err != nil {
 			return nil, GetCorporationIconsOutput{}, fmt.Errorf("get corporation icons: %w", err)
 		}
@@ -156,8 +213,12 @@ func getCorporationIconsHandler(version string) mcpsdk.ToolHandlerFor[GetCorpora
 
 // --- list_npc_corporations (public, no input) ---
 
-var listNPCCorporations = func(ctx context.Context, userAgent string) ([]int64, error) {
-	client := esi.NewPublicClient(userAgent)
+// npcCorporationsESI is the public ESI call list_npc_corporations makes.
+type npcCorporationsESI interface {
+	NPCCorporations(ctx context.Context) ([]int64, error)
+}
+
+func listNPCCorporations(ctx context.Context, client npcCorporationsESI) ([]int64, error) {
 	return client.NPCCorporations(ctx)
 }
 
@@ -166,9 +227,18 @@ type ListNPCCorporationsOutput struct {
 	CorporationIDs []int64 `json:"corporationIds"`
 }
 
-func listNPCCorporationsHandler(version string) mcpsdk.ToolHandlerFor[ListNPCCorporationsInput, ListNPCCorporationsOutput] {
+// AddListNPCCorporations registers list_npc_corporations. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListNPCCorporations[C npcCorporationsESI](s *mcpsdk.Server, open func() C) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_npc_corporations",
+		Description: "List every NPC corporation ID in the game (public data, no character required).",
+	}, listNPCCorporationsHandler(open))
+}
+
+func listNPCCorporationsHandler[C npcCorporationsESI](open func() C) mcpsdk.ToolHandlerFor[ListNPCCorporationsInput, ListNPCCorporationsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListNPCCorporationsInput) (*mcpsdk.CallToolResult, ListNPCCorporationsOutput, error) {
-		ids, err := listNPCCorporations(ctx, sso.UserAgent(version))
+		ids, err := listNPCCorporations(ctx, open())
 		if err != nil {
 			return nil, ListNPCCorporationsOutput{}, fmt.Errorf("list npc corporations: %w", err)
 		}
@@ -178,11 +248,12 @@ func listNPCCorporationsHandler(version string) mcpsdk.ToolHandlerFor[ListNPCCor
 
 // --- list_corporation_members (private) ---
 
-var listCorporationMembers = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64) ([]int64, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
+// corporationMembersESI is the ESI call list_corporation_members makes.
+type corporationMembersESI interface {
+	CorporationMembers(ctx context.Context, corporationID int64) ([]int64, error)
+}
+
+func listCorporationMembers(ctx context.Context, client corporationMembersESI, corporationID int64) ([]int64, error) {
 	return client.CorporationMembers(ctx, corporationID)
 }
 
@@ -196,7 +267,16 @@ type ListCorporationMembersOutput struct {
 	MemberIDs     []int64 `json:"memberIds"`
 }
 
-func listCorporationMembersHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationMembersInput, ListCorporationMembersOutput] {
+// AddListCorporationMembers registers list_corporation_members. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListCorporationMembers[C corporationMembersESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_corporation_members",
+		Description: "List a corporation's member character IDs, using a logged-in character's roles to authorize.",
+	}, listCorporationMembersHandler(open, store))
+}
+
+func listCorporationMembersHandler[C corporationMembersESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListCorporationMembersInput, ListCorporationMembersOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationMembersInput) (*mcpsdk.CallToolResult, ListCorporationMembersOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -205,7 +285,11 @@ func listCorporationMembersHandler(version, clientID string, store ConfigStore) 
 		if !found {
 			return nil, ListCorporationMembersOutput{}, fmt.Errorf("list corporation members for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		ids, err := listCorporationMembers(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCorporationMembersOutput{}, fmt.Errorf("list corporation members: %w", err)
+		}
+		ids, err := listCorporationMembers(ctx, client, in.CorporationID)
 		if err != nil {
 			return nil, ListCorporationMembersOutput{}, fmt.Errorf("list corporation members: %w", err)
 		}
@@ -215,11 +299,12 @@ func listCorporationMembersHandler(version, clientID string, store ConfigStore) 
 
 // --- get_corporation_members_limit (private) ---
 
-var getCorporationMembersLimit = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64) (int64, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return 0, fmt.Errorf("build ESI client: %w", err)
-	}
+// corporationMembersLimitESI is the ESI call get_corporation_members_limit makes.
+type corporationMembersLimitESI interface {
+	CorporationMembersLimit(ctx context.Context, corporationID int64) (int64, error)
+}
+
+func getCorporationMembersLimit(ctx context.Context, client corporationMembersLimitESI, corporationID int64) (int64, error) {
 	return client.CorporationMembersLimit(ctx, corporationID)
 }
 
@@ -233,7 +318,16 @@ type GetCorporationMembersLimitOutput struct {
 	Limit         int64 `json:"limit"`
 }
 
-func getCorporationMembersLimitHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetCorporationMembersLimitInput, GetCorporationMembersLimitOutput] {
+// AddGetCorporationMembersLimit registers get_corporation_members_limit. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddGetCorporationMembersLimit[C corporationMembersLimitESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_corporation_members_limit",
+		Description: "Get a corporation's member limit, using a logged-in character's roles to authorize.",
+	}, getCorporationMembersLimitHandler(open, store))
+}
+
+func getCorporationMembersLimitHandler[C corporationMembersLimitESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[GetCorporationMembersLimitInput, GetCorporationMembersLimitOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCorporationMembersLimitInput) (*mcpsdk.CallToolResult, GetCorporationMembersLimitOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -242,7 +336,11 @@ func getCorporationMembersLimitHandler(version, clientID string, store ConfigSto
 		if !found {
 			return nil, GetCorporationMembersLimitOutput{}, fmt.Errorf("get corporation members limit for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		limit, err := getCorporationMembersLimit(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, GetCorporationMembersLimitOutput{}, fmt.Errorf("get corporation members limit: %w", err)
+		}
+		limit, err := getCorporationMembersLimit(ctx, client, in.CorporationID)
 		if err != nil {
 			return nil, GetCorporationMembersLimitOutput{}, fmt.Errorf("get corporation members limit: %w", err)
 		}
@@ -257,11 +355,12 @@ type MemberTitles struct {
 	TitleIDs    []int64 `json:"titleIds"`
 }
 
-var listCorporationMemberTitles = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64) ([]MemberTitles, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
+// corporationMemberTitlesESI is the ESI call list_corporation_member_titles makes.
+type corporationMemberTitlesESI interface {
+	CorporationMemberTitles(ctx context.Context, corporationID int64) ([]esiapi.CorporationsCorporationIdMembersTitlesGetInner, error)
+}
+
+func listCorporationMemberTitles(ctx context.Context, client corporationMemberTitlesESI, corporationID int64) ([]MemberTitles, error) {
 	titles, err := client.CorporationMemberTitles(ctx, corporationID)
 	if err != nil {
 		return nil, err
@@ -283,7 +382,16 @@ type ListCorporationMemberTitlesOutput struct {
 	MemberTitles  []MemberTitles `json:"memberTitles"`
 }
 
-func listCorporationMemberTitlesHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationMemberTitlesInput, ListCorporationMemberTitlesOutput] {
+// AddListCorporationMemberTitles registers list_corporation_member_titles. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListCorporationMemberTitles[C corporationMemberTitlesESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_corporation_member_titles",
+		Description: "List a corporation's members' assigned title IDs, using a logged-in character's roles to authorize.",
+	}, listCorporationMemberTitlesHandler(open, store))
+}
+
+func listCorporationMemberTitlesHandler[C corporationMemberTitlesESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListCorporationMemberTitlesInput, ListCorporationMemberTitlesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationMemberTitlesInput) (*mcpsdk.CallToolResult, ListCorporationMemberTitlesOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -292,7 +400,11 @@ func listCorporationMemberTitlesHandler(version, clientID string, store ConfigSt
 		if !found {
 			return nil, ListCorporationMemberTitlesOutput{}, fmt.Errorf("list corporation member titles for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		titles, err := listCorporationMemberTitles(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCorporationMemberTitlesOutput{}, fmt.Errorf("list corporation member titles: %w", err)
+		}
+		titles, err := listCorporationMemberTitles(ctx, client, in.CorporationID)
 		if err != nil {
 			return nil, ListCorporationMemberTitlesOutput{}, fmt.Errorf("list corporation member titles: %w", err)
 		}
@@ -313,11 +425,12 @@ type MemberTracking struct {
 	StartDate    *time.Time `json:"startDate,omitempty"`
 }
 
-var listCorporationMemberTracking = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64) ([]MemberTracking, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
+// corporationMemberTrackingESI is the ESI call list_corporation_member_tracking makes.
+type corporationMemberTrackingESI interface {
+	CorporationMemberTracking(ctx context.Context, corporationID int64) ([]esiapi.CorporationsCorporationIdMembertrackingGetInner, error)
+}
+
+func listCorporationMemberTracking(ctx context.Context, client corporationMemberTrackingESI, corporationID int64) ([]MemberTracking, error) {
 	tracking, err := client.CorporationMemberTracking(ctx, corporationID)
 	if err != nil {
 		return nil, err
@@ -339,7 +452,16 @@ type ListCorporationMemberTrackingOutput struct {
 	Members       []MemberTracking `json:"members"`
 }
 
-func listCorporationMemberTrackingHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCorporationMemberTrackingInput, ListCorporationMemberTrackingOutput] {
+// AddListCorporationMemberTracking registers list_corporation_member_tracking. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListCorporationMemberTracking[C corporationMemberTrackingESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore typeNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_corporation_member_tracking",
+		Description: "List a corporation's member login/location/ship tracking data, using a logged-in character's roles to authorize.",
+	}, listCorporationMemberTrackingHandler(userAgent, open, store, sdeStore))
+}
+
+func listCorporationMemberTrackingHandler[C corporationMemberTrackingESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore typeNameCache) mcpsdk.ToolHandlerFor[ListCorporationMemberTrackingInput, ListCorporationMemberTrackingOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationMemberTrackingInput) (*mcpsdk.CallToolResult, ListCorporationMemberTrackingOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -348,7 +470,11 @@ func listCorporationMemberTrackingHandler(version, clientID string, store Config
 		if !found {
 			return nil, ListCorporationMemberTrackingOutput{}, fmt.Errorf("list corporation member tracking for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		members, err := listCorporationMemberTracking(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCorporationMemberTrackingOutput{}, fmt.Errorf("list corporation member tracking: %w", err)
+		}
+		members, err := listCorporationMemberTracking(ctx, client, in.CorporationID)
 		if err != nil {
 			return nil, ListCorporationMemberTrackingOutput{}, fmt.Errorf("list corporation member tracking: %w", err)
 		}
@@ -358,7 +484,7 @@ func listCorporationMemberTrackingHandler(version, clientID string, store Config
 				ids = append(ids, *members[i].ShipTypeID)
 			}
 		}
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		names := resolveTypeNames(ctx, sdeStore, userAgent, ids)
 		for i := range members {
 			if members[i].ShipTypeID != nil {
 				members[i].ShipTypeName = names[*members[i].ShipTypeID]
@@ -382,11 +508,12 @@ type MemberRoles struct {
 	GrantableRolesAtOther []string `json:"grantableRolesAtOther,omitempty"`
 }
 
-var listCorporationRoles = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64) ([]MemberRoles, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
+// corporationRolesESI is the ESI call list_corporation_roles makes.
+type corporationRolesESI interface {
+	CorporationRoles(ctx context.Context, corporationID int64) ([]esiapi.CorporationsCorporationIdRolesGetInner, error)
+}
+
+func listCorporationRoles(ctx context.Context, client corporationRolesESI, corporationID int64) ([]MemberRoles, error) {
 	roles, err := client.CorporationRoles(ctx, corporationID)
 	if err != nil {
 		return nil, err
@@ -411,7 +538,16 @@ type ListCorporationRolesOutput struct {
 	Roles         []MemberRoles `json:"roles"`
 }
 
-func listCorporationRolesHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationRolesInput, ListCorporationRolesOutput] {
+// AddListCorporationRoles registers list_corporation_roles. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListCorporationRoles[C corporationRolesESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_corporation_roles",
+		Description: "List a corporation's members' corp roles, using a logged-in character's roles to authorize.",
+	}, listCorporationRolesHandler(open, store))
+}
+
+func listCorporationRolesHandler[C corporationRolesESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListCorporationRolesInput, ListCorporationRolesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationRolesInput) (*mcpsdk.CallToolResult, ListCorporationRolesOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -420,7 +556,11 @@ func listCorporationRolesHandler(version, clientID string, store ConfigStore) mc
 		if !found {
 			return nil, ListCorporationRolesOutput{}, fmt.Errorf("list corporation roles for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		roles, err := listCorporationRoles(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCorporationRolesOutput{}, fmt.Errorf("list corporation roles: %w", err)
+		}
+		roles, err := listCorporationRoles(ctx, client, in.CorporationID)
 		if err != nil {
 			return nil, ListCorporationRolesOutput{}, fmt.Errorf("list corporation roles: %w", err)
 		}
@@ -439,11 +579,12 @@ type RoleChange struct {
 	NewRoles    []string  `json:"newRoles"`
 }
 
-var listCorporationRolesHistory = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]RoleChange, int32, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, 0, fmt.Errorf("build ESI client: %w", err)
-	}
+// corporationRolesHistoryESI is the ESI call list_corporation_roles_history makes.
+type corporationRolesHistoryESI interface {
+	CorporationRolesHistory(ctx context.Context, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdRolesHistoryGetInner, int32, error)
+}
+
+func listCorporationRolesHistory(ctx context.Context, client corporationRolesHistoryESI, corporationID int64, page int32) ([]RoleChange, int32, error) {
 	history, totalPages, err := client.CorporationRolesHistory(ctx, corporationID, page)
 	if err != nil {
 		return nil, 0, err
@@ -468,7 +609,16 @@ type ListCorporationRolesHistoryOutput struct {
 	History       []RoleChange `json:"history"`
 }
 
-func listCorporationRolesHistoryHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationRolesHistoryInput, ListCorporationRolesHistoryOutput] {
+// AddListCorporationRolesHistory registers list_corporation_roles_history. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListCorporationRolesHistory[C corporationRolesHistoryESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_corporation_roles_history",
+		Description: "List a corporation's role-change history, using a logged-in character's roles to authorize.",
+	}, listCorporationRolesHistoryHandler(open, store))
+}
+
+func listCorporationRolesHistoryHandler[C corporationRolesHistoryESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListCorporationRolesHistoryInput, ListCorporationRolesHistoryOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationRolesHistoryInput) (*mcpsdk.CallToolResult, ListCorporationRolesHistoryOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -477,7 +627,11 @@ func listCorporationRolesHistoryHandler(version, clientID string, store ConfigSt
 		if !found {
 			return nil, ListCorporationRolesHistoryOutput{}, fmt.Errorf("list corporation roles history for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		history, totalPages, err := listCorporationRolesHistory(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.Page)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCorporationRolesHistoryOutput{}, fmt.Errorf("list corporation roles history: %w", err)
+		}
+		history, totalPages, err := listCorporationRolesHistory(ctx, client, in.CorporationID, in.Page)
 		if err != nil {
 			return nil, ListCorporationRolesHistoryOutput{}, fmt.Errorf("list corporation roles history: %w", err)
 		}
@@ -496,11 +650,12 @@ type CorporationTitle struct {
 	Name    *string `json:"name,omitempty"`
 }
 
-var listCorporationTitles = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64) ([]CorporationTitle, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
+// corporationTitlesESI is the ESI call list_corporation_titles makes.
+type corporationTitlesESI interface {
+	CorporationTitles(ctx context.Context, corporationID int64) ([]esiapi.CorporationsCorporationIdTitlesGetInner, error)
+}
+
+func listCorporationTitles(ctx context.Context, client corporationTitlesESI, corporationID int64) ([]CorporationTitle, error) {
 	titles, err := client.CorporationTitles(ctx, corporationID)
 	if err != nil {
 		return nil, err
@@ -522,7 +677,16 @@ type ListCorporationTitlesOutput struct {
 	Titles        []CorporationTitle `json:"titles"`
 }
 
-func listCorporationTitlesHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationTitlesInput, ListCorporationTitlesOutput] {
+// AddListCorporationTitles registers list_corporation_titles. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListCorporationTitles[C corporationTitlesESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_corporation_titles",
+		Description: "List a corporation's defined titles, using a logged-in character's roles to authorize.",
+	}, listCorporationTitlesHandler(open, store))
+}
+
+func listCorporationTitlesHandler[C corporationTitlesESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListCorporationTitlesInput, ListCorporationTitlesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationTitlesInput) (*mcpsdk.CallToolResult, ListCorporationTitlesOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -531,7 +695,11 @@ func listCorporationTitlesHandler(version, clientID string, store ConfigStore) m
 		if !found {
 			return nil, ListCorporationTitlesOutput{}, fmt.Errorf("list corporation titles for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		titles, err := listCorporationTitles(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCorporationTitlesOutput{}, fmt.Errorf("list corporation titles: %w", err)
+		}
+		titles, err := listCorporationTitles(ctx, client, in.CorporationID)
 		if err != nil {
 			return nil, ListCorporationTitlesOutput{}, fmt.Errorf("list corporation titles: %w", err)
 		}
@@ -546,11 +714,12 @@ type Division struct {
 	Name           *string `json:"name,omitempty"`
 }
 
-var getCorporationDivisions = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64) ([]Division, []Division, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, nil, fmt.Errorf("build ESI client: %w", err)
-	}
+// corporationDivisionsESI is the ESI call get_corporation_divisions makes.
+type corporationDivisionsESI interface {
+	CorporationDivisions(ctx context.Context, corporationID int64) (*esiapi.CorporationsCorporationIdDivisionsGet, error)
+}
+
+func getCorporationDivisions(ctx context.Context, client corporationDivisionsESI, corporationID int64) ([]Division, []Division, error) {
 	divisions, err := client.CorporationDivisions(ctx, corporationID)
 	if err != nil {
 		return nil, nil, err
@@ -577,7 +746,16 @@ type GetCorporationDivisionsOutput struct {
 	Wallets       []Division `json:"wallets"`
 }
 
-func getCorporationDivisionsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetCorporationDivisionsInput, GetCorporationDivisionsOutput] {
+// AddGetCorporationDivisions registers get_corporation_divisions. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddGetCorporationDivisions[C corporationDivisionsESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_corporation_divisions",
+		Description: "Get a corporation's hangar and wallet division names, using a logged-in character's roles to authorize.",
+	}, getCorporationDivisionsHandler(open, store))
+}
+
+func getCorporationDivisionsHandler[C corporationDivisionsESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[GetCorporationDivisionsInput, GetCorporationDivisionsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCorporationDivisionsInput) (*mcpsdk.CallToolResult, GetCorporationDivisionsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -586,7 +764,11 @@ func getCorporationDivisionsHandler(version, clientID string, store ConfigStore)
 		if !found {
 			return nil, GetCorporationDivisionsOutput{}, fmt.Errorf("get corporation divisions for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		hangars, wallets, err := getCorporationDivisions(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, GetCorporationDivisionsOutput{}, fmt.Errorf("get corporation divisions: %w", err)
+		}
+		hangars, wallets, err := getCorporationDivisions(ctx, client, in.CorporationID)
 		if err != nil {
 			return nil, GetCorporationDivisionsOutput{}, fmt.Errorf("get corporation divisions: %w", err)
 		}
@@ -602,11 +784,12 @@ type Shareholder struct {
 	ShareCount      int64  `json:"shareCount"`
 }
 
-var listCorporationShareholders = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]Shareholder, int32, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, 0, fmt.Errorf("build ESI client: %w", err)
-	}
+// corporationShareholdersESI is the ESI call list_corporation_shareholders makes.
+type corporationShareholdersESI interface {
+	CorporationShareholders(ctx context.Context, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdShareholdersGetInner, int32, error)
+}
+
+func listCorporationShareholders(ctx context.Context, client corporationShareholdersESI, corporationID int64, page int32) ([]Shareholder, int32, error) {
 	shareholders, totalPages, err := client.CorporationShareholders(ctx, corporationID, page)
 	if err != nil {
 		return nil, 0, err
@@ -631,7 +814,16 @@ type ListCorporationShareholdersOutput struct {
 	Shareholders  []Shareholder `json:"shareholders"`
 }
 
-func listCorporationShareholdersHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationShareholdersInput, ListCorporationShareholdersOutput] {
+// AddListCorporationShareholders registers list_corporation_shareholders. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListCorporationShareholders[C corporationShareholdersESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_corporation_shareholders",
+		Description: "List a corporation's shareholders, using a logged-in character's roles to authorize.",
+	}, listCorporationShareholdersHandler(open, store))
+}
+
+func listCorporationShareholdersHandler[C corporationShareholdersESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListCorporationShareholdersInput, ListCorporationShareholdersOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationShareholdersInput) (*mcpsdk.CallToolResult, ListCorporationShareholdersOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -640,7 +832,11 @@ func listCorporationShareholdersHandler(version, clientID string, store ConfigSt
 		if !found {
 			return nil, ListCorporationShareholdersOutput{}, fmt.Errorf("list corporation shareholders for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		shareholders, totalPages, err := listCorporationShareholders(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.Page)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCorporationShareholdersOutput{}, fmt.Errorf("list corporation shareholders: %w", err)
+		}
+		shareholders, totalPages, err := listCorporationShareholders(ctx, client, in.CorporationID, in.Page)
 		if err != nil {
 			return nil, ListCorporationShareholdersOutput{}, fmt.Errorf("list corporation shareholders: %w", err)
 		}
@@ -656,11 +852,12 @@ func listCorporationShareholdersHandler(version, clientID string, store ConfigSt
 // Reuses the existing Standing type from mcp/character.go -- same shape (FromID, FromType,
 // Standing), same underlying ESI model (CharactersCharacterIdStandingsGetInner). Not redeclared.
 
-var listCorporationStandings = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]Standing, int32, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, 0, fmt.Errorf("build ESI client: %w", err)
-	}
+// corporationStandingsESI is the ESI call list_corporation_standings makes.
+type corporationStandingsESI interface {
+	CorporationStandings(ctx context.Context, corporationID int64, page int32) ([]esiapi.CharactersCharacterIdStandingsGetInner, int32, error)
+}
+
+func listCorporationStandings(ctx context.Context, client corporationStandingsESI, corporationID int64, page int32) ([]Standing, int32, error) {
 	standings, totalPages, err := client.CorporationStandings(ctx, corporationID, page)
 	if err != nil {
 		return nil, 0, err
@@ -685,7 +882,16 @@ type ListCorporationStandingsOutput struct {
 	Standings     []Standing `json:"standings"`
 }
 
-func listCorporationStandingsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationStandingsInput, ListCorporationStandingsOutput] {
+// AddListCorporationStandings registers list_corporation_standings. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListCorporationStandings[C corporationStandingsESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_corporation_standings",
+		Description: "List a corporation's standings toward NPC entities, using a logged-in character's roles to authorize.",
+	}, listCorporationStandingsHandler(open, store))
+}
+
+func listCorporationStandingsHandler[C corporationStandingsESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListCorporationStandingsInput, ListCorporationStandingsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationStandingsInput) (*mcpsdk.CallToolResult, ListCorporationStandingsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -694,7 +900,11 @@ func listCorporationStandingsHandler(version, clientID string, store ConfigStore
 		if !found {
 			return nil, ListCorporationStandingsOutput{}, fmt.Errorf("list corporation standings for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		standings, totalPages, err := listCorporationStandings(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.Page)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCorporationStandingsOutput{}, fmt.Errorf("list corporation standings: %w", err)
+		}
+		standings, totalPages, err := listCorporationStandings(ctx, client, in.CorporationID, in.Page)
 		if err != nil {
 			return nil, ListCorporationStandingsOutput{}, fmt.Errorf("list corporation standings: %w", err)
 		}
@@ -816,11 +1026,12 @@ type ContainerLog struct {
 	TypeName          string    `json:"typeName,omitempty"`
 }
 
-var listCorporationContainerLogs = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]ContainerLog, int32, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, 0, fmt.Errorf("build ESI client: %w", err)
-	}
+// corporationContainerLogsESI is the ESI call list_corporation_container_logs makes.
+type corporationContainerLogsESI interface {
+	CorporationContainerLogs(ctx context.Context, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdContainersLogsGetInner, int32, error)
+}
+
+func listCorporationContainerLogs(ctx context.Context, client corporationContainerLogsESI, corporationID int64, page int32) ([]ContainerLog, int32, error) {
 	logs, totalPages, err := client.CorporationContainerLogs(ctx, corporationID, page)
 	if err != nil {
 		return nil, 0, err
@@ -850,7 +1061,16 @@ type ListCorporationContainerLogsOutput struct {
 	Logs          []ContainerLog `json:"logs"`
 }
 
-func listCorporationContainerLogsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCorporationContainerLogsInput, ListCorporationContainerLogsOutput] {
+// AddListCorporationContainerLogs registers list_corporation_container_logs. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListCorporationContainerLogs[C corporationContainerLogsESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore typeNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_corporation_container_logs",
+		Description: "List a corporation's container access logs, using a logged-in character's roles to authorize.",
+	}, listCorporationContainerLogsHandler(userAgent, open, store, sdeStore))
+}
+
+func listCorporationContainerLogsHandler[C corporationContainerLogsESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore typeNameCache) mcpsdk.ToolHandlerFor[ListCorporationContainerLogsInput, ListCorporationContainerLogsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationContainerLogsInput) (*mcpsdk.CallToolResult, ListCorporationContainerLogsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -859,7 +1079,11 @@ func listCorporationContainerLogsHandler(version, clientID string, store ConfigS
 		if !found {
 			return nil, ListCorporationContainerLogsOutput{}, fmt.Errorf("list corporation container logs for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		logs, totalPages, err := listCorporationContainerLogs(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.Page)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCorporationContainerLogsOutput{}, fmt.Errorf("list corporation container logs: %w", err)
+		}
+		logs, totalPages, err := listCorporationContainerLogs(ctx, client, in.CorporationID, in.Page)
 		if err != nil {
 			return nil, ListCorporationContainerLogsOutput{}, fmt.Errorf("list corporation container logs: %w", err)
 		}
@@ -870,7 +1094,7 @@ func listCorporationContainerLogsHandler(version, clientID string, store ConfigS
 				ids = append(ids, *logs[i].TypeID)
 			}
 		}
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		names := resolveTypeNames(ctx, sdeStore, userAgent, ids)
 		for i := range logs {
 			logs[i].ContainerTypeName = names[logs[i].ContainerTypeID]
 			if logs[i].TypeID != nil {
@@ -895,11 +1119,12 @@ type Facility struct {
 	TypeName   string `json:"typeName,omitempty"`
 }
 
-var listCorporationFacilities = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64) ([]Facility, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
+// corporationFacilitiesESI is the ESI call list_corporation_facilities makes.
+type corporationFacilitiesESI interface {
+	CorporationFacilities(ctx context.Context, corporationID int64) ([]esiapi.CorporationsCorporationIdFacilitiesGetInner, error)
+}
+
+func listCorporationFacilities(ctx context.Context, client corporationFacilitiesESI, corporationID int64) ([]Facility, error) {
 	facilities, err := client.CorporationFacilities(ctx, corporationID)
 	if err != nil {
 		return nil, err
@@ -921,7 +1146,16 @@ type ListCorporationFacilitiesOutput struct {
 	Facilities    []Facility `json:"facilities"`
 }
 
-func listCorporationFacilitiesHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCorporationFacilitiesInput, ListCorporationFacilitiesOutput] {
+// AddListCorporationFacilities registers list_corporation_facilities. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListCorporationFacilities[C corporationFacilitiesESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore corporationFacilityNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_corporation_facilities",
+		Description: "List a corporation's facilities, using a logged-in character's roles to authorize.",
+	}, listCorporationFacilitiesHandler(userAgent, open, store, sdeStore))
+}
+
+func listCorporationFacilitiesHandler[C corporationFacilitiesESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore corporationFacilityNameCache) mcpsdk.ToolHandlerFor[ListCorporationFacilitiesInput, ListCorporationFacilitiesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationFacilitiesInput) (*mcpsdk.CallToolResult, ListCorporationFacilitiesOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -930,7 +1164,11 @@ func listCorporationFacilitiesHandler(version, clientID string, store ConfigStor
 		if !found {
 			return nil, ListCorporationFacilitiesOutput{}, fmt.Errorf("list corporation facilities for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		facilities, err := listCorporationFacilities(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCorporationFacilitiesOutput{}, fmt.Errorf("list corporation facilities: %w", err)
+		}
+		facilities, err := listCorporationFacilities(ctx, client, in.CorporationID)
 		if err != nil {
 			return nil, ListCorporationFacilitiesOutput{}, fmt.Errorf("list corporation facilities: %w", err)
 		}
@@ -938,7 +1176,7 @@ func listCorporationFacilitiesHandler(version, clientID string, store ConfigStor
 		for i := range facilities {
 			ids[i] = facilities[i].TypeID
 		}
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		names := resolveTypeNames(ctx, sdeStore, userAgent, ids)
 		for i := range facilities {
 			facilities[i].TypeName = names[facilities[i].TypeID]
 		}
@@ -946,7 +1184,7 @@ func listCorporationFacilitiesHandler(version, clientID string, store ConfigStor
 		for i := range facilities {
 			systemIDs[i] = facilities[i].SystemID
 		}
-		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), systemIDs)
+		systemNames := resolveSystemNames(ctx, sdeStore, userAgent, systemIDs)
 		for i := range facilities {
 			facilities[i].SystemName = systemNames[facilities[i].SystemID]
 		}
@@ -964,11 +1202,12 @@ type CorporationMedal struct {
 	Title       string    `json:"title"`
 }
 
-var listCorporationMedals = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]CorporationMedal, int32, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, 0, fmt.Errorf("build ESI client: %w", err)
-	}
+// corporationMedalsESI is the ESI call list_corporation_medals makes.
+type corporationMedalsESI interface {
+	CorporationMedals(ctx context.Context, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdMedalsGetInner, int32, error)
+}
+
+func listCorporationMedals(ctx context.Context, client corporationMedalsESI, corporationID int64, page int32) ([]CorporationMedal, int32, error) {
 	medals, totalPages, err := client.CorporationMedals(ctx, corporationID, page)
 	if err != nil {
 		return nil, 0, err
@@ -993,7 +1232,16 @@ type ListCorporationMedalsOutput struct {
 	Medals        []CorporationMedal `json:"medals"`
 }
 
-func listCorporationMedalsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationMedalsInput, ListCorporationMedalsOutput] {
+// AddListCorporationMedals registers list_corporation_medals. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListCorporationMedals[C corporationMedalsESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_corporation_medals",
+		Description: "List a corporation's defined medals, using a logged-in character's roles to authorize.",
+	}, listCorporationMedalsHandler(open, store))
+}
+
+func listCorporationMedalsHandler[C corporationMedalsESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListCorporationMedalsInput, ListCorporationMedalsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationMedalsInput) (*mcpsdk.CallToolResult, ListCorporationMedalsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -1002,7 +1250,11 @@ func listCorporationMedalsHandler(version, clientID string, store ConfigStore) m
 		if !found {
 			return nil, ListCorporationMedalsOutput{}, fmt.Errorf("list corporation medals for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		medals, totalPages, err := listCorporationMedals(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.Page)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCorporationMedalsOutput{}, fmt.Errorf("list corporation medals: %w", err)
+		}
+		medals, totalPages, err := listCorporationMedals(ctx, client, in.CorporationID, in.Page)
 		if err != nil {
 			return nil, ListCorporationMedalsOutput{}, fmt.Errorf("list corporation medals: %w", err)
 		}
@@ -1025,11 +1277,12 @@ type MedalIssued struct {
 	Status      string    `json:"status"`
 }
 
-var listCorporationMedalsIssued = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]MedalIssued, int32, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, 0, fmt.Errorf("build ESI client: %w", err)
-	}
+// corporationMedalsIssuedESI is the ESI call list_corporation_medals_issued makes.
+type corporationMedalsIssuedESI interface {
+	CorporationMedalsIssued(ctx context.Context, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdMedalsIssuedGetInner, int32, error)
+}
+
+func listCorporationMedalsIssued(ctx context.Context, client corporationMedalsIssuedESI, corporationID int64, page int32) ([]MedalIssued, int32, error) {
 	issued, totalPages, err := client.CorporationMedalsIssued(ctx, corporationID, page)
 	if err != nil {
 		return nil, 0, err
@@ -1054,7 +1307,16 @@ type ListCorporationMedalsIssuedOutput struct {
 	Issued        []MedalIssued `json:"issued"`
 }
 
-func listCorporationMedalsIssuedHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationMedalsIssuedInput, ListCorporationMedalsIssuedOutput] {
+// AddListCorporationMedalsIssued registers list_corporation_medals_issued. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListCorporationMedalsIssued[C corporationMedalsIssuedESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_corporation_medals_issued",
+		Description: "List medals a corporation has issued to its members, using a logged-in character's roles to authorize.",
+	}, listCorporationMedalsIssuedHandler(open, store))
+}
+
+func listCorporationMedalsIssuedHandler[C corporationMedalsIssuedESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListCorporationMedalsIssuedInput, ListCorporationMedalsIssuedOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationMedalsIssuedInput) (*mcpsdk.CallToolResult, ListCorporationMedalsIssuedOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -1063,7 +1325,11 @@ func listCorporationMedalsIssuedHandler(version, clientID string, store ConfigSt
 		if !found {
 			return nil, ListCorporationMedalsIssuedOutput{}, fmt.Errorf("list corporation medals issued for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		issued, totalPages, err := listCorporationMedalsIssued(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.Page)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCorporationMedalsIssuedOutput{}, fmt.Errorf("list corporation medals issued: %w", err)
+		}
+		issued, totalPages, err := listCorporationMedalsIssued(ctx, client, in.CorporationID, in.Page)
 		if err != nil {
 			return nil, ListCorporationMedalsIssuedOutput{}, fmt.Errorf("list corporation medals issued: %w", err)
 		}
@@ -1091,11 +1357,12 @@ type Starbase struct {
 	UnanchorAt      *time.Time `json:"unanchorAt,omitempty"`
 }
 
-var listCorporationStarbases = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]Starbase, int32, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, 0, fmt.Errorf("build ESI client: %w", err)
-	}
+// corporationStarbasesESI is the ESI call list_corporation_starbases makes.
+type corporationStarbasesESI interface {
+	CorporationStarbases(ctx context.Context, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdStarbasesGetInner, int32, error)
+}
+
+func listCorporationStarbases(ctx context.Context, client corporationStarbasesESI, corporationID int64, page int32) ([]Starbase, int32, error) {
 	starbases, totalPages, err := client.CorporationStarbases(ctx, corporationID, page)
 	if err != nil {
 		return nil, 0, err
@@ -1123,7 +1390,16 @@ type ListCorporationStarbasesOutput struct {
 	Starbases     []Starbase `json:"starbases"`
 }
 
-func listCorporationStarbasesHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCorporationStarbasesInput, ListCorporationStarbasesOutput] {
+// AddListCorporationStarbases registers list_corporation_starbases. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListCorporationStarbases[C corporationStarbasesESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore corporationStarbaseNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_corporation_starbases",
+		Description: "List a corporation's starbases (POSes), using a logged-in character's roles to authorize.",
+	}, listCorporationStarbasesHandler(userAgent, open, store, sdeStore))
+}
+
+func listCorporationStarbasesHandler[C corporationStarbasesESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore corporationStarbaseNameCache) mcpsdk.ToolHandlerFor[ListCorporationStarbasesInput, ListCorporationStarbasesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationStarbasesInput) (*mcpsdk.CallToolResult, ListCorporationStarbasesOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -1132,7 +1408,11 @@ func listCorporationStarbasesHandler(version, clientID string, store ConfigStore
 		if !found {
 			return nil, ListCorporationStarbasesOutput{}, fmt.Errorf("list corporation starbases for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		starbases, totalPages, err := listCorporationStarbases(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.Page)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCorporationStarbasesOutput{}, fmt.Errorf("list corporation starbases: %w", err)
+		}
+		starbases, totalPages, err := listCorporationStarbases(ctx, client, in.CorporationID, in.Page)
 		if err != nil {
 			return nil, ListCorporationStarbasesOutput{}, fmt.Errorf("list corporation starbases: %w", err)
 		}
@@ -1140,7 +1420,7 @@ func listCorporationStarbasesHandler(version, clientID string, store ConfigStore
 		for i := range starbases {
 			ids[i] = starbases[i].TypeID
 		}
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		names := resolveTypeNames(ctx, sdeStore, userAgent, ids)
 		for i := range starbases {
 			starbases[i].TypeName = names[starbases[i].TypeID]
 		}
@@ -1152,8 +1432,8 @@ func listCorporationStarbasesHandler(version, clientID string, store ConfigStore
 				moonIDs = append(moonIDs, *s.MoonID)
 			}
 		}
-		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), systemIDs)
-		moonNames := resolveMoonNames(ctx, sdeStore, sso.UserAgent(version), moonIDs)
+		systemNames := resolveSystemNames(ctx, sdeStore, userAgent, systemIDs)
+		moonNames := resolveMoonNames(ctx, sdeStore, userAgent, moonIDs)
 		for i := range starbases {
 			starbases[i].SystemName = systemNames[starbases[i].SystemID]
 			if starbases[i].MoonID != nil {
@@ -1193,11 +1473,12 @@ type StarbaseDetail struct {
 	UseAllianceStandings                bool           `json:"useAllianceStandings"`
 }
 
-var getCorporationStarbase = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, starbaseID int64, systemID int64) (StarbaseDetail, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return StarbaseDetail{}, fmt.Errorf("build ESI client: %w", err)
-	}
+// corporationStarbaseESI is the ESI call get_corporation_starbase makes.
+type corporationStarbaseESI interface {
+	CorporationStarbaseDetail(ctx context.Context, corporationID int64, starbaseID int64, systemID int64) (*esiapi.CorporationsCorporationIdStarbasesStarbaseIdGet, error)
+}
+
+func getCorporationStarbase(ctx context.Context, client corporationStarbaseESI, corporationID int64, starbaseID int64, systemID int64) (StarbaseDetail, error) {
 	detail, err := client.CorporationStarbaseDetail(ctx, corporationID, starbaseID, systemID)
 	if err != nil {
 		return StarbaseDetail{}, err
@@ -1228,7 +1509,16 @@ type GetCorporationStarbaseOutput struct {
 	Detail        StarbaseDetail `json:"detail"`
 }
 
-func getCorporationStarbaseHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetCorporationStarbaseInput, GetCorporationStarbaseOutput] {
+// AddGetCorporationStarbase registers get_corporation_starbase. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddGetCorporationStarbase[C corporationStarbaseESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore typeNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_corporation_starbase",
+		Description: "Get detail for one of a corporation's starbases (POSes), using a logged-in character's roles to authorize.",
+	}, getCorporationStarbaseHandler(userAgent, open, store, sdeStore))
+}
+
+func getCorporationStarbaseHandler[C corporationStarbaseESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore typeNameCache) mcpsdk.ToolHandlerFor[GetCorporationStarbaseInput, GetCorporationStarbaseOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCorporationStarbaseInput) (*mcpsdk.CallToolResult, GetCorporationStarbaseOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -1237,7 +1527,11 @@ func getCorporationStarbaseHandler(version, clientID string, store ConfigStore, 
 		if !found {
 			return nil, GetCorporationStarbaseOutput{}, fmt.Errorf("get corporation starbase for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		detail, err := getCorporationStarbase(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.StarbaseID, in.SystemID)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, GetCorporationStarbaseOutput{}, fmt.Errorf("get corporation starbase: %w", err)
+		}
+		detail, err := getCorporationStarbase(ctx, client, in.CorporationID, in.StarbaseID, in.SystemID)
 		if err != nil {
 			return nil, GetCorporationStarbaseOutput{}, fmt.Errorf("get corporation starbase: %w", err)
 		}
@@ -1245,7 +1539,7 @@ func getCorporationStarbaseHandler(version, clientID string, store ConfigStore, 
 		for i := range detail.Fuels {
 			ids[i] = detail.Fuels[i].TypeID
 		}
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		names := resolveTypeNames(ctx, sdeStore, userAgent, ids)
 		for i := range detail.Fuels {
 			detail.Fuels[i].TypeName = names[detail.Fuels[i].TypeID]
 		}
@@ -1280,11 +1574,12 @@ type Structure struct {
 	UnanchorsAt        *time.Time         `json:"unanchorsAt,omitempty"`
 }
 
-var listCorporationStructures = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]Structure, int32, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, 0, fmt.Errorf("build ESI client: %w", err)
-	}
+// corporationStructuresESI is the ESI call list_corporation_structures makes.
+type corporationStructuresESI interface {
+	CorporationStructures(ctx context.Context, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdStructuresGetInner, int32, error)
+}
+
+func listCorporationStructures(ctx context.Context, client corporationStructuresESI, corporationID int64, page int32) ([]Structure, int32, error) {
 	structures, totalPages, err := client.CorporationStructures(ctx, corporationID, page)
 	if err != nil {
 		return nil, 0, err
@@ -1319,7 +1614,16 @@ type ListCorporationStructuresOutput struct {
 	Structures    []Structure `json:"structures"`
 }
 
-func listCorporationStructuresHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCorporationStructuresInput, ListCorporationStructuresOutput] {
+// AddListCorporationStructures registers list_corporation_structures. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListCorporationStructures[C corporationStructuresESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore corporationFacilityNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_corporation_structures",
+		Description: "List a corporation's structures, using a logged-in character's roles to authorize.",
+	}, listCorporationStructuresHandler(userAgent, open, store, sdeStore))
+}
+
+func listCorporationStructuresHandler[C corporationStructuresESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore corporationFacilityNameCache) mcpsdk.ToolHandlerFor[ListCorporationStructuresInput, ListCorporationStructuresOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationStructuresInput) (*mcpsdk.CallToolResult, ListCorporationStructuresOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -1328,7 +1632,11 @@ func listCorporationStructuresHandler(version, clientID string, store ConfigStor
 		if !found {
 			return nil, ListCorporationStructuresOutput{}, fmt.Errorf("list corporation structures for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		structures, totalPages, err := listCorporationStructures(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.Page)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCorporationStructuresOutput{}, fmt.Errorf("list corporation structures: %w", err)
+		}
+		structures, totalPages, err := listCorporationStructures(ctx, client, in.CorporationID, in.Page)
 		if err != nil {
 			return nil, ListCorporationStructuresOutput{}, fmt.Errorf("list corporation structures: %w", err)
 		}
@@ -1336,7 +1644,7 @@ func listCorporationStructuresHandler(version, clientID string, store ConfigStor
 		for i := range structures {
 			ids[i] = structures[i].TypeID
 		}
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		names := resolveTypeNames(ctx, sdeStore, userAgent, ids)
 		for i := range structures {
 			structures[i].TypeName = names[structures[i].TypeID]
 		}
@@ -1344,7 +1652,7 @@ func listCorporationStructuresHandler(version, clientID string, store ConfigStor
 		for i := range structures {
 			systemIDs[i] = structures[i].SystemID
 		}
-		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), systemIDs)
+		systemNames := resolveSystemNames(ctx, sdeStore, userAgent, systemIDs)
 		for i := range structures {
 			structures[i].SystemName = systemNames[structures[i].SystemID]
 		}

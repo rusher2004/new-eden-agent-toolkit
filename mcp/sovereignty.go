@@ -7,11 +7,7 @@ import (
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
-
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
-
-	"github.com/rusher2004/new-eden-agent-toolkit/esi"
 )
 
 // --- list_sovereignty_campaigns (public) ---
@@ -36,9 +32,27 @@ type SovereigntyCampaign struct {
 	Participants      []SovereigntyParticipant `json:"participants,omitempty"`
 }
 
-var listSovereigntyCampaigns = func(ctx context.Context, userAgent string) ([]esiapi.SovereigntyCampaignsGetInner, error) {
-	client := esi.NewPublicClient(userAgent)
+// sovereigntyCampaignsESI is the public ESI call list_sovereignty_campaigns makes.
+type sovereigntyCampaignsESI interface {
+	SovereigntyCampaigns(ctx context.Context) ([]esiapi.SovereigntyCampaignsGetInner, error)
+}
+
+func listSovereigntyCampaigns(ctx context.Context, client sovereigntyCampaignsESI) ([]esiapi.SovereigntyCampaignsGetInner, error) {
 	return client.SovereigntyCampaigns(ctx)
+}
+
+// sovereigntyCampaignNameCache is the SDE reads list_sovereignty_campaigns
+// names constellations and systems with.
+type sovereigntyCampaignNameCache interface {
+	constellationNameCache
+	systemNameCache
+}
+
+// sovereigntySystemNameCache is the SDE reads list_sovereignty_systems names
+// systems and factions with.
+type sovereigntySystemNameCache interface {
+	systemNameCache
+	factionNameCache
 }
 
 type ListSovereigntyCampaignsInput struct{}
@@ -46,9 +60,18 @@ type ListSovereigntyCampaignsOutput struct {
 	Campaigns []SovereigntyCampaign `json:"campaigns"`
 }
 
-func listSovereigntyCampaignsHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListSovereigntyCampaignsInput, ListSovereigntyCampaignsOutput] {
+// AddListSovereigntyCampaigns registers list_sovereignty_campaigns. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListSovereigntyCampaigns[C sovereigntyCampaignsESI](s *mcpsdk.Server, userAgent string, open func() C, sdeStore sovereigntyCampaignNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_sovereignty_campaigns",
+		Description: "List every active sovereignty campaign in the game (public data, no character required).",
+	}, listSovereigntyCampaignsHandler(userAgent, open, sdeStore))
+}
+
+func listSovereigntyCampaignsHandler[C sovereigntyCampaignsESI](userAgent string, open func() C, sdeStore sovereigntyCampaignNameCache) mcpsdk.ToolHandlerFor[ListSovereigntyCampaignsInput, ListSovereigntyCampaignsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListSovereigntyCampaignsInput) (*mcpsdk.CallToolResult, ListSovereigntyCampaignsOutput, error) {
-		campaigns, err := listSovereigntyCampaigns(ctx, sso.UserAgent(version))
+		campaigns, err := listSovereigntyCampaigns(ctx, open())
 		if err != nil {
 			return nil, ListSovereigntyCampaignsOutput{}, fmt.Errorf("list sovereignty campaigns: %w", err)
 		}
@@ -72,8 +95,8 @@ func listSovereigntyCampaignsHandler(version string, sdeStore SDEStore) mcpsdk.T
 			constellationIDs[i] = c.ConstellationID
 			systemIDs[i] = c.SolarSystemID
 		}
-		constellationNames := resolveConstellationNames(ctx, sdeStore, sso.UserAgent(version), constellationIDs)
-		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), systemIDs)
+		constellationNames := resolveConstellationNames(ctx, sdeStore, userAgent, constellationIDs)
+		systemNames := resolveSystemNames(ctx, sdeStore, userAgent, systemIDs)
 		for i := range out {
 			out[i].ConstellationName = constellationNames[out[i].ConstellationID]
 			out[i].SolarSystemName = systemNames[out[i].SolarSystemID]

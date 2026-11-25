@@ -21,16 +21,17 @@ func TestGetCharacterAttributesHandler_MapsFields(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCharacterAttributes
-	t.Cleanup(func() { getCharacterAttributes = orig })
 	cooldown := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
 	lastRemap := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	bonusRemaps := int64(1)
-	getCharacterAttributes = func(ctx context.Context, clientID string, characterID int32, userAgent string) (int64, int64, int64, int64, int64, *time.Time, *int64, *time.Time, error) {
-		return 20, 21, 22, 23, 24, &cooldown, &bonusRemaps, &lastRemap, nil
-	}
+	fake := fakeCharacterAttributesESI{characterAttributes: func(context.Context) (*esiapi.CharactersCharacterIdAttributesGet, error) {
+		return &esiapi.CharactersCharacterIdAttributesGet{
+			Charisma: 20, Intelligence: 21, Memory: 22, Perception: 23, Willpower: 24,
+			AccruedRemapCooldownDate: &cooldown, BonusRemaps: &bonusRemaps, LastRemapDate: &lastRemap,
+		}, nil
+	}}
 
-	handler := getCharacterAttributesHandler("v1", "client-id", store)
+	handler := getCharacterAttributesHandler(openNarrow[characterAttributesESI](fake), store)
 	_, out, err := handler(context.Background(), nil, GetCharacterAttributesInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -53,14 +54,7 @@ func TestGetCharacterAttributesHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := getCharacterAttributes
-	t.Cleanup(func() { getCharacterAttributes = orig })
-	getCharacterAttributes = func(ctx context.Context, clientID string, characterID int32, userAgent string) (int64, int64, int64, int64, int64, *time.Time, *int64, *time.Time, error) {
-		t.Fatal("getCharacterAttributes should not be called for an unknown character")
-		return 0, 0, 0, 0, 0, nil, nil, nil, nil
-	}
-
-	handler := getCharacterAttributesHandler("v1", "client-id", store)
+	handler := getCharacterAttributesHandler(noNarrow[characterAttributesESI](t), store)
 	_, _, err := handler(context.Background(), nil, GetCharacterAttributesInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -76,22 +70,20 @@ func TestListCharacterSkillQueueHandler_MapsFields(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCharacterSkillQueue
-	t.Cleanup(func() { listCharacterSkillQueue = orig })
 	finish := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
 	start := time.Date(2026, 7, 20, 0, 0, 0, 0, time.UTC)
 	levelStartSp := int64(90510)
 	levelEndSp := int64(256000)
 	trainingStartSp := int64(90510)
-	listCharacterSkillQueue = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]SkillQueueEntry, error) {
-		return []SkillQueueEntry{{
-			SkillID: 3300, FinishedLevel: 5, QueuePosition: 0,
+	fake := fakeCharacterSkillQueueESI{characterSkillQueue: func(context.Context) ([]esiapi.CharactersSkillqueueSkill, error) {
+		return []esiapi.CharactersSkillqueueSkill{{
+			SkillId: 3300, FinishedLevel: 5, QueuePosition: 0,
 			FinishDate: &finish, StartDate: &start,
 			LevelStartSp: &levelStartSp, LevelEndSp: &levelEndSp, TrainingStartSp: &trainingStartSp,
 		}}, nil
-	}
+	}}
 
-	handler := listCharacterSkillQueueHandler("v1", "client-id", store)
+	handler := listCharacterSkillQueueHandler(openNarrow[characterSkillQueueESI](fake), store)
 	_, out, err := handler(context.Background(), nil, ListCharacterSkillQueueInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -124,14 +116,7 @@ func TestListCharacterSkillQueueHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := listCharacterSkillQueue
-	t.Cleanup(func() { listCharacterSkillQueue = orig })
-	listCharacterSkillQueue = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]SkillQueueEntry, error) {
-		t.Fatal("listCharacterSkillQueue should not be called for an unknown character")
-		return nil, nil
-	}
-
-	handler := listCharacterSkillQueueHandler("v1", "client-id", store)
+	handler := listCharacterSkillQueueHandler(noNarrow[characterSkillQueueESI](t), store)
 	_, _, err := handler(context.Background(), nil, ListCharacterSkillQueueInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -197,14 +182,10 @@ func TestGetCharacterAttributesHandler_PropagatesError(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCharacterAttributes
-	t.Cleanup(func() { getCharacterAttributes = orig })
 	wantErr := errors.New("upstream failure")
-	getCharacterAttributes = func(ctx context.Context, clientID string, characterID int32, userAgent string) (int64, int64, int64, int64, int64, *time.Time, *int64, *time.Time, error) {
-		return 0, 0, 0, 0, 0, nil, nil, nil, wantErr
-	}
+	fake := fakeCharacterAttributesESI{characterAttributes: func(context.Context) (*esiapi.CharactersCharacterIdAttributesGet, error) { return nil, wantErr }}
 
-	handler := getCharacterAttributesHandler("v1", "client-id", store)
+	handler := getCharacterAttributesHandler(openNarrow[characterAttributesESI](fake), store)
 	_, _, err := handler(context.Background(), nil, GetCharacterAttributesInput{CharacterID: 7})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -218,14 +199,10 @@ func TestListCharacterSkillQueueHandler_PropagatesError(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCharacterSkillQueue
-	t.Cleanup(func() { listCharacterSkillQueue = orig })
 	wantErr := errors.New("upstream failure")
-	listCharacterSkillQueue = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]SkillQueueEntry, error) {
-		return nil, wantErr
-	}
+	fake := fakeCharacterSkillQueueESI{characterSkillQueue: func(context.Context) ([]esiapi.CharactersSkillqueueSkill, error) { return nil, wantErr }}
 
-	handler := listCharacterSkillQueueHandler("v1", "client-id", store)
+	handler := listCharacterSkillQueueHandler(openNarrow[characterSkillQueueESI](fake), store)
 	_, _, err := handler(context.Background(), nil, ListCharacterSkillQueueInput{CharacterID: 7})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -275,4 +252,50 @@ func (f fakeCharacterSkillsESI) CharacterSkills(ctx context.Context) (*esiapi.Ch
 		return nil, errNotFaked
 	}
 	return f.characterSkills(ctx)
+}
+
+func TestGetCharacterAttributesHandler_PropagatesOpenError(t *testing.T) {
+	store := characterStore(t, config.Character{ID: 7, Name: "Test Pilot"})
+
+	wantErr := errors.New("no token")
+	handler := getCharacterAttributesHandler(failNarrow[characterAttributesESI](wantErr), store)
+	_, _, err := handler(context.Background(), nil, GetCharacterAttributesInput{CharacterID: 7})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestListCharacterSkillQueueHandler_PropagatesOpenError(t *testing.T) {
+	store := characterStore(t, config.Character{ID: 7, Name: "Test Pilot"})
+
+	wantErr := errors.New("no token")
+	handler := listCharacterSkillQueueHandler(failNarrow[characterSkillQueueESI](wantErr), store)
+	_, _, err := handler(context.Background(), nil, ListCharacterSkillQueueInput{CharacterID: 7})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+// fakeCharacterAttributesESI fakes characterAttributesESI; a nil characterAttributes fails as an unfaked call.
+type fakeCharacterAttributesESI struct {
+	characterAttributes func(ctx context.Context) (*esiapi.CharactersCharacterIdAttributesGet, error)
+}
+
+func (f fakeCharacterAttributesESI) CharacterAttributes(ctx context.Context) (*esiapi.CharactersCharacterIdAttributesGet, error) {
+	if f.characterAttributes == nil {
+		return nil, errNotFaked
+	}
+	return f.characterAttributes(ctx)
+}
+
+// fakeCharacterSkillQueueESI fakes characterSkillQueueESI; a nil characterSkillQueue fails as an unfaked call.
+type fakeCharacterSkillQueueESI struct {
+	characterSkillQueue func(ctx context.Context) ([]esiapi.CharactersSkillqueueSkill, error)
+}
+
+func (f fakeCharacterSkillQueueESI) CharacterSkillQueue(ctx context.Context) ([]esiapi.CharactersSkillqueueSkill, error) {
+	if f.characterSkillQueue == nil {
+		return nil, errNotFaked
+	}
+	return f.characterSkillQueue(ctx)
 }

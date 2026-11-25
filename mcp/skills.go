@@ -7,19 +7,16 @@ import (
 
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
-
-	"github.com/rusher2004/new-eden-agent-toolkit/esi"
 )
 
 // --- get_character_attributes (private) ---
 
-var getCharacterAttributes = func(ctx context.Context, clientID string, characterID int32, userAgent string) (int64, int64, int64, int64, int64, *time.Time, *int64, *time.Time, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return 0, 0, 0, 0, 0, nil, nil, nil, fmt.Errorf("build ESI client: %w", err)
-	}
+// characterAttributesESI is the ESI call get_character_attributes makes.
+type characterAttributesESI interface {
+	CharacterAttributes(ctx context.Context) (*esiapi.CharactersCharacterIdAttributesGet, error)
+}
+
+func getCharacterAttributes(ctx context.Context, client characterAttributesESI) (int64, int64, int64, int64, int64, *time.Time, *int64, *time.Time, error) {
 	attrs, err := client.CharacterAttributes(ctx)
 	if err != nil {
 		return 0, 0, 0, 0, 0, nil, nil, nil, err
@@ -43,7 +40,16 @@ type GetCharacterAttributesOutput struct {
 	LastRemapDate            *time.Time `json:"lastRemapDate,omitempty"`
 }
 
-func getCharacterAttributesHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetCharacterAttributesInput, GetCharacterAttributesOutput] {
+// AddGetCharacterAttributes registers get_character_attributes. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddGetCharacterAttributes[C characterAttributesESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_character_attributes",
+		Description: "Get a logged-in EVE Online character's neural attributes (Charisma, Intelligence, Memory, Perception, Willpower) and remap history.",
+	}, getCharacterAttributesHandler(open, store))
+}
+
+func getCharacterAttributesHandler[C characterAttributesESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[GetCharacterAttributesInput, GetCharacterAttributesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterAttributesInput) (*mcpsdk.CallToolResult, GetCharacterAttributesOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -52,7 +58,11 @@ func getCharacterAttributesHandler(version, clientID string, store ConfigStore) 
 		if !found {
 			return nil, GetCharacterAttributesOutput{}, fmt.Errorf("get character attributes for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		charisma, intelligence, memory, perception, willpower, accruedRemapCooldownDate, bonusRemaps, lastRemapDate, err := getCharacterAttributes(ctx, clientID, in.CharacterID, sso.UserAgent(version))
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, GetCharacterAttributesOutput{}, fmt.Errorf("get character attributes: %w", err)
+		}
+		charisma, intelligence, memory, perception, willpower, accruedRemapCooldownDate, bonusRemaps, lastRemapDate, err := getCharacterAttributes(ctx, client)
 		if err != nil {
 			return nil, GetCharacterAttributesOutput{}, fmt.Errorf("get character attributes: %w", err)
 		}
@@ -77,11 +87,12 @@ type SkillQueueEntry struct {
 	TrainingStartSp *int64     `json:"trainingStartSp,omitempty"`
 }
 
-var listCharacterSkillQueue = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]SkillQueueEntry, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
+// characterSkillQueueESI is the ESI call list_character_skill_queue makes.
+type characterSkillQueueESI interface {
+	CharacterSkillQueue(ctx context.Context) ([]esiapi.CharactersSkillqueueSkill, error)
+}
+
+func listCharacterSkillQueue(ctx context.Context, client characterSkillQueueESI) ([]SkillQueueEntry, error) {
 	queue, err := client.CharacterSkillQueue(ctx)
 	if err != nil {
 		return nil, err
@@ -105,7 +116,16 @@ type ListCharacterSkillQueueOutput struct {
 	Queue       []SkillQueueEntry `json:"queue"`
 }
 
-func listCharacterSkillQueueHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCharacterSkillQueueInput, ListCharacterSkillQueueOutput] {
+// AddListCharacterSkillQueue registers list_character_skill_queue. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListCharacterSkillQueue[C characterSkillQueueESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_character_skill_queue",
+		Description: "List a logged-in EVE Online character's current skill training queue.",
+	}, listCharacterSkillQueueHandler(open, store))
+}
+
+func listCharacterSkillQueueHandler[C characterSkillQueueESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListCharacterSkillQueueInput, ListCharacterSkillQueueOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterSkillQueueInput) (*mcpsdk.CallToolResult, ListCharacterSkillQueueOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -114,7 +134,11 @@ func listCharacterSkillQueueHandler(version, clientID string, store ConfigStore)
 		if !found {
 			return nil, ListCharacterSkillQueueOutput{}, fmt.Errorf("list character skill queue for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		queue, err := listCharacterSkillQueue(ctx, clientID, in.CharacterID, sso.UserAgent(version))
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCharacterSkillQueueOutput{}, fmt.Errorf("list character skill queue: %w", err)
+		}
+		queue, err := listCharacterSkillQueue(ctx, client)
 		if err != nil {
 			return nil, ListCharacterSkillQueueOutput{}, fmt.Errorf("list character skill queue: %w", err)
 		}
