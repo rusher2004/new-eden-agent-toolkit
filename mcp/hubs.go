@@ -429,9 +429,10 @@ func (p *planner) allOrders(ctx context.Context, hub config.HubProfile, typeIDs 
 		}
 		return out, nil
 	}
+	public := p.openPublicESI()
 	for _, id := range typeIDs {
 		orders, err := esi.AllPages(ctx, func(ctx context.Context, page int32) ([]esiapi.MarketsRegionIdOrdersGetInner, int32, error) {
-			return listMarketOrders(ctx, p.openPublicESI(), hub.RegionID(), "all", id, page)
+			return listMarketOrders(ctx, public, hub.RegionID(), "all", id, page)
 		})
 		if err != nil {
 			return nil, fmt.Errorf("orders for type %d: %w", id, err)
@@ -446,8 +447,9 @@ func (p *planner) allOrders(ctx context.Context, hub config.HubProfile, typeIDs 
 // contractCheck counts a hub's public contracts by value and lists the
 // capital ship groups in the priciest ones.
 func (p *planner) contractCheck(ctx context.Context, hub config.HubProfile) (*config.ContractCheck, error) {
+	public := p.openPublicESI()
 	all, err := esi.AllPages(ctx, func(ctx context.Context, page int32) ([]Contract, int32, error) {
-		return listPublicContracts(ctx, p.openPublicESI(), hub.RegionID(), page)
+		return listPublicContracts(ctx, public, hub.RegionID(), page)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("public contracts in %s: %w", hub.Region.Name, err)
@@ -468,7 +470,7 @@ func (p *planner) contractCheck(ctx context.Context, hub config.HubProfile) (*co
 	var typeIDs []int64
 	for _, id := range bands.Priciest {
 		items, err := esi.AllPages(ctx, func(ctx context.Context, page int32) ([]ContractItem, int32, error) {
-			return listPublicContractItems(ctx, p.openPublicESI(), id, page)
+			return listPublicContractItems(ctx, public, id, page)
 		})
 		if err != nil {
 			if ctx.Err() != nil {

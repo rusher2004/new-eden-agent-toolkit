@@ -243,13 +243,14 @@ func (p *planner) sellBooks(ctx context.Context, regionID int64, typeIDs []int64
 	var firstErr error
 	sem := make(chan struct{}, 4)
 	var wg sync.WaitGroup
+	public := p.openPublicESI() // one client for every request this call makes
 	for _, id := range ids {
 		wg.Add(1)
 		sem <- struct{}{}
 		go func(id int64) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			orders, err := fetchSellOrders(ctx, p.openPublicESI(), regionID, id)
+			orders, err := fetchSellOrders(ctx, public, regionID, id)
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
@@ -278,7 +279,8 @@ func (p *planner) skills(ctx context.Context, characterID int32) (map[int64]int,
 	}
 	client, err := p.esi(ctx, characterID)
 	if err != nil {
-		return nil, fmt.Errorf("skills of %d: %w", characterID, err)
+		// The opener's error already names the character.
+		return nil, fmt.Errorf("read skills: %w", err)
 	}
 	raw, _, _, err := listCharacterSkills(ctx, client)
 	if err != nil {

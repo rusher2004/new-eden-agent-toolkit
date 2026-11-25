@@ -335,8 +335,6 @@ type InviteFleetMemberOutput struct {
 	Role              string `json:"role"`
 }
 
-// inviteFleetMemberHandler is a write tool: it changes state on FC's server, so -- like
-// respond_calendar_event -- it validates its input BEFORE loading config.Store or calling ESI.
 // AddInviteFleetMember registers invite_fleet_member. open builds the character's ESI
 // client; any client with the fleetsESI methods will do.
 func AddInviteFleetMember[C fleetsESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
@@ -346,6 +344,8 @@ func AddInviteFleetMember[C fleetsESI](s *mcpsdk.Server, open func(ctx context.C
 	}, inviteFleetMemberHandler(open, store))
 }
 
+// inviteFleetMemberHandler is a write tool: it changes state on FC's server, so -- like
+// respond_calendar_event -- it validates its input BEFORE loading config.Store or calling ESI.
 func inviteFleetMemberHandler[C fleetsESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[InviteFleetMemberInput, InviteFleetMemberOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in InviteFleetMemberInput) (*mcpsdk.CallToolResult, InviteFleetMemberOutput, error) {
 		if !validFleetRoles[in.Role] {

@@ -162,7 +162,9 @@ func (p *planner) containerNames(ctx context.Context, own *ownership, characterI
 	}
 	client, err := p.esi(ctx, characterID)
 	if err != nil {
-		return // names are a convenience; missing ones stay blank
+		// Best-effort, like the additive name enrichment: names are a
+		// convenience and the blueprints are listed without them.
+		return
 	}
 	for start := 0; start < len(ids); start += 1000 {
 		chunk := ids[start:min(start+1000, len(ids))]

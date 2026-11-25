@@ -56,7 +56,7 @@ func structureFacts(ctx context.Context, p *planner, id int64, characterID int32
 	}
 	client, err := p.esi(ctx, characterID)
 	if err != nil {
-		return config.Structure{}, fmt.Errorf("read structure %d through character %d (it needs docking access and the structures scope group): %w", id, characterID, err)
+		return config.Structure{}, fmt.Errorf("open ESI client to read structure %d through character %d: %w", id, characterID, err)
 	}
 	us, err := getUniverseStructure(ctx, client, id)
 	if err != nil {

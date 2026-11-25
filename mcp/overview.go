@@ -86,6 +86,7 @@ type GetLogisticsOverviewOutput struct {
 type overviewReads struct {
 	systemID, stationID, structureID int64
 	locErr                           error
+	openErr                          error // the client couldn't be opened, so no part was read
 	shipItem                         int64
 	shipName                         string
 	shipType                         int64
@@ -120,12 +121,13 @@ func readOverview[C overviewClient](ctx context.Context, open func(ctx context.C
 	var r overviewReads
 	client, err := open(ctx, id)
 	if err != nil {
+		r.openErr = err
 		r.locErr, r.shipErr, r.onlineErr, r.clonesErr, r.fatigueErr, r.skillsErr = err, err, err, err, err, err
 		return r
 	}
 	var wg sync.WaitGroup
 	run := func(f func()) {
-		wg.Go(func() { ; f() })
+		wg.Go(f)
 	}
 	run(func() {
 		var st, sr *int64
@@ -201,7 +203,15 @@ func getLogisticsOverviewHandler[C overviewClient, P plannerPublicClient](userAg
 		for _, c := range chars {
 			r := readOverview(ctx, openESI, c.ID)
 			oc := OverviewCharacter{CharacterID: c.ID, CharacterName: c.Name, Account: c.Account, Abilities: []string{}, Hulls: []HullClass{}}
-			unread := func(part string, err error) { oc.Unread = append(oc.Unread, fmt.Sprintf("%s: %v", part, err)) }
+			if r.openErr != nil {
+				oc.Unread = append(oc.Unread, fmt.Sprintf("everything (the ESI client couldn't be opened): %v", r.openErr))
+			}
+			unread := func(part string, err error) {
+				if r.openErr != nil {
+					return // already reported once above
+				}
+				oc.Unread = append(oc.Unread, fmt.Sprintf("%s: %v", part, err))
+			}
 
 			if r.onlineErr != nil {
 				unread("online status", r.onlineErr)
@@ -323,10 +333,11 @@ func getLogisticsOverviewHandler[C overviewClient, P plannerPublicClient](userAg
 				suspect[l] = on
 			}
 		}
-		confirmed, err := confirmOnlineConflicts(ctx, openESI, suspect, online)
+		confirmed, recheckWarnings, err := confirmOnlineConflicts(ctx, openESI, suspect, online)
 		if err != nil {
 			return nil, GetLogisticsOverviewOutput{}, err
 		}
+		out.Warnings = append(out.Warnings, recheckWarnings...)
 		for _, l := range labels {
 			if on := confirmed[l]; len(on) > 1 {
 				sort.Strings(on)
@@ -365,8 +376,9 @@ var sleepCtx = func(ctx context.Context, d time.Duration) error {
 // it waits until the cache has expired and checks those characters again,
 // keeping only the ones still online. A character whose re-check fails is
 // left out, since a conflict it can't confirm isn't reported.
-func confirmOnlineConflicts[C characterOnlineESI](ctx context.Context, open func(ctx context.Context, characterID int32) (C, error), suspect map[string][]config.Character, online map[int32]*esi.CharacterOnlineStatus) (map[string][]string, error) {
+func confirmOnlineConflicts[C characterOnlineESI](ctx context.Context, open func(ctx context.Context, characterID int32) (C, error), suspect map[string][]config.Character, online map[int32]*esi.CharacterOnlineStatus) (map[string][]string, []string, error) {
 	confirmed := map[string][]string{}
+	var warnings []string
 	recheck := map[string][]config.Character{}
 	var wait time.Duration
 	for l, chars := range suspect {
@@ -393,18 +405,24 @@ func confirmOnlineConflicts[C characterOnlineESI](ctx context.Context, open func
 		wait = max(wait, left)
 	}
 	if len(recheck) == 0 {
-		return confirmed, nil
+		return confirmed, nil, nil
 	}
 	if err := sleepCtx(ctx, wait); err != nil {
-		return nil, fmt.Errorf("wait to re-check online status: %w", err)
+		return nil, nil, fmt.Errorf("wait to re-check online status: %w", err)
 	}
 	for l, chars := range recheck {
 		for _, c := range chars {
 			client, err := open(ctx, c.ID)
 			if err != nil {
+				warnings = append(warnings, fmt.Sprintf("couldn't re-check %s's online status, so an account conflict involving them may be missed: open ESI client: %v", c.Name, err))
 				continue
 			}
-			if st, err := getCharacterOnline(ctx, client); err == nil && st != nil && st.Online {
+			st, err := getCharacterOnline(ctx, client)
+			if err != nil || st == nil {
+				warnings = append(warnings, fmt.Sprintf("couldn't re-check %s's online status, so an account conflict involving them may be missed: %v", c.Name, err))
+				continue
+			}
+			if st.Online {
 				confirmed[l] = append(confirmed[l], c.Name)
 			}
 		}
@@ -412,5 +430,5 @@ func confirmOnlineConflicts[C characterOnlineESI](ctx context.Context, open func
 			delete(confirmed, l)
 		}
 	}
-	return confirmed, nil
+	return confirmed, warnings, nil
 }
