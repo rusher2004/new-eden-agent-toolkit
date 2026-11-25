@@ -41,6 +41,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -142,12 +143,7 @@ func modulePackage(imp, mod string) (string, bool) {
 }
 
 func inList(list []string, s string) bool {
-	for _, x := range list {
-		if x == s {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(list, s)
 }
 
 // Audit scans every non-test .go file under root.
