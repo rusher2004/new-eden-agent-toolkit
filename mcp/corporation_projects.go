@@ -565,7 +565,7 @@ func getCorporationProjectContributionHandler[C projectContributionESI](open fun
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, GetCorporationProjectContributionOutput{}, fmt.Errorf("get corporation project contribution: build ESI client: %w", err)
+			return nil, GetCorporationProjectContributionOutput{}, fmt.Errorf("get corporation project contribution: %w", err)
 		}
 		contribution, err := client.CorporationProjectContribution(ctx, in.CorporationID, in.ProjectID, in.TargetCharacterID)
 		if err != nil {
@@ -627,7 +627,7 @@ func listCorporationProjectContributorsHandler[C projectContributorsESI](open fu
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, ListCorporationProjectContributorsOutput{}, fmt.Errorf("list corporation project contributors: build ESI client: %w", err)
+			return nil, ListCorporationProjectContributorsOutput{}, fmt.Errorf("list corporation project contributors: %w", err)
 		}
 		contributors, cursor, err := client.CorporationProjectContributors(ctx, in.CorporationID, in.ProjectID, in.After, in.Before, in.Limit)
 		if err != nil {
@@ -690,7 +690,7 @@ func getCorporationProjectDetailHandler[C projectDetailESI](userAgent string, op
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, GetCorporationProjectDetailOutput{}, fmt.Errorf("get corporation project detail: build ESI client: %w", err)
+			return nil, GetCorporationProjectDetailOutput{}, fmt.Errorf("get corporation project detail: %w", err)
 		}
 		detail, err := client.CorporationProjectDetail(ctx, in.CorporationID, in.ProjectID)
 		if err != nil {
@@ -849,7 +849,7 @@ func listCorporationProjectsHandler[C projectListingESI](open func(ctx context.C
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, ListCorporationProjectsOutput{}, fmt.Errorf("list corporation projects: build ESI client: %w", err)
+			return nil, ListCorporationProjectsOutput{}, fmt.Errorf("list corporation projects: %w", err)
 		}
 		projects, cursor, err := client.CorporationProjectListing(ctx, in.CorporationID, in.After, in.Before, in.Limit, in.State)
 		if err != nil {

@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"slices"
 	"strings"
@@ -11,55 +12,102 @@ import (
 	"github.com/zalando/go-keyring"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
-// fakeAddCharacters stands in for sso.AddCharacters: it "logs in" each of
-// chars in turn through opts.OnAdded, as the real session does, and records
-// what opts.SavedCharacters reported after the last one.
-func fakeAddCharacters(t *testing.T, chars []sso.Character, savedAfter *[]sso.Character) {
-	t.Helper()
-	orig := addCharacters
-	t.Cleanup(func() { addCharacters = orig })
-	addCharacters = func(ctx context.Context, clientID, userAgent string, opts sso.AddOptions) ([]sso.Character, error) {
-		for _, c := range chars {
-			if err := opts.OnAdded(c); err != nil {
-				return nil, err
-			}
+// fakeLogin stands in for the ESI login flow, so no browser, network or
+// OAuth2 exchange runs. Scope groups "basic", "wallet" and "mail" exist; a
+// group's scope is "scope:<group>". AddCharacters "logs in" each of chars in
+// turn through opts.OnAdded, as the real session does, and records what
+// opts.SavedCharacters reported after the last one.
+type fakeLogin struct {
+	t *testing.T
+	// chars are logged in by AddCharacters. When grantRequested is set, one
+	// character 42 is logged in instead, granted exactly the scopes asked for.
+	chars          []LoginCharacter
+	grantRequested bool
+	addErr         error
+	// granted answers GrantedScopes; nil means the character has none.
+	granted func(characterID int32) ([]string, error)
+
+	requested  []string
+	savedAfter []LoginCharacter
+	logins     int
+}
+
+func (f *fakeLogin) ScopesFor(groups []string) ([]string, error) {
+	set := map[string]bool{"scope:basic": true}
+	for _, g := range groups {
+		if g != "wallet" && g != "mail" {
+			return nil, fmt.Errorf("unknown scope group %q", g)
 		}
-		if savedAfter != nil {
-			saved, err := opts.SavedCharacters()
-			if err != nil {
-				return nil, err
-			}
-			*savedAfter = saved
-		}
-		return chars, nil
+		set["scope:"+g] = true
 	}
+	out := make([]string, 0, len(set))
+	for s := range set {
+		out = append(out, s)
+	}
+	slices.Sort(out)
+	return out, nil
+}
+
+func (f *fakeLogin) GrantedGroups(scopes []string) []string {
+	var out []string
+	for _, g := range []string{"basic", "wallet", "mail"} {
+		if slices.Contains(scopes, "scope:"+g) {
+			out = append(out, g)
+		}
+	}
+	return out
+}
+
+func (f *fakeLogin) GrantedScopes(_ context.Context, characterID int32) ([]string, error) {
+	if f.granted == nil {
+		return nil, nil
+	}
+	return f.granted(characterID)
+}
+
+func (f *fakeLogin) AddCharacters(_ context.Context, opts LoginOptions) ([]LoginCharacter, error) {
+	f.logins++
+	f.requested = opts.Scopes
+	if f.addErr != nil {
+		return nil, f.addErr
+	}
+	chars := f.chars
+	if f.grantRequested {
+		chars = []LoginCharacter{{ID: 42, Name: "Test Pilot", Scopes: opts.Scopes}}
+	}
+	for _, c := range chars {
+		if err := opts.OnAdded(c); err != nil {
+			return nil, err
+		}
+	}
+	saved, err := opts.SavedCharacters()
+	if err != nil {
+		return nil, err
+	}
+	f.savedAfter = saved
+	return chars, nil
 }
 
 func TestAddCharacterHandler_SavesEachCharacterAndReturnsAll(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	chars := []sso.Character{{ID: 42, Name: "Test Pilot"}, {ID: 43, Name: "Alt Pilot"}}
-	var saved []sso.Character
-	fakeAddCharacters(t, chars, &saved)
+	chars := []LoginCharacter{{ID: 42, Name: "Test Pilot"}, {ID: 43, Name: "Alt Pilot"}}
+	login := &fakeLogin{t: t, chars: chars}
 
-	handler := addCharacterHandler("v1", "client-id", store)
+	handler := addCharacterHandler(login, store)
 	_, out, err := handler(context.Background(), nil, AddCharacterInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
 	want := []AddedCharacter{{CharacterID: 42, CharacterName: "Test Pilot"}, {CharacterID: 43, CharacterName: "Alt Pilot"}}
-	for i := range want {
-		want[i].ScopeGroups = sso.GrantedGroups(nil)
-	}
 	if !reflect.DeepEqual(out.Characters, want) {
 		t.Errorf("out.Characters = %+v, want %+v", out.Characters, want)
 	}
-	if !reflect.DeepEqual(saved, chars) {
-		t.Errorf("SavedCharacters during the session = %+v, want %+v", saved, chars)
+	if !reflect.DeepEqual(login.savedAfter, chars) {
+		t.Errorf("SavedCharacters during the session = %+v, want %+v", login.savedAfter, chars)
 	}
 
 	cfg, err := store.Load()
@@ -75,14 +123,14 @@ func TestAddCharacterHandler_SavesEachCharacterAndReturnsAll(t *testing.T) {
 func TestAddCharacterHandler_ReAddSameCharacter_ReplacesNotDuplicates(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
-	handler := addCharacterHandler("v1", "client-id", store)
 
-	fakeAddCharacters(t, []sso.Character{{ID: 42, Name: "Test Pilot"}}, nil)
+	login := &fakeLogin{t: t, chars: []LoginCharacter{{ID: 42, Name: "Test Pilot"}}}
+	handler := addCharacterHandler(login, store)
 	if _, _, err := handler(context.Background(), nil, AddCharacterInput{}); err != nil {
 		t.Fatalf("first handler call: %v", err)
 	}
 
-	fakeAddCharacters(t, []sso.Character{{ID: 42, Name: "Renamed Pilot"}}, nil)
+	login.chars = []LoginCharacter{{ID: 42, Name: "Renamed Pilot"}}
 	if _, _, err := handler(context.Background(), nil, AddCharacterInput{}); err != nil {
 		t.Fatalf("second handler call: %v", err)
 	}
@@ -100,48 +148,28 @@ func TestAddCharacterHandler_PropagatesError(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := addCharacters
-	t.Cleanup(func() { addCharacters = orig })
 	wantErr := errors.New("upstream failure")
-	addCharacters = func(ctx context.Context, clientID, userAgent string, opts sso.AddOptions) ([]sso.Character, error) {
-		return nil, wantErr
-	}
+	login := &fakeLogin{t: t, addErr: wantErr}
 
-	handler := addCharacterHandler("v1", "client-id", store)
+	handler := addCharacterHandler(login, store)
 	_, _, err := handler(context.Background(), nil, AddCharacterInput{})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
 	}
 }
 
-// captureScopes replaces addCharacters with a fake that records the scopes
-// requested and logs in one character that granted exactly those.
-func captureScopes(t *testing.T, got *[]string) {
-	t.Helper()
-	orig := addCharacters
-	t.Cleanup(func() { addCharacters = orig })
-	addCharacters = func(ctx context.Context, clientID, userAgent string, opts sso.AddOptions) ([]sso.Character, error) {
-		*got = opts.Scopes
-		return []sso.Character{{ID: 42, Name: "Test Pilot", Scopes: opts.Scopes}}, nil
-	}
-}
-
 func TestAddCharacterHandler_RequestsDefaultPlusChosenGroups(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
-	var got []string
-	captureScopes(t, &got)
+	login := &fakeLogin{t: t, grantRequested: true}
 
-	_, out, err := addCharacterHandler("v1", "client-id", store)(context.Background(), nil, AddCharacterInput{ScopeGroups: []string{"wallet", "mail"}})
+	_, out, err := addCharacterHandler(login, store)(context.Background(), nil, AddCharacterInput{ScopeGroups: []string{"wallet", "mail"}})
 	if err != nil {
 		t.Fatalf("handler: %v", err)
 	}
-	want, err := sso.ScopesFor([]string{"wallet", "mail"})
-	if err != nil {
-		t.Fatalf("ScopesFor: %v", err)
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("requested scopes = %v, want %v", got, want)
+	want := []string{"scope:basic", "scope:mail", "scope:wallet"}
+	if !reflect.DeepEqual(login.requested, want) {
+		t.Errorf("requested scopes = %v, want %v", login.requested, want)
 	}
 	if groups := out.Characters[0].ScopeGroups; !reflect.DeepEqual(groups, []string{"basic", "wallet", "mail"}) {
 		t.Errorf("reported scope groups = %v", groups)
@@ -150,80 +178,69 @@ func TestAddCharacterHandler_RequestsDefaultPlusChosenGroups(t *testing.T) {
 
 func TestAddCharacterHandler_UnknownGroup_FailsBeforeLogin(t *testing.T) {
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
-	orig := addCharacters
-	t.Cleanup(func() { addCharacters = orig })
-	addCharacters = func(context.Context, string, string, sso.AddOptions) ([]sso.Character, error) {
-		t.Fatal("login started despite an unknown scope group")
-		return nil, nil
-	}
+	login := &fakeLogin{t: t}
 
-	if _, _, err := addCharacterHandler("v1", "client-id", store)(context.Background(), nil, AddCharacterInput{ScopeGroups: []string{"nope"}}); err == nil {
+	if _, _, err := addCharacterHandler(login, store)(context.Background(), nil, AddCharacterInput{ScopeGroups: []string{"nope"}}); err == nil {
 		t.Error("unknown scope group accepted")
+	}
+	if login.logins != 0 {
+		t.Error("login started despite an unknown scope group")
 	}
 }
 
 func TestAddCharacterHandler_ReAuthorize_KeepsExistingScopes(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
-	var got []string
-	captureScopes(t, &got)
-
-	origGranted := grantedScopes
-	t.Cleanup(func() { grantedScopes = origGranted })
-	grantedScopes = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]string, error) {
+	login := &fakeLogin{t: t, grantRequested: true, granted: func(characterID int32) ([]string, error) {
 		if characterID != 42 {
 			t.Errorf("read scopes of character %d, want 42", characterID)
 		}
-		return []string{"publicData", "esi-mail.read_mail.v1"}, nil
-	}
+		return []string{"scope:mail"}, nil
+	}}
 
-	if _, _, err := addCharacterHandler("v1", "client-id", store)(context.Background(), nil, AddCharacterInput{CharacterID: 42, ScopeGroups: []string{"wallet"}}); err != nil {
+	if _, _, err := addCharacterHandler(login, store)(context.Background(), nil, AddCharacterInput{CharacterID: 42, ScopeGroups: []string{"wallet"}}); err != nil {
 		t.Fatalf("handler: %v", err)
 	}
-	for _, want := range []string{"esi-mail.read_mail.v1", "esi-wallet.read_character_wallet.v1", "esi-skills.read_skills.v1"} {
-		if !slices.Contains(got, want) {
-			t.Errorf("requested scopes are missing %s: %v", want, got)
+	for _, want := range []string{"scope:basic", "scope:mail", "scope:wallet"} {
+		if !slices.Contains(login.requested, want) {
+			t.Errorf("requested scopes are missing %s: %v", want, login.requested)
 		}
 	}
 }
 
-func TestListScopeGroups_MarksDefault(t *testing.T) {
-	_, out, err := listScopeGroupsHandler()(context.Background(), nil, nil)
+// fakeScopeCatalog lists fixed scope groups.
+type fakeScopeCatalog []ScopeGroupInfo
+
+func (f fakeScopeCatalog) ScopeGroups() []ScopeGroupInfo { return f }
+
+func TestListScopeGroups_ReturnsTheCatalog(t *testing.T) {
+	catalog := fakeScopeCatalog{
+		{Name: "basic", Description: "Basic", Default: true, Scopes: []string{"scope:basic"}},
+		{Name: "wallet", Description: "Wallet", Scopes: []string{"scope:wallet"}},
+	}
+	_, out, err := listScopeGroupsHandler(catalog)(context.Background(), nil, nil)
 	if err != nil {
 		t.Fatalf("handler: %v", err)
 	}
-	if len(out.Groups) != len(sso.ScopeGroups) {
-		t.Fatalf("%d groups, want %d", len(out.Groups), len(sso.ScopeGroups))
-	}
-	for _, g := range out.Groups {
-		if g.Default != (g.Name == sso.DefaultScopeGroup) {
-			t.Errorf("group %q default = %v", g.Name, g.Default)
-		}
+	if !reflect.DeepEqual(out.Groups, []ScopeGroupInfo(catalog)) {
+		t.Errorf("groups = %+v, want %+v", out.Groups, catalog)
 	}
 }
 
 func TestAddCharacterHandler_ReAuthorize_WarnsWhenOldScopesUnreadable(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
-	var got []string
-	captureScopes(t, &got)
-
-	origGranted := grantedScopes
-	t.Cleanup(func() { grantedScopes = origGranted })
-	grantedScopes = func(context.Context, string, int32, string) ([]string, error) {
+	login := &fakeLogin{t: t, grantRequested: true, granted: func(int32) ([]string, error) {
 		return nil, errors.New("refresh token revoked")
-	}
+	}}
 
-	_, out, err := addCharacterHandler("v1", "client-id", store)(context.Background(), nil, AddCharacterInput{CharacterID: 42, ScopeGroups: []string{"wallet"}})
+	_, out, err := addCharacterHandler(login, store)(context.Background(), nil, AddCharacterInput{CharacterID: 42, ScopeGroups: []string{"wallet"}})
 	if err != nil {
 		t.Fatalf("handler: %v", err)
 	}
-	want, err := sso.ScopesFor([]string{"wallet"})
-	if err != nil {
-		t.Fatalf("ScopesFor: %v", err)
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("requested scopes = %v, want only the chosen groups %v", got, want)
+	want := []string{"scope:basic", "scope:wallet"}
+	if !reflect.DeepEqual(login.requested, want) {
+		t.Errorf("requested scopes = %v, want only the chosen groups %v", login.requested, want)
 	}
 	if len(out.Warnings) != 1 || !strings.Contains(out.Warnings[0], "refresh token revoked") || !strings.Contains(out.Warnings[0], "characterId 42") {
 		t.Errorf("warnings = %q, want one naming the read error and how to re-grant", out.Warnings)
@@ -233,13 +250,9 @@ func TestAddCharacterHandler_ReAuthorize_WarnsWhenOldScopesUnreadable(t *testing
 func TestAddCharacterHandler_ReAuthorize_WarnsWhenOtherCharacterLoggedIn(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
-	fakeAddCharacters(t, []sso.Character{{ID: 43, Name: "Alt Pilot"}}, nil)
+	login := &fakeLogin{t: t, chars: []LoginCharacter{{ID: 43, Name: "Alt Pilot"}}}
 
-	origGranted := grantedScopes
-	t.Cleanup(func() { grantedScopes = origGranted })
-	grantedScopes = func(context.Context, string, int32, string) ([]string, error) { return nil, nil }
-
-	_, out, err := addCharacterHandler("v1", "client-id", store)(context.Background(), nil, AddCharacterInput{CharacterID: 42, ScopeGroups: []string{"wallet"}})
+	_, out, err := addCharacterHandler(login, store)(context.Background(), nil, AddCharacterInput{CharacterID: 42, ScopeGroups: []string{"wallet"}})
 	if err != nil {
 		t.Fatalf("handler: %v", err)
 	}
@@ -251,15 +264,10 @@ func TestAddCharacterHandler_ReAuthorize_WarnsWhenOtherCharacterLoggedIn(t *test
 func TestAddCharacterHandler_NoWarningsOnPlainAddOrMatchingReAuthorize(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
-	var got []string
-	captureScopes(t, &got)
-
-	origGranted := grantedScopes
-	t.Cleanup(func() { grantedScopes = origGranted })
-	grantedScopes = func(context.Context, string, int32, string) ([]string, error) { return []string{"publicData"}, nil }
+	login := &fakeLogin{t: t, grantRequested: true, granted: func(int32) ([]string, error) { return []string{"scope:basic"}, nil }}
 
 	for _, in := range []AddCharacterInput{{}, {CharacterID: 42, ScopeGroups: []string{"wallet"}}} {
-		_, out, err := addCharacterHandler("v1", "client-id", store)(context.Background(), nil, in)
+		_, out, err := addCharacterHandler(login, store)(context.Background(), nil, in)
 		if err != nil {
 			t.Fatalf("handler(%+v): %v", in, err)
 		}
@@ -272,13 +280,9 @@ func TestAddCharacterHandler_NoWarningsOnPlainAddOrMatchingReAuthorize(t *testin
 func TestAddCharacterHandler_ReAuthorize_NoNewGroups_SaysAccessIsKept(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
-	fakeAddCharacters(t, []sso.Character{{ID: 43, Name: "Alt Pilot"}}, nil)
+	login := &fakeLogin{t: t, chars: []LoginCharacter{{ID: 43, Name: "Alt Pilot"}}}
 
-	origGranted := grantedScopes
-	t.Cleanup(func() { grantedScopes = origGranted })
-	grantedScopes = func(context.Context, string, int32, string) ([]string, error) { return nil, nil }
-
-	_, out, err := addCharacterHandler("v1", "client-id", store)(context.Background(), nil, AddCharacterInput{CharacterID: 42})
+	_, out, err := addCharacterHandler(login, store)(context.Background(), nil, AddCharacterInput{CharacterID: 42})
 	if err != nil {
 		t.Fatalf("handler: %v", err)
 	}

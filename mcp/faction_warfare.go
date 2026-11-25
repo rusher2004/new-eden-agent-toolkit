@@ -101,7 +101,7 @@ func getCharacterFwStatsHandler[C fwCharacterESI](userAgent string, open func(ct
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, GetCharacterFwStatsOutput{}, fmt.Errorf("get character fw stats: build ESI client: %w", err)
+			return nil, GetCharacterFwStatsOutput{}, fmt.Errorf("get character fw stats: %w", err)
 		}
 		stats, err := client.CharacterFwStats(ctx)
 		if err != nil {
@@ -158,7 +158,7 @@ func getCorporationFwStatsHandler[C fwCorporationESI](userAgent string, open fun
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, GetCorporationFwStatsOutput{}, fmt.Errorf("get corporation fw stats: build ESI client: %w", err)
+			return nil, GetCorporationFwStatsOutput{}, fmt.Errorf("get corporation fw stats: %w", err)
 		}
 		stats, err := client.CorporationFwStats(ctx, in.CorporationID)
 		if err != nil {

@@ -252,6 +252,30 @@ func TestRepoHasNoTypeOnlyFiles(t *testing.T) {
 	}
 }
 
+func TestRepoHasNoConcreteDependencies(t *testing.T) {
+	fs, err := Audit("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range fs {
+		if f.Kind == "CONCRETE_PARAM" || f.Kind == "CONCRETE_CTOR" {
+			t.Errorf("concrete producer dependency (declare a small interface in the consumer and let commands/ wire it): %s", f)
+		}
+	}
+}
+
+func TestRepoHasNoAwayInterfaces(t *testing.T) {
+	fs, err := Audit("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range fs {
+		if f.Kind == "IFACE_AWAY" {
+			t.Errorf("interface declared in a file that never uses it (declare it where it is used): %s", f)
+		}
+	}
+}
+
 func TestRepoProducerPackagesDeclareNoInterfaces(t *testing.T) {
 	fs, err := Audit("../..")
 	if err != nil {

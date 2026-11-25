@@ -1,5 +1,8 @@
 # neat plugin — changelog
 
+## 0.20.12
+- No change for players. Internal refactor: the login, character list, character details and remove tools, and the rest of the server, now get their config, static data, ESI client and login flow from the command that starts the server, so no tool builds its own.
+
 ## 0.20.11
 - No change for players. Internal refactor: the market, contract and asset tools get their ESI client from the command that starts the server instead of building it themselves.
 

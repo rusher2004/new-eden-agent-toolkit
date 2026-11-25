@@ -163,7 +163,7 @@ func TestListLoyaltyStoreOffersHandler_ResolvesTypeNames(t *testing.T) {
 
 var errBoom = errors.New("boom")
 
-// noTypesSDE is an SDEStore that knows no types: every lookup misses, so name
+// noTypesSDE is a typeNameCache that knows no types: every lookup misses, so name
 // enrichment adds nothing. It embeds the interface so only Type needs a body;
 // any other call panics, which would flag a handler reaching past what it needs.
 type noTypesSDE struct{}

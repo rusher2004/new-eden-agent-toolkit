@@ -37,6 +37,14 @@ type ListCharactersOutput struct {
 	Warnings   []string        `json:"warnings,omitempty"`
 }
 
+// AddListCharacters registers list_characters.
+func AddListCharacters(s *mcpsdk.Server, store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_characters",
+		Description: "List EVE Online characters currently logged in to neat, with the account label and notes the user gave each. Characters with the same account label are on the same EVE account and can't be logged in at the same time. Its warnings name characters whose account is unknown: ask the user and save the answer with update_character_details.",
+	}, listCharactersHandler(store))
+}
+
 func listCharactersHandler(store configLoader) mcpsdk.ToolHandlerFor[any, ListCharactersOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, _ any) (*mcpsdk.CallToolResult, ListCharactersOutput, error) {
 		cfg, err := store.Load()

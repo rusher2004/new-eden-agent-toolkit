@@ -73,7 +73,7 @@ func listCalendarEventsHandler[C calendarESI](open func(ctx context.Context, cha
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, ListCalendarEventsOutput{}, fmt.Errorf("build ESI client: %w", err)
+			return nil, ListCalendarEventsOutput{}, fmt.Errorf("list calendar events: %w", err)
 		}
 		events, err := listCalendarEvents(ctx, client)
 		if err != nil {
@@ -150,7 +150,7 @@ func getCalendarEventHandler[C calendarESI](open func(ctx context.Context, chara
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, GetCalendarEventOutput{}, fmt.Errorf("build ESI client: %w", err)
+			return nil, GetCalendarEventOutput{}, fmt.Errorf("get calendar event: %w", err)
 		}
 		result, err := getCalendarEventDetail(ctx, client, in.EventID)
 		if err != nil {
@@ -215,7 +215,7 @@ func listCalendarEventAttendeesHandler[C calendarESI](open func(ctx context.Cont
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, ListCalendarEventAttendeesOutput{}, fmt.Errorf("build ESI client: %w", err)
+			return nil, ListCalendarEventAttendeesOutput{}, fmt.Errorf("list calendar event attendees: %w", err)
 		}
 		attendees, err := listCalendarEventAttendees(ctx, client, in.EventID)
 		if err != nil {
@@ -272,7 +272,7 @@ func respondCalendarEventHandler[C calendarESI](open func(ctx context.Context, c
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, RespondCalendarEventOutput{}, fmt.Errorf("build ESI client: %w", err)
+			return nil, RespondCalendarEventOutput{}, fmt.Errorf("respond calendar event: %w", err)
 		}
 		if err := respondToCalendarEvent(ctx, client, in.EventID, in.Response); err != nil {
 			return nil, RespondCalendarEventOutput{}, fmt.Errorf("respond to calendar event: %w", err)

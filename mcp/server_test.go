@@ -2,6 +2,7 @@ package mcp_test
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -13,6 +14,7 @@ import (
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/mcp"
 	"github.com/rusher2004/new-eden-agent-toolkit/sde"
+	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
 func connectedSession(t *testing.T, store *config.Store) (*mcpsdk.ClientSession, *mcpsdk.ServerSession) {
@@ -22,10 +24,7 @@ func connectedSession(t *testing.T, store *config.Store) (*mcpsdk.ClientSession,
 		t.Fatalf("sde.Open: %v", err)
 	}
 	t.Cleanup(func() { sdeStore.Close() })
-	server, err := commands.NewMCPServer("test", "client-id", store, sdeStore)
-	if err != nil {
-		t.Fatalf("commands.NewMCPServer: %v", err)
-	}
+	server := commands.NewMCPServer("test", "client-id", store, sdeStore)
 
 	t1, t2 := mcpsdk.NewInMemoryTransports()
 	ctx := context.Background()
@@ -204,35 +203,59 @@ func TestServer_SendsInstructions(t *testing.T) {
 	}
 }
 
-func TestNewServer_RejectsMissingDeps(t *testing.T) {
-	sdeStore, err := sde.Open(filepath.Join(t.TempDir(), "eve.db"))
+func TestNewServer_CarriesInstructionsAndNoTools(t *testing.T) {
+	server := mcp.NewServer("test")
+	t1, t2 := mcpsdk.NewInMemoryTransports()
+	ctx := context.Background()
+	serverSession, err := server.Connect(ctx, t1, nil)
 	if err != nil {
-		t.Fatalf("sde.Open: %v", err)
+		t.Fatalf("server.Connect: %v", err)
 	}
-	t.Cleanup(func() { sdeStore.Close() })
-	full := mcp.Deps{
-		Config: config.NewStoreAt(filepath.Join(t.TempDir(), "config.json")),
-		SDE:    sdeStore,
+	client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "test-client", Version: "0.0.0"}, nil)
+	clientSession, err := client.Connect(ctx, t2, nil)
+	if err != nil {
+		t.Fatalf("client.Connect: %v", err)
 	}
-	if _, err := mcp.NewServer("test", full); err != nil {
-		t.Fatalf("NewServer with every dependency: %v", err)
+	t.Cleanup(func() {
+		clientSession.Close()
+		serverSession.Wait()
+	})
+
+	if got := clientSession.InitializeResult().Instructions; got != mcp.Instructions {
+		t.Errorf("initialize instructions = %q, want mcp.Instructions", got)
 	}
-	tests := []struct {
-		name string
-		drop func(*mcp.Deps)
-		want string
-	}{
-		{"config", func(d *mcp.Deps) { d.Config = nil }, "Deps.Config"},
-		{"sde", func(d *mcp.Deps) { d.SDE = nil }, "Deps.SDE"},
+	res, err := clientSession.ListTools(ctx, &mcpsdk.ListToolsParams{})
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			deps := full
-			tt.drop(&deps)
-			_, err := mcp.NewServer("test", deps)
-			if err == nil || !strings.Contains(err.Error(), tt.want) {
-				t.Errorf("NewServer error = %v, want one naming %s", err, tt.want)
-			}
-		})
+	if len(res.Tools) != 0 {
+		t.Errorf("NewServer registered %d tools, want none: commands registers them", len(res.Tools))
+	}
+}
+
+func TestServer_ListScopeGroups_MarksDefault(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	clientSession, _ := connectedSession(t, store)
+
+	res, err := clientSession.CallTool(context.Background(), &mcpsdk.CallToolParams{Name: "list_scope_groups"})
+	if err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	var out mcp.ListScopeGroupsOutput
+	raw, err := json.Marshal(res.StructuredContent)
+	if err != nil {
+		t.Fatalf("marshal structured content: %v", err)
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		t.Fatalf("unmarshal structured content: %v", err)
+	}
+	if len(out.Groups) != len(sso.ScopeGroups) {
+		t.Fatalf("%d groups, want %d", len(out.Groups), len(sso.ScopeGroups))
+	}
+	for _, g := range out.Groups {
+		if g.Default != (g.Name == sso.DefaultScopeGroup) {
+			t.Errorf("group %q default = %v", g.Name, g.Default)
+		}
 	}
 }
