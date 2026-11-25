@@ -14,8 +14,6 @@ import (
 
 	"github.com/rusher2004/new-eden-agent-toolkit/analytics"
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
-	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/mcp"
 	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
@@ -61,9 +59,9 @@ func mcpCommand(version, clientID, aptabaseAppKey string, analyticsDebug bool) *
 				}
 			}()
 
-			server, err := mcp.NewServer(version, mcpDeps(version, clientID, store, sdeStore))
+			server, err := NewMCPServer(version, clientID, store, sdeStore)
 			if err != nil {
-				return fmt.Errorf("build MCP server: %w", err)
+				return err
 			}
 			if tracker != nil {
 				registered, err := analytics.RegisteredTools(ctx, server)
@@ -99,26 +97,6 @@ func mcpCommand(version, clientID, aptabaseAppKey string, analyticsDebug bool) *
 			// A signal (ctx cancelled) is a normal way to stop.
 			return nil
 		},
-	}
-}
-
-// mcpDeps is the composition root's resolver: it wires the concrete config
-// store, SDE cache and ESI clients into the interfaces the mcp package
-// declares, so mcp never names a producer type.
-func mcpDeps(version, clientID string, store *config.Store, sdeStore *sde.Store) mcp.Deps {
-	userAgent := sso.UserAgent(version)
-	return mcp.Deps{
-		ClientID: clientID,
-		Config:   store,
-		SDE:      sdeStore,
-		OpenESI: func(ctx context.Context, characterID int32) (mcp.ESIClient, error) {
-			c, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-			if err != nil {
-				return nil, fmt.Errorf("open ESI client for character %d: %w", characterID, err)
-			}
-			return c, nil
-		},
-		OpenPublicESI: func() mcp.ESIClient { return esi.NewPublicClient(userAgent) },
 	}
 }
 

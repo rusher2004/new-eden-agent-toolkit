@@ -37,7 +37,7 @@ type ListCharactersOutput struct {
 	Warnings   []string        `json:"warnings,omitempty"`
 }
 
-func listCharactersHandler(store ConfigStore) mcpsdk.ToolHandlerFor[any, ListCharactersOutput] {
+func listCharactersHandler(store configLoader) mcpsdk.ToolHandlerFor[any, ListCharactersOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, _ any) (*mcpsdk.CallToolResult, ListCharactersOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {

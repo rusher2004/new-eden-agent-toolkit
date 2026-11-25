@@ -6,8 +6,6 @@ import (
 
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
 // loyaltyESI is the ESI calls list_character_loyalty_points makes.
@@ -47,7 +45,17 @@ type ListCharacterLoyaltyPointsOutput struct {
 	Points      []LoyaltyPointsEntry `json:"points"`
 }
 
-func listCharacterLoyaltyPointsHandler(open func(ctx context.Context, characterID int32) (loyaltyESI, error), store configLoader) mcpsdk.ToolHandlerFor[ListCharacterLoyaltyPointsInput, ListCharacterLoyaltyPointsOutput] {
+// AddListCharacterLoyaltyPoints registers list_character_loyalty_points. open
+// builds the character's ESI client; any client with the loyaltyESI methods
+// will do.
+func AddListCharacterLoyaltyPoints[C loyaltyESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_character_loyalty_points",
+		Description: "List a logged-in EVE Online character's loyalty point balances with every corporation they've worked for.",
+	}, listCharacterLoyaltyPointsHandler(open, store))
+}
+
+func listCharacterLoyaltyPointsHandler[C loyaltyESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListCharacterLoyaltyPointsInput, ListCharacterLoyaltyPointsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterLoyaltyPointsInput) (*mcpsdk.CallToolResult, ListCharacterLoyaltyPointsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -114,13 +122,18 @@ type ListLoyaltyStoreOffersOutput struct {
 	Offers        []LoyaltyStoreOffer `json:"offers"`
 }
 
-func listLoyaltyStoreOffersHandler(version string, open func() (loyaltyStoreESI, error), sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListLoyaltyStoreOffersInput, ListLoyaltyStoreOffersOutput] {
+// AddListLoyaltyStoreOffers registers list_loyalty_store_offers. open builds a
+// public ESI client; names resolves the type names added to each offer.
+func AddListLoyaltyStoreOffers[C loyaltyStoreESI](s *mcpsdk.Server, userAgent string, open func() C, names typeNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_loyalty_store_offers",
+		Description: "List a corporation's loyalty store offers (public data, no character required).",
+	}, listLoyaltyStoreOffersHandler(userAgent, open, names))
+}
+
+func listLoyaltyStoreOffersHandler[C loyaltyStoreESI](userAgent string, open func() C, sdeStore typeNameCache) mcpsdk.ToolHandlerFor[ListLoyaltyStoreOffersInput, ListLoyaltyStoreOffersOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListLoyaltyStoreOffersInput) (*mcpsdk.CallToolResult, ListLoyaltyStoreOffersOutput, error) {
-		client, err := open()
-		if err != nil {
-			return nil, ListLoyaltyStoreOffersOutput{}, fmt.Errorf("list loyalty store offers: %w", err)
-		}
-		offers, err := listLoyaltyStoreOffers(ctx, client, in.CorporationID)
+		offers, err := listLoyaltyStoreOffers(ctx, open(), in.CorporationID)
 		if err != nil {
 			return nil, ListLoyaltyStoreOffersOutput{}, fmt.Errorf("list loyalty store offers: %w", err)
 		}
@@ -132,7 +145,7 @@ func listLoyaltyStoreOffersHandler(version string, open func() (loyaltyStoreESI,
 				ids = append(ids, it.TypeID)
 			}
 		}
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		names := resolveTypeNames(ctx, sdeStore, userAgent, ids)
 		// Enrich both outer offer type and nested required item types
 		for i := range offers {
 			offers[i].TypeName = names[offers[i].TypeID]

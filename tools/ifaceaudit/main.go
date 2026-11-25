@@ -66,9 +66,21 @@ func inCompositionRoot(rel string) bool {
 	return compositionRoots[top]
 }
 
+// isTestSupport reports a package that exists to build fixtures for tests
+// (sde/sdetest), whose name ends in "test": it constructs producers by design,
+// like a composition root.
+func isTestSupport(pkg string) bool { return strings.HasSuffix(pkg, "test") }
+
+// isConstructorName reports whether an exported function name marks a
+// constructor: the same rule picks the producer types that count as clients and
+// the calls that count as building one.
+func isConstructorName(name string) bool {
+	return strings.HasPrefix(name, "New") || strings.HasPrefix(name, "Open")
+}
+
 // Finding is one audit line.
 type Finding struct {
-	Kind    string // CONCRETE_PARAM, CONCRETE_CTOR, PRODUCER_IFACE, INTERFACE or TYPE_ONLY_FILE
+	Kind    string // CONCRETE_PARAM, CONCRETE_CTOR, PRODUCER_IFACE, INTERFACE, IFACE_AWAY or TYPE_ONLY_FILE
 	File    string // slash-separated, relative to the audit root
 	Line    int
 	Context string // enclosing func/struct.field/var, or pkg.Iface for interfaces
@@ -81,7 +93,7 @@ func (f Finding) String() string {
 	if f.Type != "" {
 		s += " " + f.Type
 	}
-	if f.Kind == "PRODUCER_IFACE" || f.Kind == "INTERFACE" {
+	if f.Kind == "PRODUCER_IFACE" || f.Kind == "INTERFACE" || f.Kind == "IFACE_AWAY" {
 		s += " used-by=" + strings.Join(f.UsedBy, ",")
 	}
 	return s
@@ -158,7 +170,7 @@ func Audit(root string) ([]Finding, error) {
 			if !ok || fd.Recv != nil || !fd.Name.IsExported() || fd.Type.Results == nil {
 				continue
 			}
-			if !strings.HasPrefix(fd.Name.Name, "New") && !strings.HasPrefix(fd.Name.Name, "Open") {
+			if !isConstructorName(fd.Name.Name) {
 				continue
 			}
 			for _, r := range fd.Type.Results.List {
@@ -185,7 +197,7 @@ func Audit(root string) ([]Finding, error) {
 	ifaces := map[ifaceKey]*Finding{}
 	for _, pf := range files {
 		inProducer := producers[pf.pkg]
-		skipConcrete := inProducer || inCompositionRoot(pf.rel)
+		skipConcrete := inProducer || inCompositionRoot(pf.rel) || isTestSupport(pf.pkg)
 		if fd, ok := typeOnlyFile(fset, pf); ok {
 			out = append(out, fd)
 		}
@@ -283,12 +295,12 @@ func Audit(root string) ([]Finding, error) {
 		})
 	}
 	for _, pf := range files {
-		if producers[pf.pkg] || inCompositionRoot(pf.rel) {
+		if producers[pf.pkg] || inCompositionRoot(pf.rel) || isTestSupport(pf.pkg) {
 			continue
 		}
 		ast.Inspect(pf.ast, func(n ast.Node) bool {
 			se, ok := n.(*ast.SelectorExpr)
-			if !ok || !strings.HasPrefix(se.Sel.Name, "New") {
+			if !ok || !isConstructorName(se.Sel.Name) {
 				return true
 			}
 			if x, ok := se.X.(*ast.Ident); ok {
@@ -302,7 +314,48 @@ func Audit(root string) ([]Finding, error) {
 			return true
 		})
 	}
+	// An interface belongs in a file that uses it; a consumer may declare it in
+	// one file and reuse it in others (an http.Client's Do needed by several
+	// files), but declaring it in a file that never refers to it is flagged.
+	// A selector use from another package is not counted: consumers' interfaces
+	// are package-private.
+	idents := map[string]map[string]bool{} // file -> identifier names used outside type declarations
+	for _, pf := range files {
+		names := map[string]bool{}
+		declared := map[*ast.Ident]bool{}
+		ast.Inspect(pf.ast, func(n ast.Node) bool {
+			switch n := n.(type) {
+			case *ast.TypeSpec:
+				declared[n.Name] = true
+			case *ast.Ident:
+				if !declared[n] {
+					names[n.Name] = true
+				}
+			}
+			return true
+		})
+		idents[pf.rel] = names
+	}
+	away := map[ifaceKey][]string{}
 	for k, fd := range ifaces {
+		pkg, _, _ := strings.Cut(fd.Context, ".")
+		if fd.Kind != "INTERFACE" || producers[pkg] || idents[fd.File][k.name] {
+			continue
+		}
+		for _, pf := range files {
+			if pf.dir == k.dir && pf.rel != fd.File && idents[pf.rel][k.name] {
+				away[k] = append(away[k], pf.rel)
+			}
+		}
+	}
+	for k, fd := range ifaces {
+		if elsewhere, ok := away[k]; ok {
+			sort.Strings(elsewhere)
+			fd.Kind = "IFACE_AWAY"
+			fd.UsedBy = elsewhere
+			out = append(out, *fd)
+			continue
+		}
 		for p := range used[k] {
 			fd.UsedBy = append(fd.UsedBy, p)
 		}

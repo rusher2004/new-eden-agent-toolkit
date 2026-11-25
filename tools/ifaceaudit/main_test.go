@@ -187,6 +187,57 @@ func TestAuditKeepsSamePackageNameDirectoriesApart(t *testing.T) {
 	}
 }
 
+func TestAuditFlagsInterfaceDeclaredAwayFromItsUsers(t *testing.T) {
+	fs, err := Audit("testdata")
+	if err != nil {
+		t.Fatal(err)
+	}
+	kinds := map[string]Finding{}
+	for _, f := range fs {
+		if strings.HasPrefix(f.File, "away/") {
+			kinds[f.Context] = f
+		}
+	}
+	// stranger is declared in decl.go but only use.go refers to it.
+	if f := kinds["away.stranger"]; f.Kind != "IFACE_AWAY" || len(f.UsedBy) != 1 || f.UsedBy[0] != "away/use.go" {
+		t.Errorf("away.stranger = %+v, want IFACE_AWAY used-by away/use.go", f)
+	}
+	// Doer is used in its own file and reused in another: a legitimate shared interface.
+	if f := kinds["away.Doer"]; f.Kind != "INTERFACE" {
+		t.Errorf("away.Doer kind = %s, want INTERFACE (declared where it is used)", f.Kind)
+	}
+}
+
+func TestAuditFlagsOpenConstructorCalls(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel, src string) {
+		t.Helper()
+		p := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("sde/s.go", "package sde\n\ntype Store struct{}\n\nfunc Open(p string) (*Store, error) { return nil, nil }\n")
+	write("sdetest/f.go", "package sdetest\n\nimport \"example.com/m/sde\"\n\nfunc Fixture() { _, _ = sde.Open(\"x\") }\n")
+	write("mcp/m.go", "package mcp\n\nimport \"example.com/m/sde\"\n\nfunc build() { _, _ = sde.Open(\"x\") }\n")
+	fs, err := Audit(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, f := range fs {
+		if f.Kind == "CONCRETE_CTOR" {
+			got = append(got, f.File)
+		}
+	}
+	if len(got) != 1 || got[0] != "mcp/m.go" {
+		t.Errorf("CONCRETE_CTOR files = %v, want only mcp/m.go (sde.Open outside a root; a *test package is exempt)", got)
+	}
+}
+
 // The repo itself must conform to the two rules CI enforces: no file that only
 // declares types, and no exported interface in a producer package.
 func TestRepoHasNoTypeOnlyFiles(t *testing.T) {

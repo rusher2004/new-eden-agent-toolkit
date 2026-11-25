@@ -23,10 +23,8 @@ import (
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/rusher2004/new-eden-agent-toolkit/commands"
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
-	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/mcp"
-	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 )
 
 // area is one section of the reference. A tool belongs to the first area,
@@ -162,15 +160,8 @@ func listTools(ctx context.Context) (_ []*mcpsdk.Tool, err error) {
 	}()
 
 	// Listing tools never calls one, so the SDE is a nil store (every
-	// sde.Store method is nil-safe) and ESI refuses to open.
-	server, err := mcp.NewServer("docs", mcp.Deps{
-		Config: config.NewStoreAt(filepath.Join(dir, "config.json")),
-		SDE:    (*sde.Store)(nil),
-		OpenESI: func(context.Context, int32) (mcp.ESIClient, error) {
-			return nil, errors.New("gentooldocs lists tools and never opens ESI")
-		},
-		OpenPublicESI: func() mcp.ESIClient { return esi.NewPublicClient("gentooldocs") },
-	})
+	// sde.Store method is nil-safe) and no ESI client is ever opened.
+	server, err := commands.NewMCPServer("docs", "docs", config.NewStoreAt(filepath.Join(dir, "config.json")), nil)
 	if err != nil {
 		return nil, fmt.Errorf("build server: %w", err)
 	}

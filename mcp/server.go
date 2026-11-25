@@ -1,12 +1,15 @@
 //go:generate go run ../tools/gentooldocs -out ../docs/reference/tools.md
 
-// Package mcp builds neat's MCP server and registers its character tools.
+// Package mcp holds neat's MCP tools. A converted tool file declares the small
+// interfaces it needs, a handler constructor that takes them, and an exported
+// Add function that registers the tool; the composition root (commands/)
+// builds the concrete config store, SDE cache and ESI clients and passes them
+// to each Add function, so nothing here constructs one. See loyalty.go.
 package mcp
 
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -14,65 +17,16 @@ import (
 	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 )
 
-// Deps is everything NewServer needs from outside the package. The composition
-// root (commands/mcp.go) builds the concrete config store, SDE cache and ESI
-// clients and hands them over as these interfaces, so no tool in this package
-// names a concrete producer type.
-//
-// ConfigStore, SDEStore and ESIClient are the unions of what every tool file
-// needs. Each tool file declares its own small interface for the calls it
-// actually makes, and the unions only have to cover them.
+// Deps is what NewServer hands to the tools not yet converted to the pattern in
+// loyalty.go. It is transitional: ConfigStore and SDEStore are unions of what
+// those files need, and each file that moves to its own small interfaces and
+// an exported Add function (registered from commands/mcp_tools.go) leaves them.
+// They are deleted, with Deps, when the last file moves.
 type Deps struct {
 	// ClientID is the ESI OAuth2 client ID, used by the login flow.
 	ClientID string
 	Config   ConfigStore
 	SDE      SDEStore
-	// OpenESI returns an authenticated ESI client for a logged-in character.
-	OpenESI func(ctx context.Context, characterID int32) (ESIClient, error)
-	// OpenPublicESI returns an ESI client for public endpoints.
-	OpenPublicESI func() ESIClient
-}
-
-// ESIClient is the union of the ESI calls the tool files make: it embeds each
-// file's own small interface, so the composition root's *esi.Client must
-// satisfy all of them (commands/mcp.go returns it as an ESIClient, so the compiler checks that).
-type ESIClient interface {
-	loyaltyESI
-	loyaltyStoreESI
-}
-
-// narrowPublicESI adapts Deps.OpenPublicESI the same way, for the tools that
-// need no character. ESIClient embeds every C, so the assertion cannot fail for
-// a client that satisfies ESIClient; the error covers a client that was built
-// wrongly. The client is opened per call, not when the server is built.
-func narrowPublicESI[C any](open func() ESIClient) func() (C, error) {
-	return func() (C, error) {
-		var zero C
-		c := open()
-		narrowed, ok := c.(C)
-		if !ok {
-			return zero, fmt.Errorf("public ESI client %T lacks a method this tool needs", c)
-		}
-		return narrowed, nil
-	}
-}
-
-// narrowESI adapts Deps.OpenESI to the small interface C one tool file needs.
-// ESIClient embeds every such C, so the assertion cannot fail for a client that
-// satisfies ESIClient; the error covers a client that was built wrongly.
-func narrowESI[C any](open func(ctx context.Context, characterID int32) (ESIClient, error)) func(ctx context.Context, characterID int32) (C, error) {
-	return func(ctx context.Context, characterID int32) (C, error) {
-		var zero C
-		c, err := open(ctx, characterID)
-		if err != nil {
-			return zero, err
-		}
-		narrowed, ok := c.(C)
-		if !ok {
-			return zero, fmt.Errorf("ESI client %T lacks a method this tool needs", c)
-		}
-		return narrowed, nil
-	}
 }
 
 type ConfigStore interface {
@@ -196,8 +150,8 @@ type SDEStore interface {
 // get_corporation_mining_observer_detail, list_corporation_industry_jobs, list_industry_facilities,
 // list_industry_systems, list_insurance_prices, list_character_killmails_recent,
 // list_corporation_killmails_recent, get_killmail, get_character_location,
-// get_character_online, get_character_ship, list_character_loyalty_points,
-// list_loyalty_store_offers, list_character_mail, get_character_mail_labels,
+// get_character_online, get_character_ship,
+// list_character_mail, get_character_mail_labels,
 // list_character_mail_lists, get_character_mail, send_character_mail,
 // create_character_mail_label, update_character_mail, delete_character_mail,
 // delete_character_mail_label, list_character_market_orders, list_character_market_order_history,
@@ -233,10 +187,6 @@ func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
 		return nil, errors.New("new server: Deps.Config is required")
 	case deps.SDE == nil:
 		return nil, errors.New("new server: Deps.SDE is required")
-	case deps.OpenESI == nil:
-		return nil, errors.New("new server: Deps.OpenESI is required")
-	case deps.OpenPublicESI == nil:
-		return nil, errors.New("new server: Deps.OpenPublicESI is required")
 	}
 	clientID, store, sdeStore := deps.ClientID, deps.Config, deps.SDE
 	server := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "neat", Version: version}, &mcpsdk.ServerOptions{Instructions: Instructions})
@@ -958,16 +908,6 @@ func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
 		Name:        "get_character_ship",
 		Description: "Get a logged-in EVE Online character's current ship.",
 	}, getCharacterShipHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_character_loyalty_points",
-		Description: "List a logged-in EVE Online character's loyalty point balances with every corporation they've worked for.",
-	}, listCharacterLoyaltyPointsHandler(narrowESI[loyaltyESI](deps.OpenESI), store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_loyalty_store_offers",
-		Description: "List a corporation's loyalty store offers (public data, no character required).",
-	}, listLoyaltyStoreOffersHandler(version, narrowPublicESI[loyaltyStoreESI](deps.OpenPublicESI), sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_character_mail",

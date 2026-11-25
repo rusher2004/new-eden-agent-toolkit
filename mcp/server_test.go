@@ -2,7 +2,6 @@ package mcp_test
 
 import (
 	"context"
-	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,6 +9,7 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/zalando/go-keyring"
 
+	"github.com/rusher2004/new-eden-agent-toolkit/commands"
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/mcp"
 	"github.com/rusher2004/new-eden-agent-toolkit/sde"
@@ -22,17 +22,9 @@ func connectedSession(t *testing.T, store *config.Store) (*mcpsdk.ClientSession,
 		t.Fatalf("sde.Open: %v", err)
 	}
 	t.Cleanup(func() { sdeStore.Close() })
-	server, err := mcp.NewServer("test", mcp.Deps{
-		ClientID: "client-id",
-		Config:   store,
-		SDE:      sdeStore,
-		OpenESI: func(context.Context, int32) (mcp.ESIClient, error) {
-			return nil, errors.New("test opens no ESI client")
-		},
-		OpenPublicESI: func() mcp.ESIClient { return nil },
-	})
+	server, err := commands.NewMCPServer("test", "client-id", store, sdeStore)
 	if err != nil {
-		t.Fatalf("mcp.NewServer: %v", err)
+		t.Fatalf("commands.NewMCPServer: %v", err)
 	}
 
 	t1, t2 := mcpsdk.NewInMemoryTransports()
@@ -219,10 +211,8 @@ func TestNewServer_RejectsMissingDeps(t *testing.T) {
 	}
 	t.Cleanup(func() { sdeStore.Close() })
 	full := mcp.Deps{
-		Config:        config.NewStoreAt(filepath.Join(t.TempDir(), "config.json")),
-		SDE:           sdeStore,
-		OpenESI:       func(context.Context, int32) (mcp.ESIClient, error) { return nil, nil },
-		OpenPublicESI: func() mcp.ESIClient { return nil },
+		Config: config.NewStoreAt(filepath.Join(t.TempDir(), "config.json")),
+		SDE:    sdeStore,
 	}
 	if _, err := mcp.NewServer("test", full); err != nil {
 		t.Fatalf("NewServer with every dependency: %v", err)
@@ -234,8 +224,6 @@ func TestNewServer_RejectsMissingDeps(t *testing.T) {
 	}{
 		{"config", func(d *mcp.Deps) { d.Config = nil }, "Deps.Config"},
 		{"sde", func(d *mcp.Deps) { d.SDE = nil }, "Deps.SDE"},
-		{"open esi", func(d *mcp.Deps) { d.OpenESI = nil }, "Deps.OpenESI"},
-		{"open public esi", func(d *mcp.Deps) { d.OpenPublicESI = nil }, "Deps.OpenPublicESI"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

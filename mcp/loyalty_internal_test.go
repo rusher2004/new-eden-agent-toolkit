@@ -108,7 +108,7 @@ func TestListLoyaltyStoreOffersHandler_MapsFields(t *testing.T) {
 		RequiredItems: []esiapi.LoyaltyStoresCorporationIdOffersGetInnerRequiredItemsInner{{TypeId: 34, Quantity: 2}},
 	}}}
 
-	handler := listLoyaltyStoreOffersHandler("v1", func() (loyaltyStoreESI, error) { return fake, nil }, noTypesSDE{})
+	handler := listLoyaltyStoreOffersHandler("test-agent", func() loyaltyStoreESI { return fake }, noTypesSDE{})
 	_, out, err := handler(context.Background(), nil, ListLoyaltyStoreOffersInput{CorporationID: 1000167})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -129,7 +129,7 @@ func TestListLoyaltyStoreOffersHandler_MapsFields(t *testing.T) {
 }
 
 func TestListLoyaltyStoreOffersHandler_PropagatesError(t *testing.T) {
-	handler := listLoyaltyStoreOffersHandler("v1", func() (loyaltyStoreESI, error) { return fakeLoyaltyStoreESI{err: errBoom}, nil }, noTypesSDE{})
+	handler := listLoyaltyStoreOffersHandler("test-agent", func() loyaltyStoreESI { return fakeLoyaltyStoreESI{err: errBoom} }, noTypesSDE{})
 	_, _, err := handler(context.Background(), nil, ListLoyaltyStoreOffersInput{CorporationID: 1000167})
 	if !errors.Is(err, errBoom) {
 		t.Errorf("err = %v, want wrapping errBoom", err)
@@ -148,7 +148,7 @@ func TestListLoyaltyStoreOffersHandler_ResolvesTypeNames(t *testing.T) {
 		return map[int64]string{587: "Rifter", 588: "Tritanium"}
 	}
 
-	handler := listLoyaltyStoreOffersHandler("v1", func() (loyaltyStoreESI, error) { return fake, nil }, noTypesSDE{})
+	handler := listLoyaltyStoreOffersHandler("test-agent", func() loyaltyStoreESI { return fake }, noTypesSDE{})
 	_, out, err := handler(context.Background(), nil, ListLoyaltyStoreOffersInput{CorporationID: 1})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -166,7 +166,7 @@ var errBoom = errors.New("boom")
 // noTypesSDE is an SDEStore that knows no types: every lookup misses, so name
 // enrichment adds nothing. It embeds the interface so only Type needs a body;
 // any other call panics, which would flag a handler reaching past what it needs.
-type noTypesSDE struct{ SDEStore }
+type noTypesSDE struct{}
 
 func (noTypesSDE) Type(context.Context, string, int64) (sde.Type, bool, error) {
 	return sde.Type{}, false, nil
