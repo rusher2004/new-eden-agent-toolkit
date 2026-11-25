@@ -61,7 +61,10 @@ func mcpCommand(version, clientID, aptabaseAppKey string, analyticsDebug bool) *
 				}
 			}()
 
-			server := mcp.NewServer(version, mcpDeps(version, clientID, store, sdeStore))
+			server, err := mcp.NewServer(version, mcpDeps(version, clientID, store, sdeStore))
+			if err != nil {
+				return fmt.Errorf("build MCP server: %w", err)
+			}
 			if tracker != nil {
 				registered, err := analytics.RegisteredTools(ctx, server)
 				if err != nil {

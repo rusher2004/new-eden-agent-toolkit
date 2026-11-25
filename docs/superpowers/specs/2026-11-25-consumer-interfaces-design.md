@@ -3,6 +3,12 @@
 Status: in progress. Foundation and the `loyalty.go` pilot landed in the first
 PR of the stack; the remaining files follow in later PRs.
 
+`tools/ifaceaudit` narrowed in that first PR: a CONCRETE_PARAM now needs a
+producer type that a pointer-returning exported `New*`/`Open*` constructor
+builds, and `cmd/`, `commands/` and `tools/` (the composition roots, rule 4)
+report no CONCRETE_* findings. That drops the count without changing any mcp
+code, so compare later PRs against the narrowed audit, not the 360/211 below.
+
 ## Why
 
 CLAUDE.md's Go standards say the package that uses a capability declares the

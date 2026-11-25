@@ -58,7 +58,7 @@ func listCharacterLoyaltyPointsHandler(open func(ctx context.Context, characterI
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, ListCharacterLoyaltyPointsOutput{}, fmt.Errorf("build ESI client: %w", err)
+			return nil, ListCharacterLoyaltyPointsOutput{}, fmt.Errorf("list character loyalty points: %w", err)
 		}
 		points, err := listCharacterLoyaltyPoints(ctx, client)
 		if err != nil {
@@ -114,9 +114,13 @@ type ListLoyaltyStoreOffersOutput struct {
 	Offers        []LoyaltyStoreOffer `json:"offers"`
 }
 
-func listLoyaltyStoreOffersHandler(version string, open func() loyaltyStoreESI, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListLoyaltyStoreOffersInput, ListLoyaltyStoreOffersOutput] {
+func listLoyaltyStoreOffersHandler(version string, open func() (loyaltyStoreESI, error), sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListLoyaltyStoreOffersInput, ListLoyaltyStoreOffersOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListLoyaltyStoreOffersInput) (*mcpsdk.CallToolResult, ListLoyaltyStoreOffersOutput, error) {
-		offers, err := listLoyaltyStoreOffers(ctx, open(), in.CorporationID)
+		client, err := open()
+		if err != nil {
+			return nil, ListLoyaltyStoreOffersOutput{}, fmt.Errorf("list loyalty store offers: %w", err)
+		}
+		offers, err := listLoyaltyStoreOffers(ctx, client, in.CorporationID)
 		if err != nil {
 			return nil, ListLoyaltyStoreOffersOutput{}, fmt.Errorf("list loyalty store offers: %w", err)
 		}

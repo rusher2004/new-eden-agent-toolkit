@@ -2,6 +2,7 @@ package mcp_test
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -21,7 +22,18 @@ func connectedSession(t *testing.T, store *config.Store) (*mcpsdk.ClientSession,
 		t.Fatalf("sde.Open: %v", err)
 	}
 	t.Cleanup(func() { sdeStore.Close() })
-	server := mcp.NewServer("test", mcp.Deps{ClientID: "client-id", Config: store, SDE: sdeStore})
+	server, err := mcp.NewServer("test", mcp.Deps{
+		ClientID: "client-id",
+		Config:   store,
+		SDE:      sdeStore,
+		OpenESI: func(context.Context, int32) (mcp.ESIClient, error) {
+			return nil, errors.New("test opens no ESI client")
+		},
+		OpenPublicESI: func() mcp.ESIClient { return nil },
+	})
+	if err != nil {
+		t.Fatalf("mcp.NewServer: %v", err)
+	}
 
 	t1, t2 := mcpsdk.NewInMemoryTransports()
 	ctx := context.Background()
@@ -197,5 +209,42 @@ func TestServer_SendsInstructions(t *testing.T) {
 		if !strings.Contains(got, tool) {
 			t.Errorf("instructions don't mention %s, which onboarding depends on", tool)
 		}
+	}
+}
+
+func TestNewServer_RejectsMissingDeps(t *testing.T) {
+	sdeStore, err := sde.Open(filepath.Join(t.TempDir(), "eve.db"))
+	if err != nil {
+		t.Fatalf("sde.Open: %v", err)
+	}
+	t.Cleanup(func() { sdeStore.Close() })
+	full := mcp.Deps{
+		Config:        config.NewStoreAt(filepath.Join(t.TempDir(), "config.json")),
+		SDE:           sdeStore,
+		OpenESI:       func(context.Context, int32) (mcp.ESIClient, error) { return nil, nil },
+		OpenPublicESI: func() mcp.ESIClient { return nil },
+	}
+	if _, err := mcp.NewServer("test", full); err != nil {
+		t.Fatalf("NewServer with every dependency: %v", err)
+	}
+	tests := []struct {
+		name string
+		drop func(*mcp.Deps)
+		want string
+	}{
+		{"config", func(d *mcp.Deps) { d.Config = nil }, "Deps.Config"},
+		{"sde", func(d *mcp.Deps) { d.SDE = nil }, "Deps.SDE"},
+		{"open esi", func(d *mcp.Deps) { d.OpenESI = nil }, "Deps.OpenESI"},
+		{"open public esi", func(d *mcp.Deps) { d.OpenPublicESI = nil }, "Deps.OpenPublicESI"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			deps := full
+			tt.drop(&deps)
+			_, err := mcp.NewServer("test", deps)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("NewServer error = %v, want one naming %s", err, tt.want)
+			}
+		})
 	}
 }

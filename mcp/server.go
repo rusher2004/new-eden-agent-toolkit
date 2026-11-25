@@ -5,6 +5,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -34,18 +35,26 @@ type Deps struct {
 
 // ESIClient is the union of the ESI calls the tool files make: it embeds each
 // file's own small interface, so the composition root's *esi.Client must
-// satisfy all of them (commands has a test that it does).
+// satisfy all of them (commands/mcp.go returns it as an ESIClient, so the compiler checks that).
 type ESIClient interface {
 	loyaltyESI
 	loyaltyStoreESI
 }
 
 // narrowPublicESI adapts Deps.OpenPublicESI the same way, for the tools that
-// need no character. ESIClient embeds every C, so the assertion holds for any
-// client the composition root can build. The client is opened per call, not
-// when the server is built.
-func narrowPublicESI[C any](open func() ESIClient) func() C {
-	return func() C { return open().(C) }
+// need no character. ESIClient embeds every C, so the assertion cannot fail for
+// a client that satisfies ESIClient; the error covers a client that was built
+// wrongly. The client is opened per call, not when the server is built.
+func narrowPublicESI[C any](open func() ESIClient) func() (C, error) {
+	return func() (C, error) {
+		var zero C
+		c := open()
+		narrowed, ok := c.(C)
+		if !ok {
+			return zero, fmt.Errorf("public ESI client %T lacks a method this tool needs", c)
+		}
+		return narrowed, nil
+	}
 }
 
 // narrowESI adapts Deps.OpenESI to the small interface C one tool file needs.
@@ -60,7 +69,7 @@ func narrowESI[C any](open func(ctx context.Context, characterID int32) (ESIClie
 		}
 		narrowed, ok := c.(C)
 		if !ok {
-			return zero, fmt.Errorf("ESI client %T does not provide %T", c, &zero)
+			return zero, fmt.Errorf("ESI client %T lacks a method this tool needs", c)
 		}
 		return narrowed, nil
 	}
@@ -137,7 +146,8 @@ type SDEStore interface {
 	TypesByName(ctx context.Context, userAgent string, names []string) (map[string]int64, error)
 }
 
-// NewServer builds neat's MCP server with add_character, list_scope_groups, list_characters,
+// NewServer builds neat's MCP server, or returns an error naming the first
+// missing dependency in deps, with add_character, list_scope_groups, list_characters,
 // remove_character, get_wallet_balance, list_character_wallet_journal,
 // list_character_wallet_transactions, list_corporation_wallets,
 // list_corporation_wallet_journal, list_corporation_wallet_transactions,
@@ -217,7 +227,17 @@ type SDEStore interface {
 // list_character_paragon_hub_skinr_listings, list_paragon_hub_skinr_listings_for_alliance,
 // list_paragon_hub_skinr_listings_for_corporation, and
 // list_paragon_hub_skinr_listings_for_character registered.
-func NewServer(version string, deps Deps) *mcpsdk.Server {
+func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
+	switch {
+	case deps.Config == nil:
+		return nil, errors.New("new server: Deps.Config is required")
+	case deps.SDE == nil:
+		return nil, errors.New("new server: Deps.SDE is required")
+	case deps.OpenESI == nil:
+		return nil, errors.New("new server: Deps.OpenESI is required")
+	case deps.OpenPublicESI == nil:
+		return nil, errors.New("new server: Deps.OpenPublicESI is required")
+	}
 	clientID, store, sdeStore := deps.ClientID, deps.Config, deps.SDE
 	server := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "neat", Version: version}, &mcpsdk.ServerOptions{Instructions: Instructions})
 
@@ -1430,5 +1450,5 @@ func NewServer(version string, deps Deps) *mcpsdk.Server {
 	registerMarketPlanningTools(server, version, clientID, store, sdeStore)
 	registerIndustryPlanningTools(server, version, clientID, store, sdeStore)
 
-	return server
+	return server, nil
 }

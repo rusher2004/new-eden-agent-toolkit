@@ -6,6 +6,13 @@ import (
 	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 )
 
+// Every resolver in this file treats a nil cache as "nothing to look up" and
+// returns no names. That is part of the additive-enrichment exception in
+// CLAUDE.md, not a guard against a wiring bug: NewServer rejects a missing
+// Deps.SDE, and the composition root passes a nil *sde.Store (whose methods
+// are nil-safe) when the cache can't open, so a missing SDE degrades to
+// unenriched output instead of failing the tool.
+
 // typeNameCache is the minimal read-only view of sde.Store.Type() that
 // resolveTypeNames needs -- narrower than universe.go's typeCache, which
 // also exposes PutType/TypeIDs for the Universe tag's own write-back and
