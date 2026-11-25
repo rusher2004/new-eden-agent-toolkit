@@ -1,4 +1,4 @@
-package commands
+package consumer
 
 import "example.com/m/sde"
 

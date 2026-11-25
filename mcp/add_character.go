@@ -41,7 +41,7 @@ type AddCharacterOutput struct {
 	Warnings   []string         `json:"warnings,omitempty"`
 }
 
-func addCharacterHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[AddCharacterInput, AddCharacterOutput] {
+func addCharacterHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[AddCharacterInput, AddCharacterOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in AddCharacterInput) (*mcpsdk.CallToolResult, AddCharacterOutput, error) {
 		userAgent := sso.UserAgent(version)
 		scopes, err := sso.ScopesFor(in.ScopeGroups)
@@ -134,7 +134,7 @@ func addCharacterHandler(version, clientID string, store *config.Store) mcpsdk.T
 }
 
 // accountEditor saves the account grouping the user sets on the login page.
-func accountEditor(store *config.Store) *sso.AccountEditor {
+func accountEditor(store ConfigStore) *sso.AccountEditor {
 	edit := func(change func(*config.Config) error) error {
 		_, err := store.Update(change)
 		return err

@@ -7,9 +7,7 @@ import (
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -45,7 +43,7 @@ type ListCharacterMercenaryDensOutput struct {
 	Dens        []MercenaryDen `json:"dens"`
 }
 
-func listCharacterMercenaryDensHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCharacterMercenaryDensInput, ListCharacterMercenaryDensOutput] {
+func listCharacterMercenaryDensHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCharacterMercenaryDensInput, ListCharacterMercenaryDensOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterMercenaryDensInput) (*mcpsdk.CallToolResult, ListCharacterMercenaryDensOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -135,7 +133,7 @@ type GetCharacterMercenaryDenInput struct {
 	MercenaryDenID int64 `json:"mercenaryDenId" jsonschema:"the mercenary den ID to look up"`
 }
 
-func getCharacterMercenaryDenHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetCharacterMercenaryDenInput, MercenaryDenDetail] {
+func getCharacterMercenaryDenHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetCharacterMercenaryDenInput, MercenaryDenDetail] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterMercenaryDenInput) (*mcpsdk.CallToolResult, MercenaryDenDetail, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -190,7 +188,7 @@ type ListCorporationSkyhooksOutput struct {
 	Skyhooks      []Skyhook `json:"skyhooks"`
 }
 
-func listCorporationSkyhooksHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCorporationSkyhooksInput, ListCorporationSkyhooksOutput] {
+func listCorporationSkyhooksHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCorporationSkyhooksInput, ListCorporationSkyhooksOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationSkyhooksInput) (*mcpsdk.CallToolResult, ListCorporationSkyhooksOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -278,7 +276,7 @@ type GetCorporationSkyhookInput struct {
 	SkyhookID     int64 `json:"skyhookId" jsonschema:"the skyhook ID to look up"`
 }
 
-func getCorporationSkyhookHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetCorporationSkyhookInput, SkyhookDetail] {
+func getCorporationSkyhookHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetCorporationSkyhookInput, SkyhookDetail] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCorporationSkyhookInput) (*mcpsdk.CallToolResult, SkyhookDetail, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -339,7 +337,7 @@ type ListCorporationSovereigntyHubsOutput struct {
 	Hubs          []StructureSovereigntyHub `json:"hubs"`
 }
 
-func listCorporationSovereigntyHubsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCorporationSovereigntyHubsInput, ListCorporationSovereigntyHubsOutput] {
+func listCorporationSovereigntyHubsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCorporationSovereigntyHubsInput, ListCorporationSovereigntyHubsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationSovereigntyHubsInput) (*mcpsdk.CallToolResult, ListCorporationSovereigntyHubsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -526,7 +524,7 @@ var getCorporationSovereigntyHub = func(ctx context.Context, clientID string, ch
 	return out, nil
 }
 
-func getCorporationSovereigntyHubHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetCorporationSovereigntyHubInput, StructureSovereigntyHubDetail] {
+func getCorporationSovereigntyHubHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetCorporationSovereigntyHubInput, StructureSovereigntyHubDetail] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCorporationSovereigntyHubInput) (*mcpsdk.CallToolResult, StructureSovereigntyHubDetail, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {

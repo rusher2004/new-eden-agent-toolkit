@@ -9,9 +9,7 @@ import (
 
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 
-	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -56,7 +54,7 @@ type ListCharacterPlanetsOutput struct {
 	Planets     []Planet `json:"planets"`
 }
 
-func listCharacterPlanetsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCharacterPlanetsInput, ListCharacterPlanetsOutput] {
+func listCharacterPlanetsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCharacterPlanetsInput, ListCharacterPlanetsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterPlanetsInput) (*mcpsdk.CallToolResult, ListCharacterPlanetsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -229,7 +227,7 @@ type GetCharacterPlanetOutput struct {
 	Routes      []PlanetRoute `json:"routes"`
 }
 
-func getCharacterPlanetHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetCharacterPlanetInput, GetCharacterPlanetOutput] {
+func getCharacterPlanetHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetCharacterPlanetInput, GetCharacterPlanetOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterPlanetInput) (*mcpsdk.CallToolResult, GetCharacterPlanetOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -322,7 +320,7 @@ type ListCorporationCustomsOfficesOutput struct {
 	Offices       []CustomsOffice `json:"offices"`
 }
 
-func listCorporationCustomsOfficesHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCorporationCustomsOfficesInput, ListCorporationCustomsOfficesOutput] {
+func listCorporationCustomsOfficesHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCorporationCustomsOfficesInput, ListCorporationCustomsOfficesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationCustomsOfficesInput) (*mcpsdk.CallToolResult, ListCorporationCustomsOfficesOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {

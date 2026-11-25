@@ -189,7 +189,7 @@ type FindOwnedBlueprintsOutput struct {
 	Blueprints []OwnedBlueprint `json:"blueprints"`
 }
 
-func findOwnedBlueprintsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[FindOwnedBlueprintsInput, FindOwnedBlueprintsOutput] {
+func findOwnedBlueprintsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[FindOwnedBlueprintsInput, FindOwnedBlueprintsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in FindOwnedBlueprintsInput) (*mcpsdk.CallToolResult, FindOwnedBlueprintsOutput, error) {
 		p := newPlanner(version, clientID, store, sdeStore)
 		own, err := p.loadOwnership(ctx, in.CharacterID, in.CorporationID, true)
@@ -326,7 +326,7 @@ type CheckMaterialStockOutput struct {
 	Lines []StockLine `json:"lines"`
 }
 
-func checkMaterialStockHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[CheckMaterialStockInput, CheckMaterialStockOutput] {
+func checkMaterialStockHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[CheckMaterialStockInput, CheckMaterialStockOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in CheckMaterialStockInput) (*mcpsdk.CallToolResult, CheckMaterialStockOutput, error) {
 		p := newPlanner(version, clientID, store, sdeStore)
 		items, err := p.resolveItems(ctx, in.Materials)
@@ -374,7 +374,7 @@ type CheckBuildSkillsOutput struct {
 	Builders []BuilderView `json:"builders"`
 }
 
-func checkBuildSkillsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[CheckBuildSkillsInput, CheckBuildSkillsOutput] {
+func checkBuildSkillsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[CheckBuildSkillsInput, CheckBuildSkillsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in CheckBuildSkillsInput) (*mcpsdk.CallToolResult, CheckBuildSkillsOutput, error) {
 		p := newPlanner(version, clientID, store, sdeStore)
 		pid, err := p.resolveType(ctx, in.Product)
@@ -483,7 +483,7 @@ func (p *planner) jobFee(ctx context.Context, f industry.Facility, prof config.F
 	return out, nil
 }
 
-func estimateJobCostHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[EstimateJobCostInput, EstimateJobCostOutput] {
+func estimateJobCostHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[EstimateJobCostInput, EstimateJobCostOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in EstimateJobCostInput) (*mcpsdk.CallToolResult, EstimateJobCostOutput, error) {
 		p := newPlanner(version, clientID, store, sdeStore)
 		pid, err := p.resolveType(ctx, in.Product)
@@ -538,7 +538,7 @@ type EstimateResearchOutput struct {
 	FeeNote string  `json:"feeNote,omitempty"`
 }
 
-func estimateResearchHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[EstimateResearchInput, EstimateResearchOutput] {
+func estimateResearchHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[EstimateResearchInput, EstimateResearchOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in EstimateResearchInput) (*mcpsdk.CallToolResult, EstimateResearchOutput, error) {
 		p := newPlanner(version, clientID, store, sdeStore)
 		if (in.Kind == "me" || in.Kind == "te") && (in.FromLevel < 0 || in.ToLevel > 10 || in.ToLevel <= in.FromLevel) {
@@ -637,7 +637,7 @@ type EstimateInventionOutput struct {
 	Notes       []string          `json:"notes,omitempty"`
 }
 
-func estimateInventionHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[EstimateInventionInput, EstimateInventionOutput] {
+func estimateInventionHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[EstimateInventionInput, EstimateInventionOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in EstimateInventionInput) (*mcpsdk.CallToolResult, EstimateInventionOutput, error) {
 		p := newPlanner(version, clientID, store, sdeStore)
 		pid, err := p.resolveType(ctx, in.Product)
@@ -839,7 +839,7 @@ func (p *planner) reprocessYield(ctx context.Context, characterID int32, prof co
 	}
 }
 
-func estimateReprocessingYieldHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[EstimateReprocessingYieldInput, EstimateReprocessingYieldOutput] {
+func estimateReprocessingYieldHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[EstimateReprocessingYieldInput, EstimateReprocessingYieldOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in EstimateReprocessingYieldInput) (*mcpsdk.CallToolResult, EstimateReprocessingYieldOutput, error) {
 		p := newPlanner(version, clientID, store, sdeStore)
 		prof, err := p.facilityProfile(in.Facility)
@@ -993,7 +993,7 @@ func (p *planner) solveOreMix(ctx context.Context, needs map[int64]int64, refine
 	return out, nil
 }
 
-func solveOreMixHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[SolveOreMixInput, SolveOreMixOutput] {
+func solveOreMixHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[SolveOreMixInput, SolveOreMixOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in SolveOreMixInput) (*mcpsdk.CallToolResult, SolveOreMixOutput, error) {
 		p := newPlanner(version, clientID, store, sdeStore)
 		p.fallbackMarketCharacter = in.RefinerID

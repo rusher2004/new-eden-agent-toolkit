@@ -4,12 +4,16 @@
 // It prints, sorted by file then line:
 //
 //	CONCRETE_PARAM  a parameter, struct field or variable outside a producer
-//	                package whose type is a concrete client or store (pkg.Type:
-//	                a type with methods or returned by a New... constructor, not
-//	                a plain data struct) from a producer package (sde, esi, sso, creds,
-//	                config, analytics).
+//	                package whose type is a concrete client or store (pkg.Type
+//	                returned by pointer from an exported New... or Open...
+//	                constructor, not a data type) from a producer package (sde,
+//	                esi, sso, creds, config, analytics).
 //	CONCRETE_CTOR   a reference to a producer constructor (pkg.New...) outside
 //	                a producer package: the place a concrete client is built.
+//
+// CONCRETE_PARAM and CONCRETE_CTOR are not reported in the composition roots
+// (cmd/, commands/, tools/), which build and wire the concrete producers.
+//
 //	PRODUCER_IFACE  an exported interface type declared inside a producer
 //	                package (an unexported one is internal, not meant for callers,
 //	                and is reported as INTERFACE).
@@ -48,6 +52,18 @@ import (
 var producers = map[string]bool{
 	"sde": true, "esi": true, "sso": true, "creds": true,
 	"config": true, "analytics": true,
+}
+
+// compositionRoots are the top-level directories where concrete producers are
+// built and wired into the consumers' interfaces (rule 4: a resolver wires the
+// implementer): the binary, the command tree, and the code generators. They
+// build concrete clients by design, so CONCRETE_* findings are not reported
+// there.
+var compositionRoots = map[string]bool{"cmd": true, "commands": true, "tools": true}
+
+func inCompositionRoot(rel string) bool {
+	top, _, _ := strings.Cut(rel, "/")
+	return compositionRoots[top]
 }
 
 // Finding is one audit line.
@@ -129,8 +145,9 @@ func Audit(root string) ([]Finding, error) {
 		return nil, fmt.Errorf("audit %s: %w", root, err)
 	}
 
-	// Only clients and stores are reported as CONCRETE_PARAM, not plain data
-	// structs: a producer type with methods, or one a New... constructor returns.
+	// Only clients and stores are reported as CONCRETE_PARAM, not data types
+	// (which may well have methods): a producer type that an exported New... or
+	// Open... constructor returns by pointer.
 	clients := map[string]bool{}
 	for _, pf := range files {
 		if !producers[pf.pkg] {
@@ -138,17 +155,16 @@ func Audit(root string) ([]Finding, error) {
 		}
 		for _, d := range pf.ast.Decls {
 			fd, ok := d.(*ast.FuncDecl)
-			if !ok {
+			if !ok || fd.Recv != nil || !fd.Name.IsExported() || fd.Type.Results == nil {
 				continue
 			}
-			if fd.Recv != nil && len(fd.Recv.List) > 0 {
-				clients[pf.pkg+"."+recvName(fd.Recv.List[0].Type)] = true
+			if !strings.HasPrefix(fd.Name.Name, "New") && !strings.HasPrefix(fd.Name.Name, "Open") {
 				continue
 			}
-			if strings.HasPrefix(fd.Name.Name, "New") && fd.Type.Results != nil {
-				for _, r := range fd.Type.Results.List {
-					if id, ok := baseIdent(r.Type); ok {
-						clients[pf.pkg+"."+id] = true
+			for _, r := range fd.Type.Results.List {
+				if st, ok := r.Type.(*ast.StarExpr); ok {
+					if id, ok := st.X.(*ast.Ident); ok {
+						clients[pf.pkg+"."+id.Name] = true
 					}
 				}
 			}
@@ -169,13 +185,14 @@ func Audit(root string) ([]Finding, error) {
 	ifaces := map[ifaceKey]*Finding{}
 	for _, pf := range files {
 		inProducer := producers[pf.pkg]
+		skipConcrete := inProducer || inCompositionRoot(pf.rel)
 		if fd, ok := typeOnlyFile(fset, pf); ok {
 			out = append(out, fd)
 		}
 		for _, d := range pf.ast.Decls {
 			switch d := d.(type) {
 			case *ast.FuncDecl:
-				if inProducer {
+				if skipConcrete {
 					continue
 				}
 				name := d.Name.Name
@@ -198,7 +215,7 @@ func Audit(root string) ([]Finding, error) {
 							fd := &Finding{Kind: k, File: pf.rel, Line: fset.Position(s.Pos()).Line, Context: pf.pkg + "." + s.Name.Name}
 							ifaces[ifaceKey{pf.dir, s.Name.Name}] = fd
 						case *ast.StructType:
-							if inProducer {
+							if skipConcrete {
 								continue
 							}
 							for _, fld := range t.Fields.List {
@@ -215,7 +232,7 @@ func Audit(root string) ([]Finding, error) {
 							}
 						}
 					case *ast.ValueSpec:
-						if inProducer {
+						if skipConcrete {
 							continue
 						}
 						for _, n := range s.Names {
@@ -266,7 +283,7 @@ func Audit(root string) ([]Finding, error) {
 		})
 	}
 	for _, pf := range files {
-		if producers[pf.pkg] {
+		if producers[pf.pkg] || inCompositionRoot(pf.rel) {
 			continue
 		}
 		ast.Inspect(pf.ast, func(n ast.Node) bool {

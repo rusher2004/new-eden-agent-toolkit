@@ -241,7 +241,7 @@ func (p *planner) resolvePrefs(ctx context.Context, in RoutePrefsInput) (config.
 	return out, nil
 }
 
-func saveHaulProfileHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[SaveHaulProfileInput, config.HaulProfile] {
+func saveHaulProfileHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[SaveHaulProfileInput, config.HaulProfile] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in SaveHaulProfileInput) (*mcpsdk.CallToolResult, config.HaulProfile, error) {
 		p := newPlanner(version, clientID, store, sdeStore)
 		if strings.TrimSpace(in.Name) == "" {
@@ -335,7 +335,7 @@ type ListHaulProfilesOutput struct {
 	Profiles []config.HaulProfile `json:"profiles"`
 }
 
-func listHaulProfilesHandler(store *config.Store) mcpsdk.ToolHandlerFor[struct{}, ListHaulProfilesOutput] {
+func listHaulProfilesHandler(store ConfigStore) mcpsdk.ToolHandlerFor[struct{}, ListHaulProfilesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, _ struct{}) (*mcpsdk.CallToolResult, ListHaulProfilesOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -459,7 +459,7 @@ func (p *planner) planRoute(ctx context.Context, prof config.HaulProfile, from, 
 	return out, g, req, nil
 }
 
-func planJumpRouteHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[PlanJumpRouteInput, PlanJumpRouteOutput] {
+func planJumpRouteHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[PlanJumpRouteInput, PlanJumpRouteOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in PlanJumpRouteInput) (*mcpsdk.CallToolResult, PlanJumpRouteOutput, error) {
 		p := newPlanner(version, clientID, store, sdeStore)
 		cfg, err := store.Load()
@@ -745,7 +745,7 @@ func (p *planner) haulPlanWith(ctx context.Context, profs []config.HaulProfile, 
 	return out, nil
 }
 
-func planHaulHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[PlanHaulInput, PlanHaulOutput] {
+func planHaulHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[PlanHaulInput, PlanHaulOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in PlanHaulInput) (*mcpsdk.CallToolResult, PlanHaulOutput, error) {
 		p := newPlanner(version, clientID, store, sdeStore)
 		cfg, err := store.Load()
@@ -857,7 +857,7 @@ type SaveRouteOutput struct {
 	Changes []config.Change `json:"changes"`
 }
 
-func saveRouteHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[SaveRouteInput, SaveRouteOutput] {
+func saveRouteHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[SaveRouteInput, SaveRouteOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in SaveRouteInput) (*mcpsdk.CallToolResult, SaveRouteOutput, error) {
 		if strings.TrimSpace(in.Name) == "" {
 			return nil, SaveRouteOutput{}, fmt.Errorf("save route: name is required")
@@ -896,7 +896,7 @@ type ListRoutesOutput struct {
 	Routes []config.Route `json:"routes"`
 }
 
-func listRoutesHandler(store *config.Store) mcpsdk.ToolHandlerFor[struct{}, ListRoutesOutput] {
+func listRoutesHandler(store ConfigStore) mcpsdk.ToolHandlerFor[struct{}, ListRoutesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, _ struct{}) (*mcpsdk.CallToolResult, ListRoutesOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {

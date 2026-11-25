@@ -27,9 +27,7 @@ import (
 
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 
-	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -527,7 +525,7 @@ type GetCorporationProjectContributionOutput struct {
 	LastModified      *time.Time `json:"lastModified,omitempty"`
 }
 
-func getCorporationProjectContributionHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[GetCorporationProjectContributionInput, GetCorporationProjectContributionOutput] {
+func getCorporationProjectContributionHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetCorporationProjectContributionInput, GetCorporationProjectContributionOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCorporationProjectContributionInput) (*mcpsdk.CallToolResult, GetCorporationProjectContributionOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -584,7 +582,7 @@ type ListCorporationProjectContributorsOutput struct {
 	NextBefore    *string              `json:"nextBefore,omitempty"`
 }
 
-func listCorporationProjectContributorsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCorporationProjectContributorsInput, ListCorporationProjectContributorsOutput] {
+func listCorporationProjectContributorsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationProjectContributorsInput, ListCorporationProjectContributorsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationProjectContributorsInput) (*mcpsdk.CallToolResult, ListCorporationProjectContributorsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -642,7 +640,7 @@ type GetCorporationProjectDetailOutput struct {
 	State         string                     `json:"state"`
 }
 
-func getCorporationProjectDetailHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetCorporationProjectDetailInput, GetCorporationProjectDetailOutput] {
+func getCorporationProjectDetailHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetCorporationProjectDetailInput, GetCorporationProjectDetailOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCorporationProjectDetailInput) (*mcpsdk.CallToolResult, GetCorporationProjectDetailOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -796,7 +794,7 @@ type ListCorporationProjectsOutput struct {
 	NextBefore    *string          `json:"nextBefore,omitempty"`
 }
 
-func listCorporationProjectsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCorporationProjectsInput, ListCorporationProjectsOutput] {
+func listCorporationProjectsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationProjectsInput, ListCorporationProjectsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationProjectsInput) (*mcpsdk.CallToolResult, ListCorporationProjectsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {

@@ -4,11 +4,138 @@
 package mcp
 
 import (
+	"context"
+	"fmt"
+
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 )
+
+// Deps is everything NewServer needs from outside the package. The composition
+// root (commands/mcp.go) builds the concrete config store, SDE cache and ESI
+// clients and hands them over as these interfaces, so no tool in this package
+// names a concrete producer type.
+//
+// ConfigStore, SDEStore and ESIClient are the unions of what every tool file
+// needs. Each tool file declares its own small interface for the calls it
+// actually makes, and the unions only have to cover them.
+type Deps struct {
+	// ClientID is the ESI OAuth2 client ID, used by the login flow.
+	ClientID string
+	Config   ConfigStore
+	SDE      SDEStore
+	// OpenESI returns an authenticated ESI client for a logged-in character.
+	OpenESI func(ctx context.Context, characterID int32) (ESIClient, error)
+	// OpenPublicESI returns an ESI client for public endpoints.
+	OpenPublicESI func() ESIClient
+}
+
+// ESIClient is the union of the ESI calls the tool files make: it embeds each
+// file's own small interface, so the composition root's *esi.Client must
+// satisfy all of them (commands has a test that it does).
+type ESIClient interface {
+	loyaltyESI
+	loyaltyStoreESI
+}
+
+// narrowPublicESI adapts Deps.OpenPublicESI the same way, for the tools that
+// need no character. ESIClient embeds every C, so the assertion holds for any
+// client the composition root can build. The client is opened per call, not
+// when the server is built.
+func narrowPublicESI[C any](open func() ESIClient) func() C {
+	return func() C { return open().(C) }
+}
+
+// narrowESI adapts Deps.OpenESI to the small interface C one tool file needs.
+// ESIClient embeds every such C, so the assertion cannot fail for a client that
+// satisfies ESIClient; the error covers a client that was built wrongly.
+func narrowESI[C any](open func(ctx context.Context, characterID int32) (ESIClient, error)) func(ctx context.Context, characterID int32) (C, error) {
+	return func(ctx context.Context, characterID int32) (C, error) {
+		var zero C
+		c, err := open(ctx, characterID)
+		if err != nil {
+			return zero, err
+		}
+		narrowed, ok := c.(C)
+		if !ok {
+			return zero, fmt.Errorf("ESI client %T does not provide %T", c, &zero)
+		}
+		return narrowed, nil
+	}
+}
+
+type ConfigStore interface {
+	Load() (config.Config, error)
+	Path() string
+	Save(cfg config.Config) error
+	SaveChanges(cfg config.Config) ([]config.Change, error)
+	Update(change func(*config.Config) error) ([]config.Change, error)
+}
+
+type SDEStore interface {
+	Ancestries(ctx context.Context, userAgent string) ([]sde.Ancestry, error)
+	AsteroidBelt(ctx context.Context, userAgent string, id int64) (sde.AsteroidBelt, bool, error)
+	AttributeInfos(ctx context.Context, userAgent string) (map[int64]sde.AttributeInfo, error)
+	Bloodline(ctx context.Context, userAgent string, id int64) (sde.Bloodline, bool, error)
+	Bloodlines(ctx context.Context, userAgent string) ([]sde.Bloodline, error)
+	Blueprint(ctx context.Context, userAgent string, blueprintTypeID int64) (sde.Blueprint, bool, error)
+	BlueprintSourcesForActivity(ctx context.Context, userAgent string, productTypeID, activityID int64) ([]sde.BlueprintSource, error)
+	BlueprintsForProduct(ctx context.Context, userAgent string, productTypeID int64) ([]sde.BlueprintSource, error)
+	Category(ctx context.Context, userAgent string, id int64) (sde.Category, bool, error)
+	CategoryIDs(ctx context.Context, userAgent string) ([]int64, error)
+	CompressedOres(ctx context.Context, userAgent string) ([]sde.Ore, error)
+	Constellation(ctx context.Context, userAgent string, id int64) (sde.Constellation, bool, error)
+	ConstellationIDs(ctx context.Context, userAgent string) ([]int64, error)
+	DogmaTypes(ctx context.Context, userAgent string, ids []int64) (map[int64]sde.DogmaType, error)
+	Faction(ctx context.Context, userAgent string, id int64) (sde.Faction, bool, error)
+	Factions(ctx context.Context, userAgent string) ([]sde.Faction, error)
+	Graphic(ctx context.Context, userAgent string, id int64) (sde.Graphic, bool, error)
+	GraphicIDs(ctx context.Context, userAgent string) ([]int64, error)
+	Group(ctx context.Context, userAgent string, id int64) (sde.Group, bool, error)
+	GroupIDs(ctx context.Context, userAgent string) ([]int64, error)
+	IndustryModifiers(ctx context.Context, userAgent string, typeID int64) ([]sde.IndustryModifierSource, error)
+	Moon(ctx context.Context, userAgent string, id int64) (sde.Moon, bool, error)
+	NPCStationIndustryData(ctx context.Context, userAgent string, stationID int64) (sde.NPCStationIndustry, bool, error)
+	Planet(ctx context.Context, userAgent string, id int64) (sde.Planet, bool, error)
+	PublishedTypesInGroups(ctx context.Context, userAgent string, groupIDs []int64) ([]sde.TypeBasic, error)
+	PublishedTypesWithEffect(ctx context.Context, userAgent, effectName string) ([]sde.TypeBasic, error)
+	PutAsteroidBelt(b sde.AsteroidBelt) error
+	PutCategory(c sde.Category) error
+	PutConstellation(c sde.Constellation) error
+	PutGraphic(g sde.Graphic) error
+	PutGroup(g sde.Group) error
+	PutMoon(m sde.Moon) error
+	PutPlanet(p sde.Planet) error
+	PutRegion(r sde.Region) error
+	PutStar(st sde.Star) error
+	PutStargate(g sde.Stargate) error
+	PutStation(st sde.Station) error
+	PutSystem(sys sde.System) error
+	PutType(t sde.Type) error
+	Race(ctx context.Context, userAgent string, id int64) (sde.Race, bool, error)
+	Races(ctx context.Context, userAgent string) ([]sde.Race, error)
+	Region(ctx context.Context, userAgent string, id int64) (sde.Region, bool, error)
+	RegionIDs(ctx context.Context, userAgent string) ([]int64, error)
+	ReprocessingMaterials(ctx context.Context, userAgent string, typeID int64) ([]sde.TypeQuantity, error)
+	RigInfo(ctx context.Context, userAgent string, typeID int64) (sde.Rig, bool, error)
+	RoutingSystems(ctx context.Context, userAgent string) ([]sde.RoutingSystem, error)
+	SkinrComponent(ctx context.Context, userAgent string, id int64) (sde.SkinrComponent, bool, error)
+	SkinrSlot(ctx context.Context, userAgent string, id int64) (sde.SkinrSlot, bool, error)
+	Star(ctx context.Context, userAgent string, id int64) (sde.Star, bool, error)
+	Stargate(ctx context.Context, userAgent string, id int64) (sde.Stargate, bool, error)
+	StargateConnections(ctx context.Context, userAgent string) ([][2]int64, error)
+	Station(ctx context.Context, userAgent string, id int64) (sde.Station, bool, error)
+	System(ctx context.Context, userAgent string, id int64) (sde.System, bool, error)
+	SystemIDs(ctx context.Context, userAgent string) ([]int64, error)
+	TargetFilters(ctx context.Context, userAgent string) (map[int64]sde.TargetFilter, error)
+	Type(ctx context.Context, userAgent string, id int64) (sde.Type, bool, error)
+	TypeAttributes(ctx context.Context, userAgent string, typeID int64) (map[int64]float64, error)
+	TypeBasics(ctx context.Context, userAgent string, ids []int64) (map[int64]sde.TypeBasic, error)
+	TypeIDs(ctx context.Context, userAgent string) ([]int64, error)
+	TypesByName(ctx context.Context, userAgent string, names []string) (map[string]int64, error)
+}
 
 // NewServer builds neat's MCP server with add_character, list_scope_groups, list_characters,
 // remove_character, get_wallet_balance, list_character_wallet_journal,
@@ -90,7 +217,8 @@ import (
 // list_character_paragon_hub_skinr_listings, list_paragon_hub_skinr_listings_for_alliance,
 // list_paragon_hub_skinr_listings_for_corporation, and
 // list_paragon_hub_skinr_listings_for_character registered.
-func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Store) *mcpsdk.Server {
+func NewServer(version string, deps Deps) *mcpsdk.Server {
+	clientID, store, sdeStore := deps.ClientID, deps.Config, deps.SDE
 	server := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "neat", Version: version}, &mcpsdk.ServerOptions{Instructions: Instructions})
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
@@ -814,12 +942,12 @@ func NewServer(version, clientID string, store *config.Store, sdeStore *sde.Stor
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_character_loyalty_points",
 		Description: "List a logged-in EVE Online character's loyalty point balances with every corporation they've worked for.",
-	}, listCharacterLoyaltyPointsHandler(version, clientID, store))
+	}, listCharacterLoyaltyPointsHandler(narrowESI[loyaltyESI](deps.OpenESI), store))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_loyalty_store_offers",
 		Description: "List a corporation's loyalty store offers (public data, no character required).",
-	}, listLoyaltyStoreOffersHandler(version, sdeStore))
+	}, listLoyaltyStoreOffersHandler(version, narrowPublicESI[loyaltyStoreESI](deps.OpenPublicESI), sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_character_mail",

@@ -100,7 +100,7 @@ func (p *planner) describeFacility(ctx context.Context, prof config.FacilityProf
 	return v, nil
 }
 
-func saveFacilityProfileHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[SaveFacilityProfileInput, FacilityView] {
+func saveFacilityProfileHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[SaveFacilityProfileInput, FacilityView] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in SaveFacilityProfileInput) (*mcpsdk.CallToolResult, FacilityView, error) {
 		p := newPlanner(version, clientID, store, sdeStore)
 		prof := config.FacilityProfile{Name: strings.TrimSpace(in.Name), Kind: in.Kind, StationID: in.StationID, Services: in.Services,
@@ -191,7 +191,7 @@ type DescribeFacilityInput struct {
 	ProductName string `json:"productName,omitempty" jsonschema:"optional product to show multipliers and whether each activity can run for it"`
 }
 
-func describeFacilityHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[DescribeFacilityInput, FacilityView] {
+func describeFacilityHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[DescribeFacilityInput, FacilityView] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in DescribeFacilityInput) (*mcpsdk.CallToolResult, FacilityView, error) {
 		p := newPlanner(version, clientID, store, sdeStore)
 		prof, err := p.facilityProfile(in.Name)
@@ -233,7 +233,7 @@ type ListFacilityProfilesOutput struct {
 	Profiles []config.FacilityProfile `json:"profiles"`
 }
 
-func listFacilityProfilesHandler(store *config.Store) mcpsdk.ToolHandlerFor[struct{}, ListFacilityProfilesOutput] {
+func listFacilityProfilesHandler(store ConfigStore) mcpsdk.ToolHandlerFor[struct{}, ListFacilityProfilesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, _ struct{}) (*mcpsdk.CallToolResult, ListFacilityProfilesOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -258,7 +258,7 @@ type CalibrateFacilityProfileOutput struct {
 	EstimatedRate  float64                `json:"estimatedRateFromCostIndex"`
 }
 
-func calibrateFacilityProfileHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[CalibrateFacilityProfileInput, CalibrateFacilityProfileOutput] {
+func calibrateFacilityProfileHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[CalibrateFacilityProfileInput, CalibrateFacilityProfileOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in CalibrateFacilityProfileInput) (*mcpsdk.CallToolResult, CalibrateFacilityProfileOutput, error) {
 		p := newPlanner(version, clientID, store, sdeStore)
 		if err := p.requireCharacter(in.CharacterID); err != nil {

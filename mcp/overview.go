@@ -13,7 +13,6 @@ import (
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
 	"github.com/rusher2004/new-eden-agent-toolkit/nav"
-	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 )
 
 // GetLogisticsOverviewInput is get_logistics_overview's input.
@@ -141,7 +140,7 @@ func (p *planner) placeName(ctx context.Context, cfg config.Config, id int64) st
 	return fmt.Sprintf("structure %d", id)
 }
 
-func getLogisticsOverviewHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetLogisticsOverviewInput, GetLogisticsOverviewOutput] {
+func getLogisticsOverviewHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetLogisticsOverviewInput, GetLogisticsOverviewOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetLogisticsOverviewInput) (*mcpsdk.CallToolResult, GetLogisticsOverviewOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {

@@ -9,9 +9,7 @@ import (
 
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 
-	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -92,7 +90,7 @@ type ListCharacterIndustryJobsOutput struct {
 	Jobs             []IndustryJob `json:"jobs"`
 }
 
-func listCharacterIndustryJobsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCharacterIndustryJobsInput, ListCharacterIndustryJobsOutput] {
+func listCharacterIndustryJobsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCharacterIndustryJobsInput, ListCharacterIndustryJobsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterIndustryJobsInput) (*mcpsdk.CallToolResult, ListCharacterIndustryJobsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -128,7 +126,7 @@ func listCharacterIndustryJobsHandler(version, clientID string, store *config.St
 
 // enrichIndustryJobs resolves BlueprintTypeName (always populated) and ProductTypeName (only when
 // ProductTypeID is non-nil) in place, sharing one resolveTypeNames batch across both fields.
-func enrichIndustryJobs(ctx context.Context, jobs []IndustryJob, sdeStore *sde.Store, userAgent string) {
+func enrichIndustryJobs(ctx context.Context, jobs []IndustryJob, sdeStore SDEStore, userAgent string) {
 	ids := make([]int64, 0, len(jobs)*2)
 	for _, j := range jobs {
 		ids = append(ids, j.BlueprintTypeID)
@@ -175,7 +173,7 @@ type ListCharacterMiningOutput struct {
 	Ledger      []MiningLedgerEntry `json:"ledger"`
 }
 
-func listCharacterMiningHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCharacterMiningInput, ListCharacterMiningOutput] {
+func listCharacterMiningHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCharacterMiningInput, ListCharacterMiningOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterMiningInput) (*mcpsdk.CallToolResult, ListCharacterMiningOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -248,7 +246,7 @@ type ListCorporationMiningExtractionsOutput struct {
 	Extractions   []MiningExtraction `json:"extractions"`
 }
 
-func listCorporationMiningExtractionsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCorporationMiningExtractionsInput, ListCorporationMiningExtractionsOutput] {
+func listCorporationMiningExtractionsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCorporationMiningExtractionsInput, ListCorporationMiningExtractionsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationMiningExtractionsInput) (*mcpsdk.CallToolResult, ListCorporationMiningExtractionsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -313,7 +311,7 @@ type ListCorporationMiningObserversOutput struct {
 	Observers     []MiningObserver `json:"observers"`
 }
 
-func listCorporationMiningObserversHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCorporationMiningObserversInput, ListCorporationMiningObserversOutput] {
+func listCorporationMiningObserversHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationMiningObserversInput, ListCorporationMiningObserversOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationMiningObserversInput) (*mcpsdk.CallToolResult, ListCorporationMiningObserversOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -372,7 +370,7 @@ type GetCorporationMiningObserverDetailOutput struct {
 	Entries       []MiningObserverEntry `json:"entries"`
 }
 
-func getCorporationMiningObserverDetailHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetCorporationMiningObserverDetailInput, GetCorporationMiningObserverDetailOutput] {
+func getCorporationMiningObserverDetailHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetCorporationMiningObserverDetailInput, GetCorporationMiningObserverDetailOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCorporationMiningObserverDetailInput) (*mcpsdk.CallToolResult, GetCorporationMiningObserverDetailOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -436,7 +434,7 @@ type ListCorporationIndustryJobsOutput struct {
 	Jobs             []IndustryJob `json:"jobs"`
 }
 
-func listCorporationIndustryJobsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCorporationIndustryJobsInput, ListCorporationIndustryJobsOutput] {
+func listCorporationIndustryJobsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCorporationIndustryJobsInput, ListCorporationIndustryJobsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationIndustryJobsInput) (*mcpsdk.CallToolResult, ListCorporationIndustryJobsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -489,7 +487,7 @@ type ListIndustryFacilitiesOutput struct {
 	Facilities []IndustryFacility `json:"facilities"`
 }
 
-func listIndustryFacilitiesHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListIndustryFacilitiesInput, ListIndustryFacilitiesOutput] {
+func listIndustryFacilitiesHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListIndustryFacilitiesInput, ListIndustryFacilitiesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListIndustryFacilitiesInput) (*mcpsdk.CallToolResult, ListIndustryFacilitiesOutput, error) {
 		facilities, err := listIndustryFacilities(ctx, sso.UserAgent(version))
 		if err != nil {
@@ -549,7 +547,7 @@ type ListIndustrySystemsOutput struct {
 	Systems []IndustrySystem `json:"systems"`
 }
 
-func listIndustrySystemsHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListIndustrySystemsInput, ListIndustrySystemsOutput] {
+func listIndustrySystemsHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListIndustrySystemsInput, ListIndustrySystemsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListIndustrySystemsInput) (*mcpsdk.CallToolResult, ListIndustrySystemsOutput, error) {
 		systems, err := listIndustrySystems(ctx, sso.UserAgent(version))
 		if err != nil {

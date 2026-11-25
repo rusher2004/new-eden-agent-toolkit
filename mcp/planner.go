@@ -39,8 +39,8 @@ var fetchSellOrders = func(ctx context.Context, userAgent string, regionID, type
 // caches them for the life of one tool call.
 type planner struct {
 	version, clientID string
-	store             *config.Store
-	sde               *sde.Store
+	store             ConfigStore
+	sde               SDEStore
 
 	mu       sync.Mutex
 	recipes  map[int64]*industry.Recipe // nil value = not buildable
@@ -61,7 +61,7 @@ type planner struct {
 	fallbackMarketCharacter int32
 }
 
-func newPlanner(version, clientID string, store *config.Store, sdeStore *sde.Store) *planner {
+func newPlanner(version, clientID string, store ConfigStore, sdeStore SDEStore) *planner {
 	return &planner{version: version, clientID: clientID, store: store, sde: sdeStore,
 		recipes: map[int64]*industry.Recipe{}, basics: map[int64]sde.TypeBasic{}, skillsBy: map[int32]map[int64]int{}}
 }
@@ -244,7 +244,7 @@ type DeletedOutput struct {
 	Deleted string `json:"deleted"`
 }
 
-func deleteProfileHandler(store *config.Store, del func(*config.Config, string) error) mcpsdk.ToolHandlerFor[ProfileNameInput, DeletedOutput] {
+func deleteProfileHandler(store ConfigStore, del func(*config.Config, string) error) mcpsdk.ToolHandlerFor[ProfileNameInput, DeletedOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ProfileNameInput) (*mcpsdk.CallToolResult, DeletedOutput, error) {
 		if _, err := store.Update(func(cfg *config.Config) error { return del(cfg, in.Name) }); err != nil {
 			return nil, DeletedOutput{}, err

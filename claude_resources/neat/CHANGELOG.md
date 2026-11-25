@@ -1,5 +1,8 @@
 # neat plugin — changelog
 
+## 0.20.3
+- No change for players. Internal refactor: the tool server now receives its config store, static data cache and ESI clients from the command that starts it, instead of building them itself.
+
 ## 0.20.2
 - No change for players. Internal cleanup to meet the Go coding standards: errors from closing files and database rows are no longer dropped, and the code uses current Go idioms.
 

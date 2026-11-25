@@ -17,7 +17,6 @@ import (
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/industry"
 	"github.com/rusher2004/new-eden-agent-toolkit/market"
-	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 )
 
 type PlanBuildInput struct {
@@ -113,7 +112,7 @@ type ScheduleSummary struct {
 	Unassigned     []string `json:"unassigned,omitempty"`
 }
 
-func planBuildHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[PlanBuildInput, PlanBuildOutput] {
+func planBuildHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[PlanBuildInput, PlanBuildOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in PlanBuildInput) (*mcpsdk.CallToolResult, PlanBuildOutput, error) {
 		p := newPlanner(version, clientID, store, sdeStore)
 		out, err := p.planBuild(ctx, in)

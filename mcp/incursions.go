@@ -7,7 +7,6 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -50,7 +49,7 @@ type ListIncursionsOutput struct {
 	Incursions []Incursion `json:"incursions"`
 }
 
-func listIncursionsHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListIncursionsInput, ListIncursionsOutput] {
+func listIncursionsHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListIncursionsInput, ListIncursionsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListIncursionsInput) (*mcpsdk.CallToolResult, ListIncursionsOutput, error) {
 		incursions, err := listIncursions(ctx, sso.UserAgent(version))
 		if err != nil {

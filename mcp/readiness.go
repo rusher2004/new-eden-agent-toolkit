@@ -201,7 +201,7 @@ type ListCharacterCapabilitiesOutput struct {
 	Warnings   []string                `json:"warnings,omitempty"`
 }
 
-func listCharacterCapabilitiesHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCharacterCapabilitiesInput, ListCharacterCapabilitiesOutput] {
+func listCharacterCapabilitiesHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCharacterCapabilitiesInput, ListCharacterCapabilitiesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterCapabilitiesInput) (*mcpsdk.CallToolResult, ListCharacterCapabilitiesOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -397,7 +397,7 @@ func (p *planner) cloneLocation(ctx context.Context, cfg config.Config, id int64
 	return l
 }
 
-func listJumpClonesHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListJumpClonesInput, ListJumpClonesOutput] {
+func listJumpClonesHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListJumpClonesInput, ListJumpClonesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListJumpClonesInput) (*mcpsdk.CallToolResult, ListJumpClonesOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {

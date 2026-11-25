@@ -9,7 +9,6 @@ import (
 
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 
-	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
@@ -140,7 +139,7 @@ type ListCharacterParagonHubSkinrListingsOutput struct {
 	NextBefore  *string        `json:"nextBefore,omitempty"`
 }
 
-func listCharacterParagonHubSkinrListingsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCharacterParagonHubSkinrListingsInput, ListCharacterParagonHubSkinrListingsOutput] {
+func listCharacterParagonHubSkinrListingsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCharacterParagonHubSkinrListingsInput, ListCharacterParagonHubSkinrListingsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterParagonHubSkinrListingsInput) (*mcpsdk.CallToolResult, ListCharacterParagonHubSkinrListingsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -191,7 +190,7 @@ type ListParagonHubSkinrListingsForAllianceOutput struct {
 	NextBefore  *string        `json:"nextBefore,omitempty"`
 }
 
-func listParagonHubSkinrListingsForAllianceHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListParagonHubSkinrListingsForAllianceInput, ListParagonHubSkinrListingsForAllianceOutput] {
+func listParagonHubSkinrListingsForAllianceHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListParagonHubSkinrListingsForAllianceInput, ListParagonHubSkinrListingsForAllianceOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListParagonHubSkinrListingsForAllianceInput) (*mcpsdk.CallToolResult, ListParagonHubSkinrListingsForAllianceOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -235,7 +234,7 @@ type ListParagonHubSkinrListingsForCorporationOutput struct {
 	NextBefore    *string        `json:"nextBefore,omitempty"`
 }
 
-func listParagonHubSkinrListingsForCorporationHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListParagonHubSkinrListingsForCorporationInput, ListParagonHubSkinrListingsForCorporationOutput] {
+func listParagonHubSkinrListingsForCorporationHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListParagonHubSkinrListingsForCorporationInput, ListParagonHubSkinrListingsForCorporationOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListParagonHubSkinrListingsForCorporationInput) (*mcpsdk.CallToolResult, ListParagonHubSkinrListingsForCorporationOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -277,7 +276,7 @@ type ListParagonHubSkinrListingsForCharacterOutput struct {
 	NextBefore  *string        `json:"nextBefore,omitempty"`
 }
 
-func listParagonHubSkinrListingsForCharacterHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListParagonHubSkinrListingsForCharacterInput, ListParagonHubSkinrListingsForCharacterOutput] {
+func listParagonHubSkinrListingsForCharacterHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListParagonHubSkinrListingsForCharacterInput, ListParagonHubSkinrListingsForCharacterOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListParagonHubSkinrListingsForCharacterInput) (*mcpsdk.CallToolResult, ListParagonHubSkinrListingsForCharacterOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {

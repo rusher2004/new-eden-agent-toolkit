@@ -8,9 +8,7 @@ import (
 
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 
-	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -60,7 +58,7 @@ type ListCharacterFittingsOutput struct {
 	Fittings    []Fitting `json:"fittings"`
 }
 
-func listCharacterFittingsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCharacterFittingsInput, ListCharacterFittingsOutput] {
+func listCharacterFittingsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCharacterFittingsInput, ListCharacterFittingsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterFittingsInput) (*mcpsdk.CallToolResult, ListCharacterFittingsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -125,7 +123,7 @@ type CreateCharacterFittingOutput struct {
 	FittingID   int64 `json:"fittingId"`
 }
 
-func createCharacterFittingHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[CreateCharacterFittingInput, CreateCharacterFittingOutput] {
+func createCharacterFittingHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[CreateCharacterFittingInput, CreateCharacterFittingOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in CreateCharacterFittingInput) (*mcpsdk.CallToolResult, CreateCharacterFittingOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -161,7 +159,7 @@ type DeleteCharacterFittingOutput struct {
 	FittingID   int64 `json:"fittingId"`
 }
 
-func deleteCharacterFittingHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[DeleteCharacterFittingInput, DeleteCharacterFittingOutput] {
+func deleteCharacterFittingHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[DeleteCharacterFittingInput, DeleteCharacterFittingOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in DeleteCharacterFittingInput) (*mcpsdk.CallToolResult, DeleteCharacterFittingOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {

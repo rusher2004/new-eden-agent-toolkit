@@ -7,7 +7,6 @@ import (
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
@@ -53,7 +52,7 @@ type ListCalendarEventsOutput struct {
 	Events      []CalendarEventSummary `json:"events"`
 }
 
-func listCalendarEventsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCalendarEventsInput, ListCalendarEventsOutput] {
+func listCalendarEventsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCalendarEventsInput, ListCalendarEventsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCalendarEventsInput) (*mcpsdk.CallToolResult, ListCalendarEventsOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -129,7 +128,7 @@ type GetCalendarEventOutput struct {
 	Title       string    `json:"title"`
 }
 
-func getCalendarEventHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[GetCalendarEventInput, GetCalendarEventOutput] {
+func getCalendarEventHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetCalendarEventInput, GetCalendarEventOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCalendarEventInput) (*mcpsdk.CallToolResult, GetCalendarEventOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -193,7 +192,7 @@ type ListCalendarEventAttendeesOutput struct {
 	Attendees   []CalendarAttendee `json:"attendees"`
 }
 
-func listCalendarEventAttendeesHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCalendarEventAttendeesInput, ListCalendarEventAttendeesOutput] {
+func listCalendarEventAttendeesHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCalendarEventAttendeesInput, ListCalendarEventAttendeesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCalendarEventAttendeesInput) (*mcpsdk.CallToolResult, ListCalendarEventAttendeesOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -246,7 +245,7 @@ type RespondCalendarEventOutput struct {
 // respondCalendarEventHandler is neat's first write tool. It changes state on FC's server, so
 // unlike every read-only handler in this project it validates its input BEFORE loading
 // config.Store or calling ESI — failing fast on bad input without an unnecessary IO round-trip.
-func respondCalendarEventHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[RespondCalendarEventInput, RespondCalendarEventOutput] {
+func respondCalendarEventHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[RespondCalendarEventInput, RespondCalendarEventOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in RespondCalendarEventInput) (*mcpsdk.CallToolResult, RespondCalendarEventOutput, error) {
 		if !validCalendarResponses[in.Response] {
 			return nil, RespondCalendarEventOutput{}, fmt.Errorf("respond to calendar event: invalid response %q, must be one of accepted, declined, tentative", in.Response)

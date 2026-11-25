@@ -7,7 +7,6 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/cargo"
-	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
 	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
@@ -43,7 +42,7 @@ func cargoItem(a AssetItem, b sde.TypeBasic, owner string) cargo.Item {
 }
 
 // enrichAssets fills in each asset's type name and volume from the SDE.
-func enrichAssets(ctx context.Context, sdeStore *sde.Store, userAgent string, assets []AssetItem) map[int64]sde.TypeBasic {
+func enrichAssets(ctx context.Context, sdeStore SDEStore, userAgent string, assets []AssetItem) map[int64]sde.TypeBasic {
 	ids := make([]int64, len(assets))
 	for i, a := range assets {
 		ids[i] = a.TypeID
@@ -94,7 +93,7 @@ type ListAssetsOutput struct {
 	Assets      []AssetItem `json:"assets"`
 }
 
-func listAssetsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListAssetsInput, ListAssetsOutput] {
+func listAssetsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListAssetsInput, ListAssetsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListAssetsInput) (*mcpsdk.CallToolResult, ListAssetsOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -160,7 +159,7 @@ type GetAssetLocationsOutput struct {
 	Locations   []AssetLocation `json:"locations"`
 }
 
-func getAssetLocationsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[GetAssetLocationsInput, GetAssetLocationsOutput] {
+func getAssetLocationsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetAssetLocationsInput, GetAssetLocationsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetAssetLocationsInput) (*mcpsdk.CallToolResult, GetAssetLocationsOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -219,7 +218,7 @@ type GetAssetNamesOutput struct {
 	Names       []AssetName `json:"names"`
 }
 
-func getAssetNamesHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[GetAssetNamesInput, GetAssetNamesOutput] {
+func getAssetNamesHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetAssetNamesInput, GetAssetNamesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetAssetNamesInput) (*mcpsdk.CallToolResult, GetAssetNamesOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -280,7 +279,7 @@ type ListCorporationAssetsOutput struct {
 	Assets        []AssetItem `json:"assets"`
 }
 
-func listCorporationAssetsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCorporationAssetsInput, ListCorporationAssetsOutput] {
+func listCorporationAssetsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCorporationAssetsInput, ListCorporationAssetsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationAssetsInput) (*mcpsdk.CallToolResult, ListCorporationAssetsOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -340,7 +339,7 @@ type GetCorporationAssetLocationsOutput struct {
 	Locations     []AssetLocation `json:"locations"`
 }
 
-func getCorporationAssetLocationsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[GetCorporationAssetLocationsInput, GetCorporationAssetLocationsOutput] {
+func getCorporationAssetLocationsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetCorporationAssetLocationsInput, GetCorporationAssetLocationsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCorporationAssetLocationsInput) (*mcpsdk.CallToolResult, GetCorporationAssetLocationsOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -395,7 +394,7 @@ type GetCorporationAssetNamesOutput struct {
 	Names         []AssetName `json:"names"`
 }
 
-func getCorporationAssetNamesHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[GetCorporationAssetNamesInput, GetCorporationAssetNamesOutput] {
+func getCorporationAssetNamesHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetCorporationAssetNamesInput, GetCorporationAssetNamesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCorporationAssetNamesInput) (*mcpsdk.CallToolResult, GetCorporationAssetNamesOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {

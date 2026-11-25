@@ -8,8 +8,6 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/cargo"
-	"github.com/rusher2004/new-eden-agent-toolkit/config"
-	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -66,7 +64,7 @@ func truncatedWarning(owner string) string {
 	return fmt.Sprintf("%s has more than %d pages of assets, so only the first %d were read: items and totals here may be incomplete", owner, maxAssetPages, maxAssetPages)
 }
 
-func listLocationAssetsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListLocationAssetsInput, ListLocationAssetsOutput] {
+func listLocationAssetsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListLocationAssetsInput, ListLocationAssetsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListLocationAssetsInput) (*mcpsdk.CallToolResult, ListLocationAssetsOutput, error) {
 		if in.LocationID == 0 {
 			return nil, ListLocationAssetsOutput{}, fmt.Errorf("list location assets: locationId is required")

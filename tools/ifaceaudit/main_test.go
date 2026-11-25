@@ -19,13 +19,13 @@ func TestAuditFindsConcreteClientParam(t *testing.T) {
 	}
 	out := strings.Join(got, "\n")
 	for _, want := range []string{
-		"CONCRETE_PARAM commands/c.go:9 holder.H sde.Client",
-		"CONCRETE_PARAM commands/c.go:12 hook sde.Client",
-		"CONCRETE_PARAM commands/c.go:15 Trigger sde.Client",
-		"CONCRETE_PARAM commands/c.go:22 factory sde.Client",
-		"CONCRETE_CTOR commands/c.go:22 commands sde.New",
-		"PRODUCER_IFACE sde/l.go:7 sde.Lister used-by=commands",
-		"INTERFACE commands/c.go:18 commands.local used-by=-",
+		"CONCRETE_PARAM consumer/c.go:9 holder.H sde.Client",
+		"CONCRETE_PARAM consumer/c.go:12 hook sde.Client",
+		"CONCRETE_PARAM consumer/c.go:15 Trigger sde.Client",
+		"CONCRETE_PARAM consumer/c.go:22 factory sde.Client",
+		"CONCRETE_CTOR consumer/c.go:22 consumer sde.New",
+		"PRODUCER_IFACE sde/l.go:7 sde.Lister used-by=consumer",
+		"INTERFACE consumer/c.go:18 consumer.local used-by=-",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in:\n%s", want, out)
@@ -87,7 +87,7 @@ func TestAuditFlagsTypeOnlyFiles(t *testing.T) {
 		}
 	}
 	want := []string{
-		"TYPE_ONLY_FILE commands/types_only.go:6 commands",
+		"TYPE_ONLY_FILE consumer/types_only.go:6 consumer",
 		"TYPE_ONLY_FILE sde/l.go:4 sde",
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {

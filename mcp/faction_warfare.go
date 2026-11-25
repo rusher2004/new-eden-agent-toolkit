@@ -9,9 +9,7 @@ import (
 
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 
-	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -48,7 +46,7 @@ type GetCharacterFwStatsOutput struct {
 	VictoryPoints KillsOrPointsStats `json:"victoryPoints"`
 }
 
-func getCharacterFwStatsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetCharacterFwStatsInput, GetCharacterFwStatsOutput] {
+func getCharacterFwStatsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetCharacterFwStatsInput, GetCharacterFwStatsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterFwStatsInput) (*mcpsdk.CallToolResult, GetCharacterFwStatsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -100,7 +98,7 @@ type GetCorporationFwStatsOutput struct {
 	VictoryPoints KillsOrPointsStats `json:"victoryPoints"`
 }
 
-func getCorporationFwStatsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetCorporationFwStatsInput, GetCorporationFwStatsOutput] {
+func getCorporationFwStatsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetCorporationFwStatsInput, GetCorporationFwStatsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCorporationFwStatsInput) (*mcpsdk.CallToolResult, GetCorporationFwStatsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -151,7 +149,7 @@ type GetFwLeaderboardsOutput struct {
 	VictoryPoints FactionLeaderboardMetric `json:"victoryPoints"`
 }
 
-func getFwLeaderboardsHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetFwLeaderboardsInput, GetFwLeaderboardsOutput] {
+func getFwLeaderboardsHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetFwLeaderboardsInput, GetFwLeaderboardsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetFwLeaderboardsInput) (*mcpsdk.CallToolResult, GetFwLeaderboardsOutput, error) {
 		lb, err := getFwLeaderboards(ctx, sso.UserAgent(version))
 		if err != nil {
@@ -345,7 +343,7 @@ type ListFwStatsOutput struct {
 	Stats []FwFactionStats `json:"stats"`
 }
 
-func listFwStatsHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListFwStatsInput, ListFwStatsOutput] {
+func listFwStatsHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListFwStatsInput, ListFwStatsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListFwStatsInput) (*mcpsdk.CallToolResult, ListFwStatsOutput, error) {
 		stats, err := listFwStats(ctx, sso.UserAgent(version))
 		if err != nil {
@@ -395,7 +393,7 @@ type ListFwSystemsOutput struct {
 	Systems []FwSystem `json:"systems"`
 }
 
-func listFwSystemsHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListFwSystemsInput, ListFwSystemsOutput] {
+func listFwSystemsHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListFwSystemsInput, ListFwSystemsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListFwSystemsInput) (*mcpsdk.CallToolResult, ListFwSystemsOutput, error) {
 		systems, err := listFwSystems(ctx, sso.UserAgent(version))
 		if err != nil {
@@ -448,7 +446,7 @@ type ListFwWarsOutput struct {
 	Wars []FwWar `json:"wars"`
 }
 
-func listFwWarsHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListFwWarsInput, ListFwWarsOutput] {
+func listFwWarsHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListFwWarsInput, ListFwWarsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListFwWarsInput) (*mcpsdk.CallToolResult, ListFwWarsOutput, error) {
 		wars, err := listFwWars(ctx, sso.UserAgent(version))
 		if err != nil {

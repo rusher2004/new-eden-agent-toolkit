@@ -21,7 +21,7 @@ func connectedSession(t *testing.T, store *config.Store) (*mcpsdk.ClientSession,
 		t.Fatalf("sde.Open: %v", err)
 	}
 	t.Cleanup(func() { sdeStore.Close() })
-	server := mcp.NewServer("test", "client-id", store, sdeStore)
+	server := mcp.NewServer("test", mcp.Deps{ClientID: "client-id", Config: store, SDE: sdeStore})
 
 	t1, t2 := mcpsdk.NewInMemoryTransports()
 	ctx := context.Background()

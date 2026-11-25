@@ -9,7 +9,6 @@ import (
 
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 
-	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
@@ -104,7 +103,7 @@ type ListCharacterMailOutput struct {
 	NextLastMailID *int64       `json:"nextLastMailId,omitempty"`
 }
 
-func listCharacterMailHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCharacterMailInput, ListCharacterMailOutput] {
+func listCharacterMailHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCharacterMailInput, ListCharacterMailOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterMailInput) (*mcpsdk.CallToolResult, ListCharacterMailOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -155,7 +154,7 @@ type GetCharacterMailLabelsOutput struct {
 	TotalUnreadCount *int64      `json:"totalUnreadCount,omitempty"`
 }
 
-func getCharacterMailLabelsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[GetCharacterMailLabelsInput, GetCharacterMailLabelsOutput] {
+func getCharacterMailLabelsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetCharacterMailLabelsInput, GetCharacterMailLabelsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterMailLabelsInput) (*mcpsdk.CallToolResult, GetCharacterMailLabelsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -206,7 +205,7 @@ type ListCharacterMailListsOutput struct {
 	MailLists   []MailList `json:"mailLists"`
 }
 
-func listCharacterMailListsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCharacterMailListsInput, ListCharacterMailListsOutput] {
+func listCharacterMailListsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCharacterMailListsInput, ListCharacterMailListsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterMailListsInput) (*mcpsdk.CallToolResult, ListCharacterMailListsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -256,7 +255,7 @@ type GetCharacterMailOutput struct {
 	Recipients  []MailRecipient `json:"recipients,omitempty"`
 }
 
-func getCharacterMailHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[GetCharacterMailInput, GetCharacterMailOutput] {
+func getCharacterMailHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetCharacterMailInput, GetCharacterMailOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterMailInput) (*mcpsdk.CallToolResult, GetCharacterMailOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -307,7 +306,7 @@ type SendCharacterMailOutput struct {
 	MailID      int64 `json:"mailId"`
 }
 
-func sendCharacterMailHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[SendCharacterMailInput, SendCharacterMailOutput] {
+func sendCharacterMailHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[SendCharacterMailInput, SendCharacterMailOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in SendCharacterMailInput) (*mcpsdk.CallToolResult, SendCharacterMailOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -344,7 +343,7 @@ type CreateCharacterMailLabelOutput struct {
 	LabelID     int64 `json:"labelId"`
 }
 
-func createCharacterMailLabelHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[CreateCharacterMailLabelInput, CreateCharacterMailLabelOutput] {
+func createCharacterMailLabelHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[CreateCharacterMailLabelInput, CreateCharacterMailLabelOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in CreateCharacterMailLabelInput) (*mcpsdk.CallToolResult, CreateCharacterMailLabelOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -382,7 +381,7 @@ type UpdateCharacterMailOutput struct {
 	MailID      int64 `json:"mailId"`
 }
 
-func updateCharacterMailHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[UpdateCharacterMailInput, UpdateCharacterMailOutput] {
+func updateCharacterMailHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[UpdateCharacterMailInput, UpdateCharacterMailOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in UpdateCharacterMailInput) (*mcpsdk.CallToolResult, UpdateCharacterMailOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -417,7 +416,7 @@ type DeleteCharacterMailOutput struct {
 	MailID      int64 `json:"mailId"`
 }
 
-func deleteCharacterMailHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[DeleteCharacterMailInput, DeleteCharacterMailOutput] {
+func deleteCharacterMailHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[DeleteCharacterMailInput, DeleteCharacterMailOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in DeleteCharacterMailInput) (*mcpsdk.CallToolResult, DeleteCharacterMailOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -452,7 +451,7 @@ type DeleteCharacterMailLabelOutput struct {
 	LabelID     int64 `json:"labelId"`
 }
 
-func deleteCharacterMailLabelHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[DeleteCharacterMailLabelInput, DeleteCharacterMailLabelOutput] {
+func deleteCharacterMailLabelHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[DeleteCharacterMailLabelInput, DeleteCharacterMailLabelOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in DeleteCharacterMailLabelInput) (*mcpsdk.CallToolResult, DeleteCharacterMailLabelOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {

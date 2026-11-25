@@ -7,7 +7,6 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -124,7 +123,7 @@ type GetDogmaDynamicItemInput struct {
 	ItemID int64 `json:"itemId" jsonschema:"the mutated item's item ID"`
 }
 
-func getDogmaDynamicItemHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetDogmaDynamicItemInput, GetDogmaDynamicItemOutput] {
+func getDogmaDynamicItemHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetDogmaDynamicItemInput, GetDogmaDynamicItemOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetDogmaDynamicItemInput) (*mcpsdk.CallToolResult, GetDogmaDynamicItemOutput, error) {
 		out, err := getDogmaDynamicItem(ctx, sso.UserAgent(version), in.TypeID, in.ItemID)
 		if err != nil {

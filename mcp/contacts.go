@@ -6,7 +6,6 @@ import (
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
@@ -56,7 +55,7 @@ type ListCharacterContactsOutput struct {
 	Contacts    []Contact `json:"contacts"`
 }
 
-func listCharacterContactsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCharacterContactsInput, ListCharacterContactsOutput] {
+func listCharacterContactsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCharacterContactsInput, ListCharacterContactsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterContactsInput) (*mcpsdk.CallToolResult, ListCharacterContactsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -103,7 +102,7 @@ type ListCharacterContactLabelsOutput struct {
 	Labels      []ContactLabel `json:"labels"`
 }
 
-func listCharacterContactLabelsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCharacterContactLabelsInput, ListCharacterContactLabelsOutput] {
+func listCharacterContactLabelsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCharacterContactLabelsInput, ListCharacterContactLabelsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterContactLabelsInput) (*mcpsdk.CallToolResult, ListCharacterContactLabelsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -151,7 +150,7 @@ type ListCorporationContactsOutput struct {
 	Contacts      []Contact `json:"contacts"`
 }
 
-func listCorporationContactsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCorporationContactsInput, ListCorporationContactsOutput] {
+func listCorporationContactsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationContactsInput, ListCorporationContactsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationContactsInput) (*mcpsdk.CallToolResult, ListCorporationContactsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -200,7 +199,7 @@ type ListCorporationContactLabelsOutput struct {
 	Labels        []ContactLabel `json:"labels"`
 }
 
-func listCorporationContactLabelsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCorporationContactLabelsInput, ListCorporationContactLabelsOutput] {
+func listCorporationContactLabelsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationContactLabelsInput, ListCorporationContactLabelsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationContactLabelsInput) (*mcpsdk.CallToolResult, ListCorporationContactLabelsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -248,7 +247,7 @@ type ListAllianceContactsOutput struct {
 	Contacts    []Contact `json:"contacts"`
 }
 
-func listAllianceContactsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListAllianceContactsInput, ListAllianceContactsOutput] {
+func listAllianceContactsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListAllianceContactsInput, ListAllianceContactsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListAllianceContactsInput) (*mcpsdk.CallToolResult, ListAllianceContactsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -297,7 +296,7 @@ type ListAllianceContactLabelsOutput struct {
 	Labels      []ContactLabel `json:"labels"`
 }
 
-func listAllianceContactLabelsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListAllianceContactLabelsInput, ListAllianceContactLabelsOutput] {
+func listAllianceContactLabelsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListAllianceContactLabelsInput, ListAllianceContactLabelsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListAllianceContactLabelsInput) (*mcpsdk.CallToolResult, ListAllianceContactLabelsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -336,7 +335,7 @@ type AddCharacterContactsOutput struct {
 	AddedContactIDs []int64 `json:"addedContactIds"`
 }
 
-func addCharacterContactsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[AddCharacterContactsInput, AddCharacterContactsOutput] {
+func addCharacterContactsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[AddCharacterContactsInput, AddCharacterContactsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in AddCharacterContactsInput) (*mcpsdk.CallToolResult, AddCharacterContactsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -375,7 +374,7 @@ type UpdateCharacterContactsOutput struct {
 	ContactIDs  []int64 `json:"contactIds"`
 }
 
-func updateCharacterContactsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[UpdateCharacterContactsInput, UpdateCharacterContactsOutput] {
+func updateCharacterContactsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[UpdateCharacterContactsInput, UpdateCharacterContactsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in UpdateCharacterContactsInput) (*mcpsdk.CallToolResult, UpdateCharacterContactsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -410,7 +409,7 @@ type RemoveCharacterContactsOutput struct {
 	RemovedContactIDs []int64 `json:"removedContactIds"`
 }
 
-func removeCharacterContactsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[RemoveCharacterContactsInput, RemoveCharacterContactsOutput] {
+func removeCharacterContactsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[RemoveCharacterContactsInput, RemoveCharacterContactsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in RemoveCharacterContactsInput) (*mcpsdk.CallToolResult, RemoveCharacterContactsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {

@@ -7,7 +7,6 @@ import (
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
@@ -42,7 +41,7 @@ type GetCharacterAttributesOutput struct {
 	LastRemapDate            *time.Time `json:"lastRemapDate,omitempty"`
 }
 
-func getCharacterAttributesHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[GetCharacterAttributesInput, GetCharacterAttributesOutput] {
+func getCharacterAttributesHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetCharacterAttributesInput, GetCharacterAttributesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterAttributesInput) (*mcpsdk.CallToolResult, GetCharacterAttributesOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -104,7 +103,7 @@ type ListCharacterSkillQueueOutput struct {
 	Queue       []SkillQueueEntry `json:"queue"`
 }
 
-func listCharacterSkillQueueHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCharacterSkillQueueInput, ListCharacterSkillQueueOutput] {
+func listCharacterSkillQueueHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCharacterSkillQueueInput, ListCharacterSkillQueueOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterSkillQueueInput) (*mcpsdk.CallToolResult, ListCharacterSkillQueueOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -159,7 +158,7 @@ type ListCharacterSkillsOutput struct {
 	UnallocatedSp *int64           `json:"unallocatedSp,omitempty"`
 }
 
-func listCharacterSkillsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCharacterSkillsInput, ListCharacterSkillsOutput] {
+func listCharacterSkillsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCharacterSkillsInput, ListCharacterSkillsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterSkillsInput) (*mcpsdk.CallToolResult, ListCharacterSkillsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {

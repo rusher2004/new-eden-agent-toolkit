@@ -159,7 +159,7 @@ func listTools(ctx context.Context) (_ []*mcpsdk.Tool, err error) {
 		}
 	}()
 
-	server := mcp.NewServer("docs", "", config.NewStoreAt(filepath.Join(dir, "config.json")), nil)
+	server := mcp.NewServer("docs", mcp.Deps{Config: config.NewStoreAt(filepath.Join(dir, "config.json"))})
 	serverTransport, clientTransport := mcpsdk.NewInMemoryTransports()
 	serverSession, err := server.Connect(ctx, serverTransport, nil)
 	if err != nil {

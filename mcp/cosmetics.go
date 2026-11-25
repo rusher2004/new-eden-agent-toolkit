@@ -8,9 +8,7 @@ import (
 
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 
-	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -38,7 +36,7 @@ type ListCharacterSkinrLicensesOutput struct {
 	Licenses    []SkinrLicense `json:"licenses"`
 }
 
-func listCharacterSkinrLicensesHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCharacterSkinrLicensesInput, ListCharacterSkinrLicensesOutput] {
+func listCharacterSkinrLicensesHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCharacterSkinrLicensesInput, ListCharacterSkinrLicensesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterSkinrLicensesInput) (*mcpsdk.CallToolResult, ListCharacterSkinrLicensesOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -88,7 +86,7 @@ type ListCharacterSkinrComponentLicensesOutput struct {
 	Licenses    []SkinrComponentLicense `json:"licenses"`
 }
 
-func listCharacterSkinrComponentLicensesHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCharacterSkinrComponentLicensesInput, ListCharacterSkinrComponentLicensesOutput] {
+func listCharacterSkinrComponentLicensesHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCharacterSkinrComponentLicensesInput, ListCharacterSkinrComponentLicensesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterSkinrComponentLicensesInput) (*mcpsdk.CallToolResult, ListCharacterSkinrComponentLicensesOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -201,7 +199,7 @@ type GetSkinrOutput struct {
 	Slots            []SkinrLayoutSlot `json:"slots"`
 }
 
-func getSkinrHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetSkinrInput, GetSkinrOutput] {
+func getSkinrHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetSkinrInput, GetSkinrOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetSkinrInput) (*mcpsdk.CallToolResult, GetSkinrOutput, error) {
 		userAgent := sso.UserAgent(version)
 		s, err := getSkinr(ctx, userAgent, in.SkinrID)
