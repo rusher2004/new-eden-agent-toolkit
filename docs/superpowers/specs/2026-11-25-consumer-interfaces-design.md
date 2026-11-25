@@ -4,7 +4,8 @@ Status: done. The foundation settled the pattern (explicit wiring from
 `commands/`, the `loyalty.go` worked example, the audit and the standards), the
 ported PRs moved every file in `mcp/` to it, and the cleanup deleted `Deps`,
 `ConfigStore`, `SDEStore` and `NewServer`'s registrations. `ifaceaudit` now
-fails CI on any `CONCRETE_*`, `PRODUCER_IFACE`, `IFACE_AWAY` or `TYPE_ONLY_FILE`.
+fails CI on any `CONCRETE_*`, `PRODUCER_IFACE`, `IFACE_AWAY` or `TYPE_ONLY_FILE`
+(`TestRepoConformsToConsumerInterfaceRules`); only `INTERFACE` stays informational.
 
 `tools/ifaceaudit` narrowed in that first PR: a CONCRETE_PARAM now needs a
 producer type that a pointer-returning exported `New*`/`Open*` constructor

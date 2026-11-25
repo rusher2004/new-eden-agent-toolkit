@@ -1,6 +1,6 @@
 // Command gentooldocs generates docs/reference/tools.md: every MCP tool neat
 // registers, grouped into player-facing areas, with its description. It reads
-// the tools from a live mcp.NewServer over an in-memory transport, so the
+// the tools from a live commands.NewMCPServer over an in-memory transport, so the
 // reference can't list a tool that doesn't exist or miss one that does.
 //
 // It is wired via `go:generate` in mcp/server.go. Rerun `go generate ./...`
@@ -146,7 +146,7 @@ func main() {
 	}
 }
 
-// listTools returns every tool mcp.NewServer registers, sorted by name (the
+// listTools returns every tool commands.NewMCPServer registers, sorted by name (the
 // order the MCP SDK lists them in).
 func listTools(ctx context.Context) (_ []*mcpsdk.Tool, err error) {
 	dir, err := os.MkdirTemp("", "gentooldocs")

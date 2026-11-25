@@ -6,12 +6,13 @@ import (
 	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 )
 
-// Every resolver in this file treats an untyped nil cache as "nothing to look
-// up" and returns no names. The composition root passes a nil *sde.Store when
-// the cache can't open; that is a typed nil, so it does not match these guards
-// and is handled instead by sde.Store's nil-safe methods, which miss every
-// lookup. Either way a missing SDE degrades to unenriched output instead of
-// failing the tool (the additive-enrichment exception in CLAUDE.md).
+// Every resolver in this file treats a nil cache interface as "nothing to
+// look up" and returns no names. The composition root passes a nil *sde.Store
+// when the cache can't open; that is a non-nil interface holding a nil
+// pointer, so it is not caught by the check here but by sde.Store's own
+// nil-safe methods, which fail the lookup, and a failed lookup is dropped. Either
+// way a missing SDE degrades to unenriched output instead of failing the tool,
+// as the additive-enrichment exception in CLAUDE.md allows.
 
 // typeNameCache is the minimal read-only view of sde.Store.Type() that
 // resolveTypeNames needs -- narrower than universe.go's typeCache, which

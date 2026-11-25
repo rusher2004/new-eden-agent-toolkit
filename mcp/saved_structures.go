@@ -327,7 +327,7 @@ type structureStore interface {
 func lookUpStructure[C universeStructureESI](ctx context.Context, open func(ctx context.Context, characterID int32) (C, error), characterID int32, structureID int64) (UniverseStructure, error) {
 	client, err := open(ctx, characterID)
 	if err != nil {
-		return UniverseStructure{}, err
+		return UniverseStructure{}, fmt.Errorf("open ESI client to look up structure %d: %w", structureID, err)
 	}
 	return getUniverseStructure(ctx, client, structureID)
 }
