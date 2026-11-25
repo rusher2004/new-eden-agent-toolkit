@@ -8,9 +8,6 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
-
-	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
 // --- shared types ---
@@ -62,12 +59,9 @@ func toFreelanceJobSummaries(js []esiapi.FreelanceJobsDetailFreelancejob) []Free
 
 // --- list_character_freelance_jobs (private) ---
 
-var listCharacterFreelanceJobs = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]esiapi.FreelanceJobsDetailFreelancejob, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
-	return client.CharacterFreelanceJobs(ctx)
+// characterFreelanceJobsESI is the ESI call list_character_freelance_jobs makes.
+type characterFreelanceJobsESI interface {
+	CharacterFreelanceJobs(ctx context.Context) ([]esiapi.FreelanceJobsDetailFreelancejob, error)
 }
 
 type ListCharacterFreelanceJobsInput struct {
@@ -78,7 +72,16 @@ type ListCharacterFreelanceJobsOutput struct {
 	Jobs        []FreelanceJobSummary `json:"jobs"`
 }
 
-func listCharacterFreelanceJobsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCharacterFreelanceJobsInput, ListCharacterFreelanceJobsOutput] {
+// AddListCharacterFreelanceJobs registers list_character_freelance_jobs. open builds the ESI client; any client with the
+// characterFreelanceJobsESI methods will do.
+func AddListCharacterFreelanceJobs[C characterFreelanceJobsESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_character_freelance_jobs",
+		Description: "List a logged-in EVE Online character's freelance jobs.",
+	}, listCharacterFreelanceJobsHandler(open, store))
+}
+
+func listCharacterFreelanceJobsHandler[C characterFreelanceJobsESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListCharacterFreelanceJobsInput, ListCharacterFreelanceJobsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterFreelanceJobsInput) (*mcpsdk.CallToolResult, ListCharacterFreelanceJobsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -87,7 +90,11 @@ func listCharacterFreelanceJobsHandler(version, clientID string, store ConfigSto
 		if !found {
 			return nil, ListCharacterFreelanceJobsOutput{}, fmt.Errorf("list character freelance jobs for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		jobs, err := listCharacterFreelanceJobs(ctx, clientID, in.CharacterID, sso.UserAgent(version))
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCharacterFreelanceJobsOutput{}, fmt.Errorf("build ESI client: %w", err)
+		}
+		jobs, err := client.CharacterFreelanceJobs(ctx)
 		if err != nil {
 			return nil, ListCharacterFreelanceJobsOutput{}, fmt.Errorf("list character freelance jobs: %w", err)
 		}
@@ -97,12 +104,9 @@ func listCharacterFreelanceJobsHandler(version, clientID string, store ConfigSto
 
 // --- get_character_freelance_job_participation (private) ---
 
-var getCharacterFreelanceJobParticipation = func(ctx context.Context, clientID string, characterID int32, userAgent string, jobID string) (*esiapi.CharactersFreelanceJobsParticipation, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
-	return client.CharacterFreelanceJobParticipation(ctx, jobID)
+// characterFreelanceJobParticipationESI is the ESI call get_character_freelance_job_participation makes.
+type characterFreelanceJobParticipationESI interface {
+	CharacterFreelanceJobParticipation(ctx context.Context, jobID string) (*esiapi.CharactersFreelanceJobsParticipation, error)
 }
 
 type GetCharacterFreelanceJobParticipationInput struct {
@@ -117,7 +121,16 @@ type GetCharacterFreelanceJobParticipationOutput struct {
 	LastModified time.Time `json:"lastModified"`
 }
 
-func getCharacterFreelanceJobParticipationHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetCharacterFreelanceJobParticipationInput, GetCharacterFreelanceJobParticipationOutput] {
+// AddGetCharacterFreelanceJobParticipation registers get_character_freelance_job_participation. open builds the ESI client; any client with the
+// characterFreelanceJobParticipationESI methods will do.
+func AddGetCharacterFreelanceJobParticipation[C characterFreelanceJobParticipationESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_character_freelance_job_participation",
+		Description: "Get a logged-in character's contribution to a freelance job.",
+	}, getCharacterFreelanceJobParticipationHandler(open, store))
+}
+
+func getCharacterFreelanceJobParticipationHandler[C characterFreelanceJobParticipationESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[GetCharacterFreelanceJobParticipationInput, GetCharacterFreelanceJobParticipationOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterFreelanceJobParticipationInput) (*mcpsdk.CallToolResult, GetCharacterFreelanceJobParticipationOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -126,7 +139,11 @@ func getCharacterFreelanceJobParticipationHandler(version, clientID string, stor
 		if !found {
 			return nil, GetCharacterFreelanceJobParticipationOutput{}, fmt.Errorf("get character freelance job participation for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		p, err := getCharacterFreelanceJobParticipation(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.JobID)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, GetCharacterFreelanceJobParticipationOutput{}, fmt.Errorf("build ESI client: %w", err)
+		}
+		p, err := client.CharacterFreelanceJobParticipation(ctx, in.JobID)
 		if err != nil {
 			return nil, GetCharacterFreelanceJobParticipationOutput{}, fmt.Errorf("get character freelance job participation: %w", err)
 		}
@@ -138,12 +155,9 @@ func getCharacterFreelanceJobParticipationHandler(version, clientID string, stor
 
 // --- list_corporation_freelance_jobs (private, cursor-paginated) ---
 
-var listCorporationFreelanceJobs = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, after, before string, limit int64) ([]esiapi.FreelanceJobsDetailFreelancejob, *esiapi.Cursor, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, nil, fmt.Errorf("build ESI client: %w", err)
-	}
-	return client.CorporationFreelanceJobs(ctx, corporationID, after, before, limit)
+// corporationFreelanceJobsESI is the ESI call list_corporation_freelance_jobs makes.
+type corporationFreelanceJobsESI interface {
+	CorporationFreelanceJobs(ctx context.Context, corporationID int64, after, before string, limit int64) ([]esiapi.FreelanceJobsDetailFreelancejob, *esiapi.Cursor, error)
 }
 
 type ListCorporationFreelanceJobsInput struct {
@@ -161,7 +175,16 @@ type ListCorporationFreelanceJobsOutput struct {
 	NextBefore    *string               `json:"nextBefore,omitempty"`
 }
 
-func listCorporationFreelanceJobsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationFreelanceJobsInput, ListCorporationFreelanceJobsOutput] {
+// AddListCorporationFreelanceJobs registers list_corporation_freelance_jobs. open builds the ESI client; any client with the
+// corporationFreelanceJobsESI methods will do.
+func AddListCorporationFreelanceJobs[C corporationFreelanceJobsESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_corporation_freelance_jobs",
+		Description: "List a corporation's freelance jobs, using a logged-in character's roles to authorize.",
+	}, listCorporationFreelanceJobsHandler(open, store))
+}
+
+func listCorporationFreelanceJobsHandler[C corporationFreelanceJobsESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListCorporationFreelanceJobsInput, ListCorporationFreelanceJobsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationFreelanceJobsInput) (*mcpsdk.CallToolResult, ListCorporationFreelanceJobsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -170,7 +193,11 @@ func listCorporationFreelanceJobsHandler(version, clientID string, store ConfigS
 		if !found {
 			return nil, ListCorporationFreelanceJobsOutput{}, fmt.Errorf("list corporation freelance jobs for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		jobs, cursor, err := listCorporationFreelanceJobs(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.After, in.Before, in.Limit)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCorporationFreelanceJobsOutput{}, fmt.Errorf("build ESI client: %w", err)
+		}
+		jobs, cursor, err := client.CorporationFreelanceJobs(ctx, in.CorporationID, in.After, in.Before, in.Limit)
 		if err != nil {
 			return nil, ListCorporationFreelanceJobsOutput{}, fmt.Errorf("list corporation freelance jobs: %w", err)
 		}
@@ -192,12 +219,9 @@ type JobParticipant struct {
 	Contributed   int64  `json:"contributed"`
 }
 
-var listCorporationFreelanceJobParticipants = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, jobID string, after, before string, limit int64) ([]esiapi.CorporationsFreelanceJobsParticipantsParticipant, *esiapi.Cursor, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, nil, fmt.Errorf("build ESI client: %w", err)
-	}
-	return client.CorporationFreelanceJobParticipants(ctx, corporationID, jobID, after, before, limit)
+// corporationFreelanceJobParticipantsESI is the ESI call list_corporation_freelance_job_participants makes.
+type corporationFreelanceJobParticipantsESI interface {
+	CorporationFreelanceJobParticipants(ctx context.Context, corporationID int64, jobID string, after, before string, limit int64) ([]esiapi.CorporationsFreelanceJobsParticipantsParticipant, *esiapi.Cursor, error)
 }
 
 type ListCorporationFreelanceJobParticipantsInput struct {
@@ -217,7 +241,16 @@ type ListCorporationFreelanceJobParticipantsOutput struct {
 	NextBefore    *string          `json:"nextBefore,omitempty"`
 }
 
-func listCorporationFreelanceJobParticipantsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationFreelanceJobParticipantsInput, ListCorporationFreelanceJobParticipantsOutput] {
+// AddListCorporationFreelanceJobParticipants registers list_corporation_freelance_job_participants. open builds the ESI client; any client with the
+// corporationFreelanceJobParticipantsESI methods will do.
+func AddListCorporationFreelanceJobParticipants[C corporationFreelanceJobParticipantsESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_corporation_freelance_job_participants",
+		Description: "List the participants in a corporation's freelance job, using a logged-in character's roles to authorize.",
+	}, listCorporationFreelanceJobParticipantsHandler(open, store))
+}
+
+func listCorporationFreelanceJobParticipantsHandler[C corporationFreelanceJobParticipantsESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListCorporationFreelanceJobParticipantsInput, ListCorporationFreelanceJobParticipantsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationFreelanceJobParticipantsInput) (*mcpsdk.CallToolResult, ListCorporationFreelanceJobParticipantsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -226,7 +259,11 @@ func listCorporationFreelanceJobParticipantsHandler(version, clientID string, st
 		if !found {
 			return nil, ListCorporationFreelanceJobParticipantsOutput{}, fmt.Errorf("list corporation freelance job participants for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		participants, cursor, err := listCorporationFreelanceJobParticipants(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.JobID, in.After, in.Before, in.Limit)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCorporationFreelanceJobParticipantsOutput{}, fmt.Errorf("build ESI client: %w", err)
+		}
+		participants, cursor, err := client.CorporationFreelanceJobParticipants(ctx, in.CorporationID, in.JobID, in.After, in.Before, in.Limit)
 		if err != nil {
 			return nil, ListCorporationFreelanceJobParticipantsOutput{}, fmt.Errorf("list corporation freelance job participants: %w", err)
 		}
@@ -366,9 +403,9 @@ type JobAccessAndVisibility struct {
 	Restrictions       *JobRestrictions       `json:"restrictions,omitempty"`
 }
 
-var getFreelanceJob = func(ctx context.Context, userAgent string, jobID string) (*esiapi.FreelanceJobsDetail, error) {
-	client := esi.NewPublicClient(userAgent)
-	return client.FreelanceJobDetail(ctx, jobID)
+// freelanceJobESI is the ESI call get_freelance_job makes.
+type freelanceJobESI interface {
+	FreelanceJobDetail(ctx context.Context, jobID string) (*esiapi.FreelanceJobsDetail, error)
 }
 
 type GetFreelanceJobInput struct {
@@ -388,9 +425,19 @@ type GetFreelanceJobOutput struct {
 	AccessAndVisibility JobAccessAndVisibility `json:"accessAndVisibility"`
 }
 
-func getFreelanceJobHandler(version string) mcpsdk.ToolHandlerFor[GetFreelanceJobInput, GetFreelanceJobOutput] {
+// AddGetFreelanceJob registers get_freelance_job. open builds the ESI client; any client with the
+// freelanceJobESI methods will do.
+func AddGetFreelanceJob[C freelanceJobESI](s *mcpsdk.Server, open func() C) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_freelance_job",
+		Description: "Get the full details of a freelance job (public data, no character required).",
+	}, getFreelanceJobHandler(open))
+}
+
+func getFreelanceJobHandler[C freelanceJobESI](open func() C) mcpsdk.ToolHandlerFor[GetFreelanceJobInput, GetFreelanceJobOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetFreelanceJobInput) (*mcpsdk.CallToolResult, GetFreelanceJobOutput, error) {
-		detail, err := getFreelanceJob(ctx, sso.UserAgent(version), in.JobID)
+		client := open()
+		detail, err := client.FreelanceJobDetail(ctx, in.JobID)
 		if err != nil {
 			return nil, GetFreelanceJobOutput{}, fmt.Errorf("get freelance job: %w", err)
 		}
@@ -426,9 +473,9 @@ func getFreelanceJobHandler(version string) mcpsdk.ToolHandlerFor[GetFreelanceJo
 
 // --- list_freelance_jobs (public, cursor-paginated) ---
 
-var listFreelanceJobs = func(ctx context.Context, userAgent string, after, before string, limit, corporationID int64) ([]esiapi.FreelanceJobsDetailFreelancejob, *esiapi.Cursor, error) {
-	client := esi.NewPublicClient(userAgent)
-	return client.FreelanceJobsListing(ctx, after, before, limit, corporationID)
+// freelanceJobsESI is the ESI call list_freelance_jobs makes.
+type freelanceJobsESI interface {
+	FreelanceJobsListing(ctx context.Context, after, before string, limit, corporationID int64) ([]esiapi.FreelanceJobsDetailFreelancejob, *esiapi.Cursor, error)
 }
 
 type ListFreelanceJobsInput struct {
@@ -443,9 +490,19 @@ type ListFreelanceJobsOutput struct {
 	NextBefore *string               `json:"nextBefore,omitempty"`
 }
 
-func listFreelanceJobsHandler(version string) mcpsdk.ToolHandlerFor[ListFreelanceJobsInput, ListFreelanceJobsOutput] {
+// AddListFreelanceJobs registers list_freelance_jobs. open builds the ESI client; any client with the
+// freelanceJobsESI methods will do.
+func AddListFreelanceJobs[C freelanceJobsESI](s *mcpsdk.Server, open func() C) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_freelance_jobs",
+		Description: "List freelance jobs game-wide, optionally filtered by corporation (public data, no character required).",
+	}, listFreelanceJobsHandler(open))
+}
+
+func listFreelanceJobsHandler[C freelanceJobsESI](open func() C) mcpsdk.ToolHandlerFor[ListFreelanceJobsInput, ListFreelanceJobsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListFreelanceJobsInput) (*mcpsdk.CallToolResult, ListFreelanceJobsOutput, error) {
-		jobs, cursor, err := listFreelanceJobs(ctx, sso.UserAgent(version), in.After, in.Before, in.Limit, in.CorporationID)
+		client := open()
+		jobs, cursor, err := client.FreelanceJobsListing(ctx, in.After, in.Before, in.Limit, in.CorporationID)
 		if err != nil {
 			return nil, ListFreelanceJobsOutput{}, fmt.Errorf("list freelance jobs: %w", err)
 		}

@@ -13,6 +13,57 @@ import (
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 )
 
+// openFreelanceJobsFake and openFreelanceJobsPubFake adapt a fake to the openers the handlers take.
+func openFreelanceJobsFake[C any](c C) func(context.Context, int32) (C, error) {
+	return func(context.Context, int32) (C, error) { return c, nil }
+}
+
+func openFreelanceJobsPubFake[C any](c C) func() C {
+	return func() C { return c }
+}
+
+// fakeCharacterFreelanceJobsESI fakes the ESI call behind listCharacterFreelanceJobsHandler.
+type fakeCharacterFreelanceJobsESI func(ctx context.Context) ([]esiapi.FreelanceJobsDetailFreelancejob, error)
+
+func (f fakeCharacterFreelanceJobsESI) CharacterFreelanceJobs(ctx context.Context) ([]esiapi.FreelanceJobsDetailFreelancejob, error) {
+	return f(ctx)
+}
+
+// fakeCharacterFreelanceJobParticipationESI fakes the ESI call behind getCharacterFreelanceJobParticipationHandler.
+type fakeCharacterFreelanceJobParticipationESI func(ctx context.Context, jobID string) (*esiapi.CharactersFreelanceJobsParticipation, error)
+
+func (f fakeCharacterFreelanceJobParticipationESI) CharacterFreelanceJobParticipation(ctx context.Context, jobID string) (*esiapi.CharactersFreelanceJobsParticipation, error) {
+	return f(ctx, jobID)
+}
+
+// fakeCorporationFreelanceJobsESI fakes the ESI call behind listCorporationFreelanceJobsHandler.
+type fakeCorporationFreelanceJobsESI func(ctx context.Context, corporationID int64, after, before string, limit int64) ([]esiapi.FreelanceJobsDetailFreelancejob, *esiapi.Cursor, error)
+
+func (f fakeCorporationFreelanceJobsESI) CorporationFreelanceJobs(ctx context.Context, corporationID int64, after, before string, limit int64) ([]esiapi.FreelanceJobsDetailFreelancejob, *esiapi.Cursor, error) {
+	return f(ctx, corporationID, after, before, limit)
+}
+
+// fakeCorporationFreelanceJobParticipantsESI fakes the ESI call behind listCorporationFreelanceJobParticipantsHandler.
+type fakeCorporationFreelanceJobParticipantsESI func(ctx context.Context, corporationID int64, jobID string, after, before string, limit int64) ([]esiapi.CorporationsFreelanceJobsParticipantsParticipant, *esiapi.Cursor, error)
+
+func (f fakeCorporationFreelanceJobParticipantsESI) CorporationFreelanceJobParticipants(ctx context.Context, corporationID int64, jobID string, after, before string, limit int64) ([]esiapi.CorporationsFreelanceJobsParticipantsParticipant, *esiapi.Cursor, error) {
+	return f(ctx, corporationID, jobID, after, before, limit)
+}
+
+// fakeFreelanceJobESI fakes the ESI call behind getFreelanceJobHandler.
+type fakeFreelanceJobESI func(ctx context.Context, jobID string) (*esiapi.FreelanceJobsDetail, error)
+
+func (f fakeFreelanceJobESI) FreelanceJobDetail(ctx context.Context, jobID string) (*esiapi.FreelanceJobsDetail, error) {
+	return f(ctx, jobID)
+}
+
+// fakeFreelanceJobsESI fakes the ESI call behind listFreelanceJobsHandler.
+type fakeFreelanceJobsESI func(ctx context.Context, after, before string, limit, corporationID int64) ([]esiapi.FreelanceJobsDetailFreelancejob, *esiapi.Cursor, error)
+
+func (f fakeFreelanceJobsESI) FreelanceJobsListing(ctx context.Context, after, before string, limit, corporationID int64) ([]esiapi.FreelanceJobsDetailFreelancejob, *esiapi.Cursor, error) {
+	return f(ctx, after, before, limit, corporationID)
+}
+
 func TestListCharacterFreelanceJobsHandler_MapsFields(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
@@ -20,10 +71,8 @@ func TestListCharacterFreelanceJobsHandler_MapsFields(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCharacterFreelanceJobs
-	t.Cleanup(func() { listCharacterFreelanceJobs = orig })
 	lastModified := time.Unix(1000, 0)
-	listCharacterFreelanceJobs = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]esiapi.FreelanceJobsDetailFreelancejob, error) {
+	listCharacterFreelanceJobsFake := fakeCharacterFreelanceJobsESI(func(ctx context.Context) ([]esiapi.FreelanceJobsDetailFreelancejob, error) {
 		return []esiapi.FreelanceJobsDetailFreelancejob{
 			{
 				Id: "job-1", Name: "Test Job", State: "Active", LastModified: lastModified,
@@ -31,9 +80,9 @@ func TestListCharacterFreelanceJobsHandler_MapsFields(t *testing.T) {
 				Reward:   &esiapi.FreelanceJobsDetailReward{Initial: 1000000.0, Remaining: 500000.0},
 			},
 		}, nil
-	}
+	})
 
-	handler := listCharacterFreelanceJobsHandler("v1", "client-id", store)
+	handler := listCharacterFreelanceJobsHandler(openFreelanceJobsFake[characterFreelanceJobsESI](listCharacterFreelanceJobsFake), store)
 	_, out, err := handler(context.Background(), nil, ListCharacterFreelanceJobsInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -53,14 +102,12 @@ func TestListCharacterFreelanceJobsHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := listCharacterFreelanceJobs
-	t.Cleanup(func() { listCharacterFreelanceJobs = orig })
-	listCharacterFreelanceJobs = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]esiapi.FreelanceJobsDetailFreelancejob, error) {
+	listCharacterFreelanceJobsFake := fakeCharacterFreelanceJobsESI(func(ctx context.Context) ([]esiapi.FreelanceJobsDetailFreelancejob, error) {
 		t.Fatal("listCharacterFreelanceJobs should not be called for an unknown character")
 		return nil, nil
-	}
+	})
 
-	handler := listCharacterFreelanceJobsHandler("v1", "client-id", store)
+	handler := listCharacterFreelanceJobsHandler(openFreelanceJobsFake[characterFreelanceJobsESI](listCharacterFreelanceJobsFake), store)
 	_, _, err := handler(context.Background(), nil, ListCharacterFreelanceJobsInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -74,14 +121,12 @@ func TestGetCharacterFreelanceJobParticipationHandler_MapsFields(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCharacterFreelanceJobParticipation
-	t.Cleanup(func() { getCharacterFreelanceJobParticipation = orig })
 	lastModified := time.Unix(2000, 0)
-	getCharacterFreelanceJobParticipation = func(ctx context.Context, clientID string, characterID int32, userAgent string, jobID string) (*esiapi.CharactersFreelanceJobsParticipation, error) {
+	getCharacterFreelanceJobParticipationFake := fakeCharacterFreelanceJobParticipationESI(func(ctx context.Context, jobID string) (*esiapi.CharactersFreelanceJobsParticipation, error) {
 		return &esiapi.CharactersFreelanceJobsParticipation{Contributed: 500, LastModified: lastModified, State: "committed"}, nil
-	}
+	})
 
-	handler := getCharacterFreelanceJobParticipationHandler("v1", "client-id", store)
+	handler := getCharacterFreelanceJobParticipationHandler(openFreelanceJobsFake[characterFreelanceJobParticipationESI](getCharacterFreelanceJobParticipationFake), store)
 	_, out, err := handler(context.Background(), nil, GetCharacterFreelanceJobParticipationInput{
 		CharacterID: 7, JobID: "job-1",
 	})
@@ -97,14 +142,12 @@ func TestGetCharacterFreelanceJobParticipationHandler_UnknownCharacter(t *testin
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := getCharacterFreelanceJobParticipation
-	t.Cleanup(func() { getCharacterFreelanceJobParticipation = orig })
-	getCharacterFreelanceJobParticipation = func(ctx context.Context, clientID string, characterID int32, userAgent string, jobID string) (*esiapi.CharactersFreelanceJobsParticipation, error) {
+	getCharacterFreelanceJobParticipationFake := fakeCharacterFreelanceJobParticipationESI(func(ctx context.Context, jobID string) (*esiapi.CharactersFreelanceJobsParticipation, error) {
 		t.Fatal("getCharacterFreelanceJobParticipation should not be called for an unknown character")
 		return nil, nil
-	}
+	})
 
-	handler := getCharacterFreelanceJobParticipationHandler("v1", "client-id", store)
+	handler := getCharacterFreelanceJobParticipationHandler(openFreelanceJobsFake[characterFreelanceJobParticipationESI](getCharacterFreelanceJobParticipationFake), store)
 	_, _, err := handler(context.Background(), nil, GetCharacterFreelanceJobParticipationInput{
 		CharacterID: 999, JobID: "job-1",
 	})
@@ -120,12 +163,10 @@ func TestListCorporationFreelanceJobsHandler_MapsFieldsAndCursor(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationFreelanceJobs
-	t.Cleanup(func() { listCorporationFreelanceJobs = orig })
 	after := "cursor-after"
 	before := "cursor-before"
 	lastModified := time.Unix(3000, 0)
-	listCorporationFreelanceJobs = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, afterIn, beforeIn string, limit int64) ([]esiapi.FreelanceJobsDetailFreelancejob, *esiapi.Cursor, error) {
+	listCorporationFreelanceJobsFake := fakeCorporationFreelanceJobsESI(func(ctx context.Context, corporationID int64, afterIn, beforeIn string, limit int64) ([]esiapi.FreelanceJobsDetailFreelancejob, *esiapi.Cursor, error) {
 		return []esiapi.FreelanceJobsDetailFreelancejob{
 			{
 				Id: "job-2", Name: "Corp Job", State: "Active", LastModified: lastModified,
@@ -133,9 +174,9 @@ func TestListCorporationFreelanceJobsHandler_MapsFieldsAndCursor(t *testing.T) {
 				Reward:   &esiapi.FreelanceJobsDetailReward{Initial: 200000.0, Remaining: 150000.0},
 			},
 		}, &esiapi.Cursor{After: &after, Before: &before}, nil
-	}
+	})
 
-	handler := listCorporationFreelanceJobsHandler("v1", "client-id", store)
+	handler := listCorporationFreelanceJobsHandler(openFreelanceJobsFake[corporationFreelanceJobsESI](listCorporationFreelanceJobsFake), store)
 	_, out, err := handler(context.Background(), nil, ListCorporationFreelanceJobsInput{
 		CharacterID: 7, CorporationID: 98000001,
 	})
@@ -160,14 +201,12 @@ func TestListCorporationFreelanceJobsHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := listCorporationFreelanceJobs
-	t.Cleanup(func() { listCorporationFreelanceJobs = orig })
-	listCorporationFreelanceJobs = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, after, before string, limit int64) ([]esiapi.FreelanceJobsDetailFreelancejob, *esiapi.Cursor, error) {
+	listCorporationFreelanceJobsFake := fakeCorporationFreelanceJobsESI(func(ctx context.Context, corporationID int64, after, before string, limit int64) ([]esiapi.FreelanceJobsDetailFreelancejob, *esiapi.Cursor, error) {
 		t.Fatal("listCorporationFreelanceJobs should not be called for an unknown character")
 		return nil, nil, nil
-	}
+	})
 
-	handler := listCorporationFreelanceJobsHandler("v1", "client-id", store)
+	handler := listCorporationFreelanceJobsHandler(openFreelanceJobsFake[corporationFreelanceJobsESI](listCorporationFreelanceJobsFake), store)
 	_, _, err := handler(context.Background(), nil, ListCorporationFreelanceJobsInput{
 		CharacterID: 999, CorporationID: 98000001,
 	})
@@ -183,17 +222,15 @@ func TestListCorporationFreelanceJobParticipantsHandler_MapsFieldsAndCursor(t *t
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationFreelanceJobParticipants
-	t.Cleanup(func() { listCorporationFreelanceJobParticipants = orig })
 	after := "participants-after"
 	before := "participants-before"
-	listCorporationFreelanceJobParticipants = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, jobID string, afterIn, beforeIn string, limit int64) ([]esiapi.CorporationsFreelanceJobsParticipantsParticipant, *esiapi.Cursor, error) {
+	listCorporationFreelanceJobParticipantsFake := fakeCorporationFreelanceJobParticipantsESI(func(ctx context.Context, corporationID int64, jobID string, afterIn, beforeIn string, limit int64) ([]esiapi.CorporationsFreelanceJobsParticipantsParticipant, *esiapi.Cursor, error) {
 		return []esiapi.CorporationsFreelanceJobsParticipantsParticipant{
 			{Contributed: 250, Id: 998879, Name: "Some Pilot", State: "committed"},
 		}, &esiapi.Cursor{After: &after, Before: &before}, nil
-	}
+	})
 
-	handler := listCorporationFreelanceJobParticipantsHandler("v1", "client-id", store)
+	handler := listCorporationFreelanceJobParticipantsHandler(openFreelanceJobsFake[corporationFreelanceJobParticipantsESI](listCorporationFreelanceJobParticipantsFake), store)
 	_, out, err := handler(context.Background(), nil, ListCorporationFreelanceJobParticipantsInput{
 		CharacterID: 7, CorporationID: 98000001, JobID: "job-1",
 	})
@@ -216,14 +253,12 @@ func TestListCorporationFreelanceJobParticipantsHandler_UnknownCharacter(t *test
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := listCorporationFreelanceJobParticipants
-	t.Cleanup(func() { listCorporationFreelanceJobParticipants = orig })
-	listCorporationFreelanceJobParticipants = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, jobID string, after, before string, limit int64) ([]esiapi.CorporationsFreelanceJobsParticipantsParticipant, *esiapi.Cursor, error) {
+	listCorporationFreelanceJobParticipantsFake := fakeCorporationFreelanceJobParticipantsESI(func(ctx context.Context, corporationID int64, jobID string, after, before string, limit int64) ([]esiapi.CorporationsFreelanceJobsParticipantsParticipant, *esiapi.Cursor, error) {
 		t.Fatal("listCorporationFreelanceJobParticipants should not be called for an unknown character")
 		return nil, nil, nil
-	}
+	})
 
-	handler := listCorporationFreelanceJobParticipantsHandler("v1", "client-id", store)
+	handler := listCorporationFreelanceJobParticipantsHandler(openFreelanceJobsFake[corporationFreelanceJobParticipantsESI](listCorporationFreelanceJobParticipantsFake), store)
 	_, _, err := handler(context.Background(), nil, ListCorporationFreelanceJobParticipantsInput{
 		CharacterID: 999, CorporationID: 98000001, JobID: "job-1",
 	})
@@ -301,19 +336,17 @@ func assertBaseFreelanceJobDetailMapping(t *testing.T, out GetFreelanceJobOutput
 }
 
 func TestGetFreelanceJobHandler_ConfigurationBooleanVariant(t *testing.T) {
-	orig := getFreelanceJob
-	t.Cleanup(func() { getFreelanceJob = orig })
 
 	param := esiapi.FreelanceJobsDetailConfigurationParametersValue{
 		Boolean: &esiapi.Boolean{
 			Boolean: &esiapi.FreelanceJobsDetailParameterboolean{Value: true},
 		},
 	}
-	getFreelanceJob = func(ctx context.Context, userAgent string, jobID string) (*esiapi.FreelanceJobsDetail, error) {
+	getFreelanceJobFake := fakeFreelanceJobESI(func(ctx context.Context, jobID string) (*esiapi.FreelanceJobsDetail, error) {
 		return baseFreelanceJobDetail(param), nil
-	}
+	})
 
-	handler := getFreelanceJobHandler("v1")
+	handler := getFreelanceJobHandler(openFreelanceJobsPubFake[freelanceJobESI](getFreelanceJobFake))
 	_, out, err := handler(context.Background(), nil, GetFreelanceJobInput{JobID: "job-detail-1"})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -336,8 +369,6 @@ func TestGetFreelanceJobHandler_ConfigurationBooleanVariant(t *testing.T) {
 }
 
 func TestGetFreelanceJobHandler_ConfigurationCorporationItemDeliveryVariant(t *testing.T) {
-	orig := getFreelanceJob
-	t.Cleanup(func() { getFreelanceJob = orig })
 
 	param := esiapi.FreelanceJobsDetailConfigurationParametersValue{
 		CorporationItemDelivery: &esiapi.CorporationItemDelivery{
@@ -355,11 +386,11 @@ func TestGetFreelanceJobHandler_ConfigurationCorporationItemDeliveryVariant(t *t
 			},
 		},
 	}
-	getFreelanceJob = func(ctx context.Context, userAgent string, jobID string) (*esiapi.FreelanceJobsDetail, error) {
+	getFreelanceJobFake := fakeFreelanceJobESI(func(ctx context.Context, jobID string) (*esiapi.FreelanceJobsDetail, error) {
 		return baseFreelanceJobDetail(param), nil
-	}
+	})
 
-	handler := getFreelanceJobHandler("v1")
+	handler := getFreelanceJobHandler(openFreelanceJobsPubFake[freelanceJobESI](getFreelanceJobFake))
 	_, out, err := handler(context.Background(), nil, GetFreelanceJobInput{JobID: "job-detail-1"})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -391,8 +422,6 @@ func TestGetFreelanceJobHandler_ConfigurationCorporationItemDeliveryVariant(t *t
 }
 
 func TestGetFreelanceJobHandler_ConfigurationMatcherVariant(t *testing.T) {
-	orig := getFreelanceJob
-	t.Cleanup(func() { getFreelanceJob = orig })
 
 	param := esiapi.FreelanceJobsDetailConfigurationParametersValue{
 		Matcher: &esiapi.Matcher{
@@ -403,11 +432,11 @@ func TestGetFreelanceJobHandler_ConfigurationMatcherVariant(t *testing.T) {
 			},
 		},
 	}
-	getFreelanceJob = func(ctx context.Context, userAgent string, jobID string) (*esiapi.FreelanceJobsDetail, error) {
+	getFreelanceJobFake := fakeFreelanceJobESI(func(ctx context.Context, jobID string) (*esiapi.FreelanceJobsDetail, error) {
 		return baseFreelanceJobDetail(param), nil
-	}
+	})
 
-	handler := getFreelanceJobHandler("v1")
+	handler := getFreelanceJobHandler(openFreelanceJobsPubFake[freelanceJobESI](getFreelanceJobFake))
 	_, out, err := handler(context.Background(), nil, GetFreelanceJobInput{JobID: "job-detail-1"})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -434,19 +463,17 @@ func TestGetFreelanceJobHandler_ConfigurationMatcherVariant(t *testing.T) {
 }
 
 func TestGetFreelanceJobHandler_ConfigurationOptionsVariant(t *testing.T) {
-	orig := getFreelanceJob
-	t.Cleanup(func() { getFreelanceJob = orig })
 
 	param := esiapi.FreelanceJobsDetailConfigurationParametersValue{
 		Options: &esiapi.Options{
 			Options: &esiapi.FreelanceJobsDetailParameteroptions{Selected: []string{"opt-a", "opt-b"}},
 		},
 	}
-	getFreelanceJob = func(ctx context.Context, userAgent string, jobID string) (*esiapi.FreelanceJobsDetail, error) {
+	getFreelanceJobFake := fakeFreelanceJobESI(func(ctx context.Context, jobID string) (*esiapi.FreelanceJobsDetail, error) {
 		return baseFreelanceJobDetail(param), nil
-	}
+	})
 
-	handler := getFreelanceJobHandler("v1")
+	handler := getFreelanceJobHandler(openFreelanceJobsPubFake[freelanceJobESI](getFreelanceJobFake))
 	_, out, err := handler(context.Background(), nil, GetFreelanceJobInput{JobID: "job-detail-1"})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -469,12 +496,10 @@ func TestGetFreelanceJobHandler_ConfigurationOptionsVariant(t *testing.T) {
 }
 
 func TestListFreelanceJobsHandler_MapsFieldsAndCursor(t *testing.T) {
-	orig := listFreelanceJobs
-	t.Cleanup(func() { listFreelanceJobs = orig })
 	after := "list-after"
 	before := "list-before"
 	lastModified := time.Unix(6000, 0)
-	listFreelanceJobs = func(ctx context.Context, userAgent string, afterIn, beforeIn string, limit, corporationID int64) ([]esiapi.FreelanceJobsDetailFreelancejob, *esiapi.Cursor, error) {
+	listFreelanceJobsFake := fakeFreelanceJobsESI(func(ctx context.Context, afterIn, beforeIn string, limit, corporationID int64) ([]esiapi.FreelanceJobsDetailFreelancejob, *esiapi.Cursor, error) {
 		return []esiapi.FreelanceJobsDetailFreelancejob{
 			{
 				Id: "job-3", Name: "Public Job", State: "Active", LastModified: lastModified,
@@ -482,9 +507,9 @@ func TestListFreelanceJobsHandler_MapsFieldsAndCursor(t *testing.T) {
 				Reward:   &esiapi.FreelanceJobsDetailReward{Initial: 300000.0, Remaining: 250000.0},
 			},
 		}, &esiapi.Cursor{After: &after, Before: &before}, nil
-	}
+	})
 
-	handler := listFreelanceJobsHandler("v1")
+	handler := listFreelanceJobsHandler(openFreelanceJobsPubFake[freelanceJobsESI](listFreelanceJobsFake))
 	_, out, err := handler(context.Background(), nil, ListFreelanceJobsInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -545,14 +570,12 @@ func TestListCharacterFreelanceJobsHandler_PropagatesError(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCharacterFreelanceJobs
-	t.Cleanup(func() { listCharacterFreelanceJobs = orig })
 	wantErr := errors.New("upstream failure")
-	listCharacterFreelanceJobs = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]esiapi.FreelanceJobsDetailFreelancejob, error) {
+	listCharacterFreelanceJobsFake := fakeCharacterFreelanceJobsESI(func(ctx context.Context) ([]esiapi.FreelanceJobsDetailFreelancejob, error) {
 		return nil, wantErr
-	}
+	})
 
-	handler := listCharacterFreelanceJobsHandler("v1", "client-id", store)
+	handler := listCharacterFreelanceJobsHandler(openFreelanceJobsFake[characterFreelanceJobsESI](listCharacterFreelanceJobsFake), store)
 	_, _, err := handler(context.Background(), nil, ListCharacterFreelanceJobsInput{CharacterID: 7})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -566,14 +589,12 @@ func TestGetCharacterFreelanceJobParticipationHandler_PropagatesError(t *testing
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCharacterFreelanceJobParticipation
-	t.Cleanup(func() { getCharacterFreelanceJobParticipation = orig })
 	wantErr := errors.New("upstream failure")
-	getCharacterFreelanceJobParticipation = func(ctx context.Context, clientID string, characterID int32, userAgent string, jobID string) (*esiapi.CharactersFreelanceJobsParticipation, error) {
+	getCharacterFreelanceJobParticipationFake := fakeCharacterFreelanceJobParticipationESI(func(ctx context.Context, jobID string) (*esiapi.CharactersFreelanceJobsParticipation, error) {
 		return nil, wantErr
-	}
+	})
 
-	handler := getCharacterFreelanceJobParticipationHandler("v1", "client-id", store)
+	handler := getCharacterFreelanceJobParticipationHandler(openFreelanceJobsFake[characterFreelanceJobParticipationESI](getCharacterFreelanceJobParticipationFake), store)
 	_, _, err := handler(context.Background(), nil, GetCharacterFreelanceJobParticipationInput{
 		CharacterID: 7, JobID: "job-1",
 	})
@@ -589,14 +610,12 @@ func TestListCorporationFreelanceJobsHandler_PropagatesError(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationFreelanceJobs
-	t.Cleanup(func() { listCorporationFreelanceJobs = orig })
 	wantErr := errors.New("upstream failure")
-	listCorporationFreelanceJobs = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, after, before string, limit int64) ([]esiapi.FreelanceJobsDetailFreelancejob, *esiapi.Cursor, error) {
+	listCorporationFreelanceJobsFake := fakeCorporationFreelanceJobsESI(func(ctx context.Context, corporationID int64, after, before string, limit int64) ([]esiapi.FreelanceJobsDetailFreelancejob, *esiapi.Cursor, error) {
 		return nil, nil, wantErr
-	}
+	})
 
-	handler := listCorporationFreelanceJobsHandler("v1", "client-id", store)
+	handler := listCorporationFreelanceJobsHandler(openFreelanceJobsFake[corporationFreelanceJobsESI](listCorporationFreelanceJobsFake), store)
 	_, _, err := handler(context.Background(), nil, ListCorporationFreelanceJobsInput{
 		CharacterID: 7, CorporationID: 98000001,
 	})
@@ -612,14 +631,12 @@ func TestListCorporationFreelanceJobParticipantsHandler_PropagatesError(t *testi
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationFreelanceJobParticipants
-	t.Cleanup(func() { listCorporationFreelanceJobParticipants = orig })
 	wantErr := errors.New("upstream failure")
-	listCorporationFreelanceJobParticipants = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, jobID string, after, before string, limit int64) ([]esiapi.CorporationsFreelanceJobsParticipantsParticipant, *esiapi.Cursor, error) {
+	listCorporationFreelanceJobParticipantsFake := fakeCorporationFreelanceJobParticipantsESI(func(ctx context.Context, corporationID int64, jobID string, after, before string, limit int64) ([]esiapi.CorporationsFreelanceJobsParticipantsParticipant, *esiapi.Cursor, error) {
 		return nil, nil, wantErr
-	}
+	})
 
-	handler := listCorporationFreelanceJobParticipantsHandler("v1", "client-id", store)
+	handler := listCorporationFreelanceJobParticipantsHandler(openFreelanceJobsFake[corporationFreelanceJobParticipantsESI](listCorporationFreelanceJobParticipantsFake), store)
 	_, _, err := handler(context.Background(), nil, ListCorporationFreelanceJobParticipantsInput{
 		CharacterID: 7, CorporationID: 98000001, JobID: "job-1",
 	})
@@ -629,14 +646,12 @@ func TestListCorporationFreelanceJobParticipantsHandler_PropagatesError(t *testi
 }
 
 func TestGetFreelanceJobHandler_PropagatesError(t *testing.T) {
-	orig := getFreelanceJob
-	t.Cleanup(func() { getFreelanceJob = orig })
 	wantErr := errors.New("upstream failure")
-	getFreelanceJob = func(ctx context.Context, userAgent string, jobID string) (*esiapi.FreelanceJobsDetail, error) {
+	getFreelanceJobFake := fakeFreelanceJobESI(func(ctx context.Context, jobID string) (*esiapi.FreelanceJobsDetail, error) {
 		return nil, wantErr
-	}
+	})
 
-	handler := getFreelanceJobHandler("v1")
+	handler := getFreelanceJobHandler(openFreelanceJobsPubFake[freelanceJobESI](getFreelanceJobFake))
 	_, _, err := handler(context.Background(), nil, GetFreelanceJobInput{JobID: "job-detail-1"})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -644,16 +659,49 @@ func TestGetFreelanceJobHandler_PropagatesError(t *testing.T) {
 }
 
 func TestListFreelanceJobsHandler_PropagatesError(t *testing.T) {
-	orig := listFreelanceJobs
-	t.Cleanup(func() { listFreelanceJobs = orig })
 	wantErr := errors.New("upstream failure")
-	listFreelanceJobs = func(ctx context.Context, userAgent string, after, before string, limit, corporationID int64) ([]esiapi.FreelanceJobsDetailFreelancejob, *esiapi.Cursor, error) {
+	listFreelanceJobsFake := fakeFreelanceJobsESI(func(ctx context.Context, after, before string, limit, corporationID int64) ([]esiapi.FreelanceJobsDetailFreelancejob, *esiapi.Cursor, error) {
 		return nil, nil, wantErr
-	}
+	})
 
-	handler := listFreelanceJobsHandler("v1")
+	handler := listFreelanceJobsHandler(openFreelanceJobsPubFake[freelanceJobsESI](listFreelanceJobsFake))
 	_, _, err := handler(context.Background(), nil, ListFreelanceJobsInput{})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+// TestFreelanceJobsPrivateHandlers_PropagateOpenError checks the authenticated handlers report a failed ESI client build,
+// wrapped so errors.Is still finds the cause.
+func TestFreelanceJobsPrivateHandlers_PropagateOpenError(t *testing.T) {
+	store := storeWithCharacter(t)
+	ctx := context.Background()
+	errOpen := errors.New("open failed")
+
+	for name, call := range map[string]func() error{
+		"list_character_freelance_jobs": func() error {
+			open := func(context.Context, int32) (characterFreelanceJobsESI, error) { return nil, errOpen }
+			_, _, err := listCharacterFreelanceJobsHandler(open, store)(ctx, nil, ListCharacterFreelanceJobsInput{CharacterID: 7})
+			return err
+		},
+		"get_character_freelance_job_participation": func() error {
+			open := func(context.Context, int32) (characterFreelanceJobParticipationESI, error) { return nil, errOpen }
+			_, _, err := getCharacterFreelanceJobParticipationHandler(open, store)(ctx, nil, GetCharacterFreelanceJobParticipationInput{CharacterID: 7, JobID: "j"})
+			return err
+		},
+		"list_corporation_freelance_jobs": func() error {
+			open := func(context.Context, int32) (corporationFreelanceJobsESI, error) { return nil, errOpen }
+			_, _, err := listCorporationFreelanceJobsHandler(open, store)(ctx, nil, ListCorporationFreelanceJobsInput{CharacterID: 7, CorporationID: 1})
+			return err
+		},
+		"list_corporation_freelance_job_participants": func() error {
+			open := func(context.Context, int32) (corporationFreelanceJobParticipantsESI, error) { return nil, errOpen }
+			_, _, err := listCorporationFreelanceJobParticipantsHandler(open, store)(ctx, nil, ListCorporationFreelanceJobParticipantsInput{CharacterID: 7, CorporationID: 1, JobID: "j"})
+			return err
+		},
+	} {
+		if err := call(); !errors.Is(err, errOpen) {
+			t.Errorf("%s: err = %v, want wrapping errOpen", name, err)
+		}
 	}
 }

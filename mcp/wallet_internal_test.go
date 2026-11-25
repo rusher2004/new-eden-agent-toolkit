@@ -12,6 +12,57 @@ import (
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 )
 
+// openWalletFake and openWalletPubFake adapt a fake to the openers the handlers take.
+func openWalletFake[C any](c C) func(context.Context, int32) (C, error) {
+	return func(context.Context, int32) (C, error) { return c, nil }
+}
+
+func openWalletPubFake[C any](c C) func() C {
+	return func() C { return c }
+}
+
+// fakeWalletBalanceESI fakes the ESI call behind getWalletBalanceHandler.
+type fakeWalletBalanceESI func(ctx context.Context) (float64, error)
+
+func (f fakeWalletBalanceESI) WalletBalance(ctx context.Context) (float64, error) {
+	return f(ctx)
+}
+
+// fakeCharacterWalletJournalESI fakes the ESI call behind listCharacterWalletJournalHandler.
+type fakeCharacterWalletJournalESI func(ctx context.Context, page int32) ([]esiapi.CharactersCharacterIdWalletJournalGetInner, int32, error)
+
+func (f fakeCharacterWalletJournalESI) CharacterWalletJournal(ctx context.Context, page int32) ([]esiapi.CharactersCharacterIdWalletJournalGetInner, int32, error) {
+	return f(ctx, page)
+}
+
+// fakeCharacterWalletTransactionsESI fakes the ESI call behind listCharacterWalletTransactionsHandler.
+type fakeCharacterWalletTransactionsESI func(ctx context.Context, fromID int64) ([]esiapi.CharactersCharacterIdWalletTransactionsGetInner, error)
+
+func (f fakeCharacterWalletTransactionsESI) CharacterWalletTransactions(ctx context.Context, fromID int64) ([]esiapi.CharactersCharacterIdWalletTransactionsGetInner, error) {
+	return f(ctx, fromID)
+}
+
+// fakeCorporationWalletsESI fakes the ESI call behind listCorporationWalletsHandler.
+type fakeCorporationWalletsESI func(ctx context.Context, corporationID int64) ([]esiapi.CorporationsCorporationIdWalletsGetInner, error)
+
+func (f fakeCorporationWalletsESI) CorporationWallets(ctx context.Context, corporationID int64) ([]esiapi.CorporationsCorporationIdWalletsGetInner, error) {
+	return f(ctx, corporationID)
+}
+
+// fakeCorporationWalletJournalESI fakes the ESI call behind listCorporationWalletJournalHandler.
+type fakeCorporationWalletJournalESI func(ctx context.Context, corporationID, division int64, page int32) ([]esiapi.CorporationsCorporationIdWalletsDivisionJournalGetInner, int32, error)
+
+func (f fakeCorporationWalletJournalESI) CorporationWalletJournal(ctx context.Context, corporationID, division int64, page int32) ([]esiapi.CorporationsCorporationIdWalletsDivisionJournalGetInner, int32, error) {
+	return f(ctx, corporationID, division, page)
+}
+
+// fakeCorporationWalletTransactionsESI fakes the ESI call behind listCorporationWalletTransactionsHandler.
+type fakeCorporationWalletTransactionsESI func(ctx context.Context, corporationID, division, fromID int64) ([]esiapi.CorporationsCorporationIdWalletsDivisionTransactionsGetInner, error)
+
+func (f fakeCorporationWalletTransactionsESI) CorporationWalletTransactions(ctx context.Context, corporationID, division, fromID int64) ([]esiapi.CorporationsCorporationIdWalletsDivisionTransactionsGetInner, error) {
+	return f(ctx, corporationID, division, fromID)
+}
+
 func TestGetWalletBalanceHandler_ReturnsBalance(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
@@ -19,13 +70,11 @@ func TestGetWalletBalanceHandler_ReturnsBalance(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getWalletBalance
-	t.Cleanup(func() { getWalletBalance = orig })
-	getWalletBalance = func(ctx context.Context, clientID string, characterID int32, userAgent string) (float64, error) {
+	getWalletBalanceFake := fakeWalletBalanceESI(func(ctx context.Context) (float64, error) {
 		return 42.5, nil
-	}
+	})
 
-	handler := getWalletBalanceHandler("v1", "client-id", store)
+	handler := getWalletBalanceHandler(openWalletFake[walletBalanceESI](getWalletBalanceFake), store)
 	_, out, err := handler(context.Background(), nil, GetWalletBalanceInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -42,13 +91,11 @@ func TestGetWalletBalanceHandler_PropagatesError(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getWalletBalance
-	t.Cleanup(func() { getWalletBalance = orig })
-	getWalletBalance = func(ctx context.Context, clientID string, characterID int32, userAgent string) (float64, error) {
+	getWalletBalanceFake := fakeWalletBalanceESI(func(ctx context.Context) (float64, error) {
 		return 0, errors.New("simulated failure")
-	}
+	})
 
-	handler := getWalletBalanceHandler("v1", "client-id", store)
+	handler := getWalletBalanceHandler(openWalletFake[walletBalanceESI](getWalletBalanceFake), store)
 	if _, _, err := handler(context.Background(), nil, GetWalletBalanceInput{CharacterID: 7}); err == nil {
 		t.Fatal("handler returned nil error, want the underlying error wrapped")
 	}
@@ -64,14 +111,12 @@ func TestGetWalletBalanceHandler_UnknownCharacter_ReturnsErrCharacterNotFound(t 
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := getWalletBalance
-	t.Cleanup(func() { getWalletBalance = orig })
-	getWalletBalance = func(ctx context.Context, clientID string, characterID int32, userAgent string) (float64, error) {
+	getWalletBalanceFake := fakeWalletBalanceESI(func(ctx context.Context) (float64, error) {
 		t.Fatal("getWalletBalance should not be called for an unknown character")
 		return 0, nil
-	}
+	})
 
-	handler := getWalletBalanceHandler("v1", "client-id", store)
+	handler := getWalletBalanceHandler(openWalletFake[walletBalanceESI](getWalletBalanceFake), store)
 	_, _, err := handler(context.Background(), nil, GetWalletBalanceInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -85,13 +130,11 @@ func TestListCharacterWalletJournalHandler_ReturnsEntries(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCharacterWalletJournal
-	t.Cleanup(func() { listCharacterWalletJournal = orig })
-	listCharacterWalletJournal = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]esiapi.CharactersCharacterIdWalletJournalGetInner, int32, error) {
+	listCharacterWalletJournalFake := fakeCharacterWalletJournalESI(func(ctx context.Context, page int32) ([]esiapi.CharactersCharacterIdWalletJournalGetInner, int32, error) {
 		return []esiapi.CharactersCharacterIdWalletJournalGetInner{{Id: 1, RefType: "player_donation"}}, 3, nil
-	}
+	})
 
-	handler := listCharacterWalletJournalHandler("v1", "client-id", store)
+	handler := listCharacterWalletJournalHandler(openWalletFake[characterWalletJournalESI](listCharacterWalletJournalFake), store)
 	_, out, err := handler(context.Background(), nil, ListCharacterWalletJournalInput{CharacterID: 7, Page: 2})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -108,13 +151,11 @@ func TestListCharacterWalletJournalHandler_PropagatesError(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCharacterWalletJournal
-	t.Cleanup(func() { listCharacterWalletJournal = orig })
-	listCharacterWalletJournal = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]esiapi.CharactersCharacterIdWalletJournalGetInner, int32, error) {
+	listCharacterWalletJournalFake := fakeCharacterWalletJournalESI(func(ctx context.Context, page int32) ([]esiapi.CharactersCharacterIdWalletJournalGetInner, int32, error) {
 		return nil, 0, errors.New("simulated failure")
-	}
+	})
 
-	handler := listCharacterWalletJournalHandler("v1", "client-id", store)
+	handler := listCharacterWalletJournalHandler(openWalletFake[characterWalletJournalESI](listCharacterWalletJournalFake), store)
 	if _, _, err := handler(context.Background(), nil, ListCharacterWalletJournalInput{CharacterID: 7}); err == nil {
 		t.Fatal("handler returned nil error, want the underlying error wrapped")
 	}
@@ -124,7 +165,7 @@ func TestListCharacterWalletJournalHandler_UnknownCharacter_ReturnsErrCharacterN
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	handler := listCharacterWalletJournalHandler("v1", "client-id", store)
+	handler := listCharacterWalletJournalHandler[characterWalletJournalESI](nil, store)
 	_, _, err := handler(context.Background(), nil, ListCharacterWalletJournalInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -138,11 +179,9 @@ func TestListCharacterWalletTransactionsHandler_ResolvesTypeName(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	origFetch := listCharacterWalletTransactions
-	t.Cleanup(func() { listCharacterWalletTransactions = origFetch })
-	listCharacterWalletTransactions = func(ctx context.Context, clientID string, characterID int32, userAgent string, fromID int64) ([]esiapi.CharactersCharacterIdWalletTransactionsGetInner, error) {
+	listCharacterWalletTransactionsFake := fakeCharacterWalletTransactionsESI(func(ctx context.Context, fromID int64) ([]esiapi.CharactersCharacterIdWalletTransactionsGetInner, error) {
 		return []esiapi.CharactersCharacterIdWalletTransactionsGetInner{{TransactionId: 5, TypeId: 587}}, nil
-	}
+	})
 
 	origResolve := resolveTypeNames
 	t.Cleanup(func() { resolveTypeNames = origResolve })
@@ -150,7 +189,7 @@ func TestListCharacterWalletTransactionsHandler_ResolvesTypeName(t *testing.T) {
 		return map[int64]string{587: "Rifter"}
 	}
 
-	handler := listCharacterWalletTransactionsHandler("v1", "client-id", store, nil)
+	handler := listCharacterWalletTransactionsHandler("v1", openWalletFake[characterWalletTransactionsESI](listCharacterWalletTransactionsFake), store, nil)
 	_, out, err := handler(context.Background(), nil, ListCharacterWalletTransactionsInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -167,13 +206,11 @@ func TestListCharacterWalletTransactionsHandler_PropagatesError(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCharacterWalletTransactions
-	t.Cleanup(func() { listCharacterWalletTransactions = orig })
-	listCharacterWalletTransactions = func(ctx context.Context, clientID string, characterID int32, userAgent string, fromID int64) ([]esiapi.CharactersCharacterIdWalletTransactionsGetInner, error) {
+	listCharacterWalletTransactionsFake := fakeCharacterWalletTransactionsESI(func(ctx context.Context, fromID int64) ([]esiapi.CharactersCharacterIdWalletTransactionsGetInner, error) {
 		return nil, errors.New("simulated failure")
-	}
+	})
 
-	handler := listCharacterWalletTransactionsHandler("v1", "client-id", store, nil)
+	handler := listCharacterWalletTransactionsHandler("v1", openWalletFake[characterWalletTransactionsESI](listCharacterWalletTransactionsFake), store, nil)
 	if _, _, err := handler(context.Background(), nil, ListCharacterWalletTransactionsInput{CharacterID: 7}); err == nil {
 		t.Fatal("handler returned nil error, want the underlying error wrapped")
 	}
@@ -183,7 +220,7 @@ func TestListCharacterWalletTransactionsHandler_UnknownCharacter_ReturnsErrChara
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	handler := listCharacterWalletTransactionsHandler("v1", "client-id", store, nil)
+	handler := listCharacterWalletTransactionsHandler[characterWalletTransactionsESI]("v1", nil, store, nil)
 	_, _, err := handler(context.Background(), nil, ListCharacterWalletTransactionsInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -197,13 +234,11 @@ func TestListCorporationWalletsHandler_ReturnsWallets(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationWallets
-	t.Cleanup(func() { listCorporationWallets = orig })
-	listCorporationWallets = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64) ([]esiapi.CorporationsCorporationIdWalletsGetInner, error) {
+	listCorporationWalletsFake := fakeCorporationWalletsESI(func(ctx context.Context, corporationID int64) ([]esiapi.CorporationsCorporationIdWalletsGetInner, error) {
 		return []esiapi.CorporationsCorporationIdWalletsGetInner{{Division: 1, Balance: 3330000000.5}}, nil
-	}
+	})
 
-	handler := listCorporationWalletsHandler("v1", "client-id", store)
+	handler := listCorporationWalletsHandler(openWalletFake[corporationWalletsESI](listCorporationWalletsFake), store)
 	_, out, err := handler(context.Background(), nil, ListCorporationWalletsInput{CharacterID: 7, CorporationID: 98000001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -220,13 +255,11 @@ func TestListCorporationWalletsHandler_PropagatesError(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationWallets
-	t.Cleanup(func() { listCorporationWallets = orig })
-	listCorporationWallets = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64) ([]esiapi.CorporationsCorporationIdWalletsGetInner, error) {
+	listCorporationWalletsFake := fakeCorporationWalletsESI(func(ctx context.Context, corporationID int64) ([]esiapi.CorporationsCorporationIdWalletsGetInner, error) {
 		return nil, errors.New("simulated failure")
-	}
+	})
 
-	handler := listCorporationWalletsHandler("v1", "client-id", store)
+	handler := listCorporationWalletsHandler(openWalletFake[corporationWalletsESI](listCorporationWalletsFake), store)
 	if _, _, err := handler(context.Background(), nil, ListCorporationWalletsInput{CharacterID: 7, CorporationID: 98000001}); err == nil {
 		t.Fatal("handler returned nil error, want the underlying error wrapped")
 	}
@@ -236,7 +269,7 @@ func TestListCorporationWalletsHandler_UnknownCharacter_ReturnsErrCharacterNotFo
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	handler := listCorporationWalletsHandler("v1", "client-id", store)
+	handler := listCorporationWalletsHandler[corporationWalletsESI](nil, store)
 	_, _, err := handler(context.Background(), nil, ListCorporationWalletsInput{CharacterID: 999, CorporationID: 98000001})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -250,13 +283,11 @@ func TestListCorporationWalletJournalHandler_ReturnsEntries(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationWalletJournal
-	t.Cleanup(func() { listCorporationWalletJournal = orig })
-	listCorporationWalletJournal = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID, division int64, page int32) ([]esiapi.CorporationsCorporationIdWalletsDivisionJournalGetInner, int32, error) {
+	listCorporationWalletJournalFake := fakeCorporationWalletJournalESI(func(ctx context.Context, corporationID, division int64, page int32) ([]esiapi.CorporationsCorporationIdWalletsDivisionJournalGetInner, int32, error) {
 		return []esiapi.CorporationsCorporationIdWalletsDivisionJournalGetInner{{Id: 1, RefType: "corporation_account_withdrawal"}}, 1, nil
-	}
+	})
 
-	handler := listCorporationWalletJournalHandler("v1", "client-id", store)
+	handler := listCorporationWalletJournalHandler(openWalletFake[corporationWalletJournalESI](listCorporationWalletJournalFake), store)
 	_, out, err := handler(context.Background(), nil, ListCorporationWalletJournalInput{CharacterID: 7, CorporationID: 98000001, Division: 1})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -273,13 +304,11 @@ func TestListCorporationWalletJournalHandler_PropagatesError(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationWalletJournal
-	t.Cleanup(func() { listCorporationWalletJournal = orig })
-	listCorporationWalletJournal = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID, division int64, page int32) ([]esiapi.CorporationsCorporationIdWalletsDivisionJournalGetInner, int32, error) {
+	listCorporationWalletJournalFake := fakeCorporationWalletJournalESI(func(ctx context.Context, corporationID, division int64, page int32) ([]esiapi.CorporationsCorporationIdWalletsDivisionJournalGetInner, int32, error) {
 		return nil, 0, errors.New("simulated failure")
-	}
+	})
 
-	handler := listCorporationWalletJournalHandler("v1", "client-id", store)
+	handler := listCorporationWalletJournalHandler(openWalletFake[corporationWalletJournalESI](listCorporationWalletJournalFake), store)
 	if _, _, err := handler(context.Background(), nil, ListCorporationWalletJournalInput{CharacterID: 7, CorporationID: 98000001, Division: 1}); err == nil {
 		t.Fatal("handler returned nil error, want the underlying error wrapped")
 	}
@@ -289,7 +318,7 @@ func TestListCorporationWalletJournalHandler_UnknownCharacter_ReturnsErrCharacte
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	handler := listCorporationWalletJournalHandler("v1", "client-id", store)
+	handler := listCorporationWalletJournalHandler[corporationWalletJournalESI](nil, store)
 	_, _, err := handler(context.Background(), nil, ListCorporationWalletJournalInput{CharacterID: 999, CorporationID: 98000001, Division: 1})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -303,11 +332,9 @@ func TestListCorporationWalletTransactionsHandler_ResolvesTypeName(t *testing.T)
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	origFetch := listCorporationWalletTransactions
-	t.Cleanup(func() { listCorporationWalletTransactions = origFetch })
-	listCorporationWalletTransactions = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID, division, fromID int64) ([]esiapi.CorporationsCorporationIdWalletsDivisionTransactionsGetInner, error) {
+	listCorporationWalletTransactionsFake := fakeCorporationWalletTransactionsESI(func(ctx context.Context, corporationID, division, fromID int64) ([]esiapi.CorporationsCorporationIdWalletsDivisionTransactionsGetInner, error) {
 		return []esiapi.CorporationsCorporationIdWalletsDivisionTransactionsGetInner{{TransactionId: 5, TypeId: 587}}, nil
-	}
+	})
 
 	origResolve := resolveTypeNames
 	t.Cleanup(func() { resolveTypeNames = origResolve })
@@ -315,7 +342,7 @@ func TestListCorporationWalletTransactionsHandler_ResolvesTypeName(t *testing.T)
 		return map[int64]string{587: "Rifter"}
 	}
 
-	handler := listCorporationWalletTransactionsHandler("v1", "client-id", store, nil)
+	handler := listCorporationWalletTransactionsHandler("v1", openWalletFake[corporationWalletTransactionsESI](listCorporationWalletTransactionsFake), store, nil)
 	_, out, err := handler(context.Background(), nil, ListCorporationWalletTransactionsInput{CharacterID: 7, CorporationID: 98000001, Division: 1})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -332,13 +359,11 @@ func TestListCorporationWalletTransactionsHandler_PropagatesError(t *testing.T) 
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationWalletTransactions
-	t.Cleanup(func() { listCorporationWalletTransactions = orig })
-	listCorporationWalletTransactions = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID, division, fromID int64) ([]esiapi.CorporationsCorporationIdWalletsDivisionTransactionsGetInner, error) {
+	listCorporationWalletTransactionsFake := fakeCorporationWalletTransactionsESI(func(ctx context.Context, corporationID, division, fromID int64) ([]esiapi.CorporationsCorporationIdWalletsDivisionTransactionsGetInner, error) {
 		return nil, errors.New("simulated failure")
-	}
+	})
 
-	handler := listCorporationWalletTransactionsHandler("v1", "client-id", store, nil)
+	handler := listCorporationWalletTransactionsHandler("v1", openWalletFake[corporationWalletTransactionsESI](listCorporationWalletTransactionsFake), store, nil)
 	if _, _, err := handler(context.Background(), nil, ListCorporationWalletTransactionsInput{CharacterID: 7, CorporationID: 98000001, Division: 1}); err == nil {
 		t.Fatal("handler returned nil error, want the underlying error wrapped")
 	}
@@ -348,9 +373,54 @@ func TestListCorporationWalletTransactionsHandler_UnknownCharacter_ReturnsErrCha
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	handler := listCorporationWalletTransactionsHandler("v1", "client-id", store, nil)
+	handler := listCorporationWalletTransactionsHandler[corporationWalletTransactionsESI]("v1", nil, store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationWalletTransactionsInput{CharacterID: 999, CorporationID: 98000001, Division: 1})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
+	}
+}
+
+// TestWalletHandlers_PropagateOpenError checks the authenticated handlers report a failed ESI client build,
+// wrapped so errors.Is still finds the cause.
+func TestWalletHandlers_PropagateOpenError(t *testing.T) {
+	store := storeWithCharacter(t)
+	ctx := context.Background()
+	errOpen := errors.New("open failed")
+
+	for name, call := range map[string]func() error{
+		"get_wallet_balance": func() error {
+			open := func(context.Context, int32) (walletBalanceESI, error) { return nil, errOpen }
+			_, _, err := getWalletBalanceHandler(open, store)(ctx, nil, GetWalletBalanceInput{CharacterID: 7})
+			return err
+		},
+		"list_character_wallet_journal": func() error {
+			open := func(context.Context, int32) (characterWalletJournalESI, error) { return nil, errOpen }
+			_, _, err := listCharacterWalletJournalHandler(open, store)(ctx, nil, ListCharacterWalletJournalInput{CharacterID: 7})
+			return err
+		},
+		"list_character_wallet_transactions": func() error {
+			open := func(context.Context, int32) (characterWalletTransactionsESI, error) { return nil, errOpen }
+			_, _, err := listCharacterWalletTransactionsHandler("v1", open, store, nil)(ctx, nil, ListCharacterWalletTransactionsInput{CharacterID: 7})
+			return err
+		},
+		"list_corporation_wallets": func() error {
+			open := func(context.Context, int32) (corporationWalletsESI, error) { return nil, errOpen }
+			_, _, err := listCorporationWalletsHandler(open, store)(ctx, nil, ListCorporationWalletsInput{CharacterID: 7, CorporationID: 1})
+			return err
+		},
+		"list_corporation_wallet_journal": func() error {
+			open := func(context.Context, int32) (corporationWalletJournalESI, error) { return nil, errOpen }
+			_, _, err := listCorporationWalletJournalHandler(open, store)(ctx, nil, ListCorporationWalletJournalInput{CharacterID: 7, CorporationID: 1, Division: 1})
+			return err
+		},
+		"list_corporation_wallet_transactions": func() error {
+			open := func(context.Context, int32) (corporationWalletTransactionsESI, error) { return nil, errOpen }
+			_, _, err := listCorporationWalletTransactionsHandler("v1", open, store, nil)(ctx, nil, ListCorporationWalletTransactionsInput{CharacterID: 7, CorporationID: 1, Division: 1})
+			return err
+		},
+	} {
+		if err := call(); !errors.Is(err, errOpen) {
+			t.Errorf("%s: err = %v, want wrapping errOpen", name, err)
+		}
 	}
 }

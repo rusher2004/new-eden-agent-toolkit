@@ -7,9 +7,6 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
-
-	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
 // --- list_character_skinr_licenses (private) ---
@@ -20,12 +17,9 @@ type SkinrLicense struct {
 	Unactivated int64  `json:"unactivated"`
 }
 
-var listCharacterSkinrLicenses = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]esiapi.CharactersCosmeticsSkinrItem, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
-	return client.CharacterSkinrLicenses(ctx)
+// characterSkinrLicensesESI is the ESI call list_character_skinr_licenses makes.
+type characterSkinrLicensesESI interface {
+	CharacterSkinrLicenses(ctx context.Context) ([]esiapi.CharactersCosmeticsSkinrItem, error)
 }
 
 type ListCharacterSkinrLicensesInput struct {
@@ -36,7 +30,16 @@ type ListCharacterSkinrLicensesOutput struct {
 	Licenses    []SkinrLicense `json:"licenses"`
 }
 
-func listCharacterSkinrLicensesHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCharacterSkinrLicensesInput, ListCharacterSkinrLicensesOutput] {
+// AddListCharacterSkinrLicenses registers list_character_skinr_licenses. open builds the ESI client; any client with the
+// characterSkinrLicensesESI methods will do.
+func AddListCharacterSkinrLicenses[C characterSkinrLicensesESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_character_skinr_licenses",
+		Description: "List the SKINR (ship skin) licenses a logged-in character owns, with activated/unactivated counts.",
+	}, listCharacterSkinrLicensesHandler(open, store))
+}
+
+func listCharacterSkinrLicensesHandler[C characterSkinrLicensesESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListCharacterSkinrLicensesInput, ListCharacterSkinrLicensesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterSkinrLicensesInput) (*mcpsdk.CallToolResult, ListCharacterSkinrLicensesOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -45,7 +48,11 @@ func listCharacterSkinrLicensesHandler(version, clientID string, store ConfigSto
 		if !found {
 			return nil, ListCharacterSkinrLicensesOutput{}, fmt.Errorf("list character skinr licenses for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		licenses, err := listCharacterSkinrLicenses(ctx, clientID, in.CharacterID, sso.UserAgent(version))
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCharacterSkinrLicensesOutput{}, fmt.Errorf("build ESI client: %w", err)
+		}
+		licenses, err := client.CharacterSkinrLicenses(ctx)
 		if err != nil {
 			return nil, ListCharacterSkinrLicensesOutput{}, fmt.Errorf("list character skinr licenses: %w", err)
 		}
@@ -70,12 +77,9 @@ type SkinrComponentLicense struct {
 	RunsRemaining *int64 `json:"runsRemaining,omitempty"`
 }
 
-var listCharacterSkinrComponentLicenses = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]esiapi.CharactersCosmeticsSkinrComponentsItem, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
-	return client.CharacterSkinrComponentLicenses(ctx)
+// characterSkinrComponentLicensesESI is the ESI call list_character_skinr_component_licenses makes.
+type characterSkinrComponentLicensesESI interface {
+	CharacterSkinrComponentLicenses(ctx context.Context) ([]esiapi.CharactersCosmeticsSkinrComponentsItem, error)
 }
 
 type ListCharacterSkinrComponentLicensesInput struct {
@@ -86,7 +90,16 @@ type ListCharacterSkinrComponentLicensesOutput struct {
 	Licenses    []SkinrComponentLicense `json:"licenses"`
 }
 
-func listCharacterSkinrComponentLicensesHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCharacterSkinrComponentLicensesInput, ListCharacterSkinrComponentLicensesOutput] {
+// AddListCharacterSkinrComponentLicenses registers list_character_skinr_component_licenses. open builds the ESI client; any client with the
+// characterSkinrComponentLicensesESI methods will do.
+func AddListCharacterSkinrComponentLicenses[C characterSkinrComponentLicensesESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore skinrComponentNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_character_skinr_component_licenses",
+		Description: "List the SKINR component licenses (nanocoatings, patterns) a logged-in character owns, with names and remaining runs.",
+	}, listCharacterSkinrComponentLicensesHandler(userAgent, open, store, sdeStore))
+}
+
+func listCharacterSkinrComponentLicensesHandler[C characterSkinrComponentLicensesESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore skinrComponentNameCache) mcpsdk.ToolHandlerFor[ListCharacterSkinrComponentLicensesInput, ListCharacterSkinrComponentLicensesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterSkinrComponentLicensesInput) (*mcpsdk.CallToolResult, ListCharacterSkinrComponentLicensesOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -95,7 +108,11 @@ func listCharacterSkinrComponentLicensesHandler(version, clientID string, store 
 		if !found {
 			return nil, ListCharacterSkinrComponentLicensesOutput{}, fmt.Errorf("list character skinr component licenses for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		licenses, err := listCharacterSkinrComponentLicenses(ctx, clientID, in.CharacterID, sso.UserAgent(version))
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCharacterSkinrComponentLicensesOutput{}, fmt.Errorf("build ESI client: %w", err)
+		}
+		licenses, err := client.CharacterSkinrComponentLicenses(ctx)
 		if err != nil {
 			return nil, ListCharacterSkinrComponentLicensesOutput{}, fmt.Errorf("list character skinr component licenses: %w", err)
 		}
@@ -103,7 +120,7 @@ func listCharacterSkinrComponentLicensesHandler(version, clientID string, store 
 		for i, l := range licenses {
 			ids[i] = l.ComponentId
 		}
-		names := resolveSkinrComponentNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		names := resolveSkinrComponentNames(ctx, sdeStore, userAgent, ids)
 		out := make([]SkinrComponentLicense, len(licenses))
 		for i, l := range licenses {
 			out[i] = SkinrComponentLicense{ComponentID: l.ComponentId, ComponentName: names[l.ComponentId], Type: l.Type}
@@ -180,8 +197,16 @@ func toSkinrLayoutSlot(s esiapi.CosmeticsSkinrLayoutslot) SkinrLayoutSlot {
 	return out
 }
 
-var getSkinr = func(ctx context.Context, userAgent, skinrID string) (*esiapi.CosmeticsSkinr, error) {
-	return esi.NewPublicClient(userAgent).SkinrDetail(ctx, skinrID)
+// skinrDetailESI is the ESI call get_skinr makes.
+type skinrDetailESI interface {
+	SkinrDetail(ctx context.Context, skinrID string) (*esiapi.CosmeticsSkinr, error)
+}
+
+// skinrNameCache is the SDE lookups get_skinr makes: slot and component names, plus the ship's type name.
+type skinrNameCache interface {
+	typeNameCache
+	skinrComponentNameCache
+	skinrSlotNameCache
 }
 
 type GetSkinrInput struct {
@@ -199,10 +224,20 @@ type GetSkinrOutput struct {
 	Slots            []SkinrLayoutSlot `json:"slots"`
 }
 
-func getSkinrHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetSkinrInput, GetSkinrOutput] {
+// AddGetSkinr registers get_skinr. open builds the ESI client; any client with the
+// skinrDetailESI methods will do.
+func AddGetSkinr[C skinrDetailESI](s *mcpsdk.Server, userAgent string, open func() C, sdeStore skinrNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_skinr",
+		Description: "Get a SKINR's full design: ship type, tier, and each cosmetic slot's nanocoating or pattern, with names (public data, no character required).",
+	}, getSkinrHandler(userAgent, open, sdeStore))
+}
+
+func getSkinrHandler[C skinrDetailESI](userAgent string, open func() C, sdeStore skinrNameCache) mcpsdk.ToolHandlerFor[GetSkinrInput, GetSkinrOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetSkinrInput) (*mcpsdk.CallToolResult, GetSkinrOutput, error) {
-		userAgent := sso.UserAgent(version)
-		s, err := getSkinr(ctx, userAgent, in.SkinrID)
+		userAgent := userAgent
+		client := open()
+		s, err := client.SkinrDetail(ctx, in.SkinrID)
 		if err != nil {
 			return nil, GetSkinrOutput{}, fmt.Errorf("get skinr: %w", err)
 		}

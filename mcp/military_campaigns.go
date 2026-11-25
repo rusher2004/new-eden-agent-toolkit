@@ -8,9 +8,6 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
-
-	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
 // Every cursor-paginated tool in this file and in paragon_hub.go documents its limit as "10-100":
@@ -57,8 +54,9 @@ type CharacterCampaignObjective struct {
 
 // --- list_military_campaigns (public) ---
 
-var listMilitaryCampaigns = func(ctx context.Context, userAgent string) ([]esiapi.MilitaryCampaignsDetailCampaign, error) {
-	return esi.NewPublicClient(userAgent).MilitaryCampaigns(ctx)
+// militaryCampaignsESI is the ESI call list_military_campaigns makes.
+type militaryCampaignsESI interface {
+	MilitaryCampaigns(ctx context.Context) ([]esiapi.MilitaryCampaignsDetailCampaign, error)
 }
 
 type ListMilitaryCampaignsInput struct{}
@@ -66,9 +64,19 @@ type ListMilitaryCampaignsOutput struct {
 	Campaigns []MilitaryCampaign `json:"campaigns"`
 }
 
-func listMilitaryCampaignsHandler(version string) mcpsdk.ToolHandlerFor[ListMilitaryCampaignsInput, ListMilitaryCampaignsOutput] {
+// AddListMilitaryCampaigns registers list_military_campaigns. open builds the ESI client; any client with the
+// militaryCampaignsESI methods will do.
+func AddListMilitaryCampaigns[C militaryCampaignsESI](s *mcpsdk.Server, open func() C) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_military_campaigns",
+		Description: "List EVE Online military campaigns with their state, progress, and start/finish times (public data, no character required).",
+	}, listMilitaryCampaignsHandler(open))
+}
+
+func listMilitaryCampaignsHandler[C militaryCampaignsESI](open func() C) mcpsdk.ToolHandlerFor[ListMilitaryCampaignsInput, ListMilitaryCampaignsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, _ ListMilitaryCampaignsInput) (*mcpsdk.CallToolResult, ListMilitaryCampaignsOutput, error) {
-		campaigns, err := listMilitaryCampaigns(ctx, sso.UserAgent(version))
+		client := open()
+		campaigns, err := client.MilitaryCampaigns(ctx)
 		if err != nil {
 			return nil, ListMilitaryCampaignsOutput{}, fmt.Errorf("list military campaigns: %w", err)
 		}
@@ -82,8 +90,9 @@ func listMilitaryCampaignsHandler(version string) mcpsdk.ToolHandlerFor[ListMili
 
 // --- get_military_campaign (public) ---
 
-var getMilitaryCampaign = func(ctx context.Context, userAgent, campaignID string) (*esiapi.MilitaryCampaignsDetail, error) {
-	return esi.NewPublicClient(userAgent).MilitaryCampaignDetail(ctx, campaignID)
+// militaryCampaignDetailESI is the ESI call get_military_campaign makes.
+type militaryCampaignDetailESI interface {
+	MilitaryCampaignDetail(ctx context.Context, campaignID string) (*esiapi.MilitaryCampaignsDetail, error)
 }
 
 type GetMilitaryCampaignInput struct {
@@ -91,9 +100,19 @@ type GetMilitaryCampaignInput struct {
 }
 type GetMilitaryCampaignOutput = MilitaryCampaign
 
-func getMilitaryCampaignHandler(version string) mcpsdk.ToolHandlerFor[GetMilitaryCampaignInput, GetMilitaryCampaignOutput] {
+// AddGetMilitaryCampaign registers get_military_campaign. open builds the ESI client; any client with the
+// militaryCampaignDetailESI methods will do.
+func AddGetMilitaryCampaign[C militaryCampaignDetailESI](s *mcpsdk.Server, open func() C) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_military_campaign",
+		Description: "Get one military campaign's state, progress, and start/finish times (public data, no character required).",
+	}, getMilitaryCampaignHandler(open))
+}
+
+func getMilitaryCampaignHandler[C militaryCampaignDetailESI](open func() C) mcpsdk.ToolHandlerFor[GetMilitaryCampaignInput, GetMilitaryCampaignOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetMilitaryCampaignInput) (*mcpsdk.CallToolResult, GetMilitaryCampaignOutput, error) {
-		c, err := getMilitaryCampaign(ctx, sso.UserAgent(version), in.CampaignID)
+		client := open()
+		c, err := client.MilitaryCampaignDetail(ctx, in.CampaignID)
 		if err != nil {
 			return nil, GetMilitaryCampaignOutput{}, fmt.Errorf("get military campaign: %w", err)
 		}
@@ -103,8 +122,9 @@ func getMilitaryCampaignHandler(version string) mcpsdk.ToolHandlerFor[GetMilitar
 
 // --- list_military_campaign_objectives (public, cursor-paginated) ---
 
-var listMilitaryCampaignObjectives = func(ctx context.Context, userAgent, campaignID, after, before string, limit int64) ([]esiapi.MilitaryCampaignsObjectivesDetailObjective, *esiapi.Cursor, error) {
-	return esi.NewPublicClient(userAgent).MilitaryCampaignObjectives(ctx, campaignID, after, before, limit)
+// militaryCampaignObjectivesESI is the ESI call list_military_campaign_objectives makes.
+type militaryCampaignObjectivesESI interface {
+	MilitaryCampaignObjectives(ctx context.Context, campaignID, after, before string, limit int64) ([]esiapi.MilitaryCampaignsObjectivesDetailObjective, *esiapi.Cursor, error)
 }
 
 type ListMilitaryCampaignObjectivesInput struct {
@@ -120,9 +140,19 @@ type ListMilitaryCampaignObjectivesOutput struct {
 	NextBefore *string             `json:"nextBefore,omitempty"`
 }
 
-func listMilitaryCampaignObjectivesHandler(version string) mcpsdk.ToolHandlerFor[ListMilitaryCampaignObjectivesInput, ListMilitaryCampaignObjectivesOutput] {
+// AddListMilitaryCampaignObjectives registers list_military_campaign_objectives. open builds the ESI client; any client with the
+// militaryCampaignObjectivesESI methods will do.
+func AddListMilitaryCampaignObjectives[C militaryCampaignObjectivesESI](s *mcpsdk.Server, open func() C) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_military_campaign_objectives",
+		Description: "List a military campaign's objectives with progress and participant counts, cursor-paginated (public data, no character required).",
+	}, listMilitaryCampaignObjectivesHandler(open))
+}
+
+func listMilitaryCampaignObjectivesHandler[C militaryCampaignObjectivesESI](open func() C) mcpsdk.ToolHandlerFor[ListMilitaryCampaignObjectivesInput, ListMilitaryCampaignObjectivesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListMilitaryCampaignObjectivesInput) (*mcpsdk.CallToolResult, ListMilitaryCampaignObjectivesOutput, error) {
-		objectives, cursor, err := listMilitaryCampaignObjectives(ctx, sso.UserAgent(version), in.CampaignID, in.After, in.Before, in.Limit)
+		client := open()
+		objectives, cursor, err := client.MilitaryCampaignObjectives(ctx, in.CampaignID, in.After, in.Before, in.Limit)
 		if err != nil {
 			return nil, ListMilitaryCampaignObjectivesOutput{}, fmt.Errorf("list military campaign objectives: %w", err)
 		}
@@ -142,8 +172,9 @@ func listMilitaryCampaignObjectivesHandler(version string) mcpsdk.ToolHandlerFor
 
 // --- get_military_campaign_objective (public) ---
 
-var getMilitaryCampaignObjective = func(ctx context.Context, userAgent, campaignID, objectiveID string) (*esiapi.MilitaryCampaignsObjectivesDetail, error) {
-	return esi.NewPublicClient(userAgent).MilitaryCampaignObjectiveDetail(ctx, campaignID, objectiveID)
+// militaryCampaignObjectiveDetailESI is the ESI call get_military_campaign_objective makes.
+type militaryCampaignObjectiveDetailESI interface {
+	MilitaryCampaignObjectiveDetail(ctx context.Context, campaignID, objectiveID string) (*esiapi.MilitaryCampaignsObjectivesDetail, error)
 }
 
 type GetMilitaryCampaignObjectiveInput struct {
@@ -161,9 +192,19 @@ type GetMilitaryCampaignObjectiveOutput struct {
 	Finished     *time.Time                    `json:"finished,omitempty"`
 }
 
-func getMilitaryCampaignObjectiveHandler(version string) mcpsdk.ToolHandlerFor[GetMilitaryCampaignObjectiveInput, GetMilitaryCampaignObjectiveOutput] {
+// AddGetMilitaryCampaignObjective registers get_military_campaign_objective. open builds the ESI client; any client with the
+// militaryCampaignObjectiveDetailESI methods will do.
+func AddGetMilitaryCampaignObjective[C militaryCampaignObjectiveDetailESI](s *mcpsdk.Server, open func() C) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_military_campaign_objective",
+		Description: "Get one military campaign objective's state, progress, and participant counts (public data, no character required).",
+	}, getMilitaryCampaignObjectiveHandler(open))
+}
+
+func getMilitaryCampaignObjectiveHandler[C militaryCampaignObjectiveDetailESI](open func() C) mcpsdk.ToolHandlerFor[GetMilitaryCampaignObjectiveInput, GetMilitaryCampaignObjectiveOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetMilitaryCampaignObjectiveInput) (*mcpsdk.CallToolResult, GetMilitaryCampaignObjectiveOutput, error) {
-		o, err := getMilitaryCampaignObjective(ctx, sso.UserAgent(version), in.CampaignID, in.ObjectiveID)
+		client := open()
+		o, err := client.MilitaryCampaignObjectiveDetail(ctx, in.CampaignID, in.ObjectiveID)
 		if err != nil {
 			return nil, GetMilitaryCampaignObjectiveOutput{}, fmt.Errorf("get military campaign objective: %w", err)
 		}
@@ -177,12 +218,9 @@ func getMilitaryCampaignObjectiveHandler(version string) mcpsdk.ToolHandlerFor[G
 
 // --- list_character_military_campaign_objectives (private, cursor-paginated) ---
 
-var listCharacterMilitaryCampaignObjectives = func(ctx context.Context, clientID string, characterID int32, userAgent, after, before string, limit int64) ([]esiapi.CharactersMilitaryCampaignsObjectivesParticipationCharacterobjective, *esiapi.Cursor, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, nil, fmt.Errorf("build ESI client: %w", err)
-	}
-	return client.CharacterMilitaryCampaignObjectives(ctx, after, before, limit)
+// characterMilitaryCampaignObjectivesESI is the ESI call list_character_military_campaign_objectives makes.
+type characterMilitaryCampaignObjectivesESI interface {
+	CharacterMilitaryCampaignObjectives(ctx context.Context, after, before string, limit int64) ([]esiapi.CharactersMilitaryCampaignsObjectivesParticipationCharacterobjective, *esiapi.Cursor, error)
 }
 
 type ListCharacterMilitaryCampaignObjectivesInput struct {
@@ -198,7 +236,16 @@ type ListCharacterMilitaryCampaignObjectivesOutput struct {
 	NextBefore  *string                      `json:"nextBefore,omitempty"`
 }
 
-func listCharacterMilitaryCampaignObjectivesHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCharacterMilitaryCampaignObjectivesInput, ListCharacterMilitaryCampaignObjectivesOutput] {
+// AddListCharacterMilitaryCampaignObjectives registers list_character_military_campaign_objectives. open builds the ESI client; any client with the
+// characterMilitaryCampaignObjectivesESI methods will do.
+func AddListCharacterMilitaryCampaignObjectives[C characterMilitaryCampaignObjectivesESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_character_military_campaign_objectives",
+		Description: "List the military campaign objectives a logged-in character has participated in, with contribution and commitment, cursor-paginated.",
+	}, listCharacterMilitaryCampaignObjectivesHandler(open, store))
+}
+
+func listCharacterMilitaryCampaignObjectivesHandler[C characterMilitaryCampaignObjectivesESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListCharacterMilitaryCampaignObjectivesInput, ListCharacterMilitaryCampaignObjectivesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterMilitaryCampaignObjectivesInput) (*mcpsdk.CallToolResult, ListCharacterMilitaryCampaignObjectivesOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -207,7 +254,11 @@ func listCharacterMilitaryCampaignObjectivesHandler(version, clientID string, st
 		if !found {
 			return nil, ListCharacterMilitaryCampaignObjectivesOutput{}, fmt.Errorf("list character military campaign objectives for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		objectives, cursor, err := listCharacterMilitaryCampaignObjectives(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.After, in.Before, in.Limit)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCharacterMilitaryCampaignObjectivesOutput{}, fmt.Errorf("build ESI client: %w", err)
+		}
+		objectives, cursor, err := client.CharacterMilitaryCampaignObjectives(ctx, in.After, in.Before, in.Limit)
 		if err != nil {
 			return nil, ListCharacterMilitaryCampaignObjectivesOutput{}, fmt.Errorf("list character military campaign objectives: %w", err)
 		}
@@ -226,12 +277,9 @@ func listCharacterMilitaryCampaignObjectivesHandler(version, clientID string, st
 
 // --- get_character_military_campaign_objective_participation (private) ---
 
-var getCharacterMilitaryCampaignObjectiveParticipation = func(ctx context.Context, clientID string, characterID int32, userAgent, objectiveID string) (*esiapi.CharactersMilitaryCampaignsObjectivesParticipation, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
-	return client.CharacterMilitaryCampaignObjectiveParticipation(ctx, objectiveID)
+// characterMilitaryCampaignObjectiveParticipationESI is the ESI call get_character_military_campaign_objective_participation makes.
+type characterMilitaryCampaignObjectiveParticipationESI interface {
+	CharacterMilitaryCampaignObjectiveParticipation(ctx context.Context, objectiveID string) (*esiapi.CharactersMilitaryCampaignsObjectivesParticipation, error)
 }
 
 type GetCharacterMilitaryCampaignObjectiveParticipationInput struct {
@@ -247,7 +295,16 @@ type GetCharacterMilitaryCampaignObjectiveParticipationOutput struct {
 	LastModified time.Time `json:"lastModified"`
 }
 
-func getCharacterMilitaryCampaignObjectiveParticipationHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetCharacterMilitaryCampaignObjectiveParticipationInput, GetCharacterMilitaryCampaignObjectiveParticipationOutput] {
+// AddGetCharacterMilitaryCampaignObjectiveParticipation registers get_character_military_campaign_objective_participation. open builds the ESI client; any client with the
+// characterMilitaryCampaignObjectiveParticipationESI methods will do.
+func AddGetCharacterMilitaryCampaignObjectiveParticipation[C characterMilitaryCampaignObjectiveParticipationESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_character_military_campaign_objective_participation",
+		Description: "Get a logged-in character's contribution to and commitment status in one military campaign objective.",
+	}, getCharacterMilitaryCampaignObjectiveParticipationHandler(open, store))
+}
+
+func getCharacterMilitaryCampaignObjectiveParticipationHandler[C characterMilitaryCampaignObjectiveParticipationESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[GetCharacterMilitaryCampaignObjectiveParticipationInput, GetCharacterMilitaryCampaignObjectiveParticipationOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterMilitaryCampaignObjectiveParticipationInput) (*mcpsdk.CallToolResult, GetCharacterMilitaryCampaignObjectiveParticipationOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -256,7 +313,11 @@ func getCharacterMilitaryCampaignObjectiveParticipationHandler(version, clientID
 		if !found {
 			return nil, GetCharacterMilitaryCampaignObjectiveParticipationOutput{}, fmt.Errorf("get character military campaign objective participation for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		p, err := getCharacterMilitaryCampaignObjectiveParticipation(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.ObjectiveID)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, GetCharacterMilitaryCampaignObjectiveParticipationOutput{}, fmt.Errorf("build ESI client: %w", err)
+		}
+		p, err := client.CharacterMilitaryCampaignObjectiveParticipation(ctx, in.ObjectiveID)
 		if err != nil {
 			return nil, GetCharacterMilitaryCampaignObjectiveParticipationOutput{}, fmt.Errorf("get character military campaign objective participation: %w", err)
 		}

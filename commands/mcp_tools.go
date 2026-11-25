@@ -64,4 +64,10 @@ func addConvertedTools(s *mcpsdk.Server, d toolDeps) {
 	addFleetTools(s, d)
 	addMailTools(s, d)
 	addUserInterfaceTools(s, d)
+	addWalletTools(s, d)
+	addFreelanceJobTools(s, d)
+	addWarTools(s, d)
+	addMilitaryCampaignTools(s, d)
+	addCosmeticsTools(s, d)
+	addParagonHubTools(s, d)
 }

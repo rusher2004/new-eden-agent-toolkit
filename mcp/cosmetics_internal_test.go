@@ -12,18 +12,46 @@ import (
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 )
 
+// openCosmeticsFake and openCosmeticsPubFake adapt a fake to the openers the handlers take.
+func openCosmeticsFake[C any](c C) func(context.Context, int32) (C, error) {
+	return func(context.Context, int32) (C, error) { return c, nil }
+}
+
+func openCosmeticsPubFake[C any](c C) func() C {
+	return func() C { return c }
+}
+
+// fakeCharacterSkinrLicensesESI fakes the ESI call behind listCharacterSkinrLicensesHandler.
+type fakeCharacterSkinrLicensesESI func(ctx context.Context) ([]esiapi.CharactersCosmeticsSkinrItem, error)
+
+func (f fakeCharacterSkinrLicensesESI) CharacterSkinrLicenses(ctx context.Context) ([]esiapi.CharactersCosmeticsSkinrItem, error) {
+	return f(ctx)
+}
+
+// fakeCharacterSkinrComponentLicensesESI fakes the ESI call behind listCharacterSkinrComponentLicensesHandler.
+type fakeCharacterSkinrComponentLicensesESI func(ctx context.Context) ([]esiapi.CharactersCosmeticsSkinrComponentsItem, error)
+
+func (f fakeCharacterSkinrComponentLicensesESI) CharacterSkinrComponentLicenses(ctx context.Context) ([]esiapi.CharactersCosmeticsSkinrComponentsItem, error) {
+	return f(ctx)
+}
+
+// fakeSkinrDetailESI fakes the ESI call behind getSkinrHandler.
+type fakeSkinrDetailESI func(ctx context.Context, skinrID string) (*esiapi.CosmeticsSkinr, error)
+
+func (f fakeSkinrDetailESI) SkinrDetail(ctx context.Context, skinrID string) (*esiapi.CosmeticsSkinr, error) {
+	return f(ctx, skinrID)
+}
+
 //go:fix inline
 func ptr[T any](v T) *T { return new(v) }
 
 func TestListCharacterSkinrLicensesHandler_MapsFields(t *testing.T) {
 	store := storeWithCharacter(t)
-	orig := listCharacterSkinrLicenses
-	t.Cleanup(func() { listCharacterSkinrLicenses = orig })
-	listCharacterSkinrLicenses = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]esiapi.CharactersCosmeticsSkinrItem, error) {
+	listCharacterSkinrLicensesFake := fakeCharacterSkinrLicensesESI(func(ctx context.Context) ([]esiapi.CharactersCosmeticsSkinrItem, error) {
 		return []esiapi.CharactersCosmeticsSkinrItem{{SkinrId: "abc", Activated: true, Unactivated: 2}}, nil
-	}
+	})
 
-	_, out, err := listCharacterSkinrLicensesHandler("v1", "client-id", store)(context.Background(), nil, ListCharacterSkinrLicensesInput{CharacterID: 7})
+	_, out, err := listCharacterSkinrLicensesHandler(openCosmeticsFake[characterSkinrLicensesESI](listCharacterSkinrLicensesFake), store)(context.Background(), nil, ListCharacterSkinrLicensesInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
@@ -35,14 +63,12 @@ func TestListCharacterSkinrLicensesHandler_MapsFields(t *testing.T) {
 func TestListCharacterSkinrLicensesHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
-	orig := listCharacterSkinrLicenses
-	t.Cleanup(func() { listCharacterSkinrLicenses = orig })
-	listCharacterSkinrLicenses = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]esiapi.CharactersCosmeticsSkinrItem, error) {
+	listCharacterSkinrLicensesFake := fakeCharacterSkinrLicensesESI(func(ctx context.Context) ([]esiapi.CharactersCosmeticsSkinrItem, error) {
 		t.Fatal("listCharacterSkinrLicenses should not be called for an unknown character")
 		return nil, nil
-	}
+	})
 
-	_, _, err := listCharacterSkinrLicensesHandler("v1", "client-id", store)(context.Background(), nil, ListCharacterSkinrLicensesInput{CharacterID: 999})
+	_, _, err := listCharacterSkinrLicensesHandler(openCosmeticsFake[characterSkinrLicensesESI](listCharacterSkinrLicensesFake), store)(context.Background(), nil, ListCharacterSkinrLicensesInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
 	}
@@ -50,19 +76,19 @@ func TestListCharacterSkinrLicensesHandler_UnknownCharacter(t *testing.T) {
 
 func TestListCharacterSkinrComponentLicensesHandler_FlattensRunsAndEnrichesNames(t *testing.T) {
 	store := storeWithCharacter(t)
-	origList, origNames := listCharacterSkinrComponentLicenses, resolveSkinrComponentNames
-	t.Cleanup(func() { listCharacterSkinrComponentLicenses, resolveSkinrComponentNames = origList, origNames })
-	listCharacterSkinrComponentLicenses = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]esiapi.CharactersCosmeticsSkinrComponentsItem, error) {
+	origNames := resolveSkinrComponentNames
+	t.Cleanup(func() { resolveSkinrComponentNames = origNames })
+	listCharacterSkinrComponentLicensesFake := fakeCharacterSkinrComponentLicensesESI(func(ctx context.Context) ([]esiapi.CharactersCosmeticsSkinrComponentsItem, error) {
 		return []esiapi.CharactersCosmeticsSkinrComponentsItem{
 			{ComponentId: 1254, Type: "material", Runs: esiapi.CharactersCosmeticsSkinrComponentsItemRuns{Remaining: &esiapi.Remaining{Remaining: new(int64(3))}}},
 			{ComponentId: 1328, Type: "pattern", Runs: esiapi.CharactersCosmeticsSkinrComponentsItemRuns{Unlimited: &esiapi.Unlimited{Unlimited: new(true)}}},
 		}, nil
-	}
+	})
 	resolveSkinrComponentNames = func(ctx context.Context, sdeStore skinrComponentNameCache, userAgent string, ids []int64) map[int64]string {
 		return map[int64]string{1254: "Charcoal Covenant Satin"} // 1328 deliberately unresolved
 	}
 
-	_, out, err := listCharacterSkinrComponentLicensesHandler("v1", "client-id", store, nil)(context.Background(), nil, ListCharacterSkinrComponentLicensesInput{CharacterID: 7})
+	_, out, err := listCharacterSkinrComponentLicensesHandler("v1", openCosmeticsFake[characterSkinrComponentLicensesESI](listCharacterSkinrComponentLicensesFake), store, nil)(context.Background(), nil, ListCharacterSkinrComponentLicensesInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
@@ -78,11 +104,11 @@ func TestListCharacterSkinrComponentLicensesHandler_FlattensRunsAndEnrichesNames
 }
 
 func TestGetSkinrHandler_FlattensSlotsAndEnriches(t *testing.T) {
-	origGet, origTypes, origSlots, origComponents := getSkinr, resolveTypeNames, resolveSkinrSlotNames, resolveSkinrComponentNames
+	origTypes, origSlots, origComponents := resolveTypeNames, resolveSkinrSlotNames, resolveSkinrComponentNames
 	t.Cleanup(func() {
-		getSkinr, resolveTypeNames, resolveSkinrSlotNames, resolveSkinrComponentNames = origGet, origTypes, origSlots, origComponents
+		resolveTypeNames, resolveSkinrSlotNames, resolveSkinrComponentNames = origTypes, origSlots, origComponents
 	})
-	getSkinr = func(ctx context.Context, userAgent, skinrID string) (*esiapi.CosmeticsSkinr, error) {
+	getSkinrFake := fakeSkinrDetailESI(func(ctx context.Context, skinrID string) (*esiapi.CosmeticsSkinr, error) {
 		return &esiapi.CosmeticsSkinr{
 			Id: skinrID, Name: "Semper Fi", Line: new("Combat"), CreatorId: 2119410889, ShipTypeId: 78576,
 			Tier: esiapi.CosmeticsSkinrTier{Level: 13},
@@ -102,7 +128,7 @@ func TestGetSkinrHandler_FlattensSlotsAndEnriches(t *testing.T) {
 				}}}},
 			}},
 		}, nil
-	}
+	})
 	resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
 		return map[int64]string{78576: "Some Ship"}
 	}
@@ -113,7 +139,7 @@ func TestGetSkinrHandler_FlattensSlotsAndEnriches(t *testing.T) {
 		return map[int64]string{1254: "Charcoal Covenant Satin", 1328: "Lines of Convergence"}
 	}
 
-	_, out, err := getSkinrHandler("v1", nil)(context.Background(), nil, GetSkinrInput{SkinrID: "381156f5"})
+	_, out, err := getSkinrHandler("v1", openCosmeticsPubFake[skinrDetailESI](getSkinrFake), nil)(context.Background(), nil, GetSkinrInput{SkinrID: "381156f5"})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
@@ -141,12 +167,35 @@ func TestGetSkinrHandler_FlattensSlotsAndEnriches(t *testing.T) {
 }
 
 func TestGetSkinrHandler_PropagatesError(t *testing.T) {
-	orig := getSkinr
-	t.Cleanup(func() { getSkinr = orig })
-	getSkinr = func(ctx context.Context, userAgent, skinrID string) (*esiapi.CosmeticsSkinr, error) {
+	getSkinrFake := fakeSkinrDetailESI(func(ctx context.Context, skinrID string) (*esiapi.CosmeticsSkinr, error) {
 		return nil, errors.New("boom")
-	}
-	if _, _, err := getSkinrHandler("v1", nil)(context.Background(), nil, GetSkinrInput{SkinrID: "x"}); err == nil {
+	})
+	if _, _, err := getSkinrHandler("v1", openCosmeticsPubFake[skinrDetailESI](getSkinrFake), nil)(context.Background(), nil, GetSkinrInput{SkinrID: "x"}); err == nil {
 		t.Fatal("handler returned nil error, want propagated error")
+	}
+}
+
+// TestCosmeticsPrivateHandlers_PropagateOpenError checks the authenticated handlers report a failed ESI client build,
+// wrapped so errors.Is still finds the cause.
+func TestCosmeticsPrivateHandlers_PropagateOpenError(t *testing.T) {
+	store := storeWithCharacter(t)
+	ctx := context.Background()
+	errOpen := errors.New("open failed")
+
+	for name, call := range map[string]func() error{
+		"list_character_skinr_licenses": func() error {
+			open := func(context.Context, int32) (characterSkinrLicensesESI, error) { return nil, errOpen }
+			_, _, err := listCharacterSkinrLicensesHandler(open, store)(ctx, nil, ListCharacterSkinrLicensesInput{CharacterID: 7})
+			return err
+		},
+		"list_character_skinr_component_licenses": func() error {
+			open := func(context.Context, int32) (characterSkinrComponentLicensesESI, error) { return nil, errOpen }
+			_, _, err := listCharacterSkinrComponentLicensesHandler("v1", open, store, nil)(ctx, nil, ListCharacterSkinrComponentLicensesInput{CharacterID: 7})
+			return err
+		},
+	} {
+		if err := call(); !errors.Is(err, errOpen) {
+			t.Errorf("%s: err = %v, want wrapping errOpen", name, err)
+		}
 	}
 }
