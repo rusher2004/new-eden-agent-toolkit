@@ -7,6 +7,8 @@ import (
 
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/rusher2004/new-eden-agent-toolkit/character"
 )
 
 // --- Public: get_character ---
@@ -262,16 +264,7 @@ func getCharacterPortraitHandler[C characterPortraitESI](open func() C) mcpsdk.T
 // file: with 10 private tools sharing the same check, duplicating the loop 10 times crosses the
 // DRY threshold that made sense for smaller batches.
 func characterExists(store configLoader, characterID int32) (bool, error) {
-	cfg, err := store.Load()
-	if err != nil {
-		return false, fmt.Errorf("load config: %w", err)
-	}
-	for _, c := range cfg.Characters {
-		if c.ID == characterID {
-			return true, nil
-		}
-	}
-	return false, nil
+	return character.Known(store, characterID)
 }
 
 // --- Private: list_character_agents_research ---

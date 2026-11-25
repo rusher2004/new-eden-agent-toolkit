@@ -2,17 +2,17 @@ package mcp
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/rusher2004/new-eden-agent-toolkit/character"
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 )
 
 // ErrCharacterNotFound is returned (wrapped) when remove_character is
 // called with a character ID that isn't in the local config.
-var ErrCharacterNotFound = errors.New("character not found")
+var ErrCharacterNotFound = character.ErrNotFound
 
 // RemoveCharacterInput is remove_character's tool input.
 type RemoveCharacterInput struct {
