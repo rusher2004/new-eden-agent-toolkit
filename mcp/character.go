@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
@@ -79,8 +80,13 @@ type CharacterAffiliation struct {
 	FactionName   string `json:"factionName,omitempty"`
 }
 
-var getCharacterAffiliations = func(ctx context.Context, userAgent string, characterIDs []int64) ([]CharacterAffiliation, error) {
-	client := esi.NewPublicClient(userAgent)
+// characterAffiliationsESI is the public ESI call get_character_affiliations
+// makes; the planner family reads affiliations through it too.
+type characterAffiliationsESI interface {
+	CharacterAffiliations(ctx context.Context, characterIDs []int64) ([]esiapi.CharactersAffiliationPostInner, error)
+}
+
+func getCharacterAffiliations(ctx context.Context, client characterAffiliationsESI, characterIDs []int64) ([]CharacterAffiliation, error) {
 	affs, err := client.CharacterAffiliations(ctx, characterIDs)
 	if err != nil {
 		return nil, err
@@ -99,9 +105,18 @@ type GetCharacterAffiliationsOutput struct {
 	Affiliations []CharacterAffiliation `json:"affiliations"`
 }
 
-func getCharacterAffiliationsHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetCharacterAffiliationsInput, GetCharacterAffiliationsOutput] {
+// AddGetCharacterAffiliations registers get_character_affiliations. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddGetCharacterAffiliations[C characterAffiliationsESI](s *mcpsdk.Server, userAgent string, open func() C, sdeStore factionNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_character_affiliations",
+		Description: "Resolve a set of character IDs to their current corporation/alliance/faction (public data, no character required).",
+	}, getCharacterAffiliationsHandler(userAgent, open, sdeStore))
+}
+
+func getCharacterAffiliationsHandler[C characterAffiliationsESI](userAgent string, open func() C, sdeStore factionNameCache) mcpsdk.ToolHandlerFor[GetCharacterAffiliationsInput, GetCharacterAffiliationsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterAffiliationsInput) (*mcpsdk.CallToolResult, GetCharacterAffiliationsOutput, error) {
-		affs, err := getCharacterAffiliations(ctx, sso.UserAgent(version), in.CharacterIDs)
+		affs, err := getCharacterAffiliations(ctx, open(), in.CharacterIDs)
 		if err != nil {
 			return nil, GetCharacterAffiliationsOutput{}, fmt.Errorf("get character affiliations: %w", err)
 		}
@@ -111,7 +126,7 @@ func getCharacterAffiliationsHandler(version string, sdeStore SDEStore) mcpsdk.T
 				factionIDs = append(factionIDs, *a.FactionID)
 			}
 		}
-		factionNames := resolveFactionNames(ctx, sdeStore, sso.UserAgent(version), factionIDs)
+		factionNames := resolveFactionNames(ctx, sdeStore, userAgent, factionIDs)
 		for i := range affs {
 			if affs[i].FactionID != nil {
 				affs[i].FactionName = factionNames[*affs[i].FactionID]
@@ -289,11 +304,13 @@ type Blueprint struct {
 	TimeEfficiency     int64  `json:"timeEfficiency"`
 }
 
-var listCharacterBlueprints = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]Blueprint, int32, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, 0, fmt.Errorf("build ESI client: %w", err)
-	}
+// characterBlueprintsESI is the ESI call list_character_blueprints makes;
+// the planner family reads blueprints through it too.
+type characterBlueprintsESI interface {
+	CharacterBlueprints(ctx context.Context, page int32) ([]esiapi.CharactersCharacterIdBlueprintsGetInner, int32, error)
+}
+
+func listCharacterBlueprints(ctx context.Context, client characterBlueprintsESI, page int32) ([]Blueprint, int32, error) {
 	bps, totalPages, err := client.CharacterBlueprints(ctx, page)
 	if err != nil {
 		return nil, 0, err
@@ -316,7 +333,16 @@ type ListCharacterBlueprintsOutput struct {
 	Blueprints  []Blueprint `json:"blueprints"`
 }
 
-func listCharacterBlueprintsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCharacterBlueprintsInput, ListCharacterBlueprintsOutput] {
+// AddListCharacterBlueprints registers list_character_blueprints. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListCharacterBlueprints[C characterBlueprintsESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore typeNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_character_blueprints",
+		Description: "List a logged-in EVE Online character's blueprints.",
+	}, listCharacterBlueprintsHandler(userAgent, open, store, sdeStore))
+}
+
+func listCharacterBlueprintsHandler[C characterBlueprintsESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore typeNameCache) mcpsdk.ToolHandlerFor[ListCharacterBlueprintsInput, ListCharacterBlueprintsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterBlueprintsInput) (*mcpsdk.CallToolResult, ListCharacterBlueprintsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -325,7 +351,11 @@ func listCharacterBlueprintsHandler(version, clientID string, store ConfigStore,
 		if !found {
 			return nil, ListCharacterBlueprintsOutput{}, fmt.Errorf("list character blueprints for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		bps, totalPages, err := listCharacterBlueprints(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.Page)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCharacterBlueprintsOutput{}, fmt.Errorf("list character blueprints: %w", err)
+		}
+		bps, totalPages, err := listCharacterBlueprints(ctx, client, in.Page)
 		if err != nil {
 			return nil, ListCharacterBlueprintsOutput{}, fmt.Errorf("list character blueprints: %w", err)
 		}
@@ -333,7 +363,7 @@ func listCharacterBlueprintsHandler(version, clientID string, store ConfigStore,
 		for i, b := range bps {
 			ids[i] = b.TypeID
 		}
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		names := resolveTypeNames(ctx, sdeStore, userAgent, ids)
 		for i := range bps {
 			bps[i].TypeName = names[bps[i].TypeID]
 		}
@@ -354,11 +384,13 @@ type GetCharacterFatigueOutput struct {
 	LastUpdateDate        *time.Time `json:"lastUpdateDate,omitempty"`
 }
 
-var getCharacterFatigue = func(ctx context.Context, clientID string, characterID int32, userAgent string) (GetCharacterFatigueOutput, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return GetCharacterFatigueOutput{}, fmt.Errorf("build ESI client: %w", err)
-	}
+// characterFatigueESI is the ESI call get_character_fatigue makes; the
+// planner family reads fatigue through it too.
+type characterFatigueESI interface {
+	CharacterFatigue(ctx context.Context) (*esiapi.CharactersCharacterIdFatigueGet, error)
+}
+
+func getCharacterFatigue(ctx context.Context, client characterFatigueESI, characterID int32) (GetCharacterFatigueOutput, error) {
 	fatigue, err := client.CharacterFatigue(ctx)
 	if err != nil {
 		return GetCharacterFatigueOutput{}, err
@@ -370,7 +402,16 @@ type GetCharacterFatigueInput struct {
 	CharacterID int32 `json:"characterId" jsonschema:"the character ID to check"`
 }
 
-func getCharacterFatigueHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetCharacterFatigueInput, GetCharacterFatigueOutput] {
+// AddGetCharacterFatigue registers get_character_fatigue. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddGetCharacterFatigue[C characterFatigueESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_character_fatigue",
+		Description: "Get a logged-in EVE Online character's jump fatigue state.",
+	}, getCharacterFatigueHandler(open, store))
+}
+
+func getCharacterFatigueHandler[C characterFatigueESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[GetCharacterFatigueInput, GetCharacterFatigueOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterFatigueInput) (*mcpsdk.CallToolResult, GetCharacterFatigueOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -379,7 +420,11 @@ func getCharacterFatigueHandler(version, clientID string, store ConfigStore) mcp
 		if !found {
 			return nil, GetCharacterFatigueOutput{}, fmt.Errorf("get character fatigue for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		out, err := getCharacterFatigue(ctx, clientID, in.CharacterID, sso.UserAgent(version))
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, GetCharacterFatigueOutput{}, fmt.Errorf("get character fatigue: %w", err)
+		}
+		out, err := getCharacterFatigue(ctx, client, in.CharacterID)
 		if err != nil {
 			return nil, GetCharacterFatigueOutput{}, fmt.Errorf("get character fatigue: %w", err)
 		}

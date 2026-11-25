@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
@@ -28,11 +29,13 @@ type ContactLabel struct {
 
 // --- list_character_contacts ---
 
-var listCharacterContacts = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]Contact, int32, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, 0, fmt.Errorf("build ESI client: %w", err)
-	}
+// characterContactsESI is the ESI call list_character_contacts makes; the
+// planner family reads standings through it too.
+type characterContactsESI interface {
+	CharacterContacts(ctx context.Context, page int32) ([]esiapi.CharactersCharacterIdContactsGetInner, int32, error)
+}
+
+func listCharacterContacts(ctx context.Context, client characterContactsESI, page int32) ([]Contact, int32, error) {
 	contacts, totalPages, err := client.CharacterContacts(ctx, page)
 	if err != nil {
 		return nil, 0, err
@@ -55,7 +58,16 @@ type ListCharacterContactsOutput struct {
 	Contacts    []Contact `json:"contacts"`
 }
 
-func listCharacterContactsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCharacterContactsInput, ListCharacterContactsOutput] {
+// AddListCharacterContacts registers list_character_contacts. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListCharacterContacts[C characterContactsESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_character_contacts",
+		Description: "List a logged-in EVE Online character's contacts.",
+	}, listCharacterContactsHandler(open, store))
+}
+
+func listCharacterContactsHandler[C characterContactsESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListCharacterContactsInput, ListCharacterContactsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterContactsInput) (*mcpsdk.CallToolResult, ListCharacterContactsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -64,7 +76,11 @@ func listCharacterContactsHandler(version, clientID string, store ConfigStore) m
 		if !found {
 			return nil, ListCharacterContactsOutput{}, fmt.Errorf("list character contacts for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		contacts, totalPages, err := listCharacterContacts(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.Page)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCharacterContactsOutput{}, fmt.Errorf("list character contacts: %w", err)
+		}
+		contacts, totalPages, err := listCharacterContacts(ctx, client, in.Page)
 		if err != nil {
 			return nil, ListCharacterContactsOutput{}, fmt.Errorf("list character contacts: %w", err)
 		}
@@ -121,11 +137,13 @@ func listCharacterContactLabelsHandler(version, clientID string, store ConfigSto
 
 // --- list_corporation_contacts ---
 
-var listCorporationContacts = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]Contact, int32, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, 0, fmt.Errorf("build ESI client: %w", err)
-	}
+// corporationContactsESI is the ESI call list_corporation_contacts makes;
+// the planner family reads standings through it too.
+type corporationContactsESI interface {
+	CorporationContacts(ctx context.Context, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdContactsGetInner, int32, error)
+}
+
+func listCorporationContacts(ctx context.Context, client corporationContactsESI, corporationID int64, page int32) ([]Contact, int32, error) {
 	contacts, totalPages, err := client.CorporationContacts(ctx, corporationID, page)
 	if err != nil {
 		return nil, 0, err
@@ -150,7 +168,16 @@ type ListCorporationContactsOutput struct {
 	Contacts      []Contact `json:"contacts"`
 }
 
-func listCorporationContactsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationContactsInput, ListCorporationContactsOutput] {
+// AddListCorporationContacts registers list_corporation_contacts. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListCorporationContacts[C corporationContactsESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_corporation_contacts",
+		Description: "List a corporation's contacts, using a logged-in character's roles to authorize.",
+	}, listCorporationContactsHandler(open, store))
+}
+
+func listCorporationContactsHandler[C corporationContactsESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListCorporationContactsInput, ListCorporationContactsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationContactsInput) (*mcpsdk.CallToolResult, ListCorporationContactsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -159,7 +186,11 @@ func listCorporationContactsHandler(version, clientID string, store ConfigStore)
 		if !found {
 			return nil, ListCorporationContactsOutput{}, fmt.Errorf("list corporation contacts for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		contacts, totalPages, err := listCorporationContacts(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.Page)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCorporationContactsOutput{}, fmt.Errorf("list corporation contacts: %w", err)
+		}
+		contacts, totalPages, err := listCorporationContacts(ctx, client, in.CorporationID, in.Page)
 		if err != nil {
 			return nil, ListCorporationContactsOutput{}, fmt.Errorf("list corporation contacts: %w", err)
 		}
@@ -218,11 +249,13 @@ func listCorporationContactLabelsHandler(version, clientID string, store ConfigS
 
 // --- list_alliance_contacts ---
 
-var listAllianceContacts = func(ctx context.Context, clientID string, characterID int32, userAgent string, allianceID int64, page int32) ([]Contact, int32, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, 0, fmt.Errorf("build ESI client: %w", err)
-	}
+// allianceContactsESI is the ESI call list_alliance_contacts makes; the
+// planner family reads standings through it too.
+type allianceContactsESI interface {
+	AllianceContacts(ctx context.Context, allianceID int64, page int32) ([]esiapi.AlliancesAllianceIdContactsGetInner, int32, error)
+}
+
+func listAllianceContacts(ctx context.Context, client allianceContactsESI, allianceID int64, page int32) ([]Contact, int32, error) {
 	contacts, totalPages, err := client.AllianceContacts(ctx, allianceID, page)
 	if err != nil {
 		return nil, 0, err
@@ -247,7 +280,16 @@ type ListAllianceContactsOutput struct {
 	Contacts    []Contact `json:"contacts"`
 }
 
-func listAllianceContactsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListAllianceContactsInput, ListAllianceContactsOutput] {
+// AddListAllianceContacts registers list_alliance_contacts. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListAllianceContacts[C allianceContactsESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_alliance_contacts",
+		Description: "List an alliance's contacts, using a logged-in character's roles to authorize.",
+	}, listAllianceContactsHandler(open, store))
+}
+
+func listAllianceContactsHandler[C allianceContactsESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListAllianceContactsInput, ListAllianceContactsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListAllianceContactsInput) (*mcpsdk.CallToolResult, ListAllianceContactsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -256,7 +298,11 @@ func listAllianceContactsHandler(version, clientID string, store ConfigStore) mc
 		if !found {
 			return nil, ListAllianceContactsOutput{}, fmt.Errorf("list alliance contacts for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		contacts, totalPages, err := listAllianceContacts(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.AllianceID, in.Page)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListAllianceContactsOutput{}, fmt.Errorf("list alliance contacts: %w", err)
+		}
+		contacts, totalPages, err := listAllianceContacts(ctx, client, in.AllianceID, in.Page)
 		if err != nil {
 			return nil, ListAllianceContactsOutput{}, fmt.Errorf("list alliance contacts: %w", err)
 		}

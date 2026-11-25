@@ -7,10 +7,11 @@ import (
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/rusher2004/new-eden-agent-toolkit/sso"
+
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
 // IndustryJob is shared by list_character_industry_jobs and list_corporation_industry_jobs --
@@ -72,11 +73,13 @@ func toIndustryJobFromCorporation(j esiapi.CorporationsCorporationIdIndustryJobs
 
 // --- list_character_industry_jobs (private) ---
 
-var listCharacterIndustryJobs = func(ctx context.Context, clientID string, characterID int32, userAgent string, includeCompleted bool) ([]esiapi.CharactersCharacterIdIndustryJobsGetInner, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
+// characterIndustryJobsESI is the ESI call list_character_industry_jobs
+// makes; the industry planning tools read jobs through it too.
+type characterIndustryJobsESI interface {
+	CharacterIndustryJobs(ctx context.Context, includeCompleted bool) ([]esiapi.CharactersCharacterIdIndustryJobsGetInner, error)
+}
+
+func listCharacterIndustryJobs(ctx context.Context, client characterIndustryJobsESI, includeCompleted bool) ([]esiapi.CharactersCharacterIdIndustryJobsGetInner, error) {
 	return client.CharacterIndustryJobs(ctx, includeCompleted)
 }
 
@@ -90,7 +93,23 @@ type ListCharacterIndustryJobsOutput struct {
 	Jobs             []IndustryJob `json:"jobs"`
 }
 
-func listCharacterIndustryJobsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCharacterIndustryJobsInput, ListCharacterIndustryJobsOutput] {
+// industryJobNameCache is the SDE lookups the industry job tools make: type
+// and station names.
+type industryJobNameCache interface {
+	typeNameCache
+	stationNameCache
+}
+
+// AddListCharacterIndustryJobs registers list_character_industry_jobs. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListCharacterIndustryJobs[C characterIndustryJobsESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore industryJobNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_character_industry_jobs",
+		Description: "List a logged-in EVE Online character's industry jobs.",
+	}, listCharacterIndustryJobsHandler(userAgent, open, store, sdeStore))
+}
+
+func listCharacterIndustryJobsHandler[C characterIndustryJobsESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore industryJobNameCache) mcpsdk.ToolHandlerFor[ListCharacterIndustryJobsInput, ListCharacterIndustryJobsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterIndustryJobsInput) (*mcpsdk.CallToolResult, ListCharacterIndustryJobsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -99,7 +118,11 @@ func listCharacterIndustryJobsHandler(version, clientID string, store ConfigStor
 		if !found {
 			return nil, ListCharacterIndustryJobsOutput{}, fmt.Errorf("list character industry jobs for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		jobs, err := listCharacterIndustryJobs(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.IncludeCompleted)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCharacterIndustryJobsOutput{}, fmt.Errorf("list character industry jobs: %w", err)
+		}
+		jobs, err := listCharacterIndustryJobs(ctx, client, in.IncludeCompleted)
 		if err != nil {
 			return nil, ListCharacterIndustryJobsOutput{}, fmt.Errorf("list character industry jobs: %w", err)
 		}
@@ -107,14 +130,14 @@ func listCharacterIndustryJobsHandler(version, clientID string, store ConfigStor
 		for i, j := range jobs {
 			out[i] = toIndustryJobFromCharacter(j)
 		}
-		enrichIndustryJobs(ctx, out, sdeStore, sso.UserAgent(version))
+		enrichIndustryJobs(ctx, out, sdeStore, userAgent)
 		stationIDs := make([]int64, 0, len(out))
 		for _, j := range out {
 			if j.StationID != 0 {
 				stationIDs = append(stationIDs, j.StationID)
 			}
 		}
-		stationNames := resolveStationNames(ctx, sdeStore, sso.UserAgent(version), stationIDs)
+		stationNames := resolveStationNames(ctx, sdeStore, userAgent, stationIDs)
 		for i := range out {
 			if out[i].StationID != 0 {
 				out[i].StationName = stationNames[out[i].StationID]
@@ -126,7 +149,7 @@ func listCharacterIndustryJobsHandler(version, clientID string, store ConfigStor
 
 // enrichIndustryJobs resolves BlueprintTypeName (always populated) and ProductTypeName (only when
 // ProductTypeID is non-nil) in place, sharing one resolveTypeNames batch across both fields.
-func enrichIndustryJobs(ctx context.Context, jobs []IndustryJob, sdeStore SDEStore, userAgent string) {
+func enrichIndustryJobs(ctx context.Context, jobs []IndustryJob, sdeStore typeNameCache, userAgent string) {
 	ids := make([]int64, 0, len(jobs)*2)
 	for _, j := range jobs {
 		ids = append(ids, j.BlueprintTypeID)
@@ -411,11 +434,13 @@ func getCorporationMiningObserverDetailHandler(version, clientID string, store C
 
 // --- list_corporation_industry_jobs (private, paginated) ---
 
-var listCorporationIndustryJobs = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, includeCompleted bool, page int32) ([]esiapi.CorporationsCorporationIdIndustryJobsGetInner, int32, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, 0, fmt.Errorf("build ESI client: %w", err)
-	}
+// corporationIndustryJobsESI is the ESI call list_corporation_industry_jobs
+// makes; the industry planning tools read jobs through it too.
+type corporationIndustryJobsESI interface {
+	CorporationIndustryJobs(ctx context.Context, corporationID int64, includeCompleted bool, page int32) ([]esiapi.CorporationsCorporationIdIndustryJobsGetInner, int32, error)
+}
+
+func listCorporationIndustryJobs(ctx context.Context, client corporationIndustryJobsESI, corporationID int64, includeCompleted bool, page int32) ([]esiapi.CorporationsCorporationIdIndustryJobsGetInner, int32, error) {
 	return client.CorporationIndustryJobs(ctx, corporationID, includeCompleted, page)
 }
 
@@ -434,7 +459,16 @@ type ListCorporationIndustryJobsOutput struct {
 	Jobs             []IndustryJob `json:"jobs"`
 }
 
-func listCorporationIndustryJobsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCorporationIndustryJobsInput, ListCorporationIndustryJobsOutput] {
+// AddListCorporationIndustryJobs registers list_corporation_industry_jobs. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListCorporationIndustryJobs[C corporationIndustryJobsESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore industryJobNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_corporation_industry_jobs",
+		Description: "List a corporation's industry jobs, using a logged-in character's roles to authorize.",
+	}, listCorporationIndustryJobsHandler(userAgent, open, store, sdeStore))
+}
+
+func listCorporationIndustryJobsHandler[C corporationIndustryJobsESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore industryJobNameCache) mcpsdk.ToolHandlerFor[ListCorporationIndustryJobsInput, ListCorporationIndustryJobsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationIndustryJobsInput) (*mcpsdk.CallToolResult, ListCorporationIndustryJobsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -443,7 +477,11 @@ func listCorporationIndustryJobsHandler(version, clientID string, store ConfigSt
 		if !found {
 			return nil, ListCorporationIndustryJobsOutput{}, fmt.Errorf("list corporation industry jobs for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		jobs, totalPages, err := listCorporationIndustryJobs(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.IncludeCompleted, in.Page)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCorporationIndustryJobsOutput{}, fmt.Errorf("list corporation industry jobs: %w", err)
+		}
+		jobs, totalPages, err := listCorporationIndustryJobs(ctx, client, in.CorporationID, in.IncludeCompleted, in.Page)
 		if err != nil {
 			return nil, ListCorporationIndustryJobsOutput{}, fmt.Errorf("list corporation industry jobs: %w", err)
 		}
@@ -451,7 +489,7 @@ func listCorporationIndustryJobsHandler(version, clientID string, store ConfigSt
 		for i, j := range jobs {
 			out[i] = toIndustryJobFromCorporation(j)
 		}
-		enrichIndustryJobs(ctx, out, sdeStore, sso.UserAgent(version))
+		enrichIndustryJobs(ctx, out, sdeStore, userAgent)
 		page := in.Page
 		if page <= 0 {
 			page = 1
@@ -537,8 +575,13 @@ type IndustrySystem struct {
 	CostIndices     []CostIndex `json:"costIndices"`
 }
 
-var listIndustrySystems = func(ctx context.Context, userAgent string) ([]esiapi.IndustrySystemsGetInner, error) {
-	client := esi.NewPublicClient(userAgent)
+// industrySystemsESI is the public ESI call list_industry_systems makes;
+// the industry planning tools read cost indices through it too.
+type industrySystemsESI interface {
+	IndustrySystems(ctx context.Context) ([]esiapi.IndustrySystemsGetInner, error)
+}
+
+func listIndustrySystems(ctx context.Context, client industrySystemsESI) ([]esiapi.IndustrySystemsGetInner, error) {
 	return client.IndustrySystems(ctx)
 }
 
@@ -547,9 +590,18 @@ type ListIndustrySystemsOutput struct {
 	Systems []IndustrySystem `json:"systems"`
 }
 
-func listIndustrySystemsHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListIndustrySystemsInput, ListIndustrySystemsOutput] {
+// AddListIndustrySystems registers list_industry_systems. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListIndustrySystems[C industrySystemsESI](s *mcpsdk.Server, userAgent string, open func() C, sdeStore systemNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_industry_systems",
+		Description: "List industry cost indices for every solar system (public data, no character required).",
+	}, listIndustrySystemsHandler(userAgent, open, sdeStore))
+}
+
+func listIndustrySystemsHandler[C industrySystemsESI](userAgent string, open func() C, sdeStore systemNameCache) mcpsdk.ToolHandlerFor[ListIndustrySystemsInput, ListIndustrySystemsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListIndustrySystemsInput) (*mcpsdk.CallToolResult, ListIndustrySystemsOutput, error) {
-		systems, err := listIndustrySystems(ctx, sso.UserAgent(version))
+		systems, err := listIndustrySystems(ctx, open())
 		if err != nil {
 			return nil, ListIndustrySystemsOutput{}, fmt.Errorf("list industry systems: %w", err)
 		}
@@ -565,7 +617,7 @@ func listIndustrySystemsHandler(version string, sdeStore SDEStore) mcpsdk.ToolHa
 		for i, s := range out {
 			systemIDs[i] = s.SolarSystemID
 		}
-		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), systemIDs)
+		systemNames := resolveSystemNames(ctx, sdeStore, userAgent, systemIDs)
 		for i := range out {
 			out[i].SolarSystemName = systemNames[out[i].SolarSystemID]
 		}

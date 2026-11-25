@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	"github.com/zalando/go-keyring"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
@@ -17,13 +18,11 @@ func TestListCharacterContactsHandler_ReturnsContacts(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCharacterContacts
-	t.Cleanup(func() { listCharacterContacts = orig })
-	listCharacterContacts = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]Contact, int32, error) {
-		return []Contact{{ContactID: 998878, Standing: 5.5}}, 2, nil
-	}
+	fake := fakeCharacterContactsESI{characterContacts: func(_ context.Context, page int32) ([]esiapi.CharactersCharacterIdContactsGetInner, int32, error) {
+		return []esiapi.CharactersCharacterIdContactsGetInner{{ContactId: 998878, Standing: 5.5}}, 2, nil
+	}}
 
-	handler := listCharacterContactsHandler("v1", "client-id", store)
+	handler := listCharacterContactsHandler(openNarrow[characterContactsESI](fake), store)
 	_, out, err := handler(context.Background(), nil, ListCharacterContactsInput{CharacterID: 7, Page: 1})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -40,14 +39,12 @@ func TestListCharacterContactsHandler_PropagatesError(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCharacterContacts
-	t.Cleanup(func() { listCharacterContacts = orig })
 	wantErr := errors.New("upstream failure")
-	listCharacterContacts = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]Contact, int32, error) {
+	fake := fakeCharacterContactsESI{characterContacts: func(_ context.Context, page int32) ([]esiapi.CharactersCharacterIdContactsGetInner, int32, error) {
 		return nil, 0, wantErr
-	}
+	}}
 
-	handler := listCharacterContactsHandler("v1", "client-id", store)
+	handler := listCharacterContactsHandler(openNarrow[characterContactsESI](fake), store)
 	_, _, err := handler(context.Background(), nil, ListCharacterContactsInput{CharacterID: 7})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -58,14 +55,7 @@ func TestListCharacterContactsHandler_UnknownCharacter_ReturnsErrCharacterNotFou
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := listCharacterContacts
-	t.Cleanup(func() { listCharacterContacts = orig })
-	listCharacterContacts = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]Contact, int32, error) {
-		t.Fatal("listCharacterContacts should not be called for an unknown character")
-		return nil, 0, nil
-	}
-
-	handler := listCharacterContactsHandler("v1", "client-id", store)
+	handler := listCharacterContactsHandler(noNarrow[characterContactsESI](t), store)
 	_, _, err := handler(context.Background(), nil, ListCharacterContactsInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -120,13 +110,11 @@ func TestListCorporationContactsHandler_ReturnsContacts(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationContacts
-	t.Cleanup(func() { listCorporationContacts = orig })
-	listCorporationContacts = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]Contact, int32, error) {
-		return []Contact{{ContactID: 998879}}, 2, nil
-	}
+	fake := fakeCorporationContactsESI{corporationContacts: func(_ context.Context, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdContactsGetInner, int32, error) {
+		return []esiapi.CorporationsCorporationIdContactsGetInner{{ContactId: 998879}}, 2, nil
+	}}
 
-	handler := listCorporationContactsHandler("v1", "client-id", store)
+	handler := listCorporationContactsHandler(openNarrow[corporationContactsESI](fake), store)
 	_, out, err := handler(context.Background(), nil, ListCorporationContactsInput{CharacterID: 7, CorporationID: 98000001, Page: 1})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -143,14 +131,12 @@ func TestListCorporationContactsHandler_PropagatesError(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationContacts
-	t.Cleanup(func() { listCorporationContacts = orig })
 	wantErr := errors.New("upstream failure")
-	listCorporationContacts = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]Contact, int32, error) {
+	fake := fakeCorporationContactsESI{corporationContacts: func(_ context.Context, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdContactsGetInner, int32, error) {
 		return nil, 0, wantErr
-	}
+	}}
 
-	handler := listCorporationContactsHandler("v1", "client-id", store)
+	handler := listCorporationContactsHandler(openNarrow[corporationContactsESI](fake), store)
 	_, _, err := handler(context.Background(), nil, ListCorporationContactsInput{CharacterID: 7, CorporationID: 98000001})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -161,14 +147,7 @@ func TestListCorporationContactsHandler_UnknownCharacter_ReturnsErrCharacterNotF
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := listCorporationContacts
-	t.Cleanup(func() { listCorporationContacts = orig })
-	listCorporationContacts = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]Contact, int32, error) {
-		t.Fatal("listCorporationContacts should not be called for an unknown character")
-		return nil, 0, nil
-	}
-
-	handler := listCorporationContactsHandler("v1", "client-id", store)
+	handler := listCorporationContactsHandler(noNarrow[corporationContactsESI](t), store)
 	_, _, err := handler(context.Background(), nil, ListCorporationContactsInput{CharacterID: 999, CorporationID: 98000001})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -223,13 +202,11 @@ func TestListAllianceContactsHandler_ReturnsContacts(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listAllianceContacts
-	t.Cleanup(func() { listAllianceContacts = orig })
-	listAllianceContacts = func(ctx context.Context, clientID string, characterID int32, userAgent string, allianceID int64, page int32) ([]Contact, int32, error) {
-		return []Contact{{ContactID: 998880, Standing: -5.0}}, 2, nil
-	}
+	fake := fakeAllianceContactsESI{allianceContacts: func(_ context.Context, allianceID int64, page int32) ([]esiapi.AlliancesAllianceIdContactsGetInner, int32, error) {
+		return []esiapi.AlliancesAllianceIdContactsGetInner{{ContactId: 998880, Standing: -5.0}}, 2, nil
+	}}
 
-	handler := listAllianceContactsHandler("v1", "client-id", store)
+	handler := listAllianceContactsHandler(openNarrow[allianceContactsESI](fake), store)
 	_, out, err := handler(context.Background(), nil, ListAllianceContactsInput{CharacterID: 7, AllianceID: 99000001, Page: 1})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -246,14 +223,12 @@ func TestListAllianceContactsHandler_PropagatesError(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listAllianceContacts
-	t.Cleanup(func() { listAllianceContacts = orig })
 	wantErr := errors.New("upstream failure")
-	listAllianceContacts = func(ctx context.Context, clientID string, characterID int32, userAgent string, allianceID int64, page int32) ([]Contact, int32, error) {
+	fake := fakeAllianceContactsESI{allianceContacts: func(_ context.Context, allianceID int64, page int32) ([]esiapi.AlliancesAllianceIdContactsGetInner, int32, error) {
 		return nil, 0, wantErr
-	}
+	}}
 
-	handler := listAllianceContactsHandler("v1", "client-id", store)
+	handler := listAllianceContactsHandler(openNarrow[allianceContactsESI](fake), store)
 	_, _, err := handler(context.Background(), nil, ListAllianceContactsInput{CharacterID: 7, AllianceID: 99000001})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -264,14 +239,7 @@ func TestListAllianceContactsHandler_UnknownCharacter_ReturnsErrCharacterNotFoun
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := listAllianceContacts
-	t.Cleanup(func() { listAllianceContacts = orig })
-	listAllianceContacts = func(ctx context.Context, clientID string, characterID int32, userAgent string, allianceID int64, page int32) ([]Contact, int32, error) {
-		t.Fatal("listAllianceContacts should not be called for an unknown character")
-		return nil, 0, nil
-	}
-
-	handler := listAllianceContactsHandler("v1", "client-id", store)
+	handler := listAllianceContactsHandler(noNarrow[allianceContactsESI](t), store)
 	_, _, err := handler(context.Background(), nil, ListAllianceContactsInput{CharacterID: 999, AllianceID: 99000001})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -441,5 +409,65 @@ func TestRemoveCharacterContactsHandler_UnknownCharacter_ReturnsErrCharacterNotF
 	_, _, err := handler(context.Background(), nil, RemoveCharacterContactsInput{CharacterID: 999, ContactIDs: []int64{998878}})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
+	}
+}
+
+// fakeCharacterContactsESI fakes characterContactsESI; a nil characterContacts fails as an unfaked call.
+type fakeCharacterContactsESI struct {
+	characterContacts func(ctx context.Context, page int32) ([]esiapi.CharactersCharacterIdContactsGetInner, int32, error)
+}
+
+func (f fakeCharacterContactsESI) CharacterContacts(ctx context.Context, page int32) ([]esiapi.CharactersCharacterIdContactsGetInner, int32, error) {
+	if f.characterContacts == nil {
+		return nil, 0, errNotFaked
+	}
+	return f.characterContacts(ctx, page)
+}
+
+// fakeCorporationContactsESI fakes corporationContactsESI; a nil corporationContacts fails as an unfaked call.
+type fakeCorporationContactsESI struct {
+	corporationContacts func(ctx context.Context, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdContactsGetInner, int32, error)
+}
+
+func (f fakeCorporationContactsESI) CorporationContacts(ctx context.Context, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdContactsGetInner, int32, error) {
+	if f.corporationContacts == nil {
+		return nil, 0, errNotFaked
+	}
+	return f.corporationContacts(ctx, corporationID, page)
+}
+
+// fakeAllianceContactsESI fakes allianceContactsESI; a nil allianceContacts fails as an unfaked call.
+type fakeAllianceContactsESI struct {
+	allianceContacts func(ctx context.Context, allianceID int64, page int32) ([]esiapi.AlliancesAllianceIdContactsGetInner, int32, error)
+}
+
+func (f fakeAllianceContactsESI) AllianceContacts(ctx context.Context, allianceID int64, page int32) ([]esiapi.AlliancesAllianceIdContactsGetInner, int32, error) {
+	if f.allianceContacts == nil {
+		return nil, 0, errNotFaked
+	}
+	return f.allianceContacts(ctx, allianceID, page)
+}
+
+// Each handler reports a client that can't be opened, wrapping the cause.
+func TestContactsHandlers_PropagateOpenError(t *testing.T) {
+	store := characterStore(t, config.Character{ID: 7, Name: "Test Pilot"})
+	wantErr := errors.New("no refresh token")
+	for name, call := range map[string]func() error{
+		"list_character_contacts": func() error {
+			_, _, err := listCharacterContactsHandler(failNarrow[characterContactsESI](wantErr), store)(context.Background(), nil, ListCharacterContactsInput{CharacterID: 7})
+			return err
+		},
+		"list_corporation_contacts": func() error {
+			_, _, err := listCorporationContactsHandler(failNarrow[corporationContactsESI](wantErr), store)(context.Background(), nil, ListCorporationContactsInput{CharacterID: 7, CorporationID: 98000001})
+			return err
+		},
+		"list_alliance_contacts": func() error {
+			_, _, err := listAllianceContactsHandler(failNarrow[allianceContactsESI](wantErr), store)(context.Background(), nil, ListAllianceContactsInput{CharacterID: 7, AllianceID: 99000001})
+			return err
+		},
+	} {
+		if err := call(); !errors.Is(err, wantErr) {
+			t.Errorf("%s: err = %v, want wrapping %v", name, err, wantErr)
+		}
 	}
 }

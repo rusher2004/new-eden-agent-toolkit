@@ -1,5 +1,8 @@
 # neat plugin — changelog
 
+## 0.20.8
+- No change for players. Internal refactor: the planning tools (routes, hauling, industry, trade hubs, logistics overview) and the ESI helpers they share get their ESI clients from the command that starts the server instead of building them themselves.
+
 ## 0.20.7
 - No change for players. Internal refactor: the faction warfare, corporation project and structure tools get their ESI client from the command that starts the server instead of building it themselves.
 

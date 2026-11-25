@@ -8,14 +8,16 @@ import (
 	"testing"
 	"time"
 
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
+
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
 )
 
 func TestCompareHaulHulls_FromSDE(t *testing.T) {
 	store, p := readinessEnv(t)
-	stubSkills(t, map[int32][]CharacterSkill{carrierPilot: requirementsOf(t, p, map[int64]int64{21611: 5, 21610: 4}, 23757)})
-	_, out, err := compareHaulHullsHandler("test", "client", store, p.sde)(context.Background(), nil, CompareHaulHullsInput{Hulls: []string{"Nomad", "Archon", "Badger"}, PilotID: carrierPilot})
+	stubSkills(p, map[int32][]CharacterSkill{carrierPilot: requirementsOf(t, p, map[int64]int64{21611: 5, 21610: 4}, 23757)})
+	_, out, err := compareHaulHullsHandler("test", p.openESI, p.openPublicESI, store, p.sde)(context.Background(), nil, CompareHaulHullsInput{Hulls: []string{"Nomad", "Archon", "Badger"}, PilotID: carrierPilot})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +44,7 @@ func TestCompareHaulHulls_FromSDE(t *testing.T) {
 
 func TestCompareHaulHulls_ClassesAndErrors(t *testing.T) {
 	store, p := readinessEnv(t)
-	h := compareHaulHullsHandler("test", "client", store, p.sde)
+	h := compareHaulHullsHandler("test", p.openESI, p.openPublicESI, store, p.sde)
 	_, out, err := h(context.Background(), nil, CompareHaulHullsInput{Classes: []string{"jump freighter"}})
 	if err != nil || len(out.Hulls) != 1 || out.Hulls[0].Name != "Nomad" || out.Hulls[0].PilotCanFly != nil {
 		t.Errorf("class = %+v, %v", out.Hulls, err)
@@ -62,38 +64,38 @@ func TestGetLogisticsOverview(t *testing.T) {
 	if err := store.Save(cfg); err != nil {
 		t.Fatal(err)
 	}
-	stubSkills(t, map[int32][]CharacterSkill{
+	stubSkills(p, map[int32][]CharacterSkill{
 		reconPilot: requirementsOf(t, p, map[int64]int64{21603: 4}, 11957, 21096),
 	})
-	origL, origS, origO, origC, origF, origN := getCharacterLocation, getCharacterShip, getCharacterOnline, getCharacterClones, getCharacterFatigue, now
-	t.Cleanup(func() {
-		getCharacterLocation, getCharacterShip, getCharacterOnline, getCharacterClones, getCharacterFatigue, now = origL, origS, origO, origC, origF, origN
-	})
+	origN := now
+	t.Cleanup(func() { now = origN })
 	now = func() time.Time { return time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC) }
 	station := int64(60003760)
-	getCharacterLocation = func(_ context.Context, _ string, id int32, _ string) (int64, *int64, *int64, error) {
-		if id == carrierPilot {
-			return 0, nil, nil, errors.New("missing scope esi-location.read_location.v1")
-		}
-		return 30000142, &station, nil, nil
-	}
-	getCharacterShip = func(_ context.Context, _ string, id int32, _ string) (int64, string, int64, error) {
-		return 1000 + int64(id), "Cyno Falcon", 11957, nil
-	}
 	loggedIn := time.Date(2026, 11, 20, 11, 0, 0, 0, time.UTC) // well before the cache window, so no re-check
-	getCharacterOnline = func(_ context.Context, _ string, id int32, _ string) (*esi.CharacterOnlineStatus, error) {
-		return &esi.CharacterOnlineStatus{Online: true, LastLogin: &loggedIn}, nil
-	}
-	stubSleep(t, func(time.Duration) { t.Error("re-checked online status for logins older than the cache window") })
 	expires := time.Date(2026, 11, 20, 13, 0, 0, 0, time.UTC)
-	getCharacterFatigue = func(_ context.Context, _ string, id int32, _ string) (GetCharacterFatigueOutput, error) {
-		return GetCharacterFatigueOutput{CharacterID: id, JumpFatigueExpireDate: &expires}, nil
-	}
-	getCharacterClones = func(_ context.Context, _ string, id int32, _ string) (GetCharacterClonesOutput, error) {
+	addESILayer(p, func(id int32, f *fakeESI) {
+		f.characterLocation = func(context.Context) (*esiapi.CharactersLocation, error) {
+			if id == carrierPilot {
+				return nil, errors.New("missing scope esi-location.read_location.v1")
+			}
+			return &esiapi.CharactersLocation{SolarSystemId: 30000142, StationId: &station}, nil
+		}
+		f.characterShip = func(context.Context) (*esiapi.CharactersShip, error) {
+			return &esiapi.CharactersShip{ShipItemId: 1000 + int64(id), ShipName: "Cyno Falcon", ShipTypeId: 11957}, nil
+		}
+		f.characterOnline = func(context.Context) (*esi.CharacterOnlineStatus, error) {
+			return &esi.CharacterOnlineStatus{Online: true, LastLogin: &loggedIn}, nil
+		}
+		f.characterFatigue = func(context.Context) (*esiapi.CharactersCharacterIdFatigueGet, error) {
+			return &esiapi.CharactersCharacterIdFatigueGet{JumpFatigueExpireDate: &expires}, nil
+		}
+	})
+	stubSleep(t, func(time.Duration) { t.Error("re-checked online status for logins older than the cache window") })
+	stubClones(p, func(id int32) (GetCharacterClonesOutput, error) {
 		return GetCharacterClonesOutput{CharacterID: id, JumpClones: []JumpClone{{LocationID: station}}}, nil
-	}
+	})
 
-	_, out, err := getLogisticsOverviewHandler("test", "client", store, p.sde)(context.Background(), nil, GetLogisticsOverviewInput{})
+	_, out, err := getLogisticsOverviewHandler("test", fakeOpener(p), p.openPublicESI, store, p.sde)(context.Background(), nil, GetLogisticsOverviewInput{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,6 +117,33 @@ func TestGetLogisticsOverview(t *testing.T) {
 	}
 }
 
+// A character whose ESI client can't be opened is reported unread once, with
+// the reason, rather than failing the whole overview or repeating the error
+// for every part.
+func TestGetLogisticsOverview_UnopenableClientLeavesEveryPartUnread(t *testing.T) {
+	store, p := readinessEnv(t)
+	p.openESI = failOpenESI(errors.New("no refresh token"))
+	_, out, err := getLogisticsOverviewHandler("test", fakeOpener(p), p.openPublicESI, store, p.sde)(context.Background(), nil, GetLogisticsOverviewInput{CharacterIDs: []int32{reconPilot}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Characters) != 1 {
+		t.Fatalf("characters = %+v, want one", out.Characters)
+	}
+	c := out.Characters[0]
+	if len(c.Unread) != 1 || c.Location != nil || c.Ship != nil || c.Online != nil || c.Clones != nil || c.Fatigue != nil {
+		t.Fatalf("character = %+v, want one unread entry", c)
+	}
+	for _, u := range c.Unread {
+		if !strings.Contains(u, "no refresh token") {
+			t.Errorf("unread %q doesn't give the open error", u)
+		}
+	}
+	if len(out.Warnings) == 0 || !strings.Contains(strings.Join(out.Warnings, ";"), "Carrier Pilot") {
+		t.Errorf("warnings = %v, want the other character's unreadable clones named", out.Warnings)
+	}
+}
+
 // stubSleep replaces sleepCtx so tests never wait, calling f with each wait.
 func stubSleep(t *testing.T, f func(time.Duration)) {
 	t.Helper()
@@ -124,8 +153,8 @@ func stubSleep(t *testing.T, f func(time.Duration)) {
 }
 
 func TestConfirmOnlineConflicts(t *testing.T) {
-	origO, origN := getCharacterOnline, now
-	t.Cleanup(func() { getCharacterOnline, now = origO, origN })
+	origN := now
+	t.Cleanup(func() { now = origN })
 	at := time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)
 	now = func() time.Time { return at }
 	old, recent := at.Add(-10*time.Minute), at.Add(-20*time.Second)
@@ -150,14 +179,18 @@ func TestConfirmOnlineConflicts(t *testing.T) {
 			online := map[int32]*esi.CharacterOnlineStatus{1: {Online: true, LastLogin: tt.logins[0]}, 2: {Online: true, LastLogin: tt.logins[1]}}
 			var waited time.Duration
 			stubSleep(t, func(d time.Duration) { waited = d })
-			getCharacterOnline = func(_ context.Context, _ string, id int32, _ string) (*esi.CharacterOnlineStatus, error) {
-				on, ok := tt.recheck[id]
-				if !ok {
-					return nil, errors.New("ESI unavailable")
+			open := openFakeFor(func(id int32) fakeESI {
+				var f fakeESI
+				f.characterOnline = func(context.Context) (*esi.CharacterOnlineStatus, error) {
+					on, ok := tt.recheck[id]
+					if !ok {
+						return nil, errors.New("ESI unavailable")
+					}
+					return &esi.CharacterOnlineStatus{Online: on}, nil
 				}
-				return &esi.CharacterOnlineStatus{Online: on}, nil
-			}
-			got, err := confirmOnlineConflicts(context.Background(), "client", "ua", suspect, online)
+				return f
+			})
+			got, err := confirmOnlineConflicts(context.Background(), open, suspect, online)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -176,7 +209,27 @@ func TestConfirmOnlineConflicts_Cancelled(t *testing.T) {
 	cancel()
 	online := map[int32]*esi.CharacterOnlineStatus{1: {Online: true}, 2: {Online: true}}
 	suspect := map[string][]config.Character{"Main": {{ID: 1}, {ID: 2}}}
-	if _, err := confirmOnlineConflicts(ctx, "client", "ua", suspect, online); !errors.Is(err, context.Canceled) {
+	if _, err := confirmOnlineConflicts(ctx, failNarrow[characterOnlineESI](errNotFaked), suspect, online); !errors.Is(err, context.Canceled) {
 		t.Errorf("err = %v, want context.Canceled", err)
+	}
+}
+
+// A re-check whose client can't be opened leaves that character out, like
+// any failed re-check.
+func TestConfirmOnlineConflicts_UnopenableClientIsNotReported(t *testing.T) {
+	origN := now
+	t.Cleanup(func() { now = origN })
+	at := time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)
+	now = func() time.Time { return at }
+	recent := at.Add(-20 * time.Second)
+	stubSleep(t, func(time.Duration) {})
+	online := map[int32]*esi.CharacterOnlineStatus{1: {Online: true, LastLogin: &recent}, 2: {Online: true, LastLogin: &recent}}
+	suspect := map[string][]config.Character{"Main": {{ID: 1, Name: "Alt A"}, {ID: 2, Name: "Alt B"}}}
+	got, err := confirmOnlineConflicts(context.Background(), failNarrow[characterOnlineESI](errors.New("no refresh token")), suspect, online)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Errorf("confirmed = %v, want none", got)
 	}
 }

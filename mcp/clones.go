@@ -5,11 +5,21 @@ import (
 	"fmt"
 	"time"
 
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-
-	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
+
+// characterClonesESI is the ESI call get_character_clones makes; the
+// planner family reads clones through it too.
+type characterClonesESI interface {
+	CharacterClones(ctx context.Context) (*esiapi.CharactersCharacterIdClonesGet, error)
+}
+
+// characterImplantsESI is the ESI call list_character_implants makes; the
+// planner family reads implants through it too.
+type characterImplantsESI interface {
+	CharacterImplants(ctx context.Context) ([]int64, error)
+}
 
 // JumpClone is one of a character's jump clones.
 type JumpClone struct {
@@ -30,12 +40,8 @@ type GetCharacterClonesOutput struct {
 	JumpClones            []JumpClone `json:"jumpClones"`
 }
 
-// getCharacterClones is overridable in tests.
-var getCharacterClones = func(ctx context.Context, clientID string, characterID int32, userAgent string) (GetCharacterClonesOutput, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return GetCharacterClonesOutput{}, fmt.Errorf("build ESI client: %w", err)
-	}
+// getCharacterClones reads characterID's clones through their client.
+func getCharacterClones(ctx context.Context, client characterClonesESI, characterID int32) (GetCharacterClonesOutput, error) {
 	clones, err := client.CharacterClones(ctx)
 	if err != nil {
 		return GetCharacterClonesOutput{}, err
@@ -61,7 +67,16 @@ type GetCharacterClonesInput struct {
 	CharacterID int32 `json:"characterId" jsonschema:"the character ID to check"`
 }
 
-func getCharacterClonesHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetCharacterClonesInput, GetCharacterClonesOutput] {
+// AddGetCharacterClones registers get_character_clones. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddGetCharacterClones[C characterClonesESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_character_clones",
+		Description: "Get a logged-in EVE Online character's jump clones and home location.",
+	}, getCharacterClonesHandler(open, store))
+}
+
+func getCharacterClonesHandler[C characterClonesESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[GetCharacterClonesInput, GetCharacterClonesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterClonesInput) (*mcpsdk.CallToolResult, GetCharacterClonesOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -77,7 +92,11 @@ func getCharacterClonesHandler(version, clientID string, store ConfigStore) mcps
 		if !found {
 			return nil, GetCharacterClonesOutput{}, fmt.Errorf("get character clones for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		out, err := getCharacterClones(ctx, clientID, in.CharacterID, sso.UserAgent(version))
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, GetCharacterClonesOutput{}, fmt.Errorf("get character clones: %w", err)
+		}
+		out, err := getCharacterClones(ctx, client, in.CharacterID)
 		if err != nil {
 			return nil, GetCharacterClonesOutput{}, fmt.Errorf("get character clones: %w", err)
 		}
@@ -85,12 +104,9 @@ func getCharacterClonesHandler(version, clientID string, store ConfigStore) mcps
 	}
 }
 
-// listCharacterImplants is overridable in tests.
-var listCharacterImplants = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]int64, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
+// listCharacterImplants reads the implant type IDs in a character's current
+// clone.
+func listCharacterImplants(ctx context.Context, client characterImplantsESI) ([]int64, error) {
 	return client.CharacterImplants(ctx)
 }
 
@@ -105,7 +121,16 @@ type ListCharacterImplantsOutput struct {
 	ImplantTypeIDs []int64 `json:"implantTypeIds"`
 }
 
-func listCharacterImplantsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCharacterImplantsInput, ListCharacterImplantsOutput] {
+// AddListCharacterImplants registers list_character_implants. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListCharacterImplants[C characterImplantsESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_character_implants",
+		Description: "List a logged-in EVE Online character's currently active implant type IDs.",
+	}, listCharacterImplantsHandler(open, store))
+}
+
+func listCharacterImplantsHandler[C characterImplantsESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListCharacterImplantsInput, ListCharacterImplantsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterImplantsInput) (*mcpsdk.CallToolResult, ListCharacterImplantsOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -121,7 +146,11 @@ func listCharacterImplantsHandler(version, clientID string, store ConfigStore) m
 		if !found {
 			return nil, ListCharacterImplantsOutput{}, fmt.Errorf("list character implants for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		ids, err := listCharacterImplants(ctx, clientID, in.CharacterID, sso.UserAgent(version))
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCharacterImplantsOutput{}, fmt.Errorf("list character implants: %w", err)
+		}
+		ids, err := listCharacterImplants(ctx, client)
 		if err != nil {
 			return nil, ListCharacterImplantsOutput{}, fmt.Errorf("list character implants: %w", err)
 		}

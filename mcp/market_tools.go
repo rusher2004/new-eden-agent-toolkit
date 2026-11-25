@@ -126,9 +126,18 @@ type QuoteMarketPurchaseOutput struct {
 	Multibuy string      `json:"multibuy" jsonschema:"paste into the in-game Multibuy window's import"`
 }
 
-func quoteMarketPurchaseHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[QuoteMarketPurchaseInput, QuoteMarketPurchaseOutput] {
+// AddQuoteMarketPurchase registers quote_market_purchase. openESI and openPublicESI build the ESI clients;
+// any client with the methods the planner and this tool call will do.
+func AddQuoteMarketPurchase[C plannerClient, P plannerPublicClient](s *mcpsdk.Server, userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "quote_market_purchase",
+		Description: "Price a shopping list against a trade hub's live sell order book, walking depth for the full quantity; returns average and total per item, shortfalls, volume, and an in-game Multibuy list.",
+	}, quoteMarketPurchaseHandler(userAgent, openESI, openPublicESI, store, sdeStore))
+}
+
+func quoteMarketPurchaseHandler[C plannerClient, P plannerPublicClient](userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) mcpsdk.ToolHandlerFor[QuoteMarketPurchaseInput, QuoteMarketPurchaseOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in QuoteMarketPurchaseInput) (*mcpsdk.CallToolResult, QuoteMarketPurchaseOutput, error) {
-		p := newPlanner(version, clientID, store, sdeStore)
+		p := newPlanner(userAgent, plannerOpener(openESI), plannerPublicOpener(openPublicESI), store, sdeStore)
 		p.marketCharacter = in.CharacterID
 		hub, err := p.hub(in.Hub)
 		if err != nil {

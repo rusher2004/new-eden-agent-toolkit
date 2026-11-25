@@ -7,10 +7,11 @@ import (
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/rusher2004/new-eden-agent-toolkit/sso"
+
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
 // MarketOrder is shared by list_character_market_orders, list_character_market_order_history,
@@ -435,8 +436,13 @@ type MarketPrice struct {
 	AveragePrice  *float64 `json:"averagePrice,omitempty"`
 }
 
-var listMarketPrices = func(ctx context.Context, userAgent string) ([]esiapi.MarketsPricesGetInner, error) {
-	client := esi.NewPublicClient(userAgent)
+// marketPricesESI is the public ESI call list_market_prices makes; the
+// planner family reads adjusted prices through it too.
+type marketPricesESI interface {
+	MarketPrices(ctx context.Context) ([]esiapi.MarketsPricesGetInner, error)
+}
+
+func listMarketPrices(ctx context.Context, client marketPricesESI) ([]esiapi.MarketsPricesGetInner, error) {
 	return client.MarketPrices(ctx)
 }
 
@@ -445,9 +451,18 @@ type ListMarketPricesOutput struct {
 	Prices []MarketPrice `json:"prices"`
 }
 
-func listMarketPricesHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListMarketPricesInput, ListMarketPricesOutput] {
+// AddListMarketPrices registers list_market_prices. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListMarketPrices[C marketPricesESI](s *mcpsdk.Server, userAgent string, open func() C, sdeStore typeNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_market_prices",
+		Description: "List ESI's adjusted/average price for every priced item type in the game (public data, no character required).",
+	}, listMarketPricesHandler(userAgent, open, sdeStore))
+}
+
+func listMarketPricesHandler[C marketPricesESI](userAgent string, open func() C, sdeStore typeNameCache) mcpsdk.ToolHandlerFor[ListMarketPricesInput, ListMarketPricesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListMarketPricesInput) (*mcpsdk.CallToolResult, ListMarketPricesOutput, error) {
-		prices, err := listMarketPrices(ctx, sso.UserAgent(version))
+		prices, err := listMarketPrices(ctx, open())
 		if err != nil {
 			return nil, ListMarketPricesOutput{}, fmt.Errorf("list market prices: %w", err)
 		}
@@ -459,7 +474,7 @@ func listMarketPricesHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandl
 		for i, p := range out {
 			ids[i] = p.TypeID
 		}
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		names := resolveTypeNames(ctx, sdeStore, userAgent, ids)
 		for i := range out {
 			out[i].TypeName = names[out[i].TypeID]
 		}
@@ -509,8 +524,19 @@ func getMarketHistoryHandler(version string) mcpsdk.ToolHandlerFor[GetMarketHist
 
 // --- list_market_orders (public, paginated) ---
 
-var listMarketOrders = func(ctx context.Context, userAgent string, regionID int64, orderType string, typeID int64, page int32) ([]esiapi.MarketsRegionIdOrdersGetInner, int32, error) {
-	client := esi.NewPublicClient(userAgent)
+// marketOrdersESI is the public ESI call list_market_orders makes; the
+// planner family reads region order books through it too.
+type marketOrdersESI interface {
+	MarketOrders(ctx context.Context, regionID int64, orderType string, typeID int64, page int32) ([]esiapi.MarketsRegionIdOrdersGetInner, int32, error)
+}
+
+// marketOrderNameCache is the SDE lookups the order book tools enrich with.
+type marketOrderNameCache interface {
+	typeNameCache
+	systemNameCache
+}
+
+func listMarketOrders(ctx context.Context, client marketOrdersESI, regionID int64, orderType string, typeID int64, page int32) ([]esiapi.MarketsRegionIdOrdersGetInner, int32, error) {
 	return client.MarketOrders(ctx, regionID, orderType, typeID, page)
 }
 
@@ -528,9 +554,18 @@ type ListMarketOrdersOutput struct {
 	Orders     []MarketOrderBookEntry `json:"orders"`
 }
 
-func listMarketOrdersHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListMarketOrdersInput, ListMarketOrdersOutput] {
+// AddListMarketOrders registers list_market_orders. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListMarketOrders[C marketOrdersESI](s *mcpsdk.Server, userAgent string, open func() C, sdeStore marketOrderNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_market_orders",
+		Description: "List live market orders in a region, optionally filtered to one item type (public data, no character required).",
+	}, listMarketOrdersHandler(userAgent, open, sdeStore))
+}
+
+func listMarketOrdersHandler[C marketOrdersESI](userAgent string, open func() C, sdeStore marketOrderNameCache) mcpsdk.ToolHandlerFor[ListMarketOrdersInput, ListMarketOrdersOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListMarketOrdersInput) (*mcpsdk.CallToolResult, ListMarketOrdersOutput, error) {
-		orders, totalPages, err := listMarketOrders(ctx, sso.UserAgent(version), in.RegionID, in.OrderType, in.TypeID, in.Page)
+		orders, totalPages, err := listMarketOrders(ctx, open(), in.RegionID, in.OrderType, in.TypeID, in.Page)
 		if err != nil {
 			return nil, ListMarketOrdersOutput{}, fmt.Errorf("list market orders: %w", err)
 		}
@@ -542,7 +577,7 @@ func listMarketOrdersHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandl
 		for i, o := range out {
 			ids[i] = o.TypeID
 		}
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		names := resolveTypeNames(ctx, sdeStore, userAgent, ids)
 		for i := range out {
 			out[i].TypeName = names[out[i].TypeID]
 		}
@@ -550,7 +585,7 @@ func listMarketOrdersHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandl
 		for i, o := range out {
 			systemIDs[i] = o.SystemID
 		}
-		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), systemIDs)
+		systemNames := resolveSystemNames(ctx, sdeStore, userAgent, systemIDs)
 		for i := range out {
 			out[i].SystemName = systemNames[out[i].SystemID]
 		}
@@ -609,11 +644,13 @@ func listMarketTypesHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandle
 // structure. There's no separate ownerId/corporationId input -- the structure itself is the
 // resource, and ESI's own 403 is the sole authorization gate, same as every corp-scoped tool.
 
-var listStructureMarketOrders = func(ctx context.Context, clientID string, characterID int32, userAgent string, structureID int64, page int32) ([]esiapi.MarketsStructuresStructureIdGetInner, int32, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, 0, fmt.Errorf("build ESI client: %w", err)
-	}
+// structureMarketOrdersESI is the ESI call list_structure_market_orders
+// makes; the trade hub tools read structure markets through it too.
+type structureMarketOrdersESI interface {
+	StructureMarketOrders(ctx context.Context, structureID int64, page int32) ([]esiapi.MarketsStructuresStructureIdGetInner, int32, error)
+}
+
+func listStructureMarketOrders(ctx context.Context, client structureMarketOrdersESI, structureID int64, page int32) ([]esiapi.MarketsStructuresStructureIdGetInner, int32, error) {
 	return client.StructureMarketOrders(ctx, structureID, page)
 }
 
@@ -630,7 +667,16 @@ type ListStructureMarketOrdersOutput struct {
 	Orders      []MarketOrderBookEntry `json:"orders"`
 }
 
-func listStructureMarketOrdersHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListStructureMarketOrdersInput, ListStructureMarketOrdersOutput] {
+// AddListStructureMarketOrders registers list_structure_market_orders. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListStructureMarketOrders[C structureMarketOrdersESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore marketOrderNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_structure_market_orders",
+		Description: "List live market orders in a player structure, using a logged-in character's docking access to authorize.",
+	}, listStructureMarketOrdersHandler(userAgent, open, store, sdeStore))
+}
+
+func listStructureMarketOrdersHandler[C structureMarketOrdersESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore marketOrderNameCache) mcpsdk.ToolHandlerFor[ListStructureMarketOrdersInput, ListStructureMarketOrdersOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListStructureMarketOrdersInput) (*mcpsdk.CallToolResult, ListStructureMarketOrdersOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -639,7 +685,11 @@ func listStructureMarketOrdersHandler(version, clientID string, store ConfigStor
 		if !found {
 			return nil, ListStructureMarketOrdersOutput{}, fmt.Errorf("list structure market orders for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		orders, totalPages, err := listStructureMarketOrders(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.StructureID, in.Page)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListStructureMarketOrdersOutput{}, fmt.Errorf("list structure market orders: %w", err)
+		}
+		orders, totalPages, err := listStructureMarketOrders(ctx, client, in.StructureID, in.Page)
 		if err != nil {
 			return nil, ListStructureMarketOrdersOutput{}, fmt.Errorf("list structure market orders: %w", err)
 		}
@@ -651,7 +701,7 @@ func listStructureMarketOrdersHandler(version, clientID string, store ConfigStor
 		for i, o := range out {
 			ids[i] = o.TypeID
 		}
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		names := resolveTypeNames(ctx, sdeStore, userAgent, ids)
 		for i := range out {
 			out[i].TypeName = names[out[i].TypeID]
 		}
@@ -659,7 +709,7 @@ func listStructureMarketOrdersHandler(version, clientID string, store ConfigStor
 		for i, o := range out {
 			systemIDs[i] = o.SystemID
 		}
-		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), systemIDs)
+		systemNames := resolveSystemNames(ctx, sdeStore, userAgent, systemIDs)
 		for i := range out {
 			out[i].SystemName = systemNames[out[i].SystemID]
 		}

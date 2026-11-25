@@ -112,9 +112,18 @@ type ScheduleSummary struct {
 	Unassigned     []string `json:"unassigned,omitempty"`
 }
 
-func planBuildHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[PlanBuildInput, PlanBuildOutput] {
+// AddPlanBuild registers plan_build. openESI and openPublicESI build the ESI clients;
+// any client with the methods the planner and this tool call will do.
+func AddPlanBuild[C plannerClient, P plannerPublicClient](s *mcpsdk.Server, userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "plan_build",
+		Description: "Plan building owned blueprints end to end: expand the build tree with your copies' ME and the facility's bonuses, net stock, price purchases on live order books, optionally buy compressed ore and refine it, compare building against buying every intermediate, price job fees, pack haul loads with fuel and dotlan route links, and estimate job time across builders. Returns cost, decisions, shopping and Multibuy lists, loads, jobs and assumptions, and saves the full plan under ~/.neat/plans/.",
+	}, planBuildHandler(userAgent, openESI, openPublicESI, store, sdeStore))
+}
+
+func planBuildHandler[C plannerClient, P plannerPublicClient](userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) mcpsdk.ToolHandlerFor[PlanBuildInput, PlanBuildOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in PlanBuildInput) (*mcpsdk.CallToolResult, PlanBuildOutput, error) {
-		p := newPlanner(version, clientID, store, sdeStore)
+		p := newPlanner(userAgent, plannerOpener(openESI), plannerPublicOpener(openPublicESI), store, sdeStore)
 		out, err := p.planBuild(ctx, in)
 		if err != nil {
 			return nil, PlanBuildOutput{}, fmt.Errorf("plan build: %w", err)

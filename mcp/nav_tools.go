@@ -89,7 +89,7 @@ func (p *planner) routePrefs(ctx context.Context, pilotID int32, prefs config.Ro
 		}
 	}
 	if len(avoidAlliances) > 0 || len(preferAlliances) > 0 {
-		sov, err := listSovereigntySystems(ctx, p.ua())
+		sov, err := listSovereigntySystems(ctx, p.openPublicESI())
 		if err != nil {
 			return out, notes, fmt.Errorf("sovereignty map: %w", err)
 		}
@@ -107,7 +107,7 @@ func (p *planner) routePrefs(ctx context.Context, pilotID int32, prefs config.Ro
 		}
 	}
 	if prefs.AvoidIncursions {
-		inc, err := listIncursions(ctx, p.ua())
+		inc, err := listIncursions(ctx, p.openPublicESI())
 		if err != nil {
 			return out, notes, fmt.Errorf("incursions: %w", err)
 		}
@@ -118,7 +118,7 @@ func (p *planner) routePrefs(ctx context.Context, pilotID int32, prefs config.Ro
 			}
 		}
 	}
-	kills, err := listUniverseSystemKills(ctx, p.ua())
+	kills, err := listUniverseSystemKills(ctx, p.openPublicESI())
 	if err != nil {
 		notes = append(notes, "recent kills unavailable: "+err.Error())
 	} else {
@@ -141,25 +141,29 @@ func (p *planner) badStandingAlliances(ctx context.Context, pilotID int32) (map[
 			}
 		}
 	}
+	client, err := p.esi(ctx, pilotID)
+	if err != nil {
+		return out, fmt.Errorf("character contacts: %w", err)
+	}
 	mine, err := esi.AllPages(ctx, func(ctx context.Context, page int32) ([]Contact, int32, error) {
-		return listCharacterContacts(ctx, p.clientID, pilotID, p.ua(), page)
+		return listCharacterContacts(ctx, client, page)
 	})
 	if err != nil {
 		return out, fmt.Errorf("character contacts: %w", err)
 	}
 	add(mine)
-	aff, err := getCharacterAffiliations(ctx, p.ua(), []int64{int64(pilotID)})
+	aff, err := getCharacterAffiliations(ctx, p.openPublicESI(), []int64{int64(pilotID)})
 	if err != nil || len(aff) == 0 {
 		return out, nil
 	}
 	if corp, err := esi.AllPages(ctx, func(ctx context.Context, page int32) ([]Contact, int32, error) {
-		return listCorporationContacts(ctx, p.clientID, pilotID, p.ua(), aff[0].CorporationID, page)
+		return listCorporationContacts(ctx, client, aff[0].CorporationID, page)
 	}); err == nil {
 		add(corp)
 	}
 	if aff[0].AllianceID != nil {
 		if al, err := esi.AllPages(ctx, func(ctx context.Context, page int32) ([]Contact, int32, error) {
-			return listAllianceContacts(ctx, p.clientID, pilotID, p.ua(), *aff[0].AllianceID, page)
+			return listAllianceContacts(ctx, client, *aff[0].AllianceID, page)
 		}); err == nil {
 			add(al)
 		}
@@ -241,9 +245,18 @@ func (p *planner) resolvePrefs(ctx context.Context, in RoutePrefsInput) (config.
 	return out, nil
 }
 
-func saveHaulProfileHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[SaveHaulProfileInput, config.HaulProfile] {
+// AddSaveHaulProfile registers save_haul_profile. openESI and openPublicESI build the ESI clients;
+// any client with the methods the planner and this tool call will do.
+func AddSaveHaulProfile[C plannerClient, P plannerPublicClient](s *mcpsdk.Server, userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "save_haul_profile",
+		Description: "Save (or replace) a named hauling profile: hull, pilot, fitted hold (worked out from the ship's real fit when given shipItemId), optional pinned routes (saved in routes.yaml, or saved routes by name), and routing preferences (avoid lists, sovereignty and standings, midpoints, optimise for fuel, jumps or fatigue). Omit notes to keep the notes it has. Writes to ~/.neat/haul_profiles.yaml and routes.yaml only.",
+	}, saveHaulProfileHandler(userAgent, openESI, openPublicESI, store, sdeStore))
+}
+
+func saveHaulProfileHandler[C plannerClient, P plannerPublicClient](userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) mcpsdk.ToolHandlerFor[SaveHaulProfileInput, config.HaulProfile] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in SaveHaulProfileInput) (*mcpsdk.CallToolResult, config.HaulProfile, error) {
-		p := newPlanner(version, clientID, store, sdeStore)
+		p := newPlanner(userAgent, plannerOpener(openESI), plannerPublicOpener(openPublicESI), store, sdeStore)
 		if strings.TrimSpace(in.Name) == "" {
 			return nil, config.HaulProfile{}, fmt.Errorf("save haul profile: name is required")
 		}
@@ -335,7 +348,23 @@ type ListHaulProfilesOutput struct {
 	Profiles []config.HaulProfile `json:"profiles"`
 }
 
-func listHaulProfilesHandler(store ConfigStore) mcpsdk.ToolHandlerFor[struct{}, ListHaulProfilesOutput] {
+// AddListHaulProfiles registers list_haul_profiles.
+func AddListHaulProfiles(s *mcpsdk.Server, store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_haul_profiles",
+		Description: "List saved haul profiles.",
+	}, listHaulProfilesHandler(store))
+}
+
+// AddDeleteHaulProfile registers delete_haul_profile.
+func AddDeleteHaulProfile(s *mcpsdk.Server, store configUpdater) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "delete_haul_profile",
+		Description: "Delete a saved haul profile from neat's local config.",
+	}, deleteProfileHandler(store, (*config.Config).DeleteHaulProfile))
+}
+
+func listHaulProfilesHandler(store configLoader) mcpsdk.ToolHandlerFor[struct{}, ListHaulProfilesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, _ struct{}) (*mcpsdk.CallToolResult, ListHaulProfilesOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -459,9 +488,18 @@ func (p *planner) planRoute(ctx context.Context, prof config.HaulProfile, from, 
 	return out, g, req, nil
 }
 
-func planJumpRouteHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[PlanJumpRouteInput, PlanJumpRouteOutput] {
+// AddPlanJumpRoute registers plan_jump_route. openESI and openPublicESI build the ESI clients;
+// any client with the methods the planner and this tool call will do.
+func AddPlanJumpRoute[C plannerClient, P plannerPublicClient](s *mcpsdk.Server, userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "plan_jump_route",
+		Description: "Plan jump and gate routes between two systems for a haul profile's ship and pilot, applying their routing preferences, or validate and cost a given route; per leg light years, fuel and fatigue, and dotlan links that display each route. Each route also comes with checks worked out for the hull: the cyno types it can jump to, where it can dock at each landing (NPC stations it may use and saved structures it fits, flagging landings with nowhere to dock), how many gates a single cyno lighter travels between landings, and whether the route's fuel fits the fuel bay. Highsec entry comes from the hull's own data.",
+	}, planJumpRouteHandler(userAgent, openESI, openPublicESI, store, sdeStore))
+}
+
+func planJumpRouteHandler[C plannerClient, P plannerPublicClient](userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) mcpsdk.ToolHandlerFor[PlanJumpRouteInput, PlanJumpRouteOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in PlanJumpRouteInput) (*mcpsdk.CallToolResult, PlanJumpRouteOutput, error) {
-		p := newPlanner(version, clientID, store, sdeStore)
+		p := newPlanner(userAgent, plannerOpener(openESI), plannerPublicOpener(openPublicESI), store, sdeStore)
 		cfg, err := store.Load()
 		if err != nil {
 			return nil, PlanJumpRouteOutput{}, err
@@ -745,9 +783,18 @@ func (p *planner) haulPlanWith(ctx context.Context, profs []config.HaulProfile, 
 	return out, nil
 }
 
-func planHaulHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[PlanHaulInput, PlanHaulOutput] {
+// AddPlanHaul registers plan_haul. openESI and openPublicESI build the ESI clients;
+// any client with the methods the planner and this tool call will do.
+func AddPlanHaul[C plannerClient, P plannerPublicClient](s *mcpsdk.Server, userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "plan_haul",
+		Description: "Pack a cargo list into loads for a haul profile's hold, each an even slice with volume by drop-off, plus round-trip route, fuel per trip, and a Multibuy list per load including fuel. With more haul profiles in with, several ships fly the trip together: their holds add up, each load is divided between them, each must manage the same route (or the call says which can't), and the result gives the cyno types they can all share.",
+	}, planHaulHandler(userAgent, openESI, openPublicESI, store, sdeStore))
+}
+
+func planHaulHandler[C plannerClient, P plannerPublicClient](userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) mcpsdk.ToolHandlerFor[PlanHaulInput, PlanHaulOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in PlanHaulInput) (*mcpsdk.CallToolResult, PlanHaulOutput, error) {
-		p := newPlanner(version, clientID, store, sdeStore)
+		p := newPlanner(userAgent, plannerOpener(openESI), plannerPublicOpener(openPublicESI), store, sdeStore)
 		cfg, err := store.Load()
 		if err != nil {
 			return nil, PlanHaulOutput{}, err
@@ -857,12 +904,21 @@ type SaveRouteOutput struct {
 	Changes []config.Change `json:"changes"`
 }
 
-func saveRouteHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[SaveRouteInput, SaveRouteOutput] {
+// AddSaveRoute registers save_route. openESI and openPublicESI build the ESI clients;
+// any client with the methods the planner and this tool call will do.
+func AddSaveRoute[C plannerClient, P plannerPublicClient](s *mcpsdk.Server, userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "save_route",
+		Description: "Save (or replace) a named jump route: its systems in order, the kind of ship it's for, and the user's notes on why it goes that way. Check list_routes before planning a route between the same places, since a saved route usually reflects choices the user made on purpose. plan_jump_route costs a saved route by name, and haul profiles pin saved routes for their regular runs. Returns every value it changed. Writes to ~/.neat/routes.yaml only.",
+	}, saveRouteHandler(userAgent, openESI, openPublicESI, store, sdeStore))
+}
+
+func saveRouteHandler[C plannerClient, P plannerPublicClient](userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) mcpsdk.ToolHandlerFor[SaveRouteInput, SaveRouteOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in SaveRouteInput) (*mcpsdk.CallToolResult, SaveRouteOutput, error) {
 		if strings.TrimSpace(in.Name) == "" {
 			return nil, SaveRouteOutput{}, fmt.Errorf("save route: name is required")
 		}
-		p := newPlanner(version, clientID, store, sdeStore)
+		p := newPlanner(userAgent, plannerOpener(openESI), plannerPublicOpener(openPublicESI), store, sdeStore)
 		r, err := p.namedRoute(ctx, in.Name, in.Systems)
 		if err != nil {
 			return nil, SaveRouteOutput{}, fmt.Errorf("save route: %w", err)
@@ -896,7 +952,23 @@ type ListRoutesOutput struct {
 	Routes []config.Route `json:"routes"`
 }
 
-func listRoutesHandler(store ConfigStore) mcpsdk.ToolHandlerFor[struct{}, ListRoutesOutput] {
+// AddListRoutes registers list_routes.
+func AddListRoutes(s *mcpsdk.Server, store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_routes",
+		Description: "List saved jump routes with their systems, ship class and the user's notes. Check it before planning a route between the same places.",
+	}, listRoutesHandler(store))
+}
+
+// AddDeleteRoute registers delete_route.
+func AddDeleteRoute(s *mcpsdk.Server, store configUpdater) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "delete_route",
+		Description: "Delete a saved jump route from ~/.neat/routes.yaml.",
+	}, deleteProfileHandler(store, (*config.Config).DeleteRoute))
+}
+
+func listRoutesHandler(store configLoader) mcpsdk.ToolHandlerFor[struct{}, ListRoutesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, _ struct{}) (*mcpsdk.CallToolResult, ListRoutesOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {

@@ -7,10 +7,11 @@ import (
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/rusher2004/new-eden-agent-toolkit/sso"
+
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
 // --- list_sovereignty_campaigns (public) ---
@@ -160,8 +161,13 @@ type SovereigntySystem struct {
 	Claim           SovereigntyClaim `json:"claim"`
 }
 
-var listSovereigntySystems = func(ctx context.Context, userAgent string) ([]esiapi.SovereigntySystemsSolarsystem, error) {
-	client := esi.NewPublicClient(userAgent)
+// sovereigntySystemsESI is the public ESI call list_sovereignty_systems
+// makes; route planning reads the sovereignty map through it too.
+type sovereigntySystemsESI interface {
+	SovereigntySystems(ctx context.Context) ([]esiapi.SovereigntySystemsSolarsystem, error)
+}
+
+func listSovereigntySystems(ctx context.Context, client sovereigntySystemsESI) ([]esiapi.SovereigntySystemsSolarsystem, error) {
 	return client.SovereigntySystems(ctx)
 }
 
@@ -170,9 +176,24 @@ type ListSovereigntySystemsOutput struct {
 	Systems []SovereigntySystem `json:"systems"`
 }
 
-func listSovereigntySystemsHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListSovereigntySystemsInput, ListSovereigntySystemsOutput] {
+// sovereigntyNameCache is the SDE lookups list_sovereignty_systems makes.
+type sovereigntyNameCache interface {
+	systemNameCache
+	factionNameCache
+}
+
+// AddListSovereigntySystems registers list_sovereignty_systems. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListSovereigntySystems[C sovereigntySystemsESI](s *mcpsdk.Server, userAgent string, open func() C, sdeStore sovereigntyNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_sovereignty_systems",
+		Description: "List every solar system and its current sovereignty claim, if any (public data, no character required).",
+	}, listSovereigntySystemsHandler(userAgent, open, sdeStore))
+}
+
+func listSovereigntySystemsHandler[C sovereigntySystemsESI](userAgent string, open func() C, sdeStore sovereigntyNameCache) mcpsdk.ToolHandlerFor[ListSovereigntySystemsInput, ListSovereigntySystemsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListSovereigntySystemsInput) (*mcpsdk.CallToolResult, ListSovereigntySystemsOutput, error) {
-		systems, err := listSovereigntySystems(ctx, sso.UserAgent(version))
+		systems, err := listSovereigntySystems(ctx, open())
 		if err != nil {
 			return nil, ListSovereigntySystemsOutput{}, fmt.Errorf("list sovereignty systems: %w", err)
 		}
@@ -185,7 +206,7 @@ func listSovereigntySystemsHandler(version string, sdeStore SDEStore) mcpsdk.Too
 		for i, s := range out {
 			systemIDs[i] = s.SolarSystemID
 		}
-		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), systemIDs)
+		systemNames := resolveSystemNames(ctx, sdeStore, userAgent, systemIDs)
 		for i := range out {
 			out[i].SolarSystemName = systemNames[out[i].SolarSystemID]
 		}
@@ -196,7 +217,7 @@ func listSovereigntySystemsHandler(version string, sdeStore SDEStore) mcpsdk.Too
 				factionIDs = append(factionIDs, *s.Claim.FactionID)
 			}
 		}
-		factionNames := resolveFactionNames(ctx, sdeStore, sso.UserAgent(version), factionIDs)
+		factionNames := resolveFactionNames(ctx, sdeStore, userAgent, factionIDs)
 		for i := range out {
 			if out[i].Claim.FactionID != nil {
 				out[i].Claim.FactionName = factionNames[*out[i].Claim.FactionID]

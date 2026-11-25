@@ -8,7 +8,6 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/cargo"
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
 // maxAssetPages caps how many pages of assets one owner's listing walks, so
@@ -64,7 +63,30 @@ func truncatedWarning(owner string) string {
 	return fmt.Sprintf("%s has more than %d pages of assets, so only the first %d were read: items and totals here may be incomplete", owner, maxAssetPages, maxAssetPages)
 }
 
-func listLocationAssetsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListLocationAssetsInput, ListLocationAssetsOutput] {
+// locationAssetsESI is the ESI calls list_location_assets makes: a
+// character's and a corporation's assets.
+type locationAssetsESI interface {
+	assetsESI
+	corporationAssetsESI
+}
+
+// locationAssetsSDE is the SDE lookups list_location_assets makes: each
+// asset's type and the station's name.
+type locationAssetsSDE interface {
+	assetEnrichCache
+	stationNameCache
+}
+
+// AddListLocationAssets registers list_location_assets. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListLocationAssets[C locationAssetsESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore locationAssetsSDE) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_location_assets",
+		Description: "List everything the user owns at one NPC station or Upwell structure, across every logged-in character (and a corporation's hangars, through a character with the roles), in one call instead of paging list_assets. Items are listed in tree order with what's inside each container and ship, and every volume comes worked out: each stack's volume as it is now, assembled ships' assembled and repackaged volumes, what comes out of each ship to repackage it, and the rigs that repackaging destroys. Totals give the volume to move with ships repackaged or carried assembled, overall and per owner in sources: items in one character's personal hangar can only be hauled by another pilot once its owner gives them over with an item exchange contract. Use it whenever a plan moves things out of a station or structure.",
+	}, listLocationAssetsHandler(userAgent, open, store, sdeStore))
+}
+
+func listLocationAssetsHandler[C locationAssetsESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore locationAssetsSDE) mcpsdk.ToolHandlerFor[ListLocationAssetsInput, ListLocationAssetsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListLocationAssetsInput) (*mcpsdk.CallToolResult, ListLocationAssetsOutput, error) {
 		if in.LocationID == 0 {
 			return nil, ListLocationAssetsOutput{}, fmt.Errorf("list location assets: locationId is required")
@@ -93,7 +115,7 @@ func listLocationAssetsHandler(version, clientID string, store ConfigStore, sdeS
 				return nil, ListLocationAssetsOutput{}, fmt.Errorf("list location assets for character %d: %w", id, ErrCharacterNotFound)
 			}
 		}
-		ua := sso.UserAgent(version)
+		ua := userAgent
 
 		type owned struct {
 			owner  string
@@ -103,8 +125,13 @@ func listLocationAssetsHandler(version, clientID string, store ConfigStore, sdeS
 		var warnings []string
 		for _, id := range chars {
 			c, _ := cfg.Character(id)
+			client, err := open(ctx, id)
+			if err != nil {
+				warnings = append(warnings, fmt.Sprintf("couldn't read %s's assets: %v", c.Name, err))
+				continue
+			}
 			assets, truncated, err := allAssetPages(func(page int32) ([]AssetItem, int32, error) {
-				return listAssets(ctx, clientID, id, ua, page)
+				return listAssets(ctx, client, page)
 			})
 			if err != nil {
 				warnings = append(warnings, fmt.Sprintf("couldn't read %s's assets: %v", c.Name, err))
@@ -116,9 +143,14 @@ func listLocationAssetsHandler(version, clientID string, store ConfigStore, sdeS
 			owners = append(owners, owned{c.Name, assets})
 		}
 		if in.CorporationID != 0 {
-			assets, truncated, err := allAssetPages(func(page int32) ([]AssetItem, int32, error) {
-				return listCorporationAssets(ctx, clientID, in.CorporationCharacterID, ua, in.CorporationID, page)
-			})
+			var assets []AssetItem
+			var truncated bool
+			client, err := open(ctx, in.CorporationCharacterID)
+			if err == nil {
+				assets, truncated, err = allAssetPages(func(page int32) ([]AssetItem, int32, error) {
+					return listCorporationAssets(ctx, client, in.CorporationID, page)
+				})
+			}
 			if err != nil {
 				warnings = append(warnings, fmt.Sprintf("couldn't read corporation %d's assets: %v", in.CorporationID, err))
 			} else {

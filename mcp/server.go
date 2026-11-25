@@ -189,29 +189,9 @@ func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
 	}, removeCharacterHandler(store))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_assets",
-		Description: "List a logged-in EVE Online character's assets.",
-	}, listAssetsHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_asset_locations",
 		Description: "Resolve a set of a character's asset item IDs into their positions.",
 	}, getAssetLocationsHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_asset_names",
-		Description: "Resolve a set of a character's asset item IDs into their player-assigned custom names.",
-	}, getAssetNamesHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_corporation_assets",
-		Description: "List a corporation's assets, using a logged-in character's roles to authorize.",
-	}, listCorporationAssetsHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_location_assets",
-		Description: "List everything the user owns at one NPC station or Upwell structure, across every logged-in character (and a corporation's hangars, through a character with the roles), in one call instead of paging list_assets. Items are listed in tree order with what's inside each container and ship, and every volume comes worked out: each stack's volume as it is now, assembled ships' assembled and repackaged volumes, what comes out of each ship to repackage it, and the rigs that repackaging destroys. Totals give the volume to move with ships repackaged or carried assembled, overall and per owner in sources: items in one character's personal hangar can only be hauled by another pilot once its owner gives them over with an item exchange contract. Use it whenever a plan moves things out of a station or structure.",
-	}, listLocationAssetsHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_corporation_asset_locations",
@@ -219,19 +199,9 @@ func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
 	}, getCorporationAssetLocationsHandler(version, clientID, store))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_corporation_asset_names",
-		Description: "Resolve a set of a corporation's asset item IDs into their player-assigned custom names.",
-	}, getCorporationAssetNamesHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_character",
 		Description: "Get public info (name, corporation, bloodline, security status) about an arbitrary character (public data, no character required).",
 	}, getCharacterHandler(version, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_character_affiliations",
-		Description: "Resolve a set of character IDs to their current corporation/alliance/faction (public data, no character required).",
-	}, getCharacterAffiliationsHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_character_corporation_history",
@@ -247,16 +217,6 @@ func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
 		Name:        "list_character_agents_research",
 		Description: "List a logged-in EVE Online character's agent research progress.",
 	}, listCharacterAgentsResearchHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_character_blueprints",
-		Description: "List a logged-in EVE Online character's blueprints.",
-	}, listCharacterBlueprintsHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_character_fatigue",
-		Description: "Get a logged-in EVE Online character's jump fatigue state.",
-	}, getCharacterFatigueHandler(version, clientID, store))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_character_medals",
@@ -294,39 +254,14 @@ func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
 	}, getCharacterCSPACostHandler(version, clientID, store))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_character_clones",
-		Description: "Get a logged-in EVE Online character's jump clones and home location.",
-	}, getCharacterClonesHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_character_implants",
-		Description: "List a logged-in EVE Online character's currently active implant type IDs.",
-	}, listCharacterImplantsHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_character_contacts",
-		Description: "List a logged-in EVE Online character's contacts.",
-	}, listCharacterContactsHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_character_contact_labels",
 		Description: "List a logged-in EVE Online character's contact labels.",
 	}, listCharacterContactLabelsHandler(version, clientID, store))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_corporation_contacts",
-		Description: "List a corporation's contacts, using a logged-in character's roles to authorize.",
-	}, listCorporationContactsHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_corporation_contact_labels",
 		Description: "List a corporation's contact labels, using a logged-in character's roles to authorize.",
 	}, listCorporationContactLabelsHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_alliance_contacts",
-		Description: "List an alliance's contacts, using a logged-in character's roles to authorize.",
-	}, listAllianceContactsHandler(version, clientID, store))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_alliance_contact_labels",
@@ -379,19 +314,9 @@ func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
 	}, listCorporationContractItemsHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_public_contracts",
-		Description: "List public contracts in a region (public data, no character required).",
-	}, listPublicContractsHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_public_contract_bids",
 		Description: "List the bids on a public contract (public data, no character required).",
 	}, listPublicContractBidsHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_public_contract_items",
-		Description: "List the items on a public contract (public data, no character required).",
-	}, listPublicContractItemsHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_corporation",
@@ -464,11 +389,6 @@ func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
 	}, listCorporationStandingsHandler(version, clientID, store))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_corporation_blueprints",
-		Description: "List a corporation's blueprints, using a logged-in character's roles to authorize.",
-	}, listCorporationBlueprintsHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_corporation_container_logs",
 		Description: "List a corporation's container access logs, using a logged-in character's roles to authorize.",
 	}, listCorporationContainerLogsHandler(version, clientID, store, sdeStore))
@@ -504,16 +424,6 @@ func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
 	}, listCorporationStructuresHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_incursions",
-		Description: "List every currently active incursion (public data, no character required).",
-	}, listIncursionsHandler(version, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_character_industry_jobs",
-		Description: "List a logged-in EVE Online character's industry jobs.",
-	}, listCharacterIndustryJobsHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_character_mining",
 		Description: "List a logged-in EVE Online character's mining ledger.",
 	}, listCharacterMiningHandler(version, clientID, store, sdeStore))
@@ -534,34 +444,9 @@ func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
 	}, getCorporationMiningObserverDetailHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_corporation_industry_jobs",
-		Description: "List a corporation's industry jobs, using a logged-in character's roles to authorize.",
-	}, listCorporationIndustryJobsHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_industry_facilities",
 		Description: "List every industry facility in the game (public data, no character required).",
 	}, listIndustryFacilitiesHandler(version, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_industry_systems",
-		Description: "List industry cost indices for every solar system (public data, no character required).",
-	}, listIndustrySystemsHandler(version, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_character_location",
-		Description: "Get a logged-in EVE Online character's current solar system, and station or structure ID if docked/boarded.",
-	}, getCharacterLocationHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_character_online",
-		Description: "Get a logged-in EVE Online character's online status and login history.",
-	}, getCharacterOnlineHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_character_ship",
-		Description: "Get a logged-in EVE Online character's current ship.",
-	}, getCharacterShipHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_character_market_orders",
@@ -594,29 +479,14 @@ func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
 	}, getMarketGroupHandler(version))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_market_prices",
-		Description: "List ESI's adjusted/average price for every priced item type in the game (public data, no character required).",
-	}, listMarketPricesHandler(version, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_market_history",
 		Description: "Get daily historical market statistics for one item type in one region (public data, no character required).",
 	}, getMarketHistoryHandler(version))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_market_orders",
-		Description: "List live market orders in a region, optionally filtered to one item type (public data, no character required).",
-	}, listMarketOrdersHandler(version, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_market_types",
 		Description: "List the item type IDs with at least one active market order in a region (public data, no character required).",
 	}, listMarketTypesHandler(version, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_structure_market_orders",
-		Description: "List live market orders in a player structure, using a logged-in character's docking access to authorize.",
-	}, listStructureMarketOrdersHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_character_attributes",
@@ -629,19 +499,9 @@ func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
 	}, listCharacterSkillQueueHandler(version, clientID, store))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_character_skills",
-		Description: "List a logged-in EVE Online character's trained skills, total skill points, and unallocated skill points.",
-	}, listCharacterSkillsHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_sovereignty_campaigns",
 		Description: "List every active sovereignty campaign in the game (public data, no character required).",
 	}, listSovereigntyCampaignsHandler(version, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_sovereignty_systems",
-		Description: "List every solar system and its current sovereignty claim, if any (public data, no character required).",
-	}, listSovereigntySystemsHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_universe_ancestries",
@@ -769,34 +629,14 @@ func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
 	}, listUniverseStructuresHandler(version))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_universe_structure",
-		Description: "Get a player structure's name, owner, solar system, type, and position. The given character must have docking access to the structure.",
-	}, getUniverseStructureHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_universe_system_jumps",
 		Description: "List ship jump activity per solar system over the last hour (public data, no character required).",
 	}, listUniverseSystemJumpsHandler(version))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_universe_system_kills",
-		Description: "List NPC/pod/ship kill activity per solar system over the last hour (public data, no character required).",
-	}, listUniverseSystemKillsHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "resolve_universe_ids",
 		Description: "Resolve a list of names to IDs, grouped by category: agents, alliances, characters, constellations, corporations, factions, inventory types, regions, stations, and systems. Names ESI can't match are simply omitted from the response, not reported as errors. Accepts 1-500 names per call (public data, no character required).",
 	}, resolveUniverseIDsHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "resolve_universe_names",
-		Description: "Resolve a list of IDs to their names and categories. Accepts 1-1000 IDs per call (public data, no character required).",
-	}, resolveUniverseNamesHandler(version))
-
-	registerNavigationTools(server, version, clientID, store, sdeStore)
-	registerStructureTools(server, version, clientID, store, sdeStore)
-	registerMarketPlanningTools(server, version, clientID, store, sdeStore)
-	registerIndustryPlanningTools(server, version, clientID, store, sdeStore)
 
 	return server, nil
 }

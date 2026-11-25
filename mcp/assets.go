@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/cargo"
@@ -41,8 +42,15 @@ func cargoItem(a AssetItem, b sde.TypeBasic, owner string) cargo.Item {
 	}
 }
 
+// assetEnrichCache is the SDE lookups enrichAssets makes: each type's name and
+// volume.
+type assetEnrichCache interface {
+	typeNameCache
+	typeBasicsCache
+}
+
 // enrichAssets fills in each asset's type name and volume from the SDE.
-func enrichAssets(ctx context.Context, sdeStore SDEStore, userAgent string, assets []AssetItem) map[int64]sde.TypeBasic {
+func enrichAssets(ctx context.Context, sdeStore assetEnrichCache, userAgent string, assets []AssetItem) map[int64]sde.TypeBasic {
 	ids := make([]int64, len(assets))
 	for i, a := range assets {
 		ids[i] = a.TypeID
@@ -58,12 +66,14 @@ func enrichAssets(ctx context.Context, sdeStore SDEStore, userAgent string, asse
 	return basics
 }
 
-// listAssets is overridable in tests so no real network/auth runs.
-var listAssets = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]AssetItem, int32, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, 0, fmt.Errorf("build ESI client: %w", err)
-	}
+// assetsESI is the ESI call list_assets makes; the planner family reads a
+// character's assets through it too.
+type assetsESI interface {
+	Assets(ctx context.Context, page int32) ([]esiapi.CharactersCharacterIdAssetsGetInner, int32, error)
+}
+
+// listAssets reads one page of a character's assets.
+func listAssets(ctx context.Context, client assetsESI, page int32) ([]AssetItem, int32, error) {
 	assets, totalPages, err := client.Assets(ctx, page)
 	if err != nil {
 		return nil, 0, err
@@ -93,7 +103,16 @@ type ListAssetsOutput struct {
 	Assets      []AssetItem `json:"assets"`
 }
 
-func listAssetsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListAssetsInput, ListAssetsOutput] {
+// AddListAssets registers list_assets. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListAssets[C assetsESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore assetEnrichCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_assets",
+		Description: "List a logged-in EVE Online character's assets.",
+	}, listAssetsHandler(userAgent, open, store, sdeStore))
+}
+
+func listAssetsHandler[C assetsESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore assetEnrichCache) mcpsdk.ToolHandlerFor[ListAssetsInput, ListAssetsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListAssetsInput) (*mcpsdk.CallToolResult, ListAssetsOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -109,11 +128,15 @@ func listAssetsHandler(version, clientID string, store ConfigStore, sdeStore SDE
 		if !found {
 			return nil, ListAssetsOutput{}, fmt.Errorf("list assets for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		assets, totalPages, err := listAssets(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.Page)
+		client, err := open(ctx, in.CharacterID)
 		if err != nil {
 			return nil, ListAssetsOutput{}, fmt.Errorf("list assets: %w", err)
 		}
-		enrichAssets(ctx, sdeStore, sso.UserAgent(version), assets)
+		assets, totalPages, err := listAssets(ctx, client, in.Page)
+		if err != nil {
+			return nil, ListAssetsOutput{}, fmt.Errorf("list assets: %w", err)
+		}
+		enrichAssets(ctx, sdeStore, userAgent, assets)
 		page := in.Page
 		if page <= 0 {
 			page = 1
@@ -189,12 +212,14 @@ type AssetName struct {
 	Name   string `json:"name"`
 }
 
-// getAssetNames is overridable in tests.
-var getAssetNames = func(ctx context.Context, clientID string, characterID int32, userAgent string, itemIDs []int64) ([]AssetName, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
+// assetNamesESI is the ESI call get_asset_names makes; the planner family
+// names a character's ships and containers through it too.
+type assetNamesESI interface {
+	AssetNames(ctx context.Context, itemIDs []int64) ([]esiapi.CharactersCharacterIdAssetsNamesPostInner, error)
+}
+
+// getAssetNames reads the custom names of a character's items.
+func getAssetNames(ctx context.Context, client assetNamesESI, itemIDs []int64) ([]AssetName, error) {
 	names, err := client.AssetNames(ctx, itemIDs)
 	if err != nil {
 		return nil, err
@@ -218,7 +243,16 @@ type GetAssetNamesOutput struct {
 	Names       []AssetName `json:"names"`
 }
 
-func getAssetNamesHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetAssetNamesInput, GetAssetNamesOutput] {
+// AddGetAssetNames registers get_asset_names. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddGetAssetNames[C assetNamesESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_asset_names",
+		Description: "Resolve a set of a character's asset item IDs into their player-assigned custom names.",
+	}, getAssetNamesHandler(open, store))
+}
+
+func getAssetNamesHandler[C assetNamesESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[GetAssetNamesInput, GetAssetNamesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetAssetNamesInput) (*mcpsdk.CallToolResult, GetAssetNamesOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -234,7 +268,11 @@ func getAssetNamesHandler(version, clientID string, store ConfigStore) mcpsdk.To
 		if !found {
 			return nil, GetAssetNamesOutput{}, fmt.Errorf("get asset names for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		names, err := getAssetNames(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.ItemIDs)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, GetAssetNamesOutput{}, fmt.Errorf("get asset names: %w", err)
+		}
+		names, err := getAssetNames(ctx, client, in.ItemIDs)
 		if err != nil {
 			return nil, GetAssetNamesOutput{}, fmt.Errorf("get asset names: %w", err)
 		}
@@ -242,12 +280,14 @@ func getAssetNamesHandler(version, clientID string, store ConfigStore) mcpsdk.To
 	}
 }
 
-// listCorporationAssets is overridable in tests.
-var listCorporationAssets = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]AssetItem, int32, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, 0, fmt.Errorf("build ESI client: %w", err)
-	}
+// corporationAssetsESI is the ESI call list_corporation_assets makes; the
+// planner family reads a corporation's assets through it too.
+type corporationAssetsESI interface {
+	CorporationAssets(ctx context.Context, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdAssetsGetInner, int32, error)
+}
+
+// listCorporationAssets reads one page of a corporation's assets.
+func listCorporationAssets(ctx context.Context, client corporationAssetsESI, corporationID int64, page int32) ([]AssetItem, int32, error) {
 	assets, totalPages, err := client.CorporationAssets(ctx, corporationID, page)
 	if err != nil {
 		return nil, 0, err
@@ -279,7 +319,16 @@ type ListCorporationAssetsOutput struct {
 	Assets        []AssetItem `json:"assets"`
 }
 
-func listCorporationAssetsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCorporationAssetsInput, ListCorporationAssetsOutput] {
+// AddListCorporationAssets registers list_corporation_assets. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListCorporationAssets[C corporationAssetsESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore assetEnrichCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_corporation_assets",
+		Description: "List a corporation's assets, using a logged-in character's roles to authorize.",
+	}, listCorporationAssetsHandler(userAgent, open, store, sdeStore))
+}
+
+func listCorporationAssetsHandler[C corporationAssetsESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore assetEnrichCache) mcpsdk.ToolHandlerFor[ListCorporationAssetsInput, ListCorporationAssetsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationAssetsInput) (*mcpsdk.CallToolResult, ListCorporationAssetsOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -295,11 +344,15 @@ func listCorporationAssetsHandler(version, clientID string, store ConfigStore, s
 		if !found {
 			return nil, ListCorporationAssetsOutput{}, fmt.Errorf("list corporation assets for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		assets, totalPages, err := listCorporationAssets(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.Page)
+		client, err := open(ctx, in.CharacterID)
 		if err != nil {
 			return nil, ListCorporationAssetsOutput{}, fmt.Errorf("list corporation assets: %w", err)
 		}
-		enrichAssets(ctx, sdeStore, sso.UserAgent(version), assets)
+		assets, totalPages, err := listCorporationAssets(ctx, client, in.CorporationID, in.Page)
+		if err != nil {
+			return nil, ListCorporationAssetsOutput{}, fmt.Errorf("list corporation assets: %w", err)
+		}
+		enrichAssets(ctx, sdeStore, userAgent, assets)
 		page := in.Page
 		if page <= 0 {
 			page = 1
@@ -363,12 +416,14 @@ func getCorporationAssetLocationsHandler(version, clientID string, store ConfigS
 	}
 }
 
-// getCorporationAssetNames is overridable in tests.
-var getCorporationAssetNames = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, itemIDs []int64) ([]AssetName, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
+// corporationAssetNamesESI is the ESI call get_corporation_asset_names
+// makes; the planner family names a corporation's containers through it too.
+type corporationAssetNamesESI interface {
+	CorporationAssetNames(ctx context.Context, corporationID int64, itemIDs []int64) ([]esiapi.CharactersCharacterIdAssetsNamesPostInner, error)
+}
+
+// getCorporationAssetNames reads the custom names of a corporation's items.
+func getCorporationAssetNames(ctx context.Context, client corporationAssetNamesESI, corporationID int64, itemIDs []int64) ([]AssetName, error) {
 	names, err := client.CorporationAssetNames(ctx, corporationID, itemIDs)
 	if err != nil {
 		return nil, err
@@ -394,7 +449,16 @@ type GetCorporationAssetNamesOutput struct {
 	Names         []AssetName `json:"names"`
 }
 
-func getCorporationAssetNamesHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetCorporationAssetNamesInput, GetCorporationAssetNamesOutput] {
+// AddGetCorporationAssetNames registers get_corporation_asset_names. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddGetCorporationAssetNames[C corporationAssetNamesESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_corporation_asset_names",
+		Description: "Resolve a set of a corporation's asset item IDs into their player-assigned custom names.",
+	}, getCorporationAssetNamesHandler(open, store))
+}
+
+func getCorporationAssetNamesHandler[C corporationAssetNamesESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[GetCorporationAssetNamesInput, GetCorporationAssetNamesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCorporationAssetNamesInput) (*mcpsdk.CallToolResult, GetCorporationAssetNamesOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -410,7 +474,11 @@ func getCorporationAssetNamesHandler(version, clientID string, store ConfigStore
 		if !found {
 			return nil, GetCorporationAssetNamesOutput{}, fmt.Errorf("get corporation asset names for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		names, err := getCorporationAssetNames(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.ItemIDs)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, GetCorporationAssetNamesOutput{}, fmt.Errorf("get corporation asset names: %w", err)
+		}
+		names, err := getCorporationAssetNames(ctx, client, in.CorporationID, in.ItemIDs)
 		if err != nil {
 			return nil, GetCorporationAssetNamesOutput{}, fmt.Errorf("get corporation asset names: %w", err)
 		}

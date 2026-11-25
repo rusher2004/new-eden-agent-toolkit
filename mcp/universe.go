@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
@@ -1370,11 +1371,13 @@ type UniverseStructure struct {
 	Position      *Position `json:"position,omitempty"`
 }
 
-var getUniverseStructure = func(ctx context.Context, clientID string, characterID int32, userAgent string, structureID int64) (UniverseStructure, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return UniverseStructure{}, fmt.Errorf("build ESI client: %w", err)
-	}
+// universeStructureESI is the ESI call get_universe_structure makes; the
+// trade hub and saved structure tools read structures through it too.
+type universeStructureESI interface {
+	UniverseStructureDetail(ctx context.Context, structureID int64) (*esiapi.UniverseStructuresStructureIdGet, error)
+}
+
+func getUniverseStructure(ctx context.Context, client universeStructureESI, structureID int64) (UniverseStructure, error) {
 	s, err := client.UniverseStructureDetail(ctx, structureID)
 	if err != nil {
 		return UniverseStructure{}, err
@@ -1391,7 +1394,16 @@ type GetUniverseStructureInput struct {
 	StructureID int64 `json:"structureId" jsonschema:"the structure ID to look up"`
 }
 
-func getUniverseStructureHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetUniverseStructureInput, UniverseStructure] {
+// AddGetUniverseStructure registers get_universe_structure. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddGetUniverseStructure[C universeStructureESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_universe_structure",
+		Description: "Get a player structure's name, owner, solar system, type, and position. The given character must have docking access to the structure.",
+	}, getUniverseStructureHandler(open, store))
+}
+
+func getUniverseStructureHandler[C universeStructureESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[GetUniverseStructureInput, UniverseStructure] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetUniverseStructureInput) (*mcpsdk.CallToolResult, UniverseStructure, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -1400,7 +1412,11 @@ func getUniverseStructureHandler(version, clientID string, store ConfigStore) mc
 		if !found {
 			return nil, UniverseStructure{}, fmt.Errorf("get universe structure for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		out, err := getUniverseStructure(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.StructureID)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, UniverseStructure{}, fmt.Errorf("get universe structure: %w", err)
+		}
+		out, err := getUniverseStructure(ctx, client, in.StructureID)
 		if err != nil {
 			return nil, UniverseStructure{}, fmt.Errorf("get universe structure: %w", err)
 		}
@@ -1452,8 +1468,13 @@ type UniverseSystemKills struct {
 	ShipKills int64 `json:"shipKills"`
 }
 
-var listUniverseSystemKills = func(ctx context.Context, userAgent string) ([]UniverseSystemKills, error) {
-	client := newPublicESIClient(userAgent)
+// universeSystemKillsESI is the public ESI call list_universe_system_kills
+// makes; route planning reads recent kills through it too.
+type universeSystemKillsESI interface {
+	UniverseSystemKills(ctx context.Context) ([]esiapi.UniverseSystemKillsGetInner, error)
+}
+
+func listUniverseSystemKills(ctx context.Context, client universeSystemKillsESI) ([]UniverseSystemKills, error) {
 	kills, err := client.UniverseSystemKills(ctx)
 	if err != nil {
 		return nil, err
@@ -1470,9 +1491,18 @@ type ListUniverseSystemKillsOutput struct {
 	SystemKills []UniverseSystemKills `json:"systemKills"`
 }
 
-func listUniverseSystemKillsHandler(version string) mcpsdk.ToolHandlerFor[ListUniverseSystemKillsInput, ListUniverseSystemKillsOutput] {
+// AddListUniverseSystemKills registers list_universe_system_kills. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListUniverseSystemKills[C universeSystemKillsESI](s *mcpsdk.Server, open func() C) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_universe_system_kills",
+		Description: "List NPC/pod/ship kill activity per solar system over the last hour (public data, no character required).",
+	}, listUniverseSystemKillsHandler(open))
+}
+
+func listUniverseSystemKillsHandler[C universeSystemKillsESI](open func() C) mcpsdk.ToolHandlerFor[ListUniverseSystemKillsInput, ListUniverseSystemKillsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListUniverseSystemKillsInput) (*mcpsdk.CallToolResult, ListUniverseSystemKillsOutput, error) {
-		kills, err := listUniverseSystemKills(ctx, sso.UserAgent(version))
+		kills, err := listUniverseSystemKills(ctx, open())
 		if err != nil {
 			return nil, ListUniverseSystemKillsOutput{}, fmt.Errorf("list universe system kills: %w", err)
 		}
@@ -1574,8 +1604,13 @@ type ResolvedName struct {
 	Name     string `json:"name"`
 }
 
-var resolveUniverseNames = func(ctx context.Context, userAgent string, ids []int64) ([]ResolvedName, error) {
-	client := newPublicESIClient(userAgent)
+// universeNamesESI is the public ESI call resolve_universe_names makes;
+// save_structure names a structure's owner through it too.
+type universeNamesESI interface {
+	UniverseNamesByID(ctx context.Context, ids []int64) ([]esiapi.UniverseNamesPostInner, error)
+}
+
+func resolveUniverseNames(ctx context.Context, client universeNamesESI, ids []int64) ([]ResolvedName, error) {
 	names, err := client.UniverseNamesByID(ctx, ids)
 	if err != nil {
 		return nil, err
@@ -1594,7 +1629,16 @@ type ResolveUniverseNamesOutput struct {
 	Names []ResolvedName `json:"names"`
 }
 
-func resolveUniverseNamesHandler(version string) mcpsdk.ToolHandlerFor[ResolveUniverseNamesInput, ResolveUniverseNamesOutput] {
+// AddResolveUniverseNames registers resolve_universe_names. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddResolveUniverseNames[C universeNamesESI](s *mcpsdk.Server, open func() C) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "resolve_universe_names",
+		Description: "Resolve a list of IDs to their names and categories. Accepts 1-1000 IDs per call (public data, no character required).",
+	}, resolveUniverseNamesHandler(open))
+}
+
+func resolveUniverseNamesHandler[C universeNamesESI](open func() C) mcpsdk.ToolHandlerFor[ResolveUniverseNamesInput, ResolveUniverseNamesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ResolveUniverseNamesInput) (*mcpsdk.CallToolResult, ResolveUniverseNamesOutput, error) {
 		// ESI's own documented cap for this endpoint (esi/api/openapi.yaml): 1-1000 IDs.
 		// Validate client-side rather than let an out-of-range request reach ESI as an opaque 400.
@@ -1604,7 +1648,7 @@ func resolveUniverseNamesHandler(version string) mcpsdk.ToolHandlerFor[ResolveUn
 		if len(in.IDs) > 1000 {
 			return nil, ResolveUniverseNamesOutput{}, fmt.Errorf("resolve universe names: got %d ids, ESI accepts at most 1000 per request", len(in.IDs))
 		}
-		names, err := resolveUniverseNames(ctx, sso.UserAgent(version), in.IDs)
+		names, err := resolveUniverseNames(ctx, open(), in.IDs)
 		if err != nil {
 			return nil, ResolveUniverseNamesOutput{}, fmt.Errorf("resolve universe names: %w", err)
 		}

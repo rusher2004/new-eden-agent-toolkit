@@ -4,10 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-
-	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
 // --- list_incursions (public, no input) ---
@@ -27,8 +25,13 @@ type Incursion struct {
 	Type                     string   `json:"type"`
 }
 
-var listIncursions = func(ctx context.Context, userAgent string) ([]Incursion, error) {
-	client := esi.NewPublicClient(userAgent)
+// incursionsESI is the public ESI call list_incursions makes; route
+// planning reads incursions through it too.
+type incursionsESI interface {
+	Incursions(ctx context.Context) ([]esiapi.IncursionsGetInner, error)
+}
+
+func listIncursions(ctx context.Context, client incursionsESI) ([]Incursion, error) {
 	incursions, err := client.Incursions(ctx)
 	if err != nil {
 		return nil, err
@@ -49,9 +52,25 @@ type ListIncursionsOutput struct {
 	Incursions []Incursion `json:"incursions"`
 }
 
-func listIncursionsHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListIncursionsInput, ListIncursionsOutput] {
+// incursionNameCache is the SDE lookups list_incursions makes.
+type incursionNameCache interface {
+	constellationNameCache
+	factionNameCache
+	systemNameCache
+}
+
+// AddListIncursions registers list_incursions. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListIncursions[C incursionsESI](s *mcpsdk.Server, userAgent string, open func() C, sdeStore incursionNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_incursions",
+		Description: "List every currently active incursion (public data, no character required).",
+	}, listIncursionsHandler(userAgent, open, sdeStore))
+}
+
+func listIncursionsHandler[C incursionsESI](userAgent string, open func() C, sdeStore incursionNameCache) mcpsdk.ToolHandlerFor[ListIncursionsInput, ListIncursionsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListIncursionsInput) (*mcpsdk.CallToolResult, ListIncursionsOutput, error) {
-		incursions, err := listIncursions(ctx, sso.UserAgent(version))
+		incursions, err := listIncursions(ctx, open())
 		if err != nil {
 			return nil, ListIncursionsOutput{}, fmt.Errorf("list incursions: %w", err)
 		}
@@ -63,9 +82,9 @@ func listIncursionsHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandler
 			systemIDs = append(systemIDs, inc.StagingSolarSystemID)
 			systemIDs = append(systemIDs, inc.InfestedSolarSystemIDs...)
 		}
-		constellationNames := resolveConstellationNames(ctx, sdeStore, sso.UserAgent(version), constellationIDs)
-		factionNames := resolveFactionNames(ctx, sdeStore, sso.UserAgent(version), factionIDs)
-		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), systemIDs)
+		constellationNames := resolveConstellationNames(ctx, sdeStore, userAgent, constellationIDs)
+		factionNames := resolveFactionNames(ctx, sdeStore, userAgent, factionIDs)
+		systemNames := resolveSystemNames(ctx, sdeStore, userAgent, systemIDs)
 		for i := range incursions {
 			incursions[i].ConstellationName = constellationNames[incursions[i].ConstellationID]
 			incursions[i].FactionName = factionNames[incursions[i].FactionID]

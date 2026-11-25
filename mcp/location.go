@@ -5,19 +5,40 @@ import (
 	"fmt"
 	"time"
 
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
+
+// characterLocationESI is the ESI call get_character_location makes; the
+// planner family reads locations through it too.
+type characterLocationESI interface {
+	CharacterLocation(ctx context.Context) (*esiapi.CharactersLocation, error)
+}
+
+// characterOnlineESI is the ESI call get_character_online makes; the
+// logistics overview reads online status through it too.
+type characterOnlineESI interface {
+	CharacterOnline(ctx context.Context) (*esi.CharacterOnlineStatus, error)
+}
+
+// characterShipESI is the ESI call get_character_ship makes; the logistics
+// overview reads ships through it too.
+type characterShipESI interface {
+	CharacterShip(ctx context.Context) (*esiapi.CharactersShip, error)
+}
+
+// locationNameCache is the SDE lookups get_character_location names its
+// system and station with.
+type locationNameCache interface {
+	systemNameCache
+	stationNameCache
+}
 
 // --- get_character_location (private) ---
 
-var getCharacterLocation = func(ctx context.Context, clientID string, characterID int32, userAgent string) (int64, *int64, *int64, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return 0, nil, nil, fmt.Errorf("build ESI client: %w", err)
-	}
+func getCharacterLocation(ctx context.Context, client characterLocationESI) (int64, *int64, *int64, error) {
 	loc, err := client.CharacterLocation(ctx)
 	if err != nil {
 		return 0, nil, nil, err
@@ -37,7 +58,16 @@ type GetCharacterLocationOutput struct {
 	StructureID     *int64 `json:"structureId,omitempty"`
 }
 
-func getCharacterLocationHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetCharacterLocationInput, GetCharacterLocationOutput] {
+// AddGetCharacterLocation registers get_character_location. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddGetCharacterLocation[C characterLocationESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore locationNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_character_location",
+		Description: "Get a logged-in EVE Online character's current solar system, and station or structure ID if docked/boarded.",
+	}, getCharacterLocationHandler(userAgent, open, store, sdeStore))
+}
+
+func getCharacterLocationHandler[C characterLocationESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore locationNameCache) mcpsdk.ToolHandlerFor[GetCharacterLocationInput, GetCharacterLocationOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterLocationInput) (*mcpsdk.CallToolResult, GetCharacterLocationOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -46,14 +76,18 @@ func getCharacterLocationHandler(version, clientID string, store ConfigStore, sd
 		if !found {
 			return nil, GetCharacterLocationOutput{}, fmt.Errorf("get character location for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		solarSystemID, stationID, structureID, err := getCharacterLocation(ctx, clientID, in.CharacterID, sso.UserAgent(version))
+		client, err := open(ctx, in.CharacterID)
 		if err != nil {
 			return nil, GetCharacterLocationOutput{}, fmt.Errorf("get character location: %w", err)
 		}
-		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), []int64{solarSystemID})
+		solarSystemID, stationID, structureID, err := getCharacterLocation(ctx, client)
+		if err != nil {
+			return nil, GetCharacterLocationOutput{}, fmt.Errorf("get character location: %w", err)
+		}
+		systemNames := resolveSystemNames(ctx, sdeStore, userAgent, []int64{solarSystemID})
 		var stationName string
 		if stationID != nil {
-			stationNames := resolveStationNames(ctx, sdeStore, sso.UserAgent(version), []int64{*stationID})
+			stationNames := resolveStationNames(ctx, sdeStore, userAgent, []int64{*stationID})
 			stationName = stationNames[*stationID]
 		}
 		return nil, GetCharacterLocationOutput{CharacterID: in.CharacterID, SolarSystemID: solarSystemID, SolarSystemName: systemNames[solarSystemID], StationID: stationID, StationName: stationName, StructureID: structureID}, nil
@@ -62,11 +96,7 @@ func getCharacterLocationHandler(version, clientID string, store ConfigStore, sd
 
 // --- get_character_online (private) ---
 
-var getCharacterOnline = func(ctx context.Context, clientID string, characterID int32, userAgent string) (*esi.CharacterOnlineStatus, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
+func getCharacterOnline(ctx context.Context, client characterOnlineESI) (*esi.CharacterOnlineStatus, error) {
 	return client.CharacterOnline(ctx)
 }
 
@@ -81,7 +111,16 @@ type GetCharacterOnlineOutput struct {
 	Logins      *int64     `json:"logins,omitempty"`
 }
 
-func getCharacterOnlineHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetCharacterOnlineInput, GetCharacterOnlineOutput] {
+// AddGetCharacterOnline registers get_character_online. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddGetCharacterOnline[C characterOnlineESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_character_online",
+		Description: "Get a logged-in EVE Online character's online status and login history.",
+	}, getCharacterOnlineHandler(open, store))
+}
+
+func getCharacterOnlineHandler[C characterOnlineESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[GetCharacterOnlineInput, GetCharacterOnlineOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterOnlineInput) (*mcpsdk.CallToolResult, GetCharacterOnlineOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -90,7 +129,11 @@ func getCharacterOnlineHandler(version, clientID string, store ConfigStore) mcps
 		if !found {
 			return nil, GetCharacterOnlineOutput{}, fmt.Errorf("get character online status for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		status, err := getCharacterOnline(ctx, clientID, in.CharacterID, sso.UserAgent(version))
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, GetCharacterOnlineOutput{}, fmt.Errorf("get character online status: open ESI client: %w", err)
+		}
+		status, err := getCharacterOnline(ctx, client)
 		if err != nil {
 			return nil, GetCharacterOnlineOutput{}, fmt.Errorf("get character online status: %w", err)
 		}
@@ -100,11 +143,7 @@ func getCharacterOnlineHandler(version, clientID string, store ConfigStore) mcps
 
 // --- get_character_ship (private) ---
 
-var getCharacterShip = func(ctx context.Context, clientID string, characterID int32, userAgent string) (int64, string, int64, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return 0, "", 0, fmt.Errorf("build ESI client: %w", err)
-	}
+func getCharacterShip(ctx context.Context, client characterShipESI) (int64, string, int64, error) {
 	ship, err := client.CharacterShip(ctx)
 	if err != nil {
 		return 0, "", 0, err
@@ -123,7 +162,16 @@ type GetCharacterShipOutput struct {
 	ShipTypeName string `json:"shipTypeName,omitempty"`
 }
 
-func getCharacterShipHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetCharacterShipInput, GetCharacterShipOutput] {
+// AddGetCharacterShip registers get_character_ship. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddGetCharacterShip[C characterShipESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore typeNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_character_ship",
+		Description: "Get a logged-in EVE Online character's current ship.",
+	}, getCharacterShipHandler(userAgent, open, store, sdeStore))
+}
+
+func getCharacterShipHandler[C characterShipESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore typeNameCache) mcpsdk.ToolHandlerFor[GetCharacterShipInput, GetCharacterShipOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterShipInput) (*mcpsdk.CallToolResult, GetCharacterShipOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -132,11 +180,15 @@ func getCharacterShipHandler(version, clientID string, store ConfigStore, sdeSto
 		if !found {
 			return nil, GetCharacterShipOutput{}, fmt.Errorf("get character ship for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		shipItemID, shipName, shipTypeID, err := getCharacterShip(ctx, clientID, in.CharacterID, sso.UserAgent(version))
+		client, err := open(ctx, in.CharacterID)
 		if err != nil {
 			return nil, GetCharacterShipOutput{}, fmt.Errorf("get character ship: %w", err)
 		}
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), []int64{shipTypeID})
+		shipItemID, shipName, shipTypeID, err := getCharacterShip(ctx, client)
+		if err != nil {
+			return nil, GetCharacterShipOutput{}, fmt.Errorf("get character ship: %w", err)
+		}
+		names := resolveTypeNames(ctx, sdeStore, userAgent, []int64{shipTypeID})
 		return nil, GetCharacterShipOutput{CharacterID: in.CharacterID, ShipItemID: shipItemID, ShipName: shipName, ShipTypeID: shipTypeID, ShipTypeName: names[shipTypeID]}, nil
 	}
 }

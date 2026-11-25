@@ -2,11 +2,13 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"math"
 	"slices"
 	"strings"
 	"testing"
 
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	"github.com/zalando/go-keyring"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
@@ -22,31 +24,29 @@ func shipToolsEnv(t *testing.T) (*config.Store, *planner) {
 		t.Fatal(err)
 	}
 	s := sdetest.NewStore(t, "testdata/industry_fixture.sql", "testdata/readiness_fixture.sql", "testdata/dogma_fixture.sql")
-	return store, newPlanner("test", "client", store, s)
+	openESI, openPublicESI := noESI()
+	return store, newPlanner("test", openESI, openPublicESI, store, s)
 }
 
-func stubOwnedArk(t *testing.T) {
-	t.Helper()
-	origA, origN := listAssets, getAssetNames
-	t.Cleanup(func() { listAssets, getAssetNames = origA, origN })
-	listAssets = func(context.Context, string, int32, string, int32) ([]AssetItem, int32, error) {
+func stubOwnedArk(p *planner) {
+	stubAssets(p, func(int32) ([]AssetItem, error) {
 		return []AssetItem{
 			{ItemID: 500, TypeID: 28850, LocationID: 60003760, LocationFlag: "Hangar", Quantity: 1, IsSingleton: true},
 			{ItemID: 501, TypeID: 1319, LocationID: 500, LocationFlag: "LoSlot0", Quantity: 1, IsSingleton: true},
 			{ItemID: 502, TypeID: 1319, LocationID: 500, LocationFlag: "LoSlot1", Quantity: 1, IsSingleton: true},
 			{ItemID: 503, TypeID: 16273, LocationID: 500, LocationFlag: "Cargo", Quantity: 100},
-		}, 1, nil
-	}
-	getAssetNames = func(context.Context, string, int32, string, []int64) ([]AssetName, error) {
+		}, nil
+	})
+	stubAssetNames(p, func(int32, []int64) ([]AssetName, error) {
 		return []AssetName{{ItemID: 500, Name: "Big Box"}}, nil
-	}
+	})
 }
 
 func TestEstimateShipHold_OwnedArkWithPilotSkills(t *testing.T) {
 	store, p := shipToolsEnv(t)
-	stubOwnedArk(t)
-	stubSkills(t, map[int32][]CharacterSkill{reconPilot: {{SkillID: 20524, ActiveSkillLevel: 4}}})
-	_, out, err := estimateShipHoldHandler("test", "client", store, p.sde)(context.Background(), nil, EstimateShipHoldInput{ShipSpec: ShipSpec{ShipItemID: 500}, PilotID: reconPilot})
+	stubOwnedArk(p)
+	stubSkills(p, map[int32][]CharacterSkill{reconPilot: {{SkillID: 20524, ActiveSkillLevel: 4}}})
+	_, out, err := estimateShipHoldHandler("test", p.openESI, p.openPublicESI, store, p.sde)(context.Background(), nil, EstimateShipHoldInput{ShipSpec: ShipSpec{ShipItemID: 500}, PilotID: reconPilot})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +60,7 @@ func TestEstimateShipHold_OwnedArkWithPilotSkills(t *testing.T) {
 
 func TestEstimateShipHold_NamedFitUntrained(t *testing.T) {
 	store, p := shipToolsEnv(t)
-	_, out, err := estimateShipHoldHandler("test", "client", store, p.sde)(context.Background(), nil, EstimateShipHoldInput{ShipSpec: ShipSpec{ShipType: "Venture",
+	_, out, err := estimateShipHoldHandler("test", p.openESI, p.openPublicESI, store, p.sde)(context.Background(), nil, EstimateShipHoldInput{ShipSpec: ShipSpec{ShipType: "Venture",
 		Modules: []string{"Expanded Cargohold II", "Small Cargohold Optimization I", "Small Cargohold Optimization I", "Small Cargohold Optimization I"}}})
 	if err != nil {
 		t.Fatal(err)
@@ -68,7 +68,7 @@ func TestEstimateShipHold_NamedFitUntrained(t *testing.T) {
 	if want := 50 * 1.275 * math.Pow(1.15, 3); math.Abs(out.Holds[0].FittedM3-want) > 1e-6 || out.Holds[0].BaseM3 != 50 {
 		t.Errorf("Venture holds = %+v, want %v", out.Holds, want)
 	}
-	if _, _, err := estimateShipHoldHandler("test", "client", store, p.sde)(context.Background(), nil, EstimateShipHoldInput{ShipSpec: ShipSpec{ShipType: "Venture", Modules: []string{"Nope"}}}); err == nil {
+	if _, _, err := estimateShipHoldHandler("test", p.openESI, p.openPublicESI, store, p.sde)(context.Background(), nil, EstimateShipHoldInput{ShipSpec: ShipSpec{ShipType: "Venture", Modules: []string{"Nope"}}}); err == nil {
 		t.Error("an unknown module: want an error")
 	}
 }
@@ -84,8 +84,8 @@ func TestEstimateCyno_VentureIndustrial(t *testing.T) {
 		{4, 240, 1, 3},
 		{5, 200, 1, 3},
 	} {
-		stubSkills(t, map[int32][]CharacterSkill{reconPilot: {{SkillID: 21603, ActiveSkillLevel: tt.cft}}})
-		_, out, err := estimateCynoHandler("test", "client", store, p.sde)(context.Background(), nil, EstimateCynoInput{ShipSpec: fit, LighterID: reconPilot, Cyno: "industrial", Lights: 3})
+		stubSkills(p, map[int32][]CharacterSkill{reconPilot: {{SkillID: 21603, ActiveSkillLevel: tt.cft}}})
+		_, out, err := estimateCynoHandler("test", p.openESI, p.openPublicESI, store, p.sde)(context.Background(), nil, EstimateCynoInput{ShipSpec: fit, LighterID: reconPilot, Cyno: "industrial", Lights: 3})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -96,8 +96,8 @@ func TestEstimateCyno_VentureIndustrial(t *testing.T) {
 			t.Errorf("CFT %d: lights per hold %d fills %d fuel %v fits %v missing %v", tt.cft, out.LightsPerHold, out.Fills, out.FuelForLights, !out.GeneratorNotFits, out.MissingSkills)
 		}
 	}
-	stubSkills(t, map[int32][]CharacterSkill{reconPilot: nil})
-	_, out, err := estimateCynoHandler("test", "client", store, p.sde)(context.Background(), nil, EstimateCynoInput{ShipSpec: ShipSpec{ShipType: "Ark"}, LighterID: reconPilot, Cyno: "industrial"})
+	stubSkills(p, map[int32][]CharacterSkill{reconPilot: nil})
+	_, out, err := estimateCynoHandler("test", p.openESI, p.openPublicESI, store, p.sde)(context.Background(), nil, EstimateCynoInput{ShipSpec: ShipSpec{ShipType: "Ark"}, LighterID: reconPilot, Cyno: "industrial"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,9 +108,9 @@ func TestEstimateCyno_VentureIndustrial(t *testing.T) {
 
 func TestSaveHaulProfile_HoldFromShipItem(t *testing.T) {
 	store, p := shipToolsEnv(t)
-	stubOwnedArk(t)
-	stubSkills(t, map[int32][]CharacterSkill{reconPilot: {{SkillID: 20524, ActiveSkillLevel: 4}}})
-	_, prof, err := saveHaulProfileHandler("test", "client", store, p.sde)(context.Background(), nil, SaveHaulProfileInput{Name: "Ark run", PilotID: int64(reconPilot), ShipItemID: 500})
+	stubOwnedArk(p)
+	stubSkills(p, map[int32][]CharacterSkill{reconPilot: {{SkillID: 20524, ActiveSkillLevel: 4}}})
+	_, prof, err := saveHaulProfileHandler("test", p.openESI, p.openPublicESI, store, p.sde)(context.Background(), nil, SaveHaulProfileInput{Name: "Ark run", PilotID: int64(reconPilot), ShipItemID: 500})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,15 +121,17 @@ func TestSaveHaulProfile_HoldFromShipItem(t *testing.T) {
 
 func TestEstimateShipHold_LoadedChargeIsNotAModule(t *testing.T) {
 	store, p := shipToolsEnv(t)
-	stubOwnedArk(t)
-	base := listAssets
-	listAssets = func(ctx context.Context, v string, c int32, cl string, page int32) ([]AssetItem, int32, error) {
-		items, pages, err := base(ctx, v, c, cl, page)
-		// A charge loaded in a module carries the module's slot flag.
-		return append(items, AssetItem{ItemID: 504, TypeID: 222, LocationID: 500, LocationFlag: "LoSlot0", Quantity: 100}), pages, err
-	}
-	stubSkills(t, map[int32][]CharacterSkill{reconPilot: {{SkillID: 20524, ActiveSkillLevel: 4}}})
-	_, out, err := estimateShipHoldHandler("test", "client", store, p.sde)(context.Background(), nil, EstimateShipHoldInput{ShipSpec: ShipSpec{ShipItemID: 500}, PilotID: reconPilot})
+	stubOwnedArk(p)
+	addESILayer(p, func(_ int32, f *fakeESI) {
+		base := f.assets
+		f.assets = func(ctx context.Context, page int32) ([]esiapi.CharactersCharacterIdAssetsGetInner, int32, error) {
+			items, pages, err := base(ctx, page)
+			// A charge loaded in a module carries the module's slot flag.
+			return append(items, esiapi.CharactersCharacterIdAssetsGetInner{ItemId: 504, TypeId: 222, LocationId: 500, LocationFlag: "LoSlot0", Quantity: 100}), pages, err
+		}
+	})
+	stubSkills(p, map[int32][]CharacterSkill{reconPilot: {{SkillID: 20524, ActiveSkillLevel: 4}}})
+	_, out, err := estimateShipHoldHandler("test", p.openESI, p.openPublicESI, store, p.sde)(context.Background(), nil, EstimateShipHoldInput{ShipSpec: ShipSpec{ShipItemID: 500}, PilotID: reconPilot})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,10 +140,19 @@ func TestEstimateShipHold_LoadedChargeIsNotAModule(t *testing.T) {
 	}
 }
 
+func TestEstimateShipHold_UnopenableClient(t *testing.T) {
+	store, p := shipToolsEnv(t)
+	p.openESI = failOpenESI(errors.New("no refresh token"))
+	_, _, err := estimateShipHoldHandler("test", p.openESI, p.openPublicESI, store, p.sde)(context.Background(), nil, EstimateShipHoldInput{ShipSpec: ShipSpec{ShipItemID: 500}, PilotID: reconPilot})
+	if err == nil || !strings.Contains(err.Error(), "read the owner's assets: no refresh token") {
+		t.Errorf("err = %v, want the open error", err)
+	}
+}
+
 func TestEstimateShipHold_ShipItemNeedsOwner(t *testing.T) {
 	store, p := shipToolsEnv(t)
-	stubOwnedArk(t)
-	_, _, err := estimateShipHoldHandler("test", "client", store, p.sde)(context.Background(), nil, EstimateShipHoldInput{ShipSpec: ShipSpec{ShipItemID: 500}})
+	stubOwnedArk(p)
+	_, _, err := estimateShipHoldHandler("test", p.openESI, p.openPublicESI, store, p.sde)(context.Background(), nil, EstimateShipHoldInput{ShipSpec: ShipSpec{ShipItemID: 500}})
 	if err == nil || !strings.Contains(err.Error(), "ownerId") {
 		t.Errorf("err = %v, want one asking for ownerId or a pilot", err)
 	}
@@ -149,9 +160,9 @@ func TestEstimateShipHold_ShipItemNeedsOwner(t *testing.T) {
 
 func TestSaveHaulProfile_ShipMustMatchShipItem(t *testing.T) {
 	store, p := shipToolsEnv(t)
-	stubOwnedArk(t)
-	stubSkills(t, map[int32][]CharacterSkill{reconPilot: {{SkillID: 20524, ActiveSkillLevel: 4}}})
-	save := saveHaulProfileHandler("test", "client", store, p.sde)
+	stubOwnedArk(p)
+	stubSkills(p, map[int32][]CharacterSkill{reconPilot: {{SkillID: 20524, ActiveSkillLevel: 4}}})
+	save := saveHaulProfileHandler("test", p.openESI, p.openPublicESI, store, p.sde)
 	if _, _, err := save(context.Background(), nil, SaveHaulProfileInput{Name: "Wrong hull", Ship: "Rhea", PilotID: int64(reconPilot), ShipItemID: 500}); err == nil || !strings.Contains(err.Error(), "Ark") {
 		t.Errorf("Rhea named for an Ark: err = %v, want a mismatch error", err)
 	}
@@ -165,10 +176,8 @@ func TestSaveHaulProfile_ShipMustMatchShipItem(t *testing.T) {
 // the fills start from what's aboard.
 func TestEstimateCyno_OwnedVentureCountsFuelAboard(t *testing.T) {
 	store, p := shipToolsEnv(t)
-	origA, origN := listAssets, getAssetNames
-	t.Cleanup(func() { listAssets, getAssetNames = origA, origN })
 	ozone := int64(242)
-	listAssets = func(context.Context, string, int32, string, int32) ([]AssetItem, int32, error) {
+	stubAssets(p, func(int32) ([]AssetItem, error) {
 		return []AssetItem{
 			{ItemID: 600, TypeID: 32880, LocationID: 60003760, LocationFlag: "Hangar", Quantity: 1, IsSingleton: true},
 			{ItemID: 601, TypeID: 1319, LocationID: 600, LocationFlag: "LoSlot0", Quantity: 1, IsSingleton: true},
@@ -177,12 +186,12 @@ func TestEstimateCyno_OwnedVentureCountsFuelAboard(t *testing.T) {
 			{ItemID: 604, TypeID: 31117, LocationID: 600, LocationFlag: "RigSlot2", Quantity: 1, IsSingleton: true},
 			{ItemID: 605, TypeID: 52694, LocationID: 600, LocationFlag: "HiSlot0", Quantity: 1, IsSingleton: true},
 			{ItemID: 606, TypeID: 16273, LocationID: 600, LocationFlag: "Cargo", Quantity: ozone},
-		}, 1, nil
-	}
-	getAssetNames = func(context.Context, string, int32, string, []int64) ([]AssetName, error) { return nil, nil }
-	stubSkills(t, map[int32][]CharacterSkill{reconPilot: {{SkillID: 21603, ActiveSkillLevel: 5}}})
+		}, nil
+	})
+	stubAssetNames(p, func(int32, []int64) ([]AssetName, error) { return nil, nil })
+	stubSkills(p, map[int32][]CharacterSkill{reconPilot: {{SkillID: 21603, ActiveSkillLevel: 5}}})
 
-	_, out, err := estimateCynoHandler("test", "client", store, p.sde)(context.Background(), nil, EstimateCynoInput{ShipSpec: ShipSpec{ShipItemID: 600}, LighterID: reconPilot, Cyno: "industrial", Lights: 2})
+	_, out, err := estimateCynoHandler("test", p.openESI, p.openPublicESI, store, p.sde)(context.Background(), nil, EstimateCynoInput{ShipSpec: ShipSpec{ShipItemID: 600}, LighterID: reconPilot, Cyno: "industrial", Lights: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,9 +212,7 @@ func TestEstimateCyno_OwnedVentureCountsFuelAboard(t *testing.T) {
 // load take two fills, the first load included, same as the hull by name.
 func TestEstimateCyno_OwnedEmptyHoldCountsFirstFill(t *testing.T) {
 	store, p := shipToolsEnv(t)
-	origA, origN := listAssets, getAssetNames
-	t.Cleanup(func() { listAssets, getAssetNames = origA, origN })
-	listAssets = func(context.Context, string, int32, string, int32) ([]AssetItem, int32, error) {
+	stubAssets(p, func(int32) ([]AssetItem, error) {
 		return []AssetItem{
 			{ItemID: 600, TypeID: 32880, LocationID: 60003760, LocationFlag: "Hangar", Quantity: 1, IsSingleton: true},
 			{ItemID: 601, TypeID: 1319, LocationID: 600, LocationFlag: "LoSlot0", Quantity: 1, IsSingleton: true},
@@ -213,18 +220,18 @@ func TestEstimateCyno_OwnedEmptyHoldCountsFirstFill(t *testing.T) {
 			{ItemID: 603, TypeID: 31117, LocationID: 600, LocationFlag: "RigSlot1", Quantity: 1, IsSingleton: true},
 			{ItemID: 604, TypeID: 31117, LocationID: 600, LocationFlag: "RigSlot2", Quantity: 1, IsSingleton: true},
 			{ItemID: 605, TypeID: 52694, LocationID: 600, LocationFlag: "HiSlot0", Quantity: 1, IsSingleton: true},
-		}, 1, nil
-	}
-	getAssetNames = func(context.Context, string, int32, string, []int64) ([]AssetName, error) { return nil, nil }
-	stubSkills(t, map[int32][]CharacterSkill{reconPilot: {{SkillID: 21603, ActiveSkillLevel: 5}}})
+		}, nil
+	})
+	stubAssetNames(p, func(int32, []int64) ([]AssetName, error) { return nil, nil })
+	stubSkills(p, map[int32][]CharacterSkill{reconPilot: {{SkillID: 21603, ActiveSkillLevel: 5}}})
 
 	in := EstimateCynoInput{ShipSpec: ShipSpec{ShipItemID: 600}, LighterID: reconPilot, Cyno: "industrial", Lights: 2}
-	_, owned, err := estimateCynoHandler("test", "client", store, p.sde)(context.Background(), nil, in)
+	_, owned, err := estimateCynoHandler("test", p.openESI, p.openPublicESI, store, p.sde)(context.Background(), nil, in)
 	if err != nil {
 		t.Fatal(err)
 	}
 	in.ShipSpec = ShipSpec{ShipType: "Venture", Modules: []string{"Expanded Cargohold II", "Small Cargohold Optimization I", "Small Cargohold Optimization I", "Small Cargohold Optimization I"}}
-	_, named, err := estimateCynoHandler("test", "client", store, p.sde)(context.Background(), nil, in)
+	_, named, err := estimateCynoHandler("test", p.openESI, p.openPublicESI, store, p.sde)(context.Background(), nil, in)
 	if err != nil {
 		t.Fatal(err)
 	}

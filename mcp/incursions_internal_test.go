@@ -4,27 +4,27 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 )
 
 func TestListIncursionsHandler_MapsFields(t *testing.T) {
-	orig := listIncursions
-	t.Cleanup(func() { listIncursions = orig })
-	listIncursions = func(ctx context.Context, userAgent string) ([]Incursion, error) {
-		return []Incursion{
+	fake := fakeIncursionsESI{incursions: func(_ context.Context) ([]esiapi.IncursionsGetInner, error) {
+		return []esiapi.IncursionsGetInner{
 			{
-				ConstellationID:        30000001,
-				FactionID:              500001,
-				HasBoss:                true,
-				InfestedSolarSystemIDs: []int64{30000002, 30000003},
-				Influence:              0.8,
-				StagingSolarSystemID:   30000004,
-				State:                  "mobilizing",
-				Type:                   "minor",
+				ConstellationId:      30000001,
+				FactionId:            500001,
+				HasBoss:              true,
+				InfestedSolarSystems: []int64{30000002, 30000003},
+				Influence:            0.8,
+				StagingSolarSystemId: 30000004,
+				State:                "mobilizing",
+				Type:                 "minor",
 			},
 		}, nil
-	}
+	}}
 
-	handler := listIncursionsHandler("v1", nil)
+	handler := listIncursionsHandler("v1", publicNarrow[incursionsESI](fake), nil)
 	_, out, err := handler(context.Background(), nil, ListIncursionsInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -60,14 +60,12 @@ func TestListIncursionsHandler_MapsFields(t *testing.T) {
 }
 
 func TestListIncursionsHandler_PropagatesError(t *testing.T) {
-	orig := listIncursions
-	t.Cleanup(func() { listIncursions = orig })
 	wantErr := errors.New("upstream failure")
-	listIncursions = func(ctx context.Context, userAgent string) ([]Incursion, error) {
+	fake := fakeIncursionsESI{incursions: func(_ context.Context) ([]esiapi.IncursionsGetInner, error) {
 		return nil, wantErr
-	}
+	}}
 
-	handler := listIncursionsHandler("v1", nil)
+	handler := listIncursionsHandler("v1", publicNarrow[incursionsESI](fake), nil)
 	_, _, err := handler(context.Background(), nil, ListIncursionsInput{})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -75,14 +73,12 @@ func TestListIncursionsHandler_PropagatesError(t *testing.T) {
 }
 
 func TestListIncursionsHandler_ResolvesLocationNames(t *testing.T) {
-	orig := listIncursions
-	t.Cleanup(func() { listIncursions = orig })
-	listIncursions = func(ctx context.Context, userAgent string) ([]Incursion, error) {
-		return []Incursion{{
-			ConstellationID: 20000020, StagingSolarSystemID: 30000142,
-			InfestedSolarSystemIDs: []int64{30000142, 30000144},
+	fake := fakeIncursionsESI{incursions: func(_ context.Context) ([]esiapi.IncursionsGetInner, error) {
+		return []esiapi.IncursionsGetInner{{
+			ConstellationId: 20000020, StagingSolarSystemId: 30000142,
+			InfestedSolarSystems: []int64{30000142, 30000144},
 		}}, nil
-	}
+	}}
 
 	origConstellation := resolveConstellationNames
 	t.Cleanup(func() { resolveConstellationNames = origConstellation })
@@ -95,7 +91,7 @@ func TestListIncursionsHandler_ResolvesLocationNames(t *testing.T) {
 		return map[int64]string{30000142: "Jita", 30000144: "Perimeter"}
 	}
 
-	handler := listIncursionsHandler("v1", nil)
+	handler := listIncursionsHandler("v1", publicNarrow[incursionsESI](fake), nil)
 	_, out, err := handler(context.Background(), nil, ListIncursionsInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -118,11 +114,9 @@ func TestListIncursionsHandler_ResolvesLocationNames(t *testing.T) {
 }
 
 func TestListIncursionsHandler_InfestedSolarSystemNamesSurvivesPartialMiss(t *testing.T) {
-	orig := listIncursions
-	t.Cleanup(func() { listIncursions = orig })
-	listIncursions = func(ctx context.Context, userAgent string) ([]Incursion, error) {
-		return []Incursion{{InfestedSolarSystemIDs: []int64{30000142, 999999999, 30000144}}}, nil
-	}
+	fake := fakeIncursionsESI{incursions: func(_ context.Context) ([]esiapi.IncursionsGetInner, error) {
+		return []esiapi.IncursionsGetInner{{InfestedSolarSystems: []int64{30000142, 999999999, 30000144}}}, nil
+	}}
 
 	origConstellation := resolveConstellationNames
 	t.Cleanup(func() { resolveConstellationNames = origConstellation })
@@ -133,7 +127,7 @@ func TestListIncursionsHandler_InfestedSolarSystemNamesSurvivesPartialMiss(t *te
 		return map[int64]string{30000142: "Jita", 30000144: "Perimeter"}
 	}
 
-	handler := listIncursionsHandler("v1", nil)
+	handler := listIncursionsHandler("v1", publicNarrow[incursionsESI](fake), nil)
 	_, out, err := handler(context.Background(), nil, ListIncursionsInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -150,11 +144,9 @@ func TestListIncursionsHandler_InfestedSolarSystemNamesSurvivesPartialMiss(t *te
 }
 
 func TestListIncursionsHandler_InfestedSolarSystemNamesNilOnTotalMiss(t *testing.T) {
-	orig := listIncursions
-	t.Cleanup(func() { listIncursions = orig })
-	listIncursions = func(ctx context.Context, userAgent string) ([]Incursion, error) {
-		return []Incursion{{InfestedSolarSystemIDs: []int64{999999997, 999999998, 999999999}}}, nil
-	}
+	fake := fakeIncursionsESI{incursions: func(_ context.Context) ([]esiapi.IncursionsGetInner, error) {
+		return []esiapi.IncursionsGetInner{{InfestedSolarSystems: []int64{999999997, 999999998, 999999999}}}, nil
+	}}
 
 	origConstellation := resolveConstellationNames
 	t.Cleanup(func() { resolveConstellationNames = origConstellation })
@@ -167,7 +159,7 @@ func TestListIncursionsHandler_InfestedSolarSystemNamesNilOnTotalMiss(t *testing
 		return map[int64]string{}
 	}
 
-	handler := listIncursionsHandler("v1", nil)
+	handler := listIncursionsHandler("v1", publicNarrow[incursionsESI](fake), nil)
 	_, out, err := handler(context.Background(), nil, ListIncursionsInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -178,11 +170,9 @@ func TestListIncursionsHandler_InfestedSolarSystemNamesNilOnTotalMiss(t *testing
 }
 
 func TestListIncursionsHandler_ResolvesFactionName(t *testing.T) {
-	orig := listIncursions
-	t.Cleanup(func() { listIncursions = orig })
-	listIncursions = func(ctx context.Context, userAgent string) ([]Incursion, error) {
-		return []Incursion{{FactionID: 500001}}, nil
-	}
+	fake := fakeIncursionsESI{incursions: func(_ context.Context) ([]esiapi.IncursionsGetInner, error) {
+		return []esiapi.IncursionsGetInner{{FactionId: 500001}}, nil
+	}}
 
 	origFaction := resolveFactionNames
 	t.Cleanup(func() { resolveFactionNames = origFaction })
@@ -190,7 +180,7 @@ func TestListIncursionsHandler_ResolvesFactionName(t *testing.T) {
 		return map[int64]string{500001: "Sansha's Nation"}
 	}
 
-	handler := listIncursionsHandler("v1", nil)
+	handler := listIncursionsHandler("v1", publicNarrow[incursionsESI](fake), nil)
 	_, out, err := handler(context.Background(), nil, ListIncursionsInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -198,4 +188,16 @@ func TestListIncursionsHandler_ResolvesFactionName(t *testing.T) {
 	if len(out.Incursions) != 1 || out.Incursions[0].FactionName != "Sansha's Nation" {
 		t.Errorf("Incursions = %+v, want one entry FactionName=%q", out.Incursions, "Sansha's Nation")
 	}
+}
+
+// fakeIncursionsESI fakes incursionsESI; a nil incursions fails as an unfaked call.
+type fakeIncursionsESI struct {
+	incursions func(ctx context.Context) ([]esiapi.IncursionsGetInner, error)
+}
+
+func (f fakeIncursionsESI) Incursions(ctx context.Context) ([]esiapi.IncursionsGetInner, error) {
+	if f.incursions == nil {
+		return nil, errNotFaked
+	}
+	return f.incursions(ctx)
 }

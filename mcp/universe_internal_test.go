@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	goesi "github.com/fnt-eve/goesi-openapi"
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	"github.com/zalando/go-keyring"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
@@ -1738,13 +1739,11 @@ func TestGetUniverseStructureHandler_MapsFields(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getUniverseStructure
-	t.Cleanup(func() { getUniverseStructure = orig })
-	getUniverseStructure = func(ctx context.Context, clientID string, characterID int32, userAgent string, structureID int64) (UniverseStructure, error) {
-		return UniverseStructure{Name: "Test Citadel", OwnerID: 98000001, SolarSystemID: 30000142, Position: &Position{X: 1, Y: 2, Z: 3}}, nil
-	}
+	fake := fakeUniverseStructureESI{universeStructureDetail: func(_ context.Context, structureID int64) (*esiapi.UniverseStructuresStructureIdGet, error) {
+		return &esiapi.UniverseStructuresStructureIdGet{Name: "Test Citadel", OwnerId: 98000001, SolarSystemId: 30000142, Position: &esiapi.UniverseStructuresStructureIdGetPosition{X: 1, Y: 2, Z: 3}}, nil
+	}}
 
-	handler := getUniverseStructureHandler("v1", "client-id", store)
+	handler := getUniverseStructureHandler(openNarrow[universeStructureESI](fake), store)
 	_, out, err := handler(context.Background(), nil, GetUniverseStructureInput{CharacterID: 7, StructureID: 1000000000001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -1761,14 +1760,7 @@ func TestGetUniverseStructureHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := getUniverseStructure
-	t.Cleanup(func() { getUniverseStructure = orig })
-	getUniverseStructure = func(ctx context.Context, clientID string, characterID int32, userAgent string, structureID int64) (UniverseStructure, error) {
-		t.Fatal("getUniverseStructure should not be called for an unknown character")
-		return UniverseStructure{}, nil
-	}
-
-	handler := getUniverseStructureHandler("v1", "client-id", store)
+	handler := getUniverseStructureHandler(noNarrow[universeStructureESI](t), store)
 	_, _, err := handler(context.Background(), nil, GetUniverseStructureInput{CharacterID: 999, StructureID: 1000000000001})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -1782,14 +1774,12 @@ func TestGetUniverseStructureHandler_PropagatesError(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getUniverseStructure
-	t.Cleanup(func() { getUniverseStructure = orig })
 	wantErr := errors.New("upstream failure")
-	getUniverseStructure = func(ctx context.Context, clientID string, characterID int32, userAgent string, structureID int64) (UniverseStructure, error) {
-		return UniverseStructure{}, wantErr
-	}
+	fake := fakeUniverseStructureESI{universeStructureDetail: func(_ context.Context, structureID int64) (*esiapi.UniverseStructuresStructureIdGet, error) {
+		return &esiapi.UniverseStructuresStructureIdGet{}, wantErr
+	}}
 
-	handler := getUniverseStructureHandler("v1", "client-id", store)
+	handler := getUniverseStructureHandler(openNarrow[universeStructureESI](fake), store)
 	_, _, err := handler(context.Background(), nil, GetUniverseStructureInput{CharacterID: 7, StructureID: 1000000000001})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -1833,13 +1823,11 @@ func TestListUniverseSystemJumpsHandler_PropagatesError(t *testing.T) {
 // --- list_universe_system_kills ---
 
 func TestListUniverseSystemKillsHandler_MapsFields(t *testing.T) {
-	orig := listUniverseSystemKills
-	t.Cleanup(func() { listUniverseSystemKills = orig })
-	listUniverseSystemKills = func(ctx context.Context, userAgent string) ([]UniverseSystemKills, error) {
-		return []UniverseSystemKills{{SystemID: 30000142, NPCKills: 5, PodKills: 1, ShipKills: 2}}, nil
-	}
+	fake := fakeUniverseSystemKillsESI{universeSystemKills: func(_ context.Context) ([]esiapi.UniverseSystemKillsGetInner, error) {
+		return []esiapi.UniverseSystemKillsGetInner{{SystemId: 30000142, NpcKills: 5, PodKills: 1, ShipKills: 2}}, nil
+	}}
 
-	handler := listUniverseSystemKillsHandler("v1")
+	handler := listUniverseSystemKillsHandler(publicNarrow[universeSystemKillsESI](fake))
 	_, out, err := handler(context.Background(), nil, ListUniverseSystemKillsInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -1850,14 +1838,12 @@ func TestListUniverseSystemKillsHandler_MapsFields(t *testing.T) {
 }
 
 func TestListUniverseSystemKillsHandler_PropagatesError(t *testing.T) {
-	orig := listUniverseSystemKills
-	t.Cleanup(func() { listUniverseSystemKills = orig })
 	wantErr := errors.New("upstream failure")
-	listUniverseSystemKills = func(ctx context.Context, userAgent string) ([]UniverseSystemKills, error) {
+	fake := fakeUniverseSystemKillsESI{universeSystemKills: func(_ context.Context) ([]esiapi.UniverseSystemKillsGetInner, error) {
 		return nil, wantErr
-	}
+	}}
 
-	handler := listUniverseSystemKillsHandler("v1")
+	handler := listUniverseSystemKillsHandler(publicNarrow[universeSystemKillsESI](fake))
 	_, _, err := handler(context.Background(), nil, ListUniverseSystemKillsInput{})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -1948,13 +1934,11 @@ func TestResolveUniverseIDsHandler_PropagatesError(t *testing.T) {
 // --- resolve_universe_names ---
 
 func TestResolveUniverseNamesHandler_MapsFields(t *testing.T) {
-	orig := resolveUniverseNames
-	t.Cleanup(func() { resolveUniverseNames = orig })
-	resolveUniverseNames = func(ctx context.Context, userAgent string, ids []int64) ([]ResolvedName, error) {
-		return []ResolvedName{{Category: "solar_system", ID: 30000142, Name: "Jita"}}, nil
-	}
+	fake := fakeUniverseNamesESI{universeNamesByID: func(_ context.Context, ids []int64) ([]esiapi.UniverseNamesPostInner, error) {
+		return []esiapi.UniverseNamesPostInner{{Category: "solar_system", Id: 30000142, Name: "Jita"}}, nil
+	}}
 
-	handler := resolveUniverseNamesHandler("v1")
+	handler := resolveUniverseNamesHandler(publicNarrow[universeNamesESI](fake))
 	_, out, err := handler(context.Background(), nil, ResolveUniverseNamesInput{IDs: []int64{30000142}})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -1965,14 +1949,12 @@ func TestResolveUniverseNamesHandler_MapsFields(t *testing.T) {
 }
 
 func TestResolveUniverseNamesHandler_RejectsEmptyIDs(t *testing.T) {
-	orig := resolveUniverseNames
-	t.Cleanup(func() { resolveUniverseNames = orig })
-	resolveUniverseNames = func(ctx context.Context, userAgent string, ids []int64) ([]ResolvedName, error) {
+	fake := fakeUniverseNamesESI{universeNamesByID: func(_ context.Context, ids []int64) ([]esiapi.UniverseNamesPostInner, error) {
 		t.Fatal("resolveUniverseNames should not be called with empty ids")
 		return nil, nil
-	}
+	}}
 
-	handler := resolveUniverseNamesHandler("v1")
+	handler := resolveUniverseNamesHandler(publicNarrow[universeNamesESI](fake))
 	_, _, err := handler(context.Background(), nil, ResolveUniverseNamesInput{IDs: []int64{}})
 	if err == nil {
 		t.Fatal("expected error for empty ids")
@@ -1980,15 +1962,13 @@ func TestResolveUniverseNamesHandler_RejectsEmptyIDs(t *testing.T) {
 }
 
 func TestResolveUniverseNamesHandler_RejectsOverCapIDs(t *testing.T) {
-	orig := resolveUniverseNames
-	t.Cleanup(func() { resolveUniverseNames = orig })
-	resolveUniverseNames = func(ctx context.Context, userAgent string, ids []int64) ([]ResolvedName, error) {
+	fake := fakeUniverseNamesESI{universeNamesByID: func(_ context.Context, ids []int64) ([]esiapi.UniverseNamesPostInner, error) {
 		t.Fatal("resolveUniverseNames should not be called with over-cap ids")
 		return nil, nil
-	}
+	}}
 
 	ids := make([]int64, 1001)
-	handler := resolveUniverseNamesHandler("v1")
+	handler := resolveUniverseNamesHandler(publicNarrow[universeNamesESI](fake))
 	_, _, err := handler(context.Background(), nil, ResolveUniverseNamesInput{IDs: ids})
 	if err == nil {
 		t.Fatal("expected error for over-cap ids (1001 > ESI's 1000 max)")
@@ -1996,14 +1976,12 @@ func TestResolveUniverseNamesHandler_RejectsOverCapIDs(t *testing.T) {
 }
 
 func TestResolveUniverseNamesHandler_PropagatesError(t *testing.T) {
-	orig := resolveUniverseNames
-	t.Cleanup(func() { resolveUniverseNames = orig })
 	wantErr := errors.New("upstream failure")
-	resolveUniverseNames = func(ctx context.Context, userAgent string, ids []int64) ([]ResolvedName, error) {
+	fake := fakeUniverseNamesESI{universeNamesByID: func(_ context.Context, ids []int64) ([]esiapi.UniverseNamesPostInner, error) {
 		return nil, wantErr
-	}
+	}}
 
-	handler := resolveUniverseNamesHandler("v1")
+	handler := resolveUniverseNamesHandler(publicNarrow[universeNamesESI](fake))
 	_, _, err := handler(context.Background(), nil, ResolveUniverseNamesInput{IDs: []int64{30000142}})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -2445,5 +2423,57 @@ func TestListUniverseFactions_CacheMiss_FetchesFromESI(t *testing.T) {
 	}
 	if got[0].CorporationID == nil || *got[0].CorporationID != 1000035 {
 		t.Errorf("CorporationID = %v, want 1000035", got[0].CorporationID)
+	}
+}
+
+// fakeUniverseStructureESI fakes universeStructureESI; a nil universeStructureDetail fails as an unfaked call.
+type fakeUniverseStructureESI struct {
+	universeStructureDetail func(ctx context.Context, structureID int64) (*esiapi.UniverseStructuresStructureIdGet, error)
+}
+
+func (f fakeUniverseStructureESI) UniverseStructureDetail(ctx context.Context, structureID int64) (*esiapi.UniverseStructuresStructureIdGet, error) {
+	if f.universeStructureDetail == nil {
+		return nil, errNotFaked
+	}
+	return f.universeStructureDetail(ctx, structureID)
+}
+
+// fakeUniverseSystemKillsESI fakes universeSystemKillsESI; a nil universeSystemKills fails as an unfaked call.
+type fakeUniverseSystemKillsESI struct {
+	universeSystemKills func(ctx context.Context) ([]esiapi.UniverseSystemKillsGetInner, error)
+}
+
+func (f fakeUniverseSystemKillsESI) UniverseSystemKills(ctx context.Context) ([]esiapi.UniverseSystemKillsGetInner, error) {
+	if f.universeSystemKills == nil {
+		return nil, errNotFaked
+	}
+	return f.universeSystemKills(ctx)
+}
+
+// fakeUniverseNamesESI fakes universeNamesESI; a nil universeNamesByID fails as an unfaked call.
+type fakeUniverseNamesESI struct {
+	universeNamesByID func(ctx context.Context, ids []int64) ([]esiapi.UniverseNamesPostInner, error)
+}
+
+func (f fakeUniverseNamesESI) UniverseNamesByID(ctx context.Context, ids []int64) ([]esiapi.UniverseNamesPostInner, error) {
+	if f.universeNamesByID == nil {
+		return nil, errNotFaked
+	}
+	return f.universeNamesByID(ctx, ids)
+}
+
+// Each handler reports a client that can't be opened, wrapping the cause.
+func TestUniverseStructureHandlers_PropagateOpenError(t *testing.T) {
+	store := characterStore(t, config.Character{ID: 7, Name: "Test Pilot"})
+	wantErr := errors.New("no refresh token")
+	for name, call := range map[string]func() error{
+		"get_universe_structure": func() error {
+			_, _, err := getUniverseStructureHandler(failNarrow[universeStructureESI](wantErr), store)(context.Background(), nil, GetUniverseStructureInput{CharacterID: 7, StructureID: 1000000000001})
+			return err
+		},
+	} {
+		if err := call(); !errors.Is(err, wantErr) {
+			t.Errorf("%s: err = %v, want wrapping %v", name, err, wantErr)
+		}
 	}
 }

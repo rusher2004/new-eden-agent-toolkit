@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
@@ -129,11 +130,13 @@ type CharacterSkill struct {
 	SkillpointsInSkill int64 `json:"skillpointsInSkill"`
 }
 
-var listCharacterSkills = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]CharacterSkill, int64, *int64, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, 0, nil, fmt.Errorf("build ESI client: %w", err)
-	}
+// characterSkillsESI is the ESI call list_character_skills makes; the
+// planner family reads skills through it too.
+type characterSkillsESI interface {
+	CharacterSkills(ctx context.Context) (*esiapi.CharactersSkills, error)
+}
+
+func listCharacterSkills(ctx context.Context, client characterSkillsESI) ([]CharacterSkill, int64, *int64, error) {
 	skills, err := client.CharacterSkills(ctx)
 	if err != nil {
 		return nil, 0, nil, err
@@ -158,7 +161,16 @@ type ListCharacterSkillsOutput struct {
 	UnallocatedSp *int64           `json:"unallocatedSp,omitempty"`
 }
 
-func listCharacterSkillsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCharacterSkillsInput, ListCharacterSkillsOutput] {
+// AddListCharacterSkills registers list_character_skills. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListCharacterSkills[C characterSkillsESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_character_skills",
+		Description: "List a logged-in EVE Online character's trained skills, total skill points, and unallocated skill points.",
+	}, listCharacterSkillsHandler(open, store))
+}
+
+func listCharacterSkillsHandler[C characterSkillsESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListCharacterSkillsInput, ListCharacterSkillsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterSkillsInput) (*mcpsdk.CallToolResult, ListCharacterSkillsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -167,7 +179,11 @@ func listCharacterSkillsHandler(version, clientID string, store ConfigStore) mcp
 		if !found {
 			return nil, ListCharacterSkillsOutput{}, fmt.Errorf("list character skills for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		skills, totalSp, unallocatedSp, err := listCharacterSkills(ctx, clientID, in.CharacterID, sso.UserAgent(version))
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCharacterSkillsOutput{}, fmt.Errorf("list character skills: %w", err)
+		}
+		skills, totalSp, unallocatedSp, err := listCharacterSkills(ctx, client)
 		if err != nil {
 			return nil, ListCharacterSkillsOutput{}, fmt.Errorf("list character skills: %w", err)
 		}

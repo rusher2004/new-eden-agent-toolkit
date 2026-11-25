@@ -11,21 +11,10 @@ import (
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
 // today is overridable in tests.
 var today = func() string { return time.Now().UTC().Format("2006-01-02") }
-
-// registerStructureTools adds the tools for the stations and structures the
-// user works from (~/.neat/structures.yaml). See
-// docs/superpowers/specs/2026-11-20-logistics-planning-design.md.
-func registerStructureTools(server *mcpsdk.Server, version, clientID string, store ConfigStore, sdeStore SDEStore) {
-	add := func(name, desc string) *mcpsdk.Tool { return &mcpsdk.Tool{Name: name, Description: desc} }
-	mcpsdk.AddTool(server, add("list_structures", fmt.Sprintf("List the NPC stations and Upwell structures the user works from (~/.neat/structures.yaml), with what the game won't tell neat: what they use each for, whether it has a working clone bay and how that's known, their corporation offices, and their notes. Each call checks every logged-in character's jump clones and records any clone bay they prove; a clone bay neat can't prove stays unknown, and only the user can check it in game. Pass characterIds to check, live, which characters have docking access to each Upwell structure: one ESI lookup per Upwell structure and character, and ESI counts every refused lookup (usually no docking access) against its error limit, so after %d refusals in one call the rest are returned as access not_checked with a warning. Pass only the characters you need, and don't call again to fill in not_checked entries for characters that were already refused. Use it before planning a clone jump, a staging move or anything that needs to dock somewhere.", maxDockingRefusals)), listStructuresHandler(version, clientID, store, sdeStore))
-	mcpsdk.AddTool(server, add("save_structure", "Save an NPC station or Upwell structure the user works from, or update one. Its name, type, system and owner are filled in from the game (an Upwell structure needs a character with docking access the first time). Record what the user tells you: what they use it for, its facility profile, a clone bay they checked in game (cloneBay yes or no), and notes. Offer to save a location whenever a plan uses one that isn't saved yet. Returns every value it changed, old and new, so you can tell the user what was recorded. Writes to ~/.neat/structures.yaml only."), saveStructureHandler(version, clientID, store, sdeStore))
-	mcpsdk.AddTool(server, add("delete_structure", "Delete a saved station or structure from ~/.neat/structures.yaml."), deleteStructureHandler(store))
-}
 
 // SaveStructureInput is save_structure's input.
 type SaveStructureInput struct {
@@ -44,9 +33,16 @@ type SaveStructureOutput struct {
 	Warnings  []string         `json:"warnings,omitempty"`
 }
 
+// listStructuresESI is the ESI calls list_structures makes: every
+// character's jump clones, and a structure lookup per docking check.
+type listStructuresESI interface {
+	characterClonesESI
+	universeStructureESI
+}
+
 // structureFacts reads what the game says about a station or structure.
-func structureFacts(ctx context.Context, clientID, ua string, sdeStore SDEStore, id int64, characterID int32) (config.Structure, error) {
-	if st, ok, err := sdeStore.Station(ctx, ua, id); err != nil {
+func structureFacts(ctx context.Context, p *planner, id int64, characterID int32) (config.Structure, error) {
+	if st, ok, err := p.sde.Station(ctx, p.ua(), id); err != nil {
 		return config.Structure{}, fmt.Errorf("look up station %d: %w", id, err)
 	} else if ok {
 		s := config.Structure{ID: id, Name: st.Name, Kind: config.StructureNPCStation, System: &config.NamedID{ID: st.SystemID}, Type: &config.NamedID{ID: st.TypeID}}
@@ -58,7 +54,11 @@ func structureFacts(ctx context.Context, clientID, ua string, sdeStore SDEStore,
 	if characterID == 0 {
 		return config.Structure{}, fmt.Errorf("%d isn't an NPC station, so it's read as an Upwell structure, which needs characterId: a logged-in character with docking access", id)
 	}
-	us, err := getUniverseStructure(ctx, clientID, characterID, ua, id)
+	client, err := p.esi(ctx, characterID)
+	if err != nil {
+		return config.Structure{}, fmt.Errorf("read structure %d through character %d (it needs docking access and the structures scope group): %w", id, characterID, err)
+	}
+	us, err := getUniverseStructure(ctx, client, id)
 	if err != nil {
 		return config.Structure{}, fmt.Errorf("read structure %d through character %d (it needs docking access and the structures scope group): %w", id, characterID, err)
 	}
@@ -72,7 +72,6 @@ func structureFacts(ctx context.Context, clientID, ua string, sdeStore SDEStore,
 // nameStructure fills in type, system and owner names. Names are for
 // reading the file, so a lookup that fails leaves the name out.
 func nameStructure(ctx context.Context, p *planner, s *config.Structure) {
-	ua := p.ua()
 	if s.Type != nil {
 		if b, err := p.typeBasics(ctx, []int64{s.Type.ID}); err == nil {
 			s.Type.Name = b[s.Type.ID].Name
@@ -84,7 +83,7 @@ func nameStructure(ctx context.Context, p *planner, s *config.Structure) {
 		}
 	}
 	if s.Owner != nil {
-		if names, err := resolveUniverseNames(ctx, ua, []int64{s.Owner.ID}); err == nil && len(names) == 1 {
+		if names, err := resolveUniverseNames(ctx, p.openPublicESI(), []int64{s.Owner.ID}); err == nil && len(names) == 1 {
 			s.Owner.Name = names[0].Name
 		}
 	}
@@ -103,7 +102,16 @@ func keepNames(facts *config.Structure, saved config.Structure) {
 	keep(facts.Owner, saved.Owner)
 }
 
-func saveStructureHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[SaveStructureInput, SaveStructureOutput] {
+// AddSaveStructure registers save_structure. openESI and openPublicESI build the ESI clients;
+// any client with the methods the planner and this tool call will do.
+func AddSaveStructure[C plannerClient, P plannerPublicClient](s *mcpsdk.Server, userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "save_structure",
+		Description: "Save an NPC station or Upwell structure the user works from, or update one. Its name, type, system and owner are filled in from the game (an Upwell structure needs a character with docking access the first time). Record what the user tells you: what they use it for, its facility profile, a clone bay they checked in game (cloneBay yes or no), and notes. Offer to save a location whenever a plan uses one that isn't saved yet. Returns every value it changed, old and new, so you can tell the user what was recorded. Writes to ~/.neat/structures.yaml only.",
+	}, saveStructureHandler(userAgent, openESI, openPublicESI, store, sdeStore))
+}
+
+func saveStructureHandler[C plannerClient, P plannerPublicClient](userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) mcpsdk.ToolHandlerFor[SaveStructureInput, SaveStructureOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in SaveStructureInput) (*mcpsdk.CallToolResult, SaveStructureOutput, error) {
 		if in.ID == 0 {
 			return nil, SaveStructureOutput{}, fmt.Errorf("save structure: id is required")
@@ -125,11 +133,11 @@ func saveStructureHandler(version, clientID string, store ConfigStore, sdeStore 
 				return nil, SaveStructureOutput{}, fmt.Errorf("save structure: no facility profile named %q", *in.FacilityProfile)
 			}
 		}
-		ua := sso.UserAgent(version)
 		var warnings []string
-		facts, factsErr := structureFacts(ctx, clientID, ua, sdeStore, in.ID, in.CharacterID)
+		p := newPlanner(userAgent, plannerOpener(openESI), plannerPublicOpener(openPublicESI), store, sdeStore)
+		facts, factsErr := structureFacts(ctx, p, in.ID, in.CharacterID)
 		if factsErr == nil {
-			nameStructure(ctx, newPlanner(version, clientID, store, sdeStore), &facts)
+			nameStructure(ctx, p, &facts)
 		}
 		// The lookups above go over the network, so the entry is merged into
 		// whatever is saved now, under Update's lock, rather than saved over
@@ -215,7 +223,16 @@ type ListStructuresOutput struct {
 	Warnings   []string        `json:"warnings,omitempty"`
 }
 
-func listStructuresHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListStructuresInput, ListStructuresOutput] {
+// AddListStructures registers list_structures. open builds a character's ESI
+// client; any client with the listStructuresESI methods will do.
+func AddListStructures[C listStructuresESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store structureStore) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_structures",
+		Description: fmt.Sprintf("List the NPC stations and Upwell structures the user works from (~/.neat/structures.yaml), with what the game won't tell neat: what they use each for, whether it has a working clone bay and how that's known, their corporation offices, and their notes. Each call checks every logged-in character's jump clones and records any clone bay they prove; a clone bay neat can't prove stays unknown, and only the user can check it in game. Pass characterIds to check, live, which characters have docking access to each Upwell structure: one ESI lookup per Upwell structure and character, and ESI counts every refused lookup (usually no docking access) against its error limit, so after %d refusals in one call the rest are returned as access not_checked with a warning. Pass only the characters you need, and don't call again to fill in not_checked entries for characters that were already refused. Use it before planning a clone jump, a staging move or anything that needs to dock somewhere.", maxDockingRefusals),
+	}, listStructuresHandler(open, store))
+}
+
+func listStructuresHandler[C listStructuresESI](open func(ctx context.Context, characterID int32) (C, error), store structureStore) mcpsdk.ToolHandlerFor[ListStructuresInput, ListStructuresOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListStructuresInput) (*mcpsdk.CallToolResult, ListStructuresOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -226,13 +243,16 @@ func listStructuresHandler(version, clientID string, store ConfigStore, sdeStore
 				return nil, ListStructuresOutput{}, fmt.Errorf("check docking for character %d: %w", id, ErrCharacterNotFound)
 			}
 		}
-		ua := sso.UserAgent(version)
 		out := ListStructuresOutput{Structures: []StructureView{}}
 
 		// A jump clone of any logged-in character proves a clone bay.
 		proved := map[int64]string{}
 		for _, c := range cfg.Characters {
-			clones, err := getCharacterClones(ctx, clientID, c.ID, ua)
+			var clones GetCharacterClonesOutput
+			client, err := open(ctx, c.ID)
+			if err == nil {
+				clones, err = getCharacterClones(ctx, client, c.ID)
+			}
 			if err != nil {
 				out.Warnings = append(out.Warnings, fmt.Sprintf("couldn't read %s's jump clones, so their clone bays weren't checked: %v", c.Name, err))
 				continue
@@ -277,7 +297,7 @@ func listStructuresHandler(version, clientID string, store ConfigStore, sdeStore
 					check := DockingCheck{CharacterID: id, CharacterName: c.Name, Access: "yes"}
 					if refused >= maxDockingRefusals {
 						check.Access, check.Detail = "not_checked", fmt.Sprintf("not checked: ESI had already refused %d docking lookups in this call", maxDockingRefusals)
-					} else if _, err := getUniverseStructure(ctx, clientID, id, ua, s.ID); err != nil {
+					} else if _, err := lookUpStructure(ctx, open, id, s.ID); err != nil {
 						check.Access, check.Detail = "unknown", err.Error()
 						if _, ok := errors.AsType[*esi.MissingScopeError](err); !ok {
 							refused++
@@ -295,12 +315,37 @@ func listStructuresHandler(version, clientID string, store ConfigStore, sdeStore
 	}
 }
 
+// structureStore is the config calls list_structures makes: read the
+// structures and record the clone bays it proves.
+type structureStore interface {
+	configLoader
+	configUpdater
+}
+
+// lookUpStructure reads a structure through a character's client, as a
+// docking check.
+func lookUpStructure[C universeStructureESI](ctx context.Context, open func(ctx context.Context, characterID int32) (C, error), characterID int32, structureID int64) (UniverseStructure, error) {
+	client, err := open(ctx, characterID)
+	if err != nil {
+		return UniverseStructure{}, err
+	}
+	return getUniverseStructure(ctx, client, structureID)
+}
+
 // DeleteStructureInput is delete_structure's input.
 type DeleteStructureInput struct {
 	ID int64 `json:"id" jsonschema:"the saved station or structure's ID"`
 }
 
-func deleteStructureHandler(store ConfigStore) mcpsdk.ToolHandlerFor[DeleteStructureInput, DeletedOutput] {
+// AddDeleteStructure registers delete_structure.
+func AddDeleteStructure(s *mcpsdk.Server, store configUpdater) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "delete_structure",
+		Description: "Delete a saved station or structure from ~/.neat/structures.yaml.",
+	}, deleteStructureHandler(store))
+}
+
+func deleteStructureHandler(store configUpdater) mcpsdk.ToolHandlerFor[DeleteStructureInput, DeletedOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in DeleteStructureInput) (*mcpsdk.CallToolResult, DeletedOutput, error) {
 		var name string
 		if _, err := store.Update(func(cfg *config.Config) error {

@@ -100,9 +100,18 @@ func (p *planner) describeFacility(ctx context.Context, prof config.FacilityProf
 	return v, nil
 }
 
-func saveFacilityProfileHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[SaveFacilityProfileInput, FacilityView] {
+// AddSaveFacilityProfile registers save_facility_profile. openESI and openPublicESI build the ESI clients;
+// any client with the methods the planner and this tool call will do.
+func AddSaveFacilityProfile[C plannerClient, P plannerPublicClient](s *mcpsdk.Server, userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "save_facility_profile",
+		Description: "Save (or replace) a named industry or reprocessing facility profile in neat's local config: NPC station, Upwell structure or starbase, its system, fitted rigs and services, and owner-set taxes. Rig and structure bonuses are read from the SDE; the response shows every resolved multiplier. Writes to ~/.neat/facilities.yaml only; omit notes to keep the notes it has.",
+	}, saveFacilityProfileHandler(userAgent, openESI, openPublicESI, store, sdeStore))
+}
+
+func saveFacilityProfileHandler[C plannerClient, P plannerPublicClient](userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) mcpsdk.ToolHandlerFor[SaveFacilityProfileInput, FacilityView] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in SaveFacilityProfileInput) (*mcpsdk.CallToolResult, FacilityView, error) {
-		p := newPlanner(version, clientID, store, sdeStore)
+		p := newPlanner(userAgent, plannerOpener(openESI), plannerPublicOpener(openPublicESI), store, sdeStore)
 		prof := config.FacilityProfile{Name: strings.TrimSpace(in.Name), Kind: in.Kind, StationID: in.StationID, Services: in.Services,
 			SupercapUpgrade: in.SupercapUpgrade, FacilityTax: in.FacilityTax, ReprocessingTax: in.ReprocessingTax,
 			ReprocessingRigTier: in.ReprocessingRigTier, Standing: in.Standing}
@@ -191,9 +200,18 @@ type DescribeFacilityInput struct {
 	ProductName string `json:"productName,omitempty" jsonschema:"optional product to show multipliers and whether each activity can run for it"`
 }
 
-func describeFacilityHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[DescribeFacilityInput, FacilityView] {
+// AddDescribeFacility registers describe_facility. openESI and openPublicESI build the ESI clients;
+// any client with the methods the planner and this tool call will do.
+func AddDescribeFacility[C plannerClient, P plannerPublicClient](s *mcpsdk.Server, userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "describe_facility",
+		Description: "Show a facility profile's security band and every material, time and cost multiplier with its source, and optionally, for a product, the combined multipliers and whether each activity can run there.",
+	}, describeFacilityHandler(userAgent, openESI, openPublicESI, store, sdeStore))
+}
+
+func describeFacilityHandler[C plannerClient, P plannerPublicClient](userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) mcpsdk.ToolHandlerFor[DescribeFacilityInput, FacilityView] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in DescribeFacilityInput) (*mcpsdk.CallToolResult, FacilityView, error) {
-		p := newPlanner(version, clientID, store, sdeStore)
+		p := newPlanner(userAgent, plannerOpener(openESI), plannerPublicOpener(openPublicESI), store, sdeStore)
 		prof, err := p.facilityProfile(in.Name)
 		if err != nil {
 			return nil, FacilityView{}, err
@@ -233,7 +251,23 @@ type ListFacilityProfilesOutput struct {
 	Profiles []config.FacilityProfile `json:"profiles"`
 }
 
-func listFacilityProfilesHandler(store ConfigStore) mcpsdk.ToolHandlerFor[struct{}, ListFacilityProfilesOutput] {
+// AddListFacilityProfiles registers list_facility_profiles.
+func AddListFacilityProfiles(s *mcpsdk.Server, store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_facility_profiles",
+		Description: "List saved facility profiles.",
+	}, listFacilityProfilesHandler(store))
+}
+
+// AddDeleteFacilityProfile registers delete_facility_profile.
+func AddDeleteFacilityProfile(s *mcpsdk.Server, store configUpdater) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "delete_facility_profile",
+		Description: "Delete a saved facility profile from neat's local config.",
+	}, deleteProfileHandler(store, (*config.Config).DeleteFacilityProfile))
+}
+
+func listFacilityProfilesHandler(store configLoader) mcpsdk.ToolHandlerFor[struct{}, ListFacilityProfilesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, _ struct{}) (*mcpsdk.CallToolResult, ListFacilityProfilesOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -258,9 +292,18 @@ type CalibrateFacilityProfileOutput struct {
 	EstimatedRate  float64                `json:"estimatedRateFromCostIndex"`
 }
 
-func calibrateFacilityProfileHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[CalibrateFacilityProfileInput, CalibrateFacilityProfileOutput] {
+// AddCalibrateFacilityProfile registers calibrate_facility_profile. openESI and openPublicESI build the ESI clients;
+// any client with the methods the planner and this tool call will do.
+func AddCalibrateFacilityProfile[C plannerClient, P plannerPublicClient](s *mcpsdk.Server, userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "calibrate_facility_profile",
+		Description: "Read a real industry job's charged fee, back out the effective fee rate, and save it on a facility profile so later estimates use it. Writes to ~/.neat/facilities.yaml only.",
+	}, calibrateFacilityProfileHandler(userAgent, openESI, openPublicESI, store, sdeStore))
+}
+
+func calibrateFacilityProfileHandler[C plannerClient, P plannerPublicClient](userAgent string, openESI func(ctx context.Context, characterID int32) (C, error), openPublicESI func() P, store plannerConfig, sdeStore plannerSDE) mcpsdk.ToolHandlerFor[CalibrateFacilityProfileInput, CalibrateFacilityProfileOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in CalibrateFacilityProfileInput) (*mcpsdk.CallToolResult, CalibrateFacilityProfileOutput, error) {
-		p := newPlanner(version, clientID, store, sdeStore)
+		p := newPlanner(userAgent, plannerOpener(openESI), plannerPublicOpener(openPublicESI), store, sdeStore)
 		if err := p.requireCharacter(in.CharacterID); err != nil {
 			return nil, CalibrateFacilityProfileOutput{}, err
 		}
@@ -331,9 +374,13 @@ func calibrateFacilityProfileHandler(version, clientID string, store ConfigStore
 // findJob looks a job up in a character's or corporation's job list,
 // including completed jobs.
 func (p *planner) findJob(ctx context.Context, characterID int32, corporationID, jobID int64) (IndustryJob, error) {
+	client, err := p.esi(ctx, characterID)
 	if corporationID != 0 {
+		if err != nil {
+			return IndustryJob{}, fmt.Errorf("corporation jobs: %w", err)
+		}
 		raw, err := esi.AllPages(ctx, func(ctx context.Context, page int32) ([]IndustryJob, int32, error) {
-			jobs, total, err := listCorporationIndustryJobs(ctx, p.clientID, characterID, p.ua(), corporationID, true, page)
+			jobs, total, err := listCorporationIndustryJobs(ctx, client, corporationID, true, page)
 			out := make([]IndustryJob, len(jobs))
 			for i, j := range jobs {
 				out[i] = toIndustryJobFromCorporation(j)
@@ -349,7 +396,10 @@ func (p *planner) findJob(ctx context.Context, characterID int32, corporationID,
 			}
 		}
 	} else {
-		jobs, err := listCharacterIndustryJobs(ctx, p.clientID, characterID, p.ua(), true)
+		if err != nil {
+			return IndustryJob{}, fmt.Errorf("character jobs: %w", err)
+		}
+		jobs, err := listCharacterIndustryJobs(ctx, client, true)
 		if err != nil {
 			return IndustryJob{}, fmt.Errorf("character jobs: %w", err)
 		}
