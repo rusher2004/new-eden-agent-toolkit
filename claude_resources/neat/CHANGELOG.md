@@ -1,5 +1,8 @@
 # neat plugin — changelog
 
+## 0.20.1
+- No change for players. Developer tooling only: Go coding standards, a review checklist, CI hygiene checks and an interface audit tool were added to the repository.
+
 ## 0.20.0
 - "No gates" now really means no gates. A routing preference of `maxGates: 0` used to mean no limit at all, and saving it on a haul profile dropped it, so a route could still take gates. Now 0 means none, leaving it out means no limit, and a saved 0 stays saved. A pinned route that takes more gates than the limit is flagged.
 - `list_jump_clones` and `get_logistics_overview` now say whether each character can start a clone jump where they're docked (`jumpFromHere`: yes, no, unknown or not docked, with the reason). `readyNow` is true only when the cooldown has passed and a clone bay is known to be there, so a pilot docked at a structure you saved without a clone bay is no longer reported ready to jump from it. `cooldownReady` still tells you about the cooldown alone.
