@@ -282,8 +282,8 @@ func (p *planner) haulShips(ctx context.Context, cfg config.Config, o haulShipOw
 			warning = fmt.Sprintf("couldn't read the names of %s's ships, so they're left out: %v", o.name, err)
 		}
 		for chunk := range slices.Chunk(ships, maxAssetNameIDs) {
-			if client == nil {
-				break
+			if err != nil {
+				break // no client to read names with
 			}
 			var shipIDs []int64
 			for _, s := range chunk {

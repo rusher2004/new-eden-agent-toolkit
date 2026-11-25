@@ -70,8 +70,6 @@ type locationAssetsESI interface {
 	corporationAssetsESI
 }
 
-// AddListLocationAssets registers list_location_assets. open builds the ESI client; any client with
-// the methods this tool calls will do.
 // locationAssetsSDE is the SDE lookups list_location_assets makes: each
 // asset's type and the station's name.
 type locationAssetsSDE interface {
