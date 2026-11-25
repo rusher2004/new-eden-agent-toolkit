@@ -60,4 +60,8 @@ func NewMCPServer(version, clientID string, store *config.Store, sdeStore *sde.S
 func addConvertedTools(s *mcpsdk.Server, d toolDeps) {
 	mcp.AddListCharacterLoyaltyPoints(s, d.openESI, d.store)
 	mcp.AddListLoyaltyStoreOffers(s, d.userAgent, d.openPublicESI, d.sde)
+	addFittingsTools(s, d)
+	addFleetTools(s, d)
+	addMailTools(s, d)
+	addUserInterfaceTools(s, d)
 }

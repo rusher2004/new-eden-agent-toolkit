@@ -3,9 +3,11 @@ package mcp
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	"github.com/zalando/go-keyring"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
@@ -32,24 +34,23 @@ func newTestStoreWithoutCharacter(t *testing.T) *config.Store {
 func TestListCharacterMailHandler_MapsFields(t *testing.T) {
 	store := newTestStoreWithCharacter(t)
 
-	orig := listCharacterMail
-	t.Cleanup(func() { listCharacterMail = orig })
+	fake := &mailFake{}
 	ts := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	mailID1, mailID2, from := int64(200), int64(100), int64(90000001)
 	subject := "Hi"
 	isRead := true
 	var gotLabelIDs []int64
 	var gotLastMailID int64
-	listCharacterMail = func(ctx context.Context, clientID string, characterID int32, userAgent string, labelIDs []int64, lastMailID int64) ([]MailHeader, error) {
+	fake.characterMailHeaders = func(ctx context.Context, labelIDs []int64, lastMailID int64) ([]esiapi.CharactersCharacterIdMailGetInner, error) {
 		gotLabelIDs = labelIDs
 		gotLastMailID = lastMailID
-		return []MailHeader{
-			{MailID: &mailID1, From: &from, Subject: &subject, Timestamp: &ts, IsRead: &isRead, Labels: []int64{1, 2}, Recipients: []MailRecipient{{RecipientID: 90000002, RecipientType: "character"}}},
-			{MailID: &mailID2, From: &from, Subject: &subject, Timestamp: &ts, IsRead: &isRead, Labels: []int64{1}, Recipients: nil},
+		return []esiapi.CharactersCharacterIdMailGetInner{
+			{MailId: &mailID1, From: &from, Subject: &subject, Timestamp: &ts, IsRead: &isRead, Labels: []int64{1, 2}, Recipients: []esiapi.PostCharactersCharacterIdMailRequestRecipientsInner{{RecipientId: 90000002, RecipientType: "character"}}},
+			{MailId: &mailID2, From: &from, Subject: &subject, Timestamp: &ts, IsRead: &isRead, Labels: []int64{1}, Recipients: nil},
 		}, nil
 	}
 
-	handler := listCharacterMailHandler("v1", "client-id", store)
+	handler := listCharacterMailHandler(fake.open, store)
 	_, out, err := handler(context.Background(), nil, ListCharacterMailInput{CharacterID: 7, LabelIDs: []int64{1, 2}, LastMailID: 300})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -95,14 +96,13 @@ func TestListCharacterMailHandler_MapsFields(t *testing.T) {
 func TestListCharacterMailHandler_UnknownCharacter(t *testing.T) {
 	store := newTestStoreWithoutCharacter(t)
 
-	orig := listCharacterMail
-	t.Cleanup(func() { listCharacterMail = orig })
-	listCharacterMail = func(ctx context.Context, clientID string, characterID int32, userAgent string, labelIDs []int64, lastMailID int64) ([]MailHeader, error) {
+	fake := &mailFake{}
+	fake.characterMailHeaders = func(ctx context.Context, labelIDs []int64, lastMailID int64) ([]esiapi.CharactersCharacterIdMailGetInner, error) {
 		t.Fatal("listCharacterMail should not be called for an unknown character")
 		return nil, nil
 	}
 
-	handler := listCharacterMailHandler("v1", "client-id", store)
+	handler := listCharacterMailHandler(fake.open, store)
 	_, _, err := handler(context.Background(), nil, ListCharacterMailInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -114,15 +114,17 @@ func TestListCharacterMailHandler_UnknownCharacter(t *testing.T) {
 func TestGetCharacterMailLabelsHandler_MapsFields(t *testing.T) {
 	store := newTestStoreWithCharacter(t)
 
-	orig := getCharacterMailLabels
-	t.Cleanup(func() { getCharacterMailLabels = orig })
+	fake := &mailFake{}
 	labelID, unread, total := int64(1), int64(3), int64(9)
 	name, color := "Inbox", "#ffffff"
-	getCharacterMailLabels = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]MailLabel, *int64, error) {
-		return []MailLabel{{LabelID: &labelID, Name: &name, Color: &color, UnreadCount: &unread}}, &total, nil
+	fake.characterMailLabels = func(ctx context.Context) (*esiapi.CharactersCharacterIdMailLabelsGet, error) {
+		return &esiapi.CharactersCharacterIdMailLabelsGet{
+			Labels:           []esiapi.CharactersCharacterIdMailLabelsGetLabelsInner{{LabelId: &labelID, Name: &name, Color: &color, UnreadCount: &unread}},
+			TotalUnreadCount: &total,
+		}, nil
 	}
 
-	handler := getCharacterMailLabelsHandler("v1", "client-id", store)
+	handler := getCharacterMailLabelsHandler(fake.open, store)
 	_, out, err := handler(context.Background(), nil, GetCharacterMailLabelsInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -145,14 +147,13 @@ func TestGetCharacterMailLabelsHandler_MapsFields(t *testing.T) {
 func TestGetCharacterMailLabelsHandler_UnknownCharacter(t *testing.T) {
 	store := newTestStoreWithoutCharacter(t)
 
-	orig := getCharacterMailLabels
-	t.Cleanup(func() { getCharacterMailLabels = orig })
-	getCharacterMailLabels = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]MailLabel, *int64, error) {
+	fake := &mailFake{}
+	fake.characterMailLabels = func(ctx context.Context) (*esiapi.CharactersCharacterIdMailLabelsGet, error) {
 		t.Fatal("getCharacterMailLabels should not be called for an unknown character")
-		return nil, nil, nil
+		return nil, nil
 	}
 
-	handler := getCharacterMailLabelsHandler("v1", "client-id", store)
+	handler := getCharacterMailLabelsHandler(fake.open, store)
 	_, _, err := handler(context.Background(), nil, GetCharacterMailLabelsInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -164,13 +165,12 @@ func TestGetCharacterMailLabelsHandler_UnknownCharacter(t *testing.T) {
 func TestListCharacterMailListsHandler_MapsFields(t *testing.T) {
 	store := newTestStoreWithCharacter(t)
 
-	orig := listCharacterMailLists
-	t.Cleanup(func() { listCharacterMailLists = orig })
-	listCharacterMailLists = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]MailList, error) {
-		return []MailList{{MailingListID: 1, Name: "Test List"}}, nil
+	fake := &mailFake{}
+	fake.characterMailLists = func(ctx context.Context) ([]esiapi.CharactersCharacterIdMailListsGetInner, error) {
+		return []esiapi.CharactersCharacterIdMailListsGetInner{{MailingListId: 1, Name: "Test List"}}, nil
 	}
 
-	handler := listCharacterMailListsHandler("v1", "client-id", store)
+	handler := listCharacterMailListsHandler(fake.open, store)
 	_, out, err := handler(context.Background(), nil, ListCharacterMailListsInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -186,14 +186,13 @@ func TestListCharacterMailListsHandler_MapsFields(t *testing.T) {
 func TestListCharacterMailListsHandler_UnknownCharacter(t *testing.T) {
 	store := newTestStoreWithoutCharacter(t)
 
-	orig := listCharacterMailLists
-	t.Cleanup(func() { listCharacterMailLists = orig })
-	listCharacterMailLists = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]MailList, error) {
+	fake := &mailFake{}
+	fake.characterMailLists = func(ctx context.Context) ([]esiapi.CharactersCharacterIdMailListsGetInner, error) {
 		t.Fatal("listCharacterMailLists should not be called for an unknown character")
 		return nil, nil
 	}
 
-	handler := listCharacterMailListsHandler("v1", "client-id", store)
+	handler := listCharacterMailListsHandler(fake.open, store)
 	_, _, err := handler(context.Background(), nil, ListCharacterMailListsInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -205,24 +204,23 @@ func TestListCharacterMailListsHandler_UnknownCharacter(t *testing.T) {
 func TestGetCharacterMailHandler_MapsFields(t *testing.T) {
 	store := newTestStoreWithCharacter(t)
 
-	orig := getCharacterMail
-	t.Cleanup(func() { getCharacterMail = orig })
+	fake := &mailFake{}
 	ts := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	from := int64(90000001)
 	subject, body := "Hi", "Hello there"
 	isRead := true
 	var gotMailID int64
-	getCharacterMail = func(ctx context.Context, clientID string, characterID int32, userAgent string, mailID int64) (GetCharacterMailOutput, error) {
+	fake.characterMail = func(ctx context.Context, mailID int64) (*esiapi.CharactersCharacterIdMailMailIdGet, error) {
 		gotMailID = mailID
-		// Deliberately leave CharacterID unset here -- the handler is responsible for filling it
-		// in from the input, same as get_character_fatigue's pattern in mcp/character.go.
-		return GetCharacterMailOutput{
-			MailID: mailID, From: &from, Subject: &subject, Body: &body, Timestamp: &ts, Read: &isRead,
-			Labels: []int64{1}, Recipients: []MailRecipient{{RecipientID: 90000002, RecipientType: "character"}},
+		// ESI's response carries no character ID -- the handler fills it in from the input, same
+		// as get_character_fatigue's pattern in mcp/character.go.
+		return &esiapi.CharactersCharacterIdMailMailIdGet{
+			From: &from, Subject: &subject, Body: &body, Timestamp: &ts, Read: &isRead,
+			Labels: []int64{1}, Recipients: []esiapi.PostCharactersCharacterIdMailRequestRecipientsInner{{RecipientId: 90000002, RecipientType: "character"}},
 		}, nil
 	}
 
-	handler := getCharacterMailHandler("v1", "client-id", store)
+	handler := getCharacterMailHandler(fake.open, store)
 	_, out, err := handler(context.Background(), nil, GetCharacterMailInput{CharacterID: 7, MailID: 123})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -253,14 +251,13 @@ func TestGetCharacterMailHandler_MapsFields(t *testing.T) {
 func TestGetCharacterMailHandler_UnknownCharacter(t *testing.T) {
 	store := newTestStoreWithoutCharacter(t)
 
-	orig := getCharacterMail
-	t.Cleanup(func() { getCharacterMail = orig })
-	getCharacterMail = func(ctx context.Context, clientID string, characterID int32, userAgent string, mailID int64) (GetCharacterMailOutput, error) {
+	fake := &mailFake{}
+	fake.characterMail = func(ctx context.Context, mailID int64) (*esiapi.CharactersCharacterIdMailMailIdGet, error) {
 		t.Fatal("getCharacterMail should not be called for an unknown character")
-		return GetCharacterMailOutput{}, nil
+		return nil, nil
 	}
 
-	handler := getCharacterMailHandler("v1", "client-id", store)
+	handler := getCharacterMailHandler(fake.open, store)
 	_, _, err := handler(context.Background(), nil, GetCharacterMailInput{CharacterID: 999, MailID: 123})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -272,12 +269,11 @@ func TestGetCharacterMailHandler_UnknownCharacter(t *testing.T) {
 func TestSendCharacterMailHandler_MapsFields(t *testing.T) {
 	store := newTestStoreWithCharacter(t)
 
-	orig := sendCharacterMail
-	t.Cleanup(func() { sendCharacterMail = orig })
+	fake := &mailFake{}
 	var gotSubject, gotBody string
-	var gotRecipients []MailRecipientInput
+	var gotRecipients []esiapi.PostCharactersCharacterIdMailRequestRecipientsInner
 	var gotApprovedCost *int64
-	sendCharacterMail = func(ctx context.Context, clientID string, characterID int32, userAgent string, subject, body string, recipients []MailRecipientInput, approvedCost *int64) (int64, error) {
+	fake.sendCharacterMail = func(ctx context.Context, subject, body string, recipients []esiapi.PostCharactersCharacterIdMailRequestRecipientsInner, approvedCost *int64) (int64, error) {
 		gotSubject, gotBody, gotRecipients, gotApprovedCost = subject, body, recipients, approvedCost
 		return 789, nil
 	}
@@ -288,7 +284,7 @@ func TestSendCharacterMailHandler_MapsFields(t *testing.T) {
 		Recipients:   []MailRecipientInput{{RecipientID: 90000002, RecipientType: "character"}},
 		ApprovedCost: &cost,
 	}
-	handler := sendCharacterMailHandler("v1", "client-id", store)
+	handler := sendCharacterMailHandler(fake.open, store)
 	_, out, err := handler(context.Background(), nil, input)
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -297,7 +293,7 @@ func TestSendCharacterMailHandler_MapsFields(t *testing.T) {
 	if gotSubject != "Hi" || gotBody != "Hello there" {
 		t.Errorf("captured subject/body = %q/%q, want \"Hi\"/\"Hello there\"", gotSubject, gotBody)
 	}
-	if len(gotRecipients) != 1 || gotRecipients[0].RecipientID != 90000002 || gotRecipients[0].RecipientType != "character" {
+	if len(gotRecipients) != 1 || gotRecipients[0].RecipientId != 90000002 || gotRecipients[0].RecipientType != "character" {
 		t.Errorf("captured recipients = %+v, want one entry {RecipientID:90000002 RecipientType:\"character\"}", gotRecipients)
 	}
 	if gotApprovedCost == nil || *gotApprovedCost != 5000 {
@@ -311,14 +307,13 @@ func TestSendCharacterMailHandler_MapsFields(t *testing.T) {
 func TestSendCharacterMailHandler_UnknownCharacter(t *testing.T) {
 	store := newTestStoreWithoutCharacter(t)
 
-	orig := sendCharacterMail
-	t.Cleanup(func() { sendCharacterMail = orig })
-	sendCharacterMail = func(ctx context.Context, clientID string, characterID int32, userAgent string, subject, body string, recipients []MailRecipientInput, approvedCost *int64) (int64, error) {
+	fake := &mailFake{}
+	fake.sendCharacterMail = func(ctx context.Context, subject, body string, recipients []esiapi.PostCharactersCharacterIdMailRequestRecipientsInner, approvedCost *int64) (int64, error) {
 		t.Fatal("sendCharacterMail should not be called for an unknown character")
 		return 0, nil
 	}
 
-	handler := sendCharacterMailHandler("v1", "client-id", store)
+	handler := sendCharacterMailHandler(fake.open, store)
 	_, _, err := handler(context.Background(), nil, SendCharacterMailInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -330,17 +325,16 @@ func TestSendCharacterMailHandler_UnknownCharacter(t *testing.T) {
 func TestCreateCharacterMailLabelHandler_MapsFields(t *testing.T) {
 	store := newTestStoreWithCharacter(t)
 
-	orig := createCharacterMailLabel
-	t.Cleanup(func() { createCharacterMailLabel = orig })
+	fake := &mailFake{}
 	var gotName string
 	var gotColor *string
-	createCharacterMailLabel = func(ctx context.Context, clientID string, characterID int32, userAgent string, name string, color *string) (int64, error) {
+	fake.createCharacterMailLabel = func(ctx context.Context, name string, color *string) (int64, error) {
 		gotName, gotColor = name, color
 		return 42, nil
 	}
 
 	color := "#ffffff"
-	handler := createCharacterMailLabelHandler("v1", "client-id", store)
+	handler := createCharacterMailLabelHandler(fake.open, store)
 	_, out, err := handler(context.Background(), nil, CreateCharacterMailLabelInput{CharacterID: 7, Name: "Important", Color: &color})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -359,14 +353,13 @@ func TestCreateCharacterMailLabelHandler_MapsFields(t *testing.T) {
 func TestCreateCharacterMailLabelHandler_UnknownCharacter(t *testing.T) {
 	store := newTestStoreWithoutCharacter(t)
 
-	orig := createCharacterMailLabel
-	t.Cleanup(func() { createCharacterMailLabel = orig })
-	createCharacterMailLabel = func(ctx context.Context, clientID string, characterID int32, userAgent string, name string, color *string) (int64, error) {
+	fake := &mailFake{}
+	fake.createCharacterMailLabel = func(ctx context.Context, name string, color *string) (int64, error) {
 		t.Fatal("createCharacterMailLabel should not be called for an unknown character")
 		return 0, nil
 	}
 
-	handler := createCharacterMailLabelHandler("v1", "client-id", store)
+	handler := createCharacterMailLabelHandler(fake.open, store)
 	_, _, err := handler(context.Background(), nil, CreateCharacterMailLabelInput{CharacterID: 999, Name: "Important"})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -378,18 +371,17 @@ func TestCreateCharacterMailLabelHandler_UnknownCharacter(t *testing.T) {
 func TestUpdateCharacterMailHandler_Succeeds(t *testing.T) {
 	store := newTestStoreWithCharacter(t)
 
-	orig := updateCharacterMail
-	t.Cleanup(func() { updateCharacterMail = orig })
+	fake := &mailFake{}
 	var gotMailID int64
 	var gotLabels []int64
 	var gotRead *bool
-	updateCharacterMail = func(ctx context.Context, clientID string, characterID int32, userAgent string, mailID int64, labels []int64, read *bool) error {
+	fake.updateCharacterMail = func(ctx context.Context, mailID int64, labels []int64, read *bool) error {
 		gotMailID, gotLabels, gotRead = mailID, labels, read
 		return nil
 	}
 
 	read := true
-	handler := updateCharacterMailHandler("v1", "client-id", store)
+	handler := updateCharacterMailHandler(fake.open, store)
 	_, out, err := handler(context.Background(), nil, UpdateCharacterMailInput{CharacterID: 7, MailID: 123, Labels: []int64{1, 2}, Read: &read})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -411,14 +403,13 @@ func TestUpdateCharacterMailHandler_Succeeds(t *testing.T) {
 func TestUpdateCharacterMailHandler_UnknownCharacter(t *testing.T) {
 	store := newTestStoreWithoutCharacter(t)
 
-	orig := updateCharacterMail
-	t.Cleanup(func() { updateCharacterMail = orig })
-	updateCharacterMail = func(ctx context.Context, clientID string, characterID int32, userAgent string, mailID int64, labels []int64, read *bool) error {
+	fake := &mailFake{}
+	fake.updateCharacterMail = func(ctx context.Context, mailID int64, labels []int64, read *bool) error {
 		t.Fatal("updateCharacterMail should not be called for an unknown character")
 		return nil
 	}
 
-	handler := updateCharacterMailHandler("v1", "client-id", store)
+	handler := updateCharacterMailHandler(fake.open, store)
 	_, _, err := handler(context.Background(), nil, UpdateCharacterMailInput{CharacterID: 999, MailID: 123})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -430,13 +421,12 @@ func TestUpdateCharacterMailHandler_UnknownCharacter(t *testing.T) {
 func TestDeleteCharacterMailHandler_Succeeds(t *testing.T) {
 	store := newTestStoreWithCharacter(t)
 
-	orig := deleteCharacterMail
-	t.Cleanup(func() { deleteCharacterMail = orig })
-	deleteCharacterMail = func(ctx context.Context, clientID string, characterID int32, userAgent string, mailID int64) error {
+	fake := &mailFake{}
+	fake.deleteCharacterMail = func(ctx context.Context, mailID int64) error {
 		return nil
 	}
 
-	handler := deleteCharacterMailHandler("v1", "client-id", store)
+	handler := deleteCharacterMailHandler(fake.open, store)
 	_, out, err := handler(context.Background(), nil, DeleteCharacterMailInput{CharacterID: 7, MailID: 123})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -449,14 +439,13 @@ func TestDeleteCharacterMailHandler_Succeeds(t *testing.T) {
 func TestDeleteCharacterMailHandler_UnknownCharacter(t *testing.T) {
 	store := newTestStoreWithoutCharacter(t)
 
-	orig := deleteCharacterMail
-	t.Cleanup(func() { deleteCharacterMail = orig })
-	deleteCharacterMail = func(ctx context.Context, clientID string, characterID int32, userAgent string, mailID int64) error {
+	fake := &mailFake{}
+	fake.deleteCharacterMail = func(ctx context.Context, mailID int64) error {
 		t.Fatal("deleteCharacterMail should not be called for an unknown character")
 		return nil
 	}
 
-	handler := deleteCharacterMailHandler("v1", "client-id", store)
+	handler := deleteCharacterMailHandler(fake.open, store)
 	_, _, err := handler(context.Background(), nil, DeleteCharacterMailInput{CharacterID: 999, MailID: 123})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -468,13 +457,12 @@ func TestDeleteCharacterMailHandler_UnknownCharacter(t *testing.T) {
 func TestDeleteCharacterMailLabelHandler_Succeeds(t *testing.T) {
 	store := newTestStoreWithCharacter(t)
 
-	orig := deleteCharacterMailLabel
-	t.Cleanup(func() { deleteCharacterMailLabel = orig })
-	deleteCharacterMailLabel = func(ctx context.Context, clientID string, characterID int32, userAgent string, labelID int64) error {
+	fake := &mailFake{}
+	fake.deleteCharacterMailLabel = func(ctx context.Context, labelID int64) error {
 		return nil
 	}
 
-	handler := deleteCharacterMailLabelHandler("v1", "client-id", store)
+	handler := deleteCharacterMailLabelHandler(fake.open, store)
 	_, out, err := handler(context.Background(), nil, DeleteCharacterMailLabelInput{CharacterID: 7, LabelID: 1})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -487,16 +475,152 @@ func TestDeleteCharacterMailLabelHandler_Succeeds(t *testing.T) {
 func TestDeleteCharacterMailLabelHandler_UnknownCharacter(t *testing.T) {
 	store := newTestStoreWithoutCharacter(t)
 
-	orig := deleteCharacterMailLabel
-	t.Cleanup(func() { deleteCharacterMailLabel = orig })
-	deleteCharacterMailLabel = func(ctx context.Context, clientID string, characterID int32, userAgent string, labelID int64) error {
+	fake := &mailFake{}
+	fake.deleteCharacterMailLabel = func(ctx context.Context, labelID int64) error {
 		t.Fatal("deleteCharacterMailLabel should not be called for an unknown character")
 		return nil
 	}
 
-	handler := deleteCharacterMailLabelHandler("v1", "client-id", store)
+	handler := deleteCharacterMailLabelHandler(fake.open, store)
 	_, _, err := handler(context.Background(), nil, DeleteCharacterMailLabelInput{CharacterID: 999, LabelID: 1})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
 	}
+}
+
+// TestMailHandlers_OpenFailure: every handler that opens an ESI client wraps and returns
+// the opener's error, and never reaches an ESI call.
+func TestMailHandlers_OpenFailure(t *testing.T) {
+	store := newTestStoreWithCharacter(t)
+	openErr := errors.New("keychain locked")
+	fake := &mailFake{openErr: openErr}
+	tests := []struct {
+		name string
+		call func() error
+	}{
+		{"list_character_mail", func() error {
+			return callHandlerForOpenFailure(listCharacterMailHandler(fake.open, store), ListCharacterMailInput{CharacterID: 7})
+		}},
+		{"get_character_mail_labels", func() error {
+			return callHandlerForOpenFailure(getCharacterMailLabelsHandler(fake.open, store), GetCharacterMailLabelsInput{CharacterID: 7})
+		}},
+		{"list_character_mail_lists", func() error {
+			return callHandlerForOpenFailure(listCharacterMailListsHandler(fake.open, store), ListCharacterMailListsInput{CharacterID: 7})
+		}},
+		{"get_character_mail", func() error {
+			return callHandlerForOpenFailure(getCharacterMailHandler(fake.open, store), GetCharacterMailInput{CharacterID: 7})
+		}},
+		{"send_character_mail", func() error {
+			return callHandlerForOpenFailure(sendCharacterMailHandler(fake.open, store), SendCharacterMailInput{CharacterID: 7})
+		}},
+		{"create_character_mail_label", func() error {
+			return callHandlerForOpenFailure(createCharacterMailLabelHandler(fake.open, store), CreateCharacterMailLabelInput{CharacterID: 7})
+		}},
+		{"update_character_mail", func() error {
+			return callHandlerForOpenFailure(updateCharacterMailHandler(fake.open, store), UpdateCharacterMailInput{CharacterID: 7})
+		}},
+		{"delete_character_mail", func() error {
+			return callHandlerForOpenFailure(deleteCharacterMailHandler(fake.open, store), DeleteCharacterMailInput{CharacterID: 7})
+		}},
+		{"delete_character_mail_label", func() error {
+			return callHandlerForOpenFailure(deleteCharacterMailLabelHandler(fake.open, store), DeleteCharacterMailLabelInput{CharacterID: 7})
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.call()
+			if !errors.Is(err, openErr) {
+				t.Fatalf("err = %v, want wrapping %v", err, openErr)
+			}
+			if !strings.Contains(err.Error(), strings.ReplaceAll(tt.name, "_", " ")) {
+				t.Errorf("err = %q, want it to start with the tool name %q", err, tt.name)
+			}
+		})
+	}
+}
+
+// mailFake fakes mailESI: set a field to answer that call, and open records the character IDs it was asked for.
+type mailFake struct {
+	characterMailHeaders     func(ctx context.Context, labelIDs []int64, lastMailID int64) ([]esiapi.CharactersCharacterIdMailGetInner, error)
+	characterMailLabels      func(ctx context.Context) (*esiapi.CharactersCharacterIdMailLabelsGet, error)
+	characterMailLists       func(ctx context.Context) ([]esiapi.CharactersCharacterIdMailListsGetInner, error)
+	characterMail            func(ctx context.Context, mailID int64) (*esiapi.CharactersCharacterIdMailMailIdGet, error)
+	sendCharacterMail        func(ctx context.Context, subject, body string, recipients []esiapi.PostCharactersCharacterIdMailRequestRecipientsInner, approvedCost *int64) (int64, error)
+	createCharacterMailLabel func(ctx context.Context, name string, color *string) (int64, error)
+	updateCharacterMail      func(ctx context.Context, mailID int64, labels []int64, read *bool) error
+	deleteCharacterMail      func(ctx context.Context, mailID int64) error
+	deleteCharacterMailLabel func(ctx context.Context, labelID int64) error
+	openErr                  error
+	openedFor                []int32
+}
+
+func (f *mailFake) open(ctx context.Context, characterID int32) (mailESI, error) {
+	f.openedFor = append(f.openedFor, characterID)
+	if f.openErr != nil {
+		return nil, f.openErr
+	}
+	return f, nil
+}
+
+func (f *mailFake) CharacterMailHeaders(ctx context.Context, labelIDs []int64, lastMailID int64) ([]esiapi.CharactersCharacterIdMailGetInner, error) {
+	if f.characterMailHeaders == nil {
+		return nil, errors.New("mailFake: unexpected CharacterMailHeaders call")
+	}
+	return f.characterMailHeaders(ctx, labelIDs, lastMailID)
+}
+
+func (f *mailFake) CharacterMailLabels(ctx context.Context) (*esiapi.CharactersCharacterIdMailLabelsGet, error) {
+	if f.characterMailLabels == nil {
+		return nil, errors.New("mailFake: unexpected CharacterMailLabels call")
+	}
+	return f.characterMailLabels(ctx)
+}
+
+func (f *mailFake) CharacterMailLists(ctx context.Context) ([]esiapi.CharactersCharacterIdMailListsGetInner, error) {
+	if f.characterMailLists == nil {
+		return nil, errors.New("mailFake: unexpected CharacterMailLists call")
+	}
+	return f.characterMailLists(ctx)
+}
+
+func (f *mailFake) CharacterMail(ctx context.Context, mailID int64) (*esiapi.CharactersCharacterIdMailMailIdGet, error) {
+	if f.characterMail == nil {
+		return nil, errors.New("mailFake: unexpected CharacterMail call")
+	}
+	return f.characterMail(ctx, mailID)
+}
+
+func (f *mailFake) SendCharacterMail(ctx context.Context, subject, body string, recipients []esiapi.PostCharactersCharacterIdMailRequestRecipientsInner, approvedCost *int64) (int64, error) {
+	if f.sendCharacterMail == nil {
+		return 0, errors.New("mailFake: unexpected SendCharacterMail call")
+	}
+	return f.sendCharacterMail(ctx, subject, body, recipients, approvedCost)
+}
+
+func (f *mailFake) CreateCharacterMailLabel(ctx context.Context, name string, color *string) (int64, error) {
+	if f.createCharacterMailLabel == nil {
+		return 0, errors.New("mailFake: unexpected CreateCharacterMailLabel call")
+	}
+	return f.createCharacterMailLabel(ctx, name, color)
+}
+
+func (f *mailFake) UpdateCharacterMail(ctx context.Context, mailID int64, labels []int64, read *bool) error {
+	if f.updateCharacterMail == nil {
+		return errors.New("mailFake: unexpected UpdateCharacterMail call")
+	}
+	return f.updateCharacterMail(ctx, mailID, labels, read)
+}
+
+func (f *mailFake) DeleteCharacterMail(ctx context.Context, mailID int64) error {
+	if f.deleteCharacterMail == nil {
+		return errors.New("mailFake: unexpected DeleteCharacterMail call")
+	}
+	return f.deleteCharacterMail(ctx, mailID)
+}
+
+func (f *mailFake) DeleteCharacterMailLabel(ctx context.Context, labelID int64) error {
+	if f.deleteCharacterMailLabel == nil {
+		return errors.New("mailFake: unexpected DeleteCharacterMailLabel call")
+	}
+	return f.deleteCharacterMailLabel(ctx, labelID)
 }

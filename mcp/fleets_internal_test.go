@@ -3,9 +3,12 @@ package mcp
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/zalando/go-keyring"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
@@ -18,15 +21,14 @@ func TestGetCharacterFleetHandler_MapsFields(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCharacterFleet
-	t.Cleanup(func() { getCharacterFleet = orig })
-	getCharacterFleet = func(ctx context.Context, clientID string, characterID int32, userAgent string) (GetCharacterFleetOutput, error) {
-		return GetCharacterFleetOutput{
-			CharacterID: characterID, FleetID: 1000, FleetBossID: 100, Role: "fleet_commander", SquadID: 10, WingID: 20,
+	fake := &fleetsFake{}
+	fake.characterFleet = func(ctx context.Context) (*esiapi.CharactersCharacterIdFleetGet, error) {
+		return &esiapi.CharactersCharacterIdFleetGet{
+			FleetId: 1000, FleetBossId: 100, Role: "fleet_commander", SquadId: 10, WingId: 20,
 		}, nil
 	}
 
-	handler := getCharacterFleetHandler("v1", "client-id", store)
+	handler := getCharacterFleetHandler(fake.open, store)
 	_, out, err := handler(context.Background(), nil, GetCharacterFleetInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -40,14 +42,13 @@ func TestGetCharacterFleetHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := getCharacterFleet
-	t.Cleanup(func() { getCharacterFleet = orig })
-	getCharacterFleet = func(ctx context.Context, clientID string, characterID int32, userAgent string) (GetCharacterFleetOutput, error) {
+	fake := &fleetsFake{}
+	fake.characterFleet = func(ctx context.Context) (*esiapi.CharactersCharacterIdFleetGet, error) {
 		t.Fatal("getCharacterFleet should not be called for an unknown character")
-		return GetCharacterFleetOutput{}, nil
+		return nil, nil
 	}
 
-	handler := getCharacterFleetHandler("v1", "client-id", store)
+	handler := getCharacterFleetHandler(fake.open, store)
 	_, _, err := handler(context.Background(), nil, GetCharacterFleetInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -61,15 +62,14 @@ func TestGetFleetHandler_MapsFields(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getFleet
-	t.Cleanup(func() { getFleet = orig })
-	getFleet = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID int64) (GetFleetOutput, error) {
-		return GetFleetOutput{
-			CharacterID: characterID, FleetID: fleetID, IsFreeMove: true, IsRegistered: true, IsVoiceEnabled: true, Motd: "Form up on grid",
+	fake := &fleetsFake{}
+	fake.fleetInfo = func(ctx context.Context, fleetID int64) (*esiapi.FleetsFleetIdGet, error) {
+		return &esiapi.FleetsFleetIdGet{
+			IsFreeMove: true, IsRegistered: true, IsVoiceEnabled: true, Motd: "Form up on grid",
 		}, nil
 	}
 
-	handler := getFleetHandler("v1", "client-id", store)
+	handler := getFleetHandler(fake.open, store)
 	_, out, err := handler(context.Background(), nil, GetFleetInput{CharacterID: 7, FleetID: 1000})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -83,14 +83,13 @@ func TestGetFleetHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := getFleet
-	t.Cleanup(func() { getFleet = orig })
-	getFleet = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID int64) (GetFleetOutput, error) {
+	fake := &fleetsFake{}
+	fake.fleetInfo = func(ctx context.Context, fleetID int64) (*esiapi.FleetsFleetIdGet, error) {
 		t.Fatal("getFleet should not be called for an unknown character")
-		return GetFleetOutput{}, nil
+		return nil, nil
 	}
 
-	handler := getFleetHandler("v1", "client-id", store)
+	handler := getFleetHandler(fake.open, store)
 	_, _, err := handler(context.Background(), nil, GetFleetInput{CharacterID: 999, FleetID: 1000})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -104,13 +103,12 @@ func TestUpdateFleetHandler_MapsFields(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := updateFleet
-	t.Cleanup(func() { updateFleet = orig })
+	fake := &fleetsFake{}
 
 	var gotFleetID int64
 	var gotIsFreeMove *bool
 	var gotMotd *string
-	updateFleet = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID int64, isFreeMove *bool, motd *string) error {
+	fake.updateFleet = func(ctx context.Context, fleetID int64, isFreeMove *bool, motd *string) error {
 		gotFleetID = fleetID
 		gotIsFreeMove = isFreeMove
 		gotMotd = motd
@@ -121,7 +119,7 @@ func TestUpdateFleetHandler_MapsFields(t *testing.T) {
 	motd := "New MOTD"
 	input := UpdateFleetInput{CharacterID: 7, FleetID: 1000, IsFreeMove: &isFreeMove, Motd: &motd}
 
-	handler := updateFleetHandler("v1", "client-id", store)
+	handler := updateFleetHandler(fake.open, store)
 	_, out, err := handler(context.Background(), nil, input)
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -139,14 +137,13 @@ func TestUpdateFleetHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := updateFleet
-	t.Cleanup(func() { updateFleet = orig })
-	updateFleet = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID int64, isFreeMove *bool, motd *string) error {
+	fake := &fleetsFake{}
+	fake.updateFleet = func(ctx context.Context, fleetID int64, isFreeMove *bool, motd *string) error {
 		t.Fatal("updateFleet should not be called for an unknown character")
 		return nil
 	}
 
-	handler := updateFleetHandler("v1", "client-id", store)
+	handler := updateFleetHandler(fake.open, store)
 	_, _, err := handler(context.Background(), nil, UpdateFleetInput{CharacterID: 999, FleetID: 1000})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -160,19 +157,18 @@ func TestListFleetMembersHandler_MapsFields(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listFleetMembers
-	t.Cleanup(func() { listFleetMembers = orig })
+	fake := &fleetsFake{}
 	joinTime := time.Unix(1000, 0)
 	stationID := int64(60003760)
-	listFleetMembers = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID int64) ([]FleetMember, error) {
-		return []FleetMember{{
-			CharacterID: 100, JoinTime: joinTime, Role: "squad_member", RoleName: "Squad Member",
-			ShipTypeID: 600, SolarSystemID: 30000142, SquadID: 10, StationID: &stationID,
-			TakesFleetWarp: true, WingID: 20,
+	fake.fleetMembers = func(ctx context.Context, fleetID int64) ([]esiapi.FleetsFleetIdMembersGetInner, error) {
+		return []esiapi.FleetsFleetIdMembersGetInner{{
+			CharacterId: 100, JoinTime: joinTime, Role: "squad_member", RoleName: "Squad Member",
+			ShipTypeId: 600, SolarSystemId: 30000142, SquadId: 10, StationId: &stationID,
+			TakesFleetWarp: true, WingId: 20,
 		}}, nil
 	}
 
-	handler := listFleetMembersHandler("v1", "client-id", store, nil)
+	handler := listFleetMembersHandler("v1", fake.open, store, nil)
 	_, out, err := handler(context.Background(), nil, ListFleetMembersInput{CharacterID: 7, FleetID: 1000})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -193,14 +189,13 @@ func TestListFleetMembersHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := listFleetMembers
-	t.Cleanup(func() { listFleetMembers = orig })
-	listFleetMembers = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID int64) ([]FleetMember, error) {
+	fake := &fleetsFake{}
+	fake.fleetMembers = func(ctx context.Context, fleetID int64) ([]esiapi.FleetsFleetIdMembersGetInner, error) {
 		t.Fatal("listFleetMembers should not be called for an unknown character")
 		return nil, nil
 	}
 
-	handler := listFleetMembersHandler("v1", "client-id", store, nil)
+	handler := listFleetMembersHandler("v1", fake.open, store, nil)
 	_, _, err := handler(context.Background(), nil, ListFleetMembersInput{CharacterID: 999, FleetID: 1000})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -214,10 +209,9 @@ func TestListFleetMembersHandler_ResolvesShipTypeName(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listFleetMembers
-	t.Cleanup(func() { listFleetMembers = orig })
-	listFleetMembers = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID int64) ([]FleetMember, error) {
-		return []FleetMember{{CharacterID: 2001, ShipTypeID: 587}}, nil
+	fake := &fleetsFake{}
+	fake.fleetMembers = func(ctx context.Context, fleetID int64) ([]esiapi.FleetsFleetIdMembersGetInner, error) {
+		return []esiapi.FleetsFleetIdMembersGetInner{{CharacterId: 2001, ShipTypeId: 587}}, nil
 	}
 
 	origResolve := resolveTypeNames
@@ -226,7 +220,7 @@ func TestListFleetMembersHandler_ResolvesShipTypeName(t *testing.T) {
 		return map[int64]string{587: "Rifter"}
 	}
 
-	handler := listFleetMembersHandler("v1", "client", store, nil)
+	handler := listFleetMembersHandler("v1", fake.open, store, nil)
 	_, out, err := handler(context.Background(), nil, ListFleetMembersInput{CharacterID: 1001, FleetID: 1})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -243,13 +237,12 @@ func TestListFleetMembersHandler_ResolvesLocationNames(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listFleetMembers
-	t.Cleanup(func() { listFleetMembers = orig })
+	fake := &fleetsFake{}
 	stationID := int64(60003760)
-	listFleetMembers = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID int64) ([]FleetMember, error) {
-		return []FleetMember{
-			{CharacterID: 2001, SolarSystemID: 30000142, StationID: &stationID},
-			{CharacterID: 2002, SolarSystemID: 30000142, StationID: nil},
+	fake.fleetMembers = func(ctx context.Context, fleetID int64) ([]esiapi.FleetsFleetIdMembersGetInner, error) {
+		return []esiapi.FleetsFleetIdMembersGetInner{
+			{CharacterId: 2001, SolarSystemId: 30000142, StationId: &stationID},
+			{CharacterId: 2002, SolarSystemId: 30000142, StationId: nil},
 		}, nil
 	}
 
@@ -264,7 +257,7 @@ func TestListFleetMembersHandler_ResolvesLocationNames(t *testing.T) {
 		return map[int64]string{60003760: "Jita IV - Moon 4 - Caldari Navy Assembly Plant"}
 	}
 
-	handler := listFleetMembersHandler("v1", "client-id", store, nil)
+	handler := listFleetMembersHandler("v1", fake.open, store, nil)
 	_, out, err := handler(context.Background(), nil, ListFleetMembersInput{CharacterID: 7, FleetID: 1})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -287,13 +280,12 @@ func TestInviteFleetMemberHandler_MapsFields(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := inviteFleetMember
-	t.Cleanup(func() { inviteFleetMember = orig })
+	fake := &fleetsFake{}
 
 	var gotFleetID, gotInviteCharacterID int64
 	var gotRole string
 	var gotWingID, gotSquadID *int64
-	inviteFleetMember = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID, inviteCharacterID int64, role string, wingID, squadID *int64) error {
+	fake.inviteFleetMember = func(ctx context.Context, fleetID, inviteCharacterID int64, role string, wingID, squadID *int64) error {
 		gotFleetID = fleetID
 		gotInviteCharacterID = inviteCharacterID
 		gotRole = role
@@ -308,7 +300,7 @@ func TestInviteFleetMemberHandler_MapsFields(t *testing.T) {
 		CharacterID: 7, FleetID: 1000, InviteCharacterID: 200, Role: "squad_member", WingID: &wingID, SquadID: &squadID,
 	}
 
-	handler := inviteFleetMemberHandler("v1", "client-id", store)
+	handler := inviteFleetMemberHandler(fake.open, store)
 	_, out, err := handler(context.Background(), nil, input)
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -328,14 +320,13 @@ func TestInviteFleetMemberHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := inviteFleetMember
-	t.Cleanup(func() { inviteFleetMember = orig })
-	inviteFleetMember = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID, inviteCharacterID int64, role string, wingID, squadID *int64) error {
+	fake := &fleetsFake{}
+	fake.inviteFleetMember = func(ctx context.Context, fleetID, inviteCharacterID int64, role string, wingID, squadID *int64) error {
 		t.Fatal("inviteFleetMember should not be called for an unknown character")
 		return nil
 	}
 
-	handler := inviteFleetMemberHandler("v1", "client-id", store)
+	handler := inviteFleetMemberHandler(fake.open, store)
 	_, _, err := handler(context.Background(), nil, InviteFleetMemberInput{CharacterID: 999, FleetID: 1000, InviteCharacterID: 200, Role: "squad_member"})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -349,14 +340,13 @@ func TestInviteFleetMemberHandler_InvalidRole(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := inviteFleetMember
-	t.Cleanup(func() { inviteFleetMember = orig })
-	inviteFleetMember = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID, inviteCharacterID int64, role string, wingID, squadID *int64) error {
+	fake := &fleetsFake{}
+	fake.inviteFleetMember = func(ctx context.Context, fleetID, inviteCharacterID int64, role string, wingID, squadID *int64) error {
 		t.Fatal("inviteFleetMember should not be called for an invalid role")
 		return nil
 	}
 
-	handler := inviteFleetMemberHandler("v1", "client-id", store)
+	handler := inviteFleetMemberHandler(fake.open, store)
 	_, _, err := handler(context.Background(), nil, InviteFleetMemberInput{CharacterID: 7, FleetID: 1000, InviteCharacterID: 200, Role: "bogus_role"})
 	if err == nil {
 		t.Fatal("expected an error for invalid role, got nil")
@@ -370,13 +360,12 @@ func TestMoveFleetMemberHandler_MapsFields(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := moveFleetMember
-	t.Cleanup(func() { moveFleetMember = orig })
+	fake := &fleetsFake{}
 
 	var gotFleetID, gotMemberID int64
 	var gotRole string
 	var gotWingID, gotSquadID *int64
-	moveFleetMember = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID, memberID int64, role string, wingID, squadID *int64) error {
+	fake.moveFleetMember = func(ctx context.Context, fleetID, memberID int64, role string, wingID, squadID *int64) error {
 		gotFleetID = fleetID
 		gotMemberID = memberID
 		gotRole = role
@@ -391,7 +380,7 @@ func TestMoveFleetMemberHandler_MapsFields(t *testing.T) {
 		CharacterID: 7, FleetID: 1000, MemberID: 200, Role: "squad_commander", WingID: &wingID, SquadID: &squadID,
 	}
 
-	handler := moveFleetMemberHandler("v1", "client-id", store)
+	handler := moveFleetMemberHandler(fake.open, store)
 	_, out, err := handler(context.Background(), nil, input)
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -411,14 +400,13 @@ func TestMoveFleetMemberHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := moveFleetMember
-	t.Cleanup(func() { moveFleetMember = orig })
-	moveFleetMember = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID, memberID int64, role string, wingID, squadID *int64) error {
+	fake := &fleetsFake{}
+	fake.moveFleetMember = func(ctx context.Context, fleetID, memberID int64, role string, wingID, squadID *int64) error {
 		t.Fatal("moveFleetMember should not be called for an unknown character")
 		return nil
 	}
 
-	handler := moveFleetMemberHandler("v1", "client-id", store)
+	handler := moveFleetMemberHandler(fake.open, store)
 	_, _, err := handler(context.Background(), nil, MoveFleetMemberInput{CharacterID: 999, FleetID: 1000, MemberID: 200, Role: "squad_member"})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -432,14 +420,13 @@ func TestMoveFleetMemberHandler_InvalidRole(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := moveFleetMember
-	t.Cleanup(func() { moveFleetMember = orig })
-	moveFleetMember = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID, memberID int64, role string, wingID, squadID *int64) error {
+	fake := &fleetsFake{}
+	fake.moveFleetMember = func(ctx context.Context, fleetID, memberID int64, role string, wingID, squadID *int64) error {
 		t.Fatal("moveFleetMember should not be called for an invalid role")
 		return nil
 	}
 
-	handler := moveFleetMemberHandler("v1", "client-id", store)
+	handler := moveFleetMemberHandler(fake.open, store)
 	_, _, err := handler(context.Background(), nil, MoveFleetMemberInput{CharacterID: 7, FleetID: 1000, MemberID: 200, Role: "bogus_role"})
 	if err == nil {
 		t.Fatal("expected an error for invalid role, got nil")
@@ -453,13 +440,12 @@ func TestKickFleetMemberHandler_Succeeds(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := kickFleetMember
-	t.Cleanup(func() { kickFleetMember = orig })
-	kickFleetMember = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID, memberID int64) error {
+	fake := &fleetsFake{}
+	fake.kickFleetMember = func(ctx context.Context, fleetID, memberID int64) error {
 		return nil
 	}
 
-	handler := kickFleetMemberHandler("v1", "client-id", store)
+	handler := kickFleetMemberHandler(fake.open, store)
 	_, out, err := handler(context.Background(), nil, KickFleetMemberInput{CharacterID: 7, FleetID: 1000, MemberID: 200})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -473,14 +459,13 @@ func TestKickFleetMemberHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := kickFleetMember
-	t.Cleanup(func() { kickFleetMember = orig })
-	kickFleetMember = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID, memberID int64) error {
+	fake := &fleetsFake{}
+	fake.kickFleetMember = func(ctx context.Context, fleetID, memberID int64) error {
 		t.Fatal("kickFleetMember should not be called for an unknown character")
 		return nil
 	}
 
-	handler := kickFleetMemberHandler("v1", "client-id", store)
+	handler := kickFleetMemberHandler(fake.open, store)
 	_, _, err := handler(context.Background(), nil, KickFleetMemberInput{CharacterID: 999, FleetID: 1000, MemberID: 200})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -494,16 +479,15 @@ func TestListFleetWingsHandler_MapsFields(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listFleetWings
-	t.Cleanup(func() { listFleetWings = orig })
-	listFleetWings = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID int64) ([]FleetWing, error) {
-		return []FleetWing{{
-			WingID: 20, Name: "Wing One",
-			Squads: []FleetSquad{{SquadID: 10, Name: "Squad One"}, {SquadID: 11, Name: "Squad Two"}},
+	fake := &fleetsFake{}
+	fake.fleetWings = func(ctx context.Context, fleetID int64) ([]esiapi.FleetsFleetIdWingsGetInner, error) {
+		return []esiapi.FleetsFleetIdWingsGetInner{{
+			Id: 20, Name: "Wing One",
+			Squads: []esiapi.FleetsFleetIdWingsGetInnerSquadsInner{{Id: 10, Name: "Squad One"}, {Id: 11, Name: "Squad Two"}},
 		}}, nil
 	}
 
-	handler := listFleetWingsHandler("v1", "client-id", store)
+	handler := listFleetWingsHandler(fake.open, store)
 	_, out, err := handler(context.Background(), nil, ListFleetWingsInput{CharacterID: 7, FleetID: 1000})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -527,14 +511,13 @@ func TestListFleetWingsHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := listFleetWings
-	t.Cleanup(func() { listFleetWings = orig })
-	listFleetWings = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID int64) ([]FleetWing, error) {
+	fake := &fleetsFake{}
+	fake.fleetWings = func(ctx context.Context, fleetID int64) ([]esiapi.FleetsFleetIdWingsGetInner, error) {
 		t.Fatal("listFleetWings should not be called for an unknown character")
 		return nil, nil
 	}
 
-	handler := listFleetWingsHandler("v1", "client-id", store)
+	handler := listFleetWingsHandler(fake.open, store)
 	_, _, err := handler(context.Background(), nil, ListFleetWingsInput{CharacterID: 999, FleetID: 1000})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -548,13 +531,12 @@ func TestCreateFleetWingHandler_MapsFields(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := createFleetWing
-	t.Cleanup(func() { createFleetWing = orig })
-	createFleetWing = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID int64) (int64, error) {
+	fake := &fleetsFake{}
+	fake.createFleetWing = func(ctx context.Context, fleetID int64) (int64, error) {
 		return 20, nil
 	}
 
-	handler := createFleetWingHandler("v1", "client-id", store)
+	handler := createFleetWingHandler(fake.open, store)
 	_, out, err := handler(context.Background(), nil, CreateFleetWingInput{CharacterID: 7, FleetID: 1000})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -568,14 +550,13 @@ func TestCreateFleetWingHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := createFleetWing
-	t.Cleanup(func() { createFleetWing = orig })
-	createFleetWing = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID int64) (int64, error) {
+	fake := &fleetsFake{}
+	fake.createFleetWing = func(ctx context.Context, fleetID int64) (int64, error) {
 		t.Fatal("createFleetWing should not be called for an unknown character")
 		return 0, nil
 	}
 
-	handler := createFleetWingHandler("v1", "client-id", store)
+	handler := createFleetWingHandler(fake.open, store)
 	_, _, err := handler(context.Background(), nil, CreateFleetWingInput{CharacterID: 999, FleetID: 1000})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -589,19 +570,18 @@ func TestRenameFleetWingHandler_MapsFields(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := renameFleetWing
-	t.Cleanup(func() { renameFleetWing = orig })
+	fake := &fleetsFake{}
 
 	var gotFleetID, gotWingID int64
 	var gotName string
-	renameFleetWing = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID, wingID int64, name string) error {
+	fake.renameFleetWing = func(ctx context.Context, fleetID, wingID int64, name string) error {
 		gotFleetID = fleetID
 		gotWingID = wingID
 		gotName = name
 		return nil
 	}
 
-	handler := renameFleetWingHandler("v1", "client-id", store)
+	handler := renameFleetWingHandler(fake.open, store)
 	_, out, err := handler(context.Background(), nil, RenameFleetWingInput{CharacterID: 7, FleetID: 1000, WingID: 20, Name: "Interceptor Wing"})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -619,14 +599,13 @@ func TestRenameFleetWingHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := renameFleetWing
-	t.Cleanup(func() { renameFleetWing = orig })
-	renameFleetWing = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID, wingID int64, name string) error {
+	fake := &fleetsFake{}
+	fake.renameFleetWing = func(ctx context.Context, fleetID, wingID int64, name string) error {
 		t.Fatal("renameFleetWing should not be called for an unknown character")
 		return nil
 	}
 
-	handler := renameFleetWingHandler("v1", "client-id", store)
+	handler := renameFleetWingHandler(fake.open, store)
 	_, _, err := handler(context.Background(), nil, RenameFleetWingInput{CharacterID: 999, FleetID: 1000, WingID: 20, Name: "Interceptor Wing"})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -640,13 +619,12 @@ func TestDeleteFleetWingHandler_Succeeds(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := deleteFleetWing
-	t.Cleanup(func() { deleteFleetWing = orig })
-	deleteFleetWing = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID, wingID int64) error {
+	fake := &fleetsFake{}
+	fake.deleteFleetWing = func(ctx context.Context, fleetID, wingID int64) error {
 		return nil
 	}
 
-	handler := deleteFleetWingHandler("v1", "client-id", store)
+	handler := deleteFleetWingHandler(fake.open, store)
 	_, out, err := handler(context.Background(), nil, DeleteFleetWingInput{CharacterID: 7, FleetID: 1000, WingID: 20})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -660,14 +638,13 @@ func TestDeleteFleetWingHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := deleteFleetWing
-	t.Cleanup(func() { deleteFleetWing = orig })
-	deleteFleetWing = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID, wingID int64) error {
+	fake := &fleetsFake{}
+	fake.deleteFleetWing = func(ctx context.Context, fleetID, wingID int64) error {
 		t.Fatal("deleteFleetWing should not be called for an unknown character")
 		return nil
 	}
 
-	handler := deleteFleetWingHandler("v1", "client-id", store)
+	handler := deleteFleetWingHandler(fake.open, store)
 	_, _, err := handler(context.Background(), nil, DeleteFleetWingInput{CharacterID: 999, FleetID: 1000, WingID: 20})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -681,17 +658,16 @@ func TestCreateFleetSquadHandler_MapsFields(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := createFleetSquad
-	t.Cleanup(func() { createFleetSquad = orig })
+	fake := &fleetsFake{}
 
 	var gotFleetID, gotWingID int64
-	createFleetSquad = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID, wingID int64) (int64, error) {
+	fake.createFleetSquad = func(ctx context.Context, fleetID, wingID int64) (int64, error) {
 		gotFleetID = fleetID
 		gotWingID = wingID
 		return 10, nil
 	}
 
-	handler := createFleetSquadHandler("v1", "client-id", store)
+	handler := createFleetSquadHandler(fake.open, store)
 	_, out, err := handler(context.Background(), nil, CreateFleetSquadInput{CharacterID: 7, FleetID: 1000, WingID: 20})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -709,14 +685,13 @@ func TestCreateFleetSquadHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := createFleetSquad
-	t.Cleanup(func() { createFleetSquad = orig })
-	createFleetSquad = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID, wingID int64) (int64, error) {
+	fake := &fleetsFake{}
+	fake.createFleetSquad = func(ctx context.Context, fleetID, wingID int64) (int64, error) {
 		t.Fatal("createFleetSquad should not be called for an unknown character")
 		return 0, nil
 	}
 
-	handler := createFleetSquadHandler("v1", "client-id", store)
+	handler := createFleetSquadHandler(fake.open, store)
 	_, _, err := handler(context.Background(), nil, CreateFleetSquadInput{CharacterID: 999, FleetID: 1000, WingID: 20})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -730,19 +705,18 @@ func TestRenameFleetSquadHandler_MapsFields(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := renameFleetSquad
-	t.Cleanup(func() { renameFleetSquad = orig })
+	fake := &fleetsFake{}
 
 	var gotFleetID, gotSquadID int64
 	var gotName string
-	renameFleetSquad = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID, squadID int64, name string) error {
+	fake.renameFleetSquad = func(ctx context.Context, fleetID, squadID int64, name string) error {
 		gotFleetID = fleetID
 		gotSquadID = squadID
 		gotName = name
 		return nil
 	}
 
-	handler := renameFleetSquadHandler("v1", "client-id", store)
+	handler := renameFleetSquadHandler(fake.open, store)
 	_, out, err := handler(context.Background(), nil, RenameFleetSquadInput{CharacterID: 7, FleetID: 1000, SquadID: 10, Name: "Alpha Squad"})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -760,14 +734,13 @@ func TestRenameFleetSquadHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := renameFleetSquad
-	t.Cleanup(func() { renameFleetSquad = orig })
-	renameFleetSquad = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID, squadID int64, name string) error {
+	fake := &fleetsFake{}
+	fake.renameFleetSquad = func(ctx context.Context, fleetID, squadID int64, name string) error {
 		t.Fatal("renameFleetSquad should not be called for an unknown character")
 		return nil
 	}
 
-	handler := renameFleetSquadHandler("v1", "client-id", store)
+	handler := renameFleetSquadHandler(fake.open, store)
 	_, _, err := handler(context.Background(), nil, RenameFleetSquadInput{CharacterID: 999, FleetID: 1000, SquadID: 10, Name: "Alpha Squad"})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -781,13 +754,12 @@ func TestDeleteFleetSquadHandler_Succeeds(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := deleteFleetSquad
-	t.Cleanup(func() { deleteFleetSquad = orig })
-	deleteFleetSquad = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID, squadID int64) error {
+	fake := &fleetsFake{}
+	fake.deleteFleetSquad = func(ctx context.Context, fleetID, squadID int64) error {
 		return nil
 	}
 
-	handler := deleteFleetSquadHandler("v1", "client-id", store)
+	handler := deleteFleetSquadHandler(fake.open, store)
 	_, out, err := handler(context.Background(), nil, DeleteFleetSquadInput{CharacterID: 7, FleetID: 1000, SquadID: 10})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -801,16 +773,213 @@ func TestDeleteFleetSquadHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := deleteFleetSquad
-	t.Cleanup(func() { deleteFleetSquad = orig })
-	deleteFleetSquad = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID, squadID int64) error {
+	fake := &fleetsFake{}
+	fake.deleteFleetSquad = func(ctx context.Context, fleetID, squadID int64) error {
 		t.Fatal("deleteFleetSquad should not be called for an unknown character")
 		return nil
 	}
 
-	handler := deleteFleetSquadHandler("v1", "client-id", store)
+	handler := deleteFleetSquadHandler(fake.open, store)
 	_, _, err := handler(context.Background(), nil, DeleteFleetSquadInput{CharacterID: 999, FleetID: 1000, SquadID: 10})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
 	}
+}
+
+// TestFleetsHandlers_OpenFailure: every handler that opens an ESI client wraps and returns
+// the opener's error, and never reaches an ESI call.
+func TestFleetsHandlers_OpenFailure(t *testing.T) {
+	store := newTestStoreWithCharacter(t)
+	openErr := errors.New("keychain locked")
+	fake := &fleetsFake{openErr: openErr}
+	tests := []struct {
+		name string
+		call func() error
+	}{
+		{"get_character_fleet", func() error {
+			return callHandlerForOpenFailure(getCharacterFleetHandler(fake.open, store), GetCharacterFleetInput{CharacterID: 7})
+		}},
+		{"get_fleet", func() error {
+			return callHandlerForOpenFailure(getFleetHandler(fake.open, store), GetFleetInput{CharacterID: 7})
+		}},
+		{"update_fleet", func() error {
+			return callHandlerForOpenFailure(updateFleetHandler(fake.open, store), UpdateFleetInput{CharacterID: 7})
+		}},
+		{"list_fleet_members", func() error {
+			return callHandlerForOpenFailure(listFleetMembersHandler("v1", fake.open, store, nil), ListFleetMembersInput{CharacterID: 7})
+		}},
+		{"invite_fleet_member", func() error {
+			return callHandlerForOpenFailure(inviteFleetMemberHandler(fake.open, store), InviteFleetMemberInput{CharacterID: 7, Role: "squad_member"})
+		}},
+		{"move_fleet_member", func() error {
+			return callHandlerForOpenFailure(moveFleetMemberHandler(fake.open, store), MoveFleetMemberInput{CharacterID: 7, Role: "squad_member"})
+		}},
+		{"kick_fleet_member", func() error {
+			return callHandlerForOpenFailure(kickFleetMemberHandler(fake.open, store), KickFleetMemberInput{CharacterID: 7})
+		}},
+		{"list_fleet_wings", func() error {
+			return callHandlerForOpenFailure(listFleetWingsHandler(fake.open, store), ListFleetWingsInput{CharacterID: 7})
+		}},
+		{"create_fleet_wing", func() error {
+			return callHandlerForOpenFailure(createFleetWingHandler(fake.open, store), CreateFleetWingInput{CharacterID: 7})
+		}},
+		{"rename_fleet_wing", func() error {
+			return callHandlerForOpenFailure(renameFleetWingHandler(fake.open, store), RenameFleetWingInput{CharacterID: 7})
+		}},
+		{"delete_fleet_wing", func() error {
+			return callHandlerForOpenFailure(deleteFleetWingHandler(fake.open, store), DeleteFleetWingInput{CharacterID: 7})
+		}},
+		{"create_fleet_squad", func() error {
+			return callHandlerForOpenFailure(createFleetSquadHandler(fake.open, store), CreateFleetSquadInput{CharacterID: 7})
+		}},
+		{"rename_fleet_squad", func() error {
+			return callHandlerForOpenFailure(renameFleetSquadHandler(fake.open, store), RenameFleetSquadInput{CharacterID: 7})
+		}},
+		{"delete_fleet_squad", func() error {
+			return callHandlerForOpenFailure(deleteFleetSquadHandler(fake.open, store), DeleteFleetSquadInput{CharacterID: 7})
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.call()
+			if !errors.Is(err, openErr) {
+				t.Fatalf("err = %v, want wrapping %v", err, openErr)
+			}
+			if !strings.Contains(err.Error(), strings.ReplaceAll(tt.name, "_", " ")) {
+				t.Errorf("err = %q, want it to start with the tool name %q", err, tt.name)
+			}
+		})
+	}
+}
+
+// fleetsFake fakes fleetsESI: set a field to answer that call, and open records the character IDs it was asked for.
+type fleetsFake struct {
+	characterFleet    func(ctx context.Context) (*esiapi.CharactersCharacterIdFleetGet, error)
+	fleetInfo         func(ctx context.Context, fleetID int64) (*esiapi.FleetsFleetIdGet, error)
+	updateFleet       func(ctx context.Context, fleetID int64, isFreeMove *bool, motd *string) error
+	fleetMembers      func(ctx context.Context, fleetID int64) ([]esiapi.FleetsFleetIdMembersGetInner, error)
+	inviteFleetMember func(ctx context.Context, fleetID, characterID int64, role string, wingID, squadID *int64) error
+	moveFleetMember   func(ctx context.Context, fleetID, memberID int64, role string, wingID, squadID *int64) error
+	kickFleetMember   func(ctx context.Context, fleetID, memberID int64) error
+	fleetWings        func(ctx context.Context, fleetID int64) ([]esiapi.FleetsFleetIdWingsGetInner, error)
+	createFleetWing   func(ctx context.Context, fleetID int64) (int64, error)
+	renameFleetWing   func(ctx context.Context, fleetID, wingID int64, name string) error
+	deleteFleetWing   func(ctx context.Context, fleetID, wingID int64) error
+	createFleetSquad  func(ctx context.Context, fleetID, wingID int64) (int64, error)
+	renameFleetSquad  func(ctx context.Context, fleetID, squadID int64, name string) error
+	deleteFleetSquad  func(ctx context.Context, fleetID, squadID int64) error
+	openErr           error
+	openedFor         []int32
+}
+
+func (f *fleetsFake) open(ctx context.Context, characterID int32) (fleetsESI, error) {
+	f.openedFor = append(f.openedFor, characterID)
+	if f.openErr != nil {
+		return nil, f.openErr
+	}
+	return f, nil
+}
+
+func (f *fleetsFake) CharacterFleet(ctx context.Context) (*esiapi.CharactersCharacterIdFleetGet, error) {
+	if f.characterFleet == nil {
+		return nil, errors.New("fleetsFake: unexpected CharacterFleet call")
+	}
+	return f.characterFleet(ctx)
+}
+
+func (f *fleetsFake) FleetInfo(ctx context.Context, fleetID int64) (*esiapi.FleetsFleetIdGet, error) {
+	if f.fleetInfo == nil {
+		return nil, errors.New("fleetsFake: unexpected FleetInfo call")
+	}
+	return f.fleetInfo(ctx, fleetID)
+}
+
+func (f *fleetsFake) UpdateFleet(ctx context.Context, fleetID int64, isFreeMove *bool, motd *string) error {
+	if f.updateFleet == nil {
+		return errors.New("fleetsFake: unexpected UpdateFleet call")
+	}
+	return f.updateFleet(ctx, fleetID, isFreeMove, motd)
+}
+
+func (f *fleetsFake) FleetMembers(ctx context.Context, fleetID int64) ([]esiapi.FleetsFleetIdMembersGetInner, error) {
+	if f.fleetMembers == nil {
+		return nil, errors.New("fleetsFake: unexpected FleetMembers call")
+	}
+	return f.fleetMembers(ctx, fleetID)
+}
+
+func (f *fleetsFake) InviteFleetMember(ctx context.Context, fleetID, characterID int64, role string, wingID, squadID *int64) error {
+	if f.inviteFleetMember == nil {
+		return errors.New("fleetsFake: unexpected InviteFleetMember call")
+	}
+	return f.inviteFleetMember(ctx, fleetID, characterID, role, wingID, squadID)
+}
+
+func (f *fleetsFake) MoveFleetMember(ctx context.Context, fleetID, memberID int64, role string, wingID, squadID *int64) error {
+	if f.moveFleetMember == nil {
+		return errors.New("fleetsFake: unexpected MoveFleetMember call")
+	}
+	return f.moveFleetMember(ctx, fleetID, memberID, role, wingID, squadID)
+}
+
+func (f *fleetsFake) KickFleetMember(ctx context.Context, fleetID, memberID int64) error {
+	if f.kickFleetMember == nil {
+		return errors.New("fleetsFake: unexpected KickFleetMember call")
+	}
+	return f.kickFleetMember(ctx, fleetID, memberID)
+}
+
+func (f *fleetsFake) FleetWings(ctx context.Context, fleetID int64) ([]esiapi.FleetsFleetIdWingsGetInner, error) {
+	if f.fleetWings == nil {
+		return nil, errors.New("fleetsFake: unexpected FleetWings call")
+	}
+	return f.fleetWings(ctx, fleetID)
+}
+
+func (f *fleetsFake) CreateFleetWing(ctx context.Context, fleetID int64) (int64, error) {
+	if f.createFleetWing == nil {
+		return 0, errors.New("fleetsFake: unexpected CreateFleetWing call")
+	}
+	return f.createFleetWing(ctx, fleetID)
+}
+
+func (f *fleetsFake) RenameFleetWing(ctx context.Context, fleetID, wingID int64, name string) error {
+	if f.renameFleetWing == nil {
+		return errors.New("fleetsFake: unexpected RenameFleetWing call")
+	}
+	return f.renameFleetWing(ctx, fleetID, wingID, name)
+}
+
+func (f *fleetsFake) DeleteFleetWing(ctx context.Context, fleetID, wingID int64) error {
+	if f.deleteFleetWing == nil {
+		return errors.New("fleetsFake: unexpected DeleteFleetWing call")
+	}
+	return f.deleteFleetWing(ctx, fleetID, wingID)
+}
+
+func (f *fleetsFake) CreateFleetSquad(ctx context.Context, fleetID, wingID int64) (int64, error) {
+	if f.createFleetSquad == nil {
+		return 0, errors.New("fleetsFake: unexpected CreateFleetSquad call")
+	}
+	return f.createFleetSquad(ctx, fleetID, wingID)
+}
+
+func (f *fleetsFake) RenameFleetSquad(ctx context.Context, fleetID, squadID int64, name string) error {
+	if f.renameFleetSquad == nil {
+		return errors.New("fleetsFake: unexpected RenameFleetSquad call")
+	}
+	return f.renameFleetSquad(ctx, fleetID, squadID, name)
+}
+
+func (f *fleetsFake) DeleteFleetSquad(ctx context.Context, fleetID, squadID int64) error {
+	if f.deleteFleetSquad == nil {
+		return errors.New("fleetsFake: unexpected DeleteFleetSquad call")
+	}
+	return f.deleteFleetSquad(ctx, fleetID, squadID)
+}
+
+// callHandlerForOpenFailure runs a tool handler for a known character and returns its error.
+func callHandlerForOpenFailure[In, Out any](h mcpsdk.ToolHandlerFor[In, Out], in In) error {
+	_, _, err := h(context.Background(), nil, in)
+	return err
 }
