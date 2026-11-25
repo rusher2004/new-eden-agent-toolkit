@@ -238,52 +238,82 @@ func TestAuditFlagsOpenConstructorCalls(t *testing.T) {
 	}
 }
 
-// The repo itself must conform to the two rules CI enforces: no file that only
-// declares types, and no exported interface in a producer package.
-func TestRepoHasNoTypeOnlyFiles(t *testing.T) {
+// enforcedKinds are the audit kinds CI fails on. INTERFACE (the list of every
+// interface and who uses it) stays informational. The audit skips _test.go
+// files, so fakes declared in tests are never reported.
+var enforcedKinds = map[string]bool{
+	"CONCRETE_PARAM": true, // a producer type taken, held or returned concretely outside a composition root
+	"CONCRETE_CTOR":  true, // a producer New*/Open* call outside a composition root or *test fixture package
+	"PRODUCER_IFACE": true, // an exported interface in a producer package
+	"TYPE_ONLY_FILE": true, // a file that only declares types, or any *_iface.go
+	"IFACE_AWAY":     true, // an interface declared in a file that never uses it
+}
+
+func enforcedFindings(fs []Finding) []Finding {
+	var out []Finding
+	for _, f := range fs {
+		if enforcedKinds[f.Kind] {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// TestRepoConformsToConsumerInterfaceRules is the repo-conformance gate: it
+// fails on any CONCRETE_PARAM, CONCRETE_CTOR, PRODUCER_IFACE, TYPE_ONLY_FILE or
+// IFACE_AWAY finding in the repository, so a change must add none.
+func TestRepoConformsToConsumerInterfaceRules(t *testing.T) {
 	fs, err := Audit("../..")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, f := range fs {
-		if f.Kind == "TYPE_ONLY_FILE" {
-			t.Errorf("type-only file (declare a type in the file of the code that uses it): %s", f)
-		}
+	for _, f := range enforcedFindings(fs) {
+		t.Errorf("%s (declare a small interface in the consumer, inject it from commands/, and keep types beside the code that uses them): %s", f.Kind, f)
 	}
 }
 
-func TestRepoHasNoConcreteDependencies(t *testing.T) {
-	fs, err := Audit("../..")
+// TestEnforcedKindsFailOnViolations proves the gate can fail: the fixture tree
+// holds a violation of every enforced kind, and the same filter the repo test
+// uses must report all of them (and not the informational INTERFACE kind).
+func TestEnforcedKindsFailOnViolations(t *testing.T) {
+	fs, err := Audit("testdata")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, f := range fs {
-		if f.Kind == "CONCRETE_PARAM" || f.Kind == "CONCRETE_CTOR" {
-			t.Errorf("concrete producer dependency (declare a small interface in the consumer and let commands/ wire it): %s", f)
+	seen := map[string]bool{}
+	for _, f := range enforcedFindings(fs) {
+		seen[f.Kind] = true
+	}
+	// CONCRETE_CTOR needs a pointer-returning constructor called from outside
+	// the producer and the roots, which the fixture tree has none of.
+	root := t.TempDir()
+	for rel, src := range map[string]string{
+		"sde/s.go": "package sde\n\ntype Store struct{}\n\nfunc Open(p string) (*Store, error) { return nil, nil }\n",
+		"mcp/m.go": "package mcp\n\nimport \"example.com/m/sde\"\n\nfunc build() { _, _ = sde.Open(\"x\") }\n",
+	} {
+		p := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(src), 0o644); err != nil {
+			t.Fatal(err)
 		}
 	}
-}
-
-func TestRepoHasNoAwayInterfaces(t *testing.T) {
-	fs, err := Audit("../..")
+	ctor, err := Audit(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, f := range fs {
-		if f.Kind == "IFACE_AWAY" {
-			t.Errorf("interface declared in a file that never uses it (declare it where it is used): %s", f)
+	for _, f := range enforcedFindings(ctor) {
+		seen[f.Kind] = true
+	}
+	for kind := range enforcedKinds {
+		if !seen[kind] {
+			t.Errorf("no %s violation reported for a tree that has one: the repo gate could not fail on it", kind)
 		}
 	}
-}
-
-func TestRepoProducerPackagesDeclareNoInterfaces(t *testing.T) {
-	fs, err := Audit("../..")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, f := range fs {
-		if f.Kind == "PRODUCER_IFACE" {
-			t.Errorf("producer package exports an interface (the consumer declares it): %s", f)
+	for _, f := range enforcedFindings(fs) {
+		if f.Kind == "INTERFACE" {
+			t.Errorf("informational INTERFACE finding treated as enforced: %s", f)
 		}
 	}
 }

@@ -11,7 +11,7 @@ The checklist for reviewing a PR (human or Claude) on top of the generic review 
    - a file that only declares types, or any `*_iface.go` file
    - a factory that returns a typed nil inside an interface; it must return an untyped `nil, err`
 
-   `go run ./tools/ifaceaudit` lists the findings; the PR must add none.
+   `go run ./tools/ifaceaudit` lists the findings; CI enforces every kind but `INTERFACE` (`TestRepoConformsToConsumerInterfaceRules`), so a PR cannot add any.
 2. **Error handling** (`CLAUDE.md` "Go standards"). Flag:
    - a dropped error: `_ = f()`, an ignored return, an empty `if err != nil {}`, a deferred `Close`/`Remove` whose error is discarded on a path that matters
    - an error returned without context across a layer or package boundary (`return err`), or wrapped with `%v`/`%s` where `%w` would keep the cause inspectable
