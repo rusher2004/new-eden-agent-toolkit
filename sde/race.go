@@ -20,11 +20,11 @@ type Race struct {
 
 // Races returns every cached race. Returns an empty slice, not an error, if
 // the store has never synced successfully.
-func (s *Store) Races(ctx context.Context, userAgent string) ([]Race, error) {
+func (s *Store) Races(ctx context.Context, userAgent string) (_ []Race, err error) {
 	if s == nil {
 		return nil, nil
 	}
-	_ = s.ensureSynced(ctx, userAgent)
+	s.syncBestEffort(ctx, userAgent)
 	if s.db == nil {
 		return nil, nil
 	}
@@ -33,7 +33,7 @@ func (s *Store) Races(ctx context.Context, userAgent string) ([]Race, error) {
 	if err != nil {
 		return nil, fmt.Errorf("query races: %w", err)
 	}
-	defer rows.Close()
+	defer closeInto(&err, rows, "rows")
 
 	var out []Race
 	for rows.Next() {
@@ -59,7 +59,7 @@ func (s *Store) Race(ctx context.Context, userAgent string, id int64) (Race, boo
 	if s == nil {
 		return Race{}, false, nil
 	}
-	_ = s.ensureSynced(ctx, userAgent)
+	s.syncBestEffort(ctx, userAgent)
 	if s.db == nil {
 		return Race{}, false, nil
 	}

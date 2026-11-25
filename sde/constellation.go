@@ -35,7 +35,7 @@ func (s *Store) Constellation(ctx context.Context, userAgent string, id int64) (
 	if v, ok := getOverlay[Constellation](s, "constellation", id); ok {
 		return v, true, nil
 	}
-	_ = s.ensureSynced(ctx, userAgent)
+	s.syncBestEffort(ctx, userAgent)
 	if s.db == nil {
 		return Constellation{}, false, nil
 	}
@@ -80,7 +80,7 @@ func (s *Store) ConstellationIDs(ctx context.Context, userAgent string) ([]int64
 	if s == nil {
 		return nil, nil
 	}
-	_ = s.ensureSynced(ctx, userAgent)
+	s.syncBestEffort(ctx, userAgent)
 	if s.db == nil {
 		return nil, nil
 	}

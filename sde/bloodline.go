@@ -50,11 +50,11 @@ func scanBloodlineRow(scanner interface{ Scan(...any) error }) (Bloodline, error
 
 // Bloodlines returns every cached bloodline. Returns an empty slice, not an
 // error, if the store has never synced successfully.
-func (s *Store) Bloodlines(ctx context.Context, userAgent string) ([]Bloodline, error) {
+func (s *Store) Bloodlines(ctx context.Context, userAgent string) (_ []Bloodline, err error) {
 	if s == nil {
 		return nil, nil
 	}
-	_ = s.ensureSynced(ctx, userAgent)
+	s.syncBestEffort(ctx, userAgent)
 	if s.db == nil {
 		return nil, nil
 	}
@@ -63,7 +63,7 @@ func (s *Store) Bloodlines(ctx context.Context, userAgent string) ([]Bloodline, 
 	if err != nil {
 		return nil, fmt.Errorf("query bloodlines: %w", err)
 	}
-	defer rows.Close()
+	defer closeInto(&err, rows, "rows")
 
 	var out []Bloodline
 	for rows.Next() {
@@ -82,7 +82,7 @@ func (s *Store) Bloodline(ctx context.Context, userAgent string, id int64) (Bloo
 	if s == nil {
 		return Bloodline{}, false, nil
 	}
-	_ = s.ensureSynced(ctx, userAgent)
+	s.syncBestEffort(ctx, userAgent)
 	if s.db == nil {
 		return Bloodline{}, false, nil
 	}

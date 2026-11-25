@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -48,9 +49,7 @@ func requirementsOf(t *testing.T, p *planner, extra map[int64]int64, typeIDs ...
 			levels[r.SkillID] = max(levels[r.SkillID], int64(r.Level))
 		}
 	}
-	for id, l := range extra {
-		levels[id] = l
-	}
+	maps.Copy(levels, extra)
 	var out []CharacterSkill
 	for id, l := range levels {
 		out = append(out, CharacterSkill{SkillID: id, ActiveSkillLevel: l, TrainedSkillLevel: l})

@@ -73,7 +73,7 @@ func NewStore(t testing.TB, fixtureFiles ...string) *sde.Store {
 		if err != nil {
 			t.Fatalf("sdetest: read %s: %v", f, err)
 		}
-		for _, line := range strings.Split(string(data), "\n") {
+		for line := range strings.SplitSeq(string(data), "\n") {
 			line = strings.TrimSpace(line)
 			if line == "" || strings.HasPrefix(line, "--") {
 				continue

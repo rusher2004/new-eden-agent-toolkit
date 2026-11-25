@@ -12,8 +12,10 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -146,12 +148,16 @@ func main() {
 
 // listTools returns every tool mcp.NewServer registers, sorted by name (the
 // order the MCP SDK lists them in).
-func listTools(ctx context.Context) ([]*mcpsdk.Tool, error) {
+func listTools(ctx context.Context) (_ []*mcpsdk.Tool, err error) {
 	dir, err := os.MkdirTemp("", "gentooldocs")
 	if err != nil {
 		return nil, fmt.Errorf("create temp dir: %w", err)
 	}
-	defer os.RemoveAll(dir)
+	defer func() {
+		if rerr := os.RemoveAll(dir); rerr != nil {
+			err = errors.Join(err, fmt.Errorf("remove temp dir %s: %w", dir, rerr))
+		}
+	}()
 
 	server := mcp.NewServer("docs", "", config.NewStoreAt(filepath.Join(dir, "config.json")), nil)
 	serverTransport, clientTransport := mcpsdk.NewInMemoryTransports()
@@ -161,13 +167,13 @@ func listTools(ctx context.Context) ([]*mcpsdk.Tool, error) {
 	}
 	// Close rather than Wait: if the client fails to connect, nothing ever
 	// closes the client transport, and Wait would block forever.
-	defer serverSession.Close()
+	defer closeInto(&err, serverSession, "server session")
 	client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "gentooldocs", Version: "0"}, nil)
 	session, err := client.Connect(ctx, clientTransport, nil)
 	if err != nil {
 		return nil, fmt.Errorf("connect client: %w", err)
 	}
-	defer session.Close()
+	defer closeInto(&err, session, "session")
 
 	var tools []*mcpsdk.Tool
 	for tool, err := range session.Tools(ctx, nil) {
@@ -252,4 +258,12 @@ func anchor(title string) string {
 
 func oneLine(s string) string {
 	return strings.Join(strings.Fields(s), " ")
+}
+
+// closeInto closes c and joins a failure into *err, for use as
+// `defer closeInto(&err, c, "what")` in a function with a named error result.
+func closeInto(err *error, c io.Closer, what string) {
+	if cerr := c.Close(); cerr != nil {
+		*err = errors.Join(*err, fmt.Errorf("close %s: %w", what, cerr))
+	}
 }

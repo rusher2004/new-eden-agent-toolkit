@@ -241,7 +241,7 @@ func TestGetCorporationProjectDetailHandler_ConfigurationManualVariant(t *testin
 	orig := getCorporationProjectDetail
 	t.Cleanup(func() { getCorporationProjectDetail = orig })
 
-	manualData := map[string]interface{}{"foo": "bar", "count": float64(3)}
+	manualData := map[string]any{"foo": "bar", "count": float64(3)}
 	getCorporationProjectDetail = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, projectID string) (*esiapi.CorporationsProjectsDetail, error) {
 		return &esiapi.CorporationsProjectsDetail{
 			Configuration: esiapi.CorporationsProjectsDetailConfiguration{
@@ -280,7 +280,7 @@ func TestGetCorporationProjectDetailHandler_ConfigurationUnknownVariant(t *testi
 	orig := getCorporationProjectDetail
 	t.Cleanup(func() { getCorporationProjectDetail = orig })
 
-	unknownData := map[string]interface{}{"raw": "payload"}
+	unknownData := map[string]any{"raw": "payload"}
 	getCorporationProjectDetail = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, projectID string) (*esiapi.CorporationsProjectsDetail, error) {
 		return &esiapi.CorporationsProjectsDetail{
 			Configuration: esiapi.CorporationsProjectsDetailConfiguration{
@@ -312,7 +312,7 @@ func TestGetCorporationProjectDetailHandler_ConfigurationUnknownVariant(t *testi
 	if out.Configuration.UnknownType != "some_future_type" {
 		t.Errorf("Configuration.UnknownType = %q, want \"some_future_type\"", out.Configuration.UnknownType)
 	}
-	unknownDataOut, ok := out.Configuration.UnknownData.(map[string]interface{})
+	unknownDataOut, ok := out.Configuration.UnknownData.(map[string]any)
 	if !ok || unknownDataOut["raw"] != "payload" {
 		t.Errorf("Configuration.UnknownData = %+v, want %+v", out.Configuration.UnknownData, unknownData)
 	}
@@ -761,7 +761,7 @@ func TestToProjectConfiguration_AllVariants(t *testing.T) {
 			LostShip: &esiapi.LostShip{LostShip: &esiapi.CorporationsProjectsDetailConfigurationlostship{}},
 		}, "lost_ship"},
 		{"manual", esiapi.CorporationsProjectsDetailConfiguration{
-			Manual: &esiapi.Manual{Manual: map[string]interface{}{"note": "test"}},
+			Manual: &esiapi.Manual{Manual: map[string]any{"note": "test"}},
 		}, "manual"},
 		{"manufacture_item", esiapi.CorporationsProjectsDetailConfiguration{
 			ManufactureItem: &esiapi.ManufactureItem{ManufactureItem: &esiapi.CorporationsProjectsDetailConfigurationmanufactureitem{}},

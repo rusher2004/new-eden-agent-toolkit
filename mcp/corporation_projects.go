@@ -147,11 +147,11 @@ type ProjectConfiguration struct {
 	ReimburseImplants bool   `json:"reimburseImplants,omitempty"`
 
 	// manual -- free-form per ESI's own spec, no further typed structure to map
-	Manual map[string]interface{} `json:"manual,omitempty"`
+	Manual map[string]any `json:"manual,omitempty"`
 
 	// unknown -- free-form per ESI's own spec
-	UnknownType string      `json:"unknownType,omitempty"`
-	UnknownData interface{} `json:"unknownData,omitempty"`
+	UnknownType string `json:"unknownType,omitempty"`
+	UnknownData any    `json:"unknownData,omitempty"`
 }
 
 func toLocationMatcher(v esiapi.CorporationsProjectsDetailConfigurationcapturefwcomplexLocationsInner) LocationMatcher {

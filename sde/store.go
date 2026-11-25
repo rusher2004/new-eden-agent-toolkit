@@ -224,12 +224,12 @@ func nullInt(v sql.NullInt64) *int64 {
 // and returns every row's value as a slice, in the order the query returned
 // them. Shared by every resource file's reverse-relation lookups (a group's
 // TypeIDs, a system's StationIDs, ...).
-func (s *Store) queryInt64Column(ctx context.Context, query string, args ...any) ([]int64, error) {
+func (s *Store) queryInt64Column(ctx context.Context, query string, args ...any) (_ []int64, err error) {
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query: %w", err)
 	}
-	defer rows.Close()
+	defer closeInto(&err, rows, "rows")
 	var ids []int64
 	for rows.Next() {
 		var id int64
@@ -251,8 +251,11 @@ func OpenStatic(path string) (*Store, error) {
 		return nil, fmt.Errorf("open sde dump %s: %w", path, err)
 	}
 	if err := db.Ping(); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("open sde dump %s: %w", path, err)
+		err = fmt.Errorf("open sde dump %s: %w", path, err)
+		if cerr := db.Close(); cerr != nil {
+			err = errors.Join(err, fmt.Errorf("close sde dump %s: %w", path, cerr))
+		}
+		return nil, err
 	}
 	s := &Store{dbPath: path, metaPath: filepath.Join(filepath.Dir(path), "meta.json"), db: db}
 	s.syncOnce.Do(func() {})

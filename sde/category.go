@@ -28,7 +28,7 @@ func (s *Store) Category(ctx context.Context, userAgent string, id int64) (Categ
 	if v, ok := getOverlay[Category](s, "category", id); ok {
 		return v, true, nil
 	}
-	_ = s.ensureSynced(ctx, userAgent)
+	s.syncBestEffort(ctx, userAgent)
 	if s.db == nil {
 		return Category{}, false, nil
 	}
@@ -71,7 +71,7 @@ func (s *Store) CategoryIDs(ctx context.Context, userAgent string) ([]int64, err
 	if s == nil {
 		return nil, nil
 	}
-	_ = s.ensureSynced(ctx, userAgent)
+	s.syncBestEffort(ctx, userAgent)
 	if s.db == nil {
 		return nil, nil
 	}

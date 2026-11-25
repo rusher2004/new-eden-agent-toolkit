@@ -43,7 +43,7 @@ func (s *Store) Station(ctx context.Context, userAgent string, id int64) (Statio
 	if v, ok := getOverlay[Station](s, "station", id); ok {
 		return v, true, nil
 	}
-	_ = s.ensureSynced(ctx, userAgent)
+	s.syncBestEffort(ctx, userAgent)
 	if s.db == nil {
 		return Station{}, false, nil
 	}

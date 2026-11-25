@@ -255,16 +255,14 @@ func TestStore_ConcurrentUpdatesKeepEveryChange(t *testing.T) {
 	var wg sync.WaitGroup
 	errs := make(chan error, n)
 	for i := range n {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			// A Store per writer, as separate tool handlers would hold.
 			_, err := config.NewStoreAt(path).Update(func(c *config.Config) error {
 				c.UpsertCharacter(config.Character{ID: int32(i + 1), Name: fmt.Sprintf("Pilot %d", i+1)})
 				return nil
 			})
 			errs <- err
-		}()
+		})
 	}
 	wg.Wait()
 	close(errs)

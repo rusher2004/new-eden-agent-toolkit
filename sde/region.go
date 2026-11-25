@@ -31,7 +31,7 @@ func (s *Store) Region(ctx context.Context, userAgent string, id int64) (Region,
 	if v, ok := getOverlay[Region](s, "region", id); ok {
 		return v, true, nil
 	}
-	_ = s.ensureSynced(ctx, userAgent)
+	s.syncBestEffort(ctx, userAgent)
 	if s.db == nil {
 		return Region{}, false, nil
 	}
@@ -70,7 +70,7 @@ func (s *Store) RegionIDs(ctx context.Context, userAgent string) ([]int64, error
 	if s == nil {
 		return nil, nil
 	}
-	_ = s.ensureSynced(ctx, userAgent)
+	s.syncBestEffort(ctx, userAgent)
 	if s.db == nil {
 		return nil, nil
 	}

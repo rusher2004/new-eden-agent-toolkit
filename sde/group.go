@@ -27,7 +27,7 @@ func (s *Store) Group(ctx context.Context, userAgent string, id int64) (Group, b
 	if v, ok := getOverlay[Group](s, "group", id); ok {
 		return v, true, nil
 	}
-	_ = s.ensureSynced(ctx, userAgent)
+	s.syncBestEffort(ctx, userAgent)
 	if s.db == nil {
 		return Group{}, false, nil
 	}
@@ -68,7 +68,7 @@ func (s *Store) GroupIDs(ctx context.Context, userAgent string) ([]int64, error)
 	if s == nil {
 		return nil, nil
 	}
-	_ = s.ensureSynced(ctx, userAgent)
+	s.syncBestEffort(ctx, userAgent)
 	if s.db == nil {
 		return nil, nil
 	}

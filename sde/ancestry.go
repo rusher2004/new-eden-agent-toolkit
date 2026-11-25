@@ -18,11 +18,11 @@ type Ancestry struct {
 
 // Ancestries returns every cached ancestry. Returns an empty slice, not an
 // error, if the store has never synced successfully.
-func (s *Store) Ancestries(ctx context.Context, userAgent string) ([]Ancestry, error) {
+func (s *Store) Ancestries(ctx context.Context, userAgent string) (_ []Ancestry, err error) {
 	if s == nil {
 		return nil, nil
 	}
-	_ = s.ensureSynced(ctx, userAgent)
+	s.syncBestEffort(ctx, userAgent)
 	if s.db == nil {
 		return nil, nil
 	}
@@ -32,7 +32,7 @@ func (s *Store) Ancestries(ctx context.Context, userAgent string) ([]Ancestry, e
 	if err != nil {
 		return nil, fmt.Errorf("query ancestries: %w", err)
 	}
-	defer rows.Close()
+	defer closeInto(&err, rows, "rows")
 
 	var out []Ancestry
 	for rows.Next() {

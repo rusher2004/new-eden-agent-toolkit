@@ -10,7 +10,9 @@
 //	                config, analytics).
 //	CONCRETE_CTOR   a reference to a producer constructor (pkg.New...) outside
 //	                a producer package: the place a concrete client is built.
-//	PRODUCER_IFACE  an interface type declared inside a producer package.
+//	PRODUCER_IFACE  an exported interface type declared inside a producer
+//	                package (an unexported one is internal, not meant for callers,
+//	                and is reported as INTERFACE).
 //	INTERFACE       an interface type declared anywhere else (consumer-side).
 //	TYPE_ONLY_FILE  a non-test file that declares a type but no func, method or
 //	                var, or any file named *_iface.go: a type must live in the
@@ -190,7 +192,7 @@ func Audit(root string) ([]Finding, error) {
 						switch t := s.Type.(type) {
 						case *ast.InterfaceType:
 							k := "INTERFACE"
-							if inProducer {
+							if inProducer && ast.IsExported(s.Name.Name) {
 								k = "PRODUCER_IFACE"
 							}
 							fd := &Finding{Kind: k, File: pf.rel, Line: fset.Position(s.Pos()).Line, Context: pf.pkg + "." + s.Name.Name}

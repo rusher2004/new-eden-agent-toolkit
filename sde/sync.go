@@ -68,6 +68,15 @@ func (s *Store) ensureSynced(ctx context.Context, userAgent string) error {
 	return s.syncErr
 }
 
+// syncBestEffort runs ensureSynced for a lookup that can answer from the
+// cache already on disk. It deliberately drops the error: ensureSynced logs
+// it, and a lookup with no usable cache reports that itself (s.db is nil, or
+// requireDB fails for the industry accessors). This is the one documented
+// best-effort path of sde's read-through lookups (see CLAUDE.md).
+func (s *Store) syncBestEffort(ctx context.Context, userAgent string) {
+	_ = s.ensureSynced(ctx, userAgent)
+}
+
 func (s *Store) sync(ctx context.Context, userAgent string) error {
 	if err := s.syncDump(ctx, userAgent); err != nil {
 		return err
@@ -98,7 +107,9 @@ func (s *Store) syncDump(ctx context.Context, userAgent string) error {
 	// otherwise treats a transient network hiccup on an already-synced
 	// install identically to "no cache has ever existed," silently routing
 	// every SDE-backed tool to live ESI until the next restart.
-	if db, ok := s.openAndVerify(s.dbPath); ok {
+	// A missing or unusable file is expected here (first run, or a corrupt
+	// dump): the download below replaces it, so this failure needs no report.
+	if db, oerr := s.openAndVerify(s.dbPath); oerr == nil {
 		s.db = db
 	}
 
@@ -125,7 +136,9 @@ func (s *Store) syncDump(ctx context.Context, userAgent string) error {
 			// destination can make the rename fail on Windows, and there's
 			// no reason to hold a connection open to a file about to be
 			// replaced on any platform.
-			s.db.Close()
+			if err := s.db.Close(); err != nil {
+				return fmt.Errorf("close sde db before refresh: %w", err)
+			}
 			s.db = nil
 		}
 		if err := s.downloadDump(ctx, userAgent); err != nil {
@@ -134,24 +147,29 @@ func (s *Store) syncDump(ctx context.Context, userAgent string) error {
 				// a failure here leaves the previous file untouched --
 				// reopen it rather than leaving the cache unusable for the
 				// rest of this process over what may be a transient issue.
-				if db, ok := s.openAndVerify(s.dbPath); ok {
+				db, oerr := s.openAndVerify(s.dbPath)
+				if oerr == nil {
 					s.db = db
 					slog.Default().WarnContext(ctx, "sde: dump refresh failed, continuing with previous cache", "error", err)
 					return nil
 				}
+				return errors.Join(fmt.Errorf("download sde dump: %w", err), fmt.Errorf("reopen previous sde dump: %w", oerr))
 			}
 			return fmt.Errorf("download sde dump: %w", err)
 		}
 
-		db, ok := s.openAndVerify(s.dbPath)
-		if !ok {
+		db, oerr := s.openAndVerify(s.dbPath)
+		if oerr != nil {
 			// The freshly downloaded file itself is unusable (a corrupt or
 			// truncated transfer) -- remove it so the next sync sees a
 			// missing file and retries, rather than inheriting a broken
 			// database that meta.json would otherwise mark as current
 			// forever.
-			os.Remove(s.dbPath)
-			return fmt.Errorf("verify downloaded sde dump: database failed sentinel query")
+			err := fmt.Errorf("verify downloaded sde dump: %w", oerr)
+			if rerr := os.Remove(s.dbPath); rerr != nil {
+				err = errors.Join(err, fmt.Errorf("remove unusable sde dump: %w", rerr))
+			}
+			return err
 		}
 		s.db = db
 		meta.SchemaVersion = schemaVersion
@@ -167,24 +185,27 @@ func (s *Store) syncDump(ctx context.Context, userAgent string) error {
 // database, not merely a valid-but-empty SQLite file -- sql.Open+Ping alone
 // can't tell the difference, since SQLite happily creates a fresh, valid,
 // empty database for any missing or zero-byte path (verified directly
-// against modernc.org/sqlite). ok is false if the path doesn't exist, can't
-// be opened, or fails the sentinel query; any *sql.DB opened along the way
-// is closed before returning false, so a caller never leaks a handle to an
+// against modernc.org/sqlite). It returns an error if the path doesn't
+// exist, can't be opened, or fails the sentinel query; any *sql.DB opened
+// along the way is closed first, so a caller never leaks a handle to an
 // unusable file.
-func (s *Store) openAndVerify(path string) (*sql.DB, bool) {
+func (s *Store) openAndVerify(path string) (*sql.DB, error) {
 	if _, err := os.Stat(path); err != nil {
-		return nil, false
+		return nil, fmt.Errorf("stat sde dump: %w", err)
 	}
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
-		return nil, false
+		return nil, fmt.Errorf("open sde dump %s: %w", path, err)
 	}
 	var name string
 	if err := db.QueryRow(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'invTypes'`).Scan(&name); err != nil {
-		db.Close()
-		return nil, false
+		err = fmt.Errorf("sde dump %s failed sentinel query: %w", path, err)
+		if cerr := db.Close(); cerr != nil {
+			err = errors.Join(err, fmt.Errorf("close sde dump %s: %w", path, cerr))
+		}
+		return nil, err
 	}
-	return db, true
+	return db, nil
 }
 
 // downloadDump fetches and gunzips the fuzzwork dump, writing it to a
@@ -197,7 +218,7 @@ func (s *Store) openAndVerify(path string) (*sql.DB, bool) {
 // interleave-write into each other's in-progress download; each still
 // renames independently over dbPath, so whichever finishes last "wins",
 // same as before, but neither corrupts the other's data en route.
-func (s *Store) downloadDump(ctx context.Context, userAgent string) error {
+func (s *Store) downloadDump(ctx context.Context, userAgent string) (err error) {
 	body, err := fetchBytes(ctx, s.dumpURL, userAgent)
 	if err != nil {
 		return fmt.Errorf("download dump: %w", err)
@@ -206,7 +227,7 @@ func (s *Store) downloadDump(ctx context.Context, userAgent string) error {
 	if err != nil {
 		return fmt.Errorf("open gzip stream: %w", err)
 	}
-	defer gz.Close()
+	defer closeInto(&err, gz, "gzip reader")
 
 	tmp, err := os.CreateTemp(filepath.Dir(s.dbPath), "eve.db.*.tmp")
 	if err != nil {
@@ -214,22 +235,16 @@ func (s *Store) downloadDump(ctx context.Context, userAgent string) error {
 	}
 	tmpPath := tmp.Name()
 	if _, err := io.Copy(tmp, gz); err != nil {
-		tmp.Close()
-		os.Remove(tmpPath)
-		return fmt.Errorf("decompress dump: %w", err)
+		return errors.Join(fmt.Errorf("decompress dump: %w", err), discardTemp(tmp, tmpPath))
 	}
 	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		os.Remove(tmpPath)
-		return fmt.Errorf("sync temp dump file: %w", err)
+		return errors.Join(fmt.Errorf("sync temp dump file: %w", err), discardTemp(tmp, tmpPath))
 	}
 	if err := tmp.Close(); err != nil {
-		os.Remove(tmpPath)
-		return fmt.Errorf("close temp dump file: %w", err)
+		return errors.Join(fmt.Errorf("close temp dump file: %w", err), removeTemp(tmpPath))
 	}
 	if err := os.Rename(tmpPath, s.dbPath); err != nil {
-		os.Remove(tmpPath)
-		return fmt.Errorf("replace dump file: %w", err)
+		return errors.Join(fmt.Errorf("replace dump file: %w", err), removeTemp(tmpPath))
 	}
 	return nil
 }
@@ -237,7 +252,7 @@ func (s *Store) downloadDump(ctx context.Context, userAgent string) error {
 // fetchRemoteVersion does a lightweight HEAD request to check a URL's
 // current version (ETag, falling back to Last-Modified) without downloading
 // its body.
-func fetchRemoteVersion(ctx context.Context, url, userAgent string) (string, error) {
+func fetchRemoteVersion(ctx context.Context, url, userAgent string) (_ string, err error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodHead, url, nil)
 	if err != nil {
 		return "", fmt.Errorf("build HEAD request: %w", err)
@@ -248,7 +263,7 @@ func fetchRemoteVersion(ctx context.Context, url, userAgent string) (string, err
 	if err != nil {
 		return "", fmt.Errorf("execute HEAD request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer closeInto(&err, resp.Body, "response body")
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("unexpected status %d from HEAD %s", resp.StatusCode, url)
 	}
@@ -261,7 +276,7 @@ func fetchRemoteVersion(ctx context.Context, url, userAgent string) (string, err
 	return "", fmt.Errorf("HEAD %s returned neither ETag nor Last-Modified", url)
 }
 
-func fetchBytes(ctx context.Context, url, userAgent string) ([]byte, error) {
+func fetchBytes(ctx context.Context, url, userAgent string) (_ []byte, err error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
@@ -272,7 +287,7 @@ func fetchBytes(ctx context.Context, url, userAgent string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("execute request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer closeInto(&err, resp.Body, "response body")
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("unexpected status %d from %s", resp.StatusCode, url)
 	}

@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "ROOT=$(git -C \"$(jq -r '.cwd')\" rev-parse --show-toplevel 2>/dev/null); if [ -n \"$ROOT\" ]; then cd \"$ROOT\" && go fmt ./...; fi"
+            "command": "ROOT=$(git -C \"$(jq -r '.cwd')\" rev-parse --show-toplevel 2>/dev/null); if [ -n \"$ROOT\" ]; then cd \"$ROOT\" && go fmt ./... && go fix ./...; fi"
           }
         ]
       }

@@ -163,7 +163,7 @@ func (c *Client) event(sessionID, name string, now time.Time, props map[string]s
 }
 
 // send posts events (at most maxBatch) in one request.
-func (c *Client) send(ctx context.Context, events []event) error {
+func (c *Client) send(ctx context.Context, events []event) (err error) {
 	body, err := json.Marshal(events)
 	if err != nil {
 		return fmt.Errorf("marshal events: %w", err)
@@ -181,7 +181,7 @@ func (c *Client) send(ctx context.Context, events []event) error {
 	if err != nil {
 		return fmt.Errorf("send events: %w", err)
 	}
-	defer resp.Body.Close()
+	defer closeInto(&err, resp.Body, "response body")
 	if resp.StatusCode >= 300 {
 		detail, err := io.ReadAll(io.LimitReader(resp.Body, 512))
 		if err != nil {
@@ -262,7 +262,7 @@ func (t *ToolTracker) Flush(ctx context.Context) error {
 // RegisteredTools returns the name of every tool server has, by listing
 // them over an in-memory session (the same way tools/gentooldocs does).
 // ToolMiddleware uses it to record only neat's own tool names.
-func RegisteredTools(ctx context.Context, server *mcpsdk.Server) (map[string]bool, error) {
+func RegisteredTools(ctx context.Context, server *mcpsdk.Server) (_ map[string]bool, err error) {
 	serverTransport, clientTransport := mcpsdk.NewInMemoryTransports()
 	serverSession, err := server.Connect(ctx, serverTransport, nil)
 	if err != nil {
@@ -270,13 +270,13 @@ func RegisteredTools(ctx context.Context, server *mcpsdk.Server) (map[string]boo
 	}
 	// Close rather than Wait: if the client fails to connect, nothing ever
 	// closes the client transport, and Wait would block forever.
-	defer serverSession.Close()
+	defer closeInto(&err, serverSession, "server session")
 	client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "neat-analytics", Version: "0"}, nil)
 	session, err := client.Connect(ctx, clientTransport, nil)
 	if err != nil {
 		return nil, fmt.Errorf("connect client: %w", err)
 	}
-	defer session.Close()
+	defer closeInto(&err, session, "session")
 
 	names := map[string]bool{}
 	for tool, err := range session.Tools(ctx, nil) {
@@ -442,4 +442,12 @@ func RemoveID(path string) error {
 		return fmt.Errorf("remove %s: %w", path, err)
 	}
 	return nil
+}
+
+// closeInto closes c and joins a failure into *err, for use as
+// `defer closeInto(&err, c, "what")` in a function with a named error result.
+func closeInto(err *error, c io.Closer, what string) {
+	if cerr := c.Close(); cerr != nil {
+		*err = errors.Join(*err, fmt.Errorf("close %s: %w", what, cerr))
+	}
 }

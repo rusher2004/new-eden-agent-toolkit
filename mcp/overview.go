@@ -108,8 +108,7 @@ func readOverview(ctx context.Context, clientID, ua string, id int32) overviewRe
 	var r overviewReads
 	var wg sync.WaitGroup
 	run := func(f func()) {
-		wg.Add(1)
-		go func() { defer wg.Done(); f() }()
+		wg.Go(func() { ; f() })
 	}
 	run(func() {
 		var st, sr *int64

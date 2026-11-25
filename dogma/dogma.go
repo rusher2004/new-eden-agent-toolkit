@@ -1,6 +1,7 @@
 package dogma
 
 import (
+	"maps"
 	"math"
 	"slices"
 	"sort"
@@ -112,9 +113,7 @@ const skillEffect = "skillEffect"
 // NewSkill is a trained skill item at a level.
 func NewSkill(typeID int64, level int, attrs map[int64]float64, effects []Effect) Item {
 	a := make(map[int64]float64, len(attrs)+1)
-	for k, v := range attrs {
-		a[k] = v
-	}
+	maps.Copy(a, attrs)
 	a[AttrSkillLevel] = float64(level)
 	return Item{Kind: Skill, TypeID: typeID, Attrs: a, Effects: effects}
 }
@@ -288,7 +287,7 @@ func penalizedProduct(factors []float64) float64 {
 		}
 	}
 	sort.Slice(up, func(i, j int) bool { return up[i] > up[j] })
-	sort.Slice(down, func(i, j int) bool { return down[i] < down[j] })
+	slices.Sort(down)
 	out := 1.0
 	for _, list := range [][]float64{up, down} {
 		for n, f := range list {

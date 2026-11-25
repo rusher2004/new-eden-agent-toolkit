@@ -23,7 +23,7 @@ func characterStore(t *testing.T, chars ...config.Character) *config.Store {
 
 func TestUpdateCharacterDetails_SetsAccountForSeveralAndReportsChanges(t *testing.T) {
 	store := characterStore(t, config.Character{ID: 1, Name: "Main"}, config.Character{ID: 2, Name: "Alt"}, config.Character{ID: 3, Name: "Cyno"})
-	_, out, err := updateCharacterDetailsHandler(store)(context.Background(), nil, UpdateCharacterDetailsInput{CharacterIDs: []int32{2, 3}, Account: ptr("Alts")})
+	_, out, err := updateCharacterDetailsHandler(store)(context.Background(), nil, UpdateCharacterDetailsInput{CharacterIDs: []int32{2, 3}, Account: new("Alts")})
 	if err != nil {
 		t.Fatalf("handler: %v", err)
 	}
@@ -42,10 +42,10 @@ func TestUpdateCharacterDetails_SetsAccountForSeveralAndReportsChanges(t *testin
 func TestUpdateCharacterDetails_NotesNeedOneCharacter(t *testing.T) {
 	store := characterStore(t, config.Character{ID: 1, Name: "Main"}, config.Character{ID: 2, Name: "Alt"})
 	h := updateCharacterDetailsHandler(store)
-	if _, _, err := h(context.Background(), nil, UpdateCharacterDetailsInput{CharacterIDs: []int32{1, 2}, Notes: ptr("x")}); err == nil {
+	if _, _, err := h(context.Background(), nil, UpdateCharacterDetailsInput{CharacterIDs: []int32{1, 2}, Notes: new("x")}); err == nil {
 		t.Error("notes for two characters: want an error")
 	}
-	_, out, err := h(context.Background(), nil, UpdateCharacterDetailsInput{CharacterIDs: []int32{1}, Notes: ptr("carrier pilot")})
+	_, out, err := h(context.Background(), nil, UpdateCharacterDetailsInput{CharacterIDs: []int32{1}, Notes: new("carrier pilot")})
 	if err != nil || len(out.Changes) != 1 || out.Changes[0].Field != "notes" || out.Changes[0].New != "carrier pilot" {
 		t.Errorf("out = %+v, %v", out, err)
 	}
@@ -64,9 +64,9 @@ func TestUpdateCharacterDetails_RejectsBadInput(t *testing.T) {
 	h := updateCharacterDetailsHandler(store)
 	for name, in := range map[string]UpdateCharacterDetailsInput{
 		"nothing to change":   {CharacterIDs: []int32{1}},
-		"no characters":       {Account: ptr("A")},
-		"unknown character":   {CharacterIDs: []int32{9}, Account: ptr("A")},
-		"label too long":      {CharacterIDs: []int32{1}, Account: ptr(strings.Repeat("x", config.MaxAccountLabelLength+1))},
+		"no characters":       {Account: new("A")},
+		"unknown character":   {CharacterIDs: []int32{9}, Account: new("A")},
+		"label too long":      {CharacterIDs: []int32{1}, Account: new(strings.Repeat("x", config.MaxAccountLabelLength+1))},
 		"rename unused label": {RenameAccount: &AccountRename{From: "Nope", To: "B"}},
 	} {
 		if _, _, err := h(context.Background(), nil, in); err == nil {

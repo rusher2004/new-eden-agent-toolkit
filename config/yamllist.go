@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -83,7 +84,7 @@ func (l yamlList[T]) load() ([]T, error) {
 
 // isBlank reports whether data holds nothing but comments and whitespace.
 func isBlank(data []byte) bool {
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		if t := strings.TrimSpace(line); t != "" && !strings.HasPrefix(t, "#") {
 			return false
 		}
@@ -182,8 +183,8 @@ func (l yamlList[T]) sync(entries []T) ([]Change, error) {
 		}
 		return changes, nil
 	}
-	for j := len(removed) - 1; j >= 0; j-- {
-		i := removed[j]
+	for _, i := range slices.Backward(removed) {
+
 		seq.Values = append(seq.Values[:i], seq.Values[i+1:]...)
 	}
 	if len(added) > 0 {
@@ -202,10 +203,11 @@ func (l yamlList[T]) sync(entries []T) ([]Change, error) {
 // adding the default header to a new file). It's used only when there's no
 // existing block list to patch.
 func (l yamlList[T]) rewrite(data []byte, entries, old []T) ([]Change, error) {
-	head := leadingComments(data)
+	var head strings.Builder
+	head.WriteString(leadingComments(data))
 	if data == nil && l.header != "" {
-		for _, line := range strings.Split(l.header, "\n") {
-			head += strings.TrimRight("# "+line, " ") + "\n"
+		for line := range strings.SplitSeq(l.header, "\n") {
+			head.WriteString(strings.TrimRight("# "+line, " ") + "\n")
 		}
 	}
 	text, err := yaml.Marshal(entries)
@@ -222,7 +224,7 @@ func (l yamlList[T]) rewrite(data []byte, entries, old []T) ([]Change, error) {
 			changes = append(changes, Change{File: l.name(), Entry: l.key(e), New: "added"})
 		}
 	}
-	return changes, l.write([]byte(head + string(text)))
+	return changes, l.write([]byte(head.String() + string(text)))
 }
 
 func (l yamlList[T]) write(data []byte) error {

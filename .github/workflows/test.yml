@@ -23,8 +23,6 @@ jobs:
           go-version-file: go.mod
 
       # The checks below are OS-independent, so they run on ubuntu only.
-      # `go fix` is not gated yet: the code has pending fixes (see CLAUDE.md
-      # "Go standards"); add it here once they are committed.
       - name: Check formatting
         if: runner.os == 'Linux'
         run: |
@@ -32,6 +30,16 @@ jobs:
           if [ -n "$unformatted" ]; then
             echo "Unformatted files - run 'go fmt ./...' and commit the result:"
             echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Check go fix leaves no diff
+        if: runner.os == 'Linux'
+        run: |
+          go fix ./...
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "go fix changed files - run 'go fix ./...' and commit the result:"
+            git diff
             exit 1
           fi
 

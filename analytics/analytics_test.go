@@ -305,7 +305,7 @@ func TestToolTracker_FlushBatchesAndSendsOnlyToolAndOutcome(t *testing.T) {
 	srv := rec.server(t)
 	tr := newTracker(t, srv.URL)
 
-	for i := 0; i < 30; i++ {
+	for i := range 30 {
 		tr.Record("plan_build", i%2 == 0)
 	}
 	if err := tr.Flush(context.Background()); err != nil {

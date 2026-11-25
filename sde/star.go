@@ -37,7 +37,7 @@ func (s *Store) Star(ctx context.Context, userAgent string, id int64) (Star, boo
 	if v, ok := getOverlay[Star](s, "star", id); ok {
 		return v, true, nil
 	}
-	_ = s.ensureSynced(ctx, userAgent)
+	s.syncBestEffort(ctx, userAgent)
 	if s.db == nil {
 		return Star{}, false, nil
 	}

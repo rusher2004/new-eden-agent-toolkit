@@ -50,14 +50,14 @@ type Type struct {
 }
 
 // Type looks up a type by ID. ok is false if the ID isn't in the cache.
-func (s *Store) Type(ctx context.Context, userAgent string, id int64) (Type, bool, error) {
+func (s *Store) Type(ctx context.Context, userAgent string, id int64) (_ Type, _ bool, err error) {
 	if s == nil {
 		return Type{}, false, nil
 	}
 	if v, ok := getOverlay[Type](s, "type", id); ok {
 		return v, true, nil
 	}
-	_ = s.ensureSynced(ctx, userAgent)
+	s.syncBestEffort(ctx, userAgent)
 	if s.db == nil {
 		return Type{}, false, nil
 	}
@@ -72,7 +72,7 @@ func (s *Store) Type(ctx context.Context, userAgent string, id int64) (Type, boo
 	row := s.db.QueryRowContext(ctx,
 		`SELECT groupID, typeName, description, published, capacity, graphicID, iconID, marketGroupID, mass, portionSize, volume, packagedVolume
 		 FROM invTypes WHERE typeID = ?`, id)
-	err := row.Scan(&groupID, &name, &description, &published, &capacity, &graphicID, &iconID, &marketGroupID, &mass, &portionSize, &volume, &packagedVolume)
+	err = row.Scan(&groupID, &name, &description, &published, &capacity, &graphicID, &iconID, &marketGroupID, &mass, &portionSize, &volume, &packagedVolume)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Type{}, false, nil
 	}
@@ -94,7 +94,7 @@ func (s *Store) Type(ctx context.Context, userAgent string, id int64) (Type, boo
 	if err != nil {
 		return Type{}, false, fmt.Errorf("query type %d dogma attributes: %w", id, err)
 	}
-	defer attrRows.Close()
+	defer closeInto(&err, attrRows, "dogma attribute rows")
 	for attrRows.Next() {
 		var attributeID int64
 		var valueInt sql.NullInt64
@@ -119,7 +119,7 @@ func (s *Store) Type(ctx context.Context, userAgent string, id int64) (Type, boo
 	if err != nil {
 		return Type{}, false, fmt.Errorf("query type %d dogma effects: %w", id, err)
 	}
-	defer effectRows.Close()
+	defer closeInto(&err, effectRows, "dogma effect rows")
 	for effectRows.Next() {
 		var effectID int64
 		var isDefault bool
@@ -150,7 +150,7 @@ func (s *Store) TypeIDs(ctx context.Context, userAgent string) ([]int64, error) 
 	if s == nil {
 		return nil, nil
 	}
-	_ = s.ensureSynced(ctx, userAgent)
+	s.syncBestEffort(ctx, userAgent)
 	if s.db == nil {
 		return nil, nil
 	}

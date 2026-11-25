@@ -25,7 +25,7 @@ func (s *Store) Moon(ctx context.Context, userAgent string, id int64) (Moon, boo
 	if v, ok := getOverlay[Moon](s, "moon", id); ok {
 		return v, true, nil
 	}
-	_ = s.ensureSynced(ctx, userAgent)
+	s.syncBestEffort(ctx, userAgent)
 	if s.db == nil {
 		return Moon{}, false, nil
 	}
