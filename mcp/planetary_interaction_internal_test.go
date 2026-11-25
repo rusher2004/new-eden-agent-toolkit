@@ -12,6 +12,54 @@ import (
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 )
 
+// fakePlanetsESI fakes the authenticated planetary interaction ESI calls and records the
+// customs office arguments; err is returned by every call.
+type fakePlanetsESI struct {
+	planets    []esiapi.CharactersCharacterIdPlanetsGetInner
+	detail     *esiapi.CharactersCharacterIdPlanetsPlanetIdGet
+	offices    []esiapi.CorporationsCorporationIdCustomsOfficesGetInner
+	totalPages int32
+	err        error
+
+	gotCorporationID int64
+	gotPage          int32
+}
+
+func (f *fakePlanetsESI) CharacterPlanets(context.Context) ([]esiapi.CharactersCharacterIdPlanetsGetInner, error) {
+	return f.planets, f.err
+}
+
+func (f *fakePlanetsESI) CharacterPlanetDetail(context.Context, int64) (*esiapi.CharactersCharacterIdPlanetsPlanetIdGet, error) {
+	return f.detail, f.err
+}
+
+func (f *fakePlanetsESI) CorporationCustomsOffices(_ context.Context, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdCustomsOfficesGetInner, int32, error) {
+	f.gotCorporationID, f.gotPage = corporationID, page
+	return f.offices, f.totalPages, f.err
+}
+
+func openPlanetsFake(c planetsESI) func(context.Context, int32) (planetsESI, error) {
+	return func(context.Context, int32) (planetsESI, error) { return c, nil }
+}
+
+func openPlanetsMustNotRun(t *testing.T) func(context.Context, int32) (planetsESI, error) {
+	t.Helper()
+	return func(context.Context, int32) (planetsESI, error) {
+		t.Fatal("no ESI client should be opened for an unknown character")
+		return nil, nil
+	}
+}
+
+// fakePlanetarySchematicESI fakes get_planetary_schematic's one ESI call.
+type fakePlanetarySchematicESI struct {
+	schematic *esiapi.UniverseSchematicsSchematicIdGet
+	err       error
+}
+
+func (f fakePlanetarySchematicESI) PlanetarySchematic(context.Context, int64) (*esiapi.UniverseSchematicsSchematicIdGet, error) {
+	return f.schematic, f.err
+}
+
 // --- list_character_planets ---
 
 func TestListCharacterPlanetsHandler_MapsFields(t *testing.T) {
@@ -21,17 +69,13 @@ func TestListCharacterPlanetsHandler_MapsFields(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCharacterPlanets
-	t.Cleanup(func() { listCharacterPlanets = orig })
 	lastUpdate := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
-	listCharacterPlanets = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]Planet, error) {
-		return []Planet{{
-			PlanetID: 40000001, SolarSystemID: 30000001, PlanetType: "plasma",
-			OwnerID: 90000001, UpgradeLevel: 3, NumPins: 5, LastUpdate: lastUpdate,
-		}}, nil
-	}
+	fake := &fakePlanetsESI{planets: []esiapi.CharactersCharacterIdPlanetsGetInner{{
+		PlanetId: 40000001, SolarSystemId: 30000001, PlanetType: "plasma",
+		OwnerId: 90000001, UpgradeLevel: 3, NumPins: 5, LastUpdate: lastUpdate,
+	}}}
 
-	handler := listCharacterPlanetsHandler("v1", "client-id", store, nil)
+	handler := listCharacterPlanetsHandler("v1", openPlanetsFake(fake), store, nil)
 	_, out, err := handler(context.Background(), nil, ListCharacterPlanetsInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -50,14 +94,7 @@ func TestListCharacterPlanetsHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := listCharacterPlanets
-	t.Cleanup(func() { listCharacterPlanets = orig })
-	listCharacterPlanets = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]Planet, error) {
-		t.Fatal("listCharacterPlanets should not be called for an unknown character")
-		return nil, nil
-	}
-
-	handler := listCharacterPlanetsHandler("v1", "client-id", store, nil)
+	handler := listCharacterPlanetsHandler("v1", openPlanetsMustNotRun(t), store, nil)
 	_, _, err := handler(context.Background(), nil, ListCharacterPlanetsInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -73,11 +110,7 @@ func TestListCharacterPlanetsHandler_ResolvesLocationNames(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCharacterPlanets
-	t.Cleanup(func() { listCharacterPlanets = orig })
-	listCharacterPlanets = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]Planet, error) {
-		return []Planet{{PlanetID: 40009086, SolarSystemID: 30000142}}, nil
-	}
+	fake := &fakePlanetsESI{planets: []esiapi.CharactersCharacterIdPlanetsGetInner{{PlanetId: 40009086, SolarSystemId: 30000142}}}
 
 	origSystem := resolveSystemNames
 	t.Cleanup(func() { resolveSystemNames = origSystem })
@@ -90,7 +123,7 @@ func TestListCharacterPlanetsHandler_ResolvesLocationNames(t *testing.T) {
 		return map[int64]string{40009086: "Jita IV"}
 	}
 
-	handler := listCharacterPlanetsHandler("v1", "client-id", store, nil)
+	handler := listCharacterPlanetsHandler("v1", openPlanetsFake(fake), store, nil)
 	_, out, err := handler(context.Background(), nil, ListCharacterPlanetsInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -112,11 +145,7 @@ func TestListCorporationCustomsOfficesHandler_ResolvesSystemName(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationCustomsOffices
-	t.Cleanup(func() { listCorporationCustomsOffices = orig })
-	listCorporationCustomsOffices = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdCustomsOfficesGetInner, int32, error) {
-		return []esiapi.CorporationsCorporationIdCustomsOfficesGetInner{{OfficeId: 1, SystemId: 30000142}}, 1, nil
-	}
+	fake := &fakePlanetsESI{offices: []esiapi.CorporationsCorporationIdCustomsOfficesGetInner{{OfficeId: 1, SystemId: 30000142}}, totalPages: 1}
 
 	origSystem := resolveSystemNames
 	t.Cleanup(func() { resolveSystemNames = origSystem })
@@ -124,7 +153,7 @@ func TestListCorporationCustomsOfficesHandler_ResolvesSystemName(t *testing.T) {
 		return map[int64]string{30000142: "Jita"}
 	}
 
-	handler := listCorporationCustomsOfficesHandler("v1", "client-id", store, nil)
+	handler := listCorporationCustomsOfficesHandler("v1", openPlanetsFake(fake), store, nil)
 	_, out, err := handler(context.Background(), nil, ListCorporationCustomsOfficesInput{CharacterID: 7, CorporationID: 98000001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -148,9 +177,6 @@ func TestGetCharacterPlanetHandler_MapsFields(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCharacterPlanet
-	t.Cleanup(func() { getCharacterPlanet = orig })
-
 	expiryTime := time.Date(2026, 7, 2, 0, 0, 0, 0, time.UTC)
 	installTime := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
 	lastCycleStart := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
@@ -160,39 +186,37 @@ func TestGetCharacterPlanetHandler_MapsFields(t *testing.T) {
 	productTypeID := int64(2073)
 	qtyPerCycle := int64(100)
 
-	getCharacterPlanet = func(ctx context.Context, clientID string, characterID int32, userAgent string, planetID int64) (*esiapi.CharactersCharacterIdPlanetsPlanetIdGet, error) {
-		return &esiapi.CharactersCharacterIdPlanetsPlanetIdGet{
-			Links: []esiapi.CharactersCharacterIdPlanetsPlanetIdGetLinksInner{
-				{SourcePinId: 1001, DestinationPinId: 1002, LinkLevel: 1},
-			},
-			Pins: []esiapi.CharactersCharacterIdPlanetsPlanetIdGetPinsInner{
-				{
-					PinId: 1001, TypeId: 2254, Latitude: 0.1, Longitude: 0.2,
-					SchematicId: &schematicID, ExpiryTime: &expiryTime, InstallTime: &installTime,
-					LastCycleStart: &lastCycleStart,
-					Contents: []esiapi.CharactersCharacterIdPlanetsPlanetIdGetPinsInnerContentsInner{
-						{TypeId: 2073, Amount: 500},
-					},
-					ExtractorDetails: &esiapi.CharactersCharacterIdPlanetsPlanetIdGetPinsInnerExtractorDetails{
-						CycleTime: &cycleTime, HeadRadius: &headRadius, ProductTypeId: &productTypeID, QtyPerCycle: &qtyPerCycle,
-						Heads: []esiapi.CharactersCharacterIdPlanetsPlanetIdGetPinsInnerExtractorDetailsHeadsInner{
-							{HeadId: 0, Latitude: 0.3, Longitude: 0.4},
-						},
-					},
-					FactoryDetails: &esiapi.CharactersCharacterIdPlanetsPlanetIdGetPinsInnerFactoryDetails{SchematicId: 100},
+	fake := &fakePlanetsESI{detail: &esiapi.CharactersCharacterIdPlanetsPlanetIdGet{
+		Links: []esiapi.CharactersCharacterIdPlanetsPlanetIdGetLinksInner{
+			{SourcePinId: 1001, DestinationPinId: 1002, LinkLevel: 1},
+		},
+		Pins: []esiapi.CharactersCharacterIdPlanetsPlanetIdGetPinsInner{
+			{
+				PinId: 1001, TypeId: 2254, Latitude: 0.1, Longitude: 0.2,
+				SchematicId: &schematicID, ExpiryTime: &expiryTime, InstallTime: &installTime,
+				LastCycleStart: &lastCycleStart,
+				Contents: []esiapi.CharactersCharacterIdPlanetsPlanetIdGetPinsInnerContentsInner{
+					{TypeId: 2073, Amount: 500},
 				},
-				{PinId: 1002, TypeId: 2255, Latitude: 0.5, Longitude: 0.6},
-			},
-			Routes: []esiapi.CharactersCharacterIdPlanetsPlanetIdGetRoutesInner{
-				{
-					RouteId: 5001, SourcePinId: 1001, DestinationPinId: 1002, ContentTypeId: 2073,
-					Quantity: 20, Waypoints: []int64{1003, 1004},
+				ExtractorDetails: &esiapi.CharactersCharacterIdPlanetsPlanetIdGetPinsInnerExtractorDetails{
+					CycleTime: &cycleTime, HeadRadius: &headRadius, ProductTypeId: &productTypeID, QtyPerCycle: &qtyPerCycle,
+					Heads: []esiapi.CharactersCharacterIdPlanetsPlanetIdGetPinsInnerExtractorDetailsHeadsInner{
+						{HeadId: 0, Latitude: 0.3, Longitude: 0.4},
+					},
 				},
+				FactoryDetails: &esiapi.CharactersCharacterIdPlanetsPlanetIdGetPinsInnerFactoryDetails{SchematicId: 100},
 			},
-		}, nil
-	}
+			{PinId: 1002, TypeId: 2255, Latitude: 0.5, Longitude: 0.6},
+		},
+		Routes: []esiapi.CharactersCharacterIdPlanetsPlanetIdGetRoutesInner{
+			{
+				RouteId: 5001, SourcePinId: 1001, DestinationPinId: 1002, ContentTypeId: 2073,
+				Quantity: 20, Waypoints: []int64{1003, 1004},
+			},
+		},
+	}}
 
-	handler := getCharacterPlanetHandler("v1", "client-id", store, nil)
+	handler := getCharacterPlanetHandler("v1", openPlanetsFake(fake), store, nil)
 	_, out, err := handler(context.Background(), nil, GetCharacterPlanetInput{CharacterID: 7, PlanetID: 40000001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -277,14 +301,7 @@ func TestGetCharacterPlanetHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := getCharacterPlanet
-	t.Cleanup(func() { getCharacterPlanet = orig })
-	getCharacterPlanet = func(ctx context.Context, clientID string, characterID int32, userAgent string, planetID int64) (*esiapi.CharactersCharacterIdPlanetsPlanetIdGet, error) {
-		t.Fatal("getCharacterPlanet should not be called for an unknown character")
-		return nil, nil
-	}
-
-	handler := getCharacterPlanetHandler("v1", "client-id", store, nil)
+	handler := getCharacterPlanetHandler("v1", openPlanetsMustNotRun(t), store, nil)
 	_, _, err := handler(context.Background(), nil, GetCharacterPlanetInput{CharacterID: 999, PlanetID: 1})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -300,9 +317,6 @@ func TestListCorporationCustomsOfficesHandler_MapsFields(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationCustomsOffices
-	t.Cleanup(func() { listCorporationCustomsOffices = orig })
-
 	allianceTax := 0.1
 	badTax := 0.5
 	corpTax := 0.05
@@ -313,30 +327,24 @@ func TestListCorporationCustomsOfficesHandler_MapsFields(t *testing.T) {
 	standingLevel := "good"
 	typeID := int64(2233)
 
-	var gotCorporationID int64
-	var gotPage int32
-	listCorporationCustomsOffices = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdCustomsOfficesGetInner, int32, error) {
-		gotCorporationID = corporationID
-		gotPage = page
-		return []esiapi.CorporationsCorporationIdCustomsOfficesGetInner{
-			{
-				OfficeId: 1234567890, SystemId: 30000001, TypeId: &typeID,
-				ReinforceExitStart: 16, ReinforceExitEnd: 18,
-				AllowAllianceAccess: true, AllowAccessWithStandings: true,
-				StandingLevel: &standingLevel, AllianceTaxRate: &allianceTax, CorporationTaxRate: &corpTax,
-				ExcellentStandingTaxRate: &excellentTax, GoodStandingTaxRate: &goodTax, NeutralStandingTaxRate: &neutralTax,
-				BadStandingTaxRate: &badTax, TerribleStandingTaxRate: &terribleTax,
-			},
-		}, 3, nil
-	}
+	fake := &fakePlanetsESI{offices: []esiapi.CorporationsCorporationIdCustomsOfficesGetInner{
+		{
+			OfficeId: 1234567890, SystemId: 30000001, TypeId: &typeID,
+			ReinforceExitStart: 16, ReinforceExitEnd: 18,
+			AllowAllianceAccess: true, AllowAccessWithStandings: true,
+			StandingLevel: &standingLevel, AllianceTaxRate: &allianceTax, CorporationTaxRate: &corpTax,
+			ExcellentStandingTaxRate: &excellentTax, GoodStandingTaxRate: &goodTax, NeutralStandingTaxRate: &neutralTax,
+			BadStandingTaxRate: &badTax, TerribleStandingTaxRate: &terribleTax,
+		},
+	}, totalPages: 3}
 
-	handler := listCorporationCustomsOfficesHandler("v1", "client-id", store, nil)
+	handler := listCorporationCustomsOfficesHandler("v1", openPlanetsFake(fake), store, nil)
 	_, out, err := handler(context.Background(), nil, ListCorporationCustomsOfficesInput{CharacterID: 7, CorporationID: 98000001, Page: 2})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
-	if gotCorporationID != 98000001 || gotPage != 2 {
-		t.Errorf("captured corporationID/page = %d/%d, want 98000001/2", gotCorporationID, gotPage)
+	if fake.gotCorporationID != 98000001 || fake.gotPage != 2 {
+		t.Errorf("captured corporationID/page = %d/%d, want 98000001/2", fake.gotCorporationID, fake.gotPage)
 	}
 	if out.CharacterID != 7 || out.CorporationID != 98000001 || out.Page != 2 || out.TotalPages != 3 {
 		t.Fatalf("out = %+v, want CharacterID=7 CorporationID=98000001 Page=2 TotalPages=3", out)
@@ -390,13 +398,9 @@ func TestListCorporationCustomsOfficesHandler_DefaultsPageToOne(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationCustomsOffices
-	t.Cleanup(func() { listCorporationCustomsOffices = orig })
-	listCorporationCustomsOffices = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdCustomsOfficesGetInner, int32, error) {
-		return nil, 1, nil
-	}
+	fake := &fakePlanetsESI{totalPages: 1}
 
-	handler := listCorporationCustomsOfficesHandler("v1", "client-id", store, nil)
+	handler := listCorporationCustomsOfficesHandler("v1", openPlanetsFake(fake), store, nil)
 	_, out, err := handler(context.Background(), nil, ListCorporationCustomsOfficesInput{CharacterID: 7, CorporationID: 98000001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -410,14 +414,7 @@ func TestListCorporationCustomsOfficesHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := listCorporationCustomsOffices
-	t.Cleanup(func() { listCorporationCustomsOffices = orig })
-	listCorporationCustomsOffices = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdCustomsOfficesGetInner, int32, error) {
-		t.Fatal("listCorporationCustomsOffices should not be called for an unknown character")
-		return nil, 0, nil
-	}
-
-	handler := listCorporationCustomsOfficesHandler("v1", "client-id", store, nil)
+	handler := listCorporationCustomsOfficesHandler("v1", openPlanetsMustNotRun(t), store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationCustomsOfficesInput{CharacterID: 999, CorporationID: 98000001})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -434,19 +431,15 @@ func TestGetCharacterPlanetHandler_ResolvesTypeNames(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCharacterPlanet
-	t.Cleanup(func() { getCharacterPlanet = orig })
 	productTypeID := int64(587)
-	getCharacterPlanet = func(ctx context.Context, clientID string, characterID int32, userAgent string, planetID int64) (*esiapi.CharactersCharacterIdPlanetsPlanetIdGet, error) {
-		return &esiapi.CharactersCharacterIdPlanetsPlanetIdGet{
-			Pins: []esiapi.CharactersCharacterIdPlanetsPlanetIdGetPinsInner{{
-				TypeId:           587,
-				Contents:         []esiapi.CharactersCharacterIdPlanetsPlanetIdGetPinsInnerContentsInner{{TypeId: 588, Amount: 100}},
-				ExtractorDetails: &esiapi.CharactersCharacterIdPlanetsPlanetIdGetPinsInnerExtractorDetails{ProductTypeId: &productTypeID},
-			}},
-			Routes: []esiapi.CharactersCharacterIdPlanetsPlanetIdGetRoutesInner{{ContentTypeId: 588}},
-		}, nil
-	}
+	fake := &fakePlanetsESI{detail: &esiapi.CharactersCharacterIdPlanetsPlanetIdGet{
+		Pins: []esiapi.CharactersCharacterIdPlanetsPlanetIdGetPinsInner{{
+			TypeId:           587,
+			Contents:         []esiapi.CharactersCharacterIdPlanetsPlanetIdGetPinsInnerContentsInner{{TypeId: 588, Amount: 100}},
+			ExtractorDetails: &esiapi.CharactersCharacterIdPlanetsPlanetIdGetPinsInnerExtractorDetails{ProductTypeId: &productTypeID},
+		}},
+		Routes: []esiapi.CharactersCharacterIdPlanetsPlanetIdGetRoutesInner{{ContentTypeId: 588}},
+	}}
 
 	origResolve := resolveTypeNames
 	t.Cleanup(func() { resolveTypeNames = origResolve })
@@ -454,7 +447,7 @@ func TestGetCharacterPlanetHandler_ResolvesTypeNames(t *testing.T) {
 		return map[int64]string{587: "Command Center", 588: "Water"}
 	}
 
-	handler := getCharacterPlanetHandler("v1", "client-id", store, nil)
+	handler := getCharacterPlanetHandler("v1", openPlanetsFake(fake), store, nil)
 	_, out, err := handler(context.Background(), nil, GetCharacterPlanetInput{CharacterID: 7, PlanetID: 1})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -486,18 +479,14 @@ func TestGetCharacterPlanetHandler_ResolvesTypeNames_NoExtractorDetails(t *testi
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCharacterPlanet
-	t.Cleanup(func() { getCharacterPlanet = orig })
-	getCharacterPlanet = func(ctx context.Context, clientID string, characterID int32, userAgent string, planetID int64) (*esiapi.CharactersCharacterIdPlanetsPlanetIdGet, error) {
-		return &esiapi.CharactersCharacterIdPlanetsPlanetIdGet{
-			Pins: []esiapi.CharactersCharacterIdPlanetsPlanetIdGetPinsInner{
-				{TypeId: 587},
-				{TypeId: 588, ExtractorDetails: &esiapi.CharactersCharacterIdPlanetsPlanetIdGetPinsInnerExtractorDetails{}},
-			},
-		}, nil
-	}
+	fake := &fakePlanetsESI{detail: &esiapi.CharactersCharacterIdPlanetsPlanetIdGet{
+		Pins: []esiapi.CharactersCharacterIdPlanetsPlanetIdGetPinsInner{
+			{TypeId: 587},
+			{TypeId: 588, ExtractorDetails: &esiapi.CharactersCharacterIdPlanetsPlanetIdGetPinsInnerExtractorDetails{}},
+		},
+	}}
 
-	handler := getCharacterPlanetHandler("v1", "client-id", store, nil)
+	handler := getCharacterPlanetHandler("v1", openPlanetsFake(fake), store, nil)
 	_, out, err := handler(context.Background(), nil, GetCharacterPlanetInput{CharacterID: 7, PlanetID: 1})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -519,15 +508,11 @@ func TestListCorporationCustomsOfficesHandler_ResolvesTypeName(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationCustomsOffices
-	t.Cleanup(func() { listCorporationCustomsOffices = orig })
 	typeID := int64(2233)
-	listCorporationCustomsOffices = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdCustomsOfficesGetInner, int32, error) {
-		return []esiapi.CorporationsCorporationIdCustomsOfficesGetInner{
-			{OfficeId: 1, TypeId: &typeID},
-			{OfficeId: 2},
-		}, 1, nil
-	}
+	fake := &fakePlanetsESI{offices: []esiapi.CorporationsCorporationIdCustomsOfficesGetInner{
+		{OfficeId: 1, TypeId: &typeID},
+		{OfficeId: 2},
+	}, totalPages: 1}
 
 	origResolve := resolveTypeNames
 	t.Cleanup(func() { resolveTypeNames = origResolve })
@@ -535,7 +520,7 @@ func TestListCorporationCustomsOfficesHandler_ResolvesTypeName(t *testing.T) {
 		return map[int64]string{2233: "Customs Office"}
 	}
 
-	handler := listCorporationCustomsOfficesHandler("v1", "client-id", store, nil)
+	handler := listCorporationCustomsOfficesHandler("v1", openPlanetsFake(fake), store, nil)
 	_, out, err := handler(context.Background(), nil, ListCorporationCustomsOfficesInput{CharacterID: 7, CorporationID: 1})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -554,13 +539,9 @@ func TestListCorporationCustomsOfficesHandler_ResolvesTypeName(t *testing.T) {
 // --- get_planetary_schematic (public, no character check) ---
 
 func TestGetPlanetarySchematicHandler_MapsFields(t *testing.T) {
-	orig := getPlanetarySchematic
-	t.Cleanup(func() { getPlanetarySchematic = orig })
-	getPlanetarySchematic = func(ctx context.Context, userAgent string, schematicID int64) (GetPlanetarySchematicOutput, error) {
-		return GetPlanetarySchematicOutput{SchematicID: schematicID, SchematicName: "Water", CycleTime: 1800}, nil
-	}
+	fake := fakePlanetarySchematicESI{schematic: &esiapi.UniverseSchematicsSchematicIdGet{SchematicName: "Water", CycleTime: 1800}}
 
-	handler := getPlanetarySchematicHandler("v1")
+	handler := getPlanetarySchematicHandler(func() planetarySchematicESI { return fake })
 	_, out, err := handler(context.Background(), nil, GetPlanetarySchematicInput{SchematicID: 90})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -571,15 +552,48 @@ func TestGetPlanetarySchematicHandler_MapsFields(t *testing.T) {
 }
 
 func TestGetPlanetarySchematicHandler_PropagatesError(t *testing.T) {
-	orig := getPlanetarySchematic
-	t.Cleanup(func() { getPlanetarySchematic = orig })
-	getPlanetarySchematic = func(ctx context.Context, userAgent string, schematicID int64) (GetPlanetarySchematicOutput, error) {
-		return GetPlanetarySchematicOutput{}, errors.New("boom")
-	}
+	wantErr := errors.New("boom")
 
-	handler := getPlanetarySchematicHandler("v1")
+	handler := getPlanetarySchematicHandler(func() planetarySchematicESI { return fakePlanetarySchematicESI{err: wantErr} })
 	_, _, err := handler(context.Background(), nil, GetPlanetarySchematicInput{SchematicID: 90})
-	if err == nil {
-		t.Fatal("handler returned nil error, want propagated error")
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestPlanetaryInteractionHandlers_PropagateESIAndOpenErrors(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+	failingOpen := func(context.Context, int32) (planetsESI, error) { return nil, errBoom }
+	failingESI := openPlanetsFake(&fakePlanetsESI{err: errBoom})
+
+	calls := map[string]func(open func(context.Context, int32) (planetsESI, error)) error{
+		"list_character_planets": func(open func(context.Context, int32) (planetsESI, error)) error {
+			_, _, err := listCharacterPlanetsHandler("v1", open, store, nil)(context.Background(), nil, ListCharacterPlanetsInput{CharacterID: 7})
+			return err
+		},
+		"get_character_planet": func(open func(context.Context, int32) (planetsESI, error)) error {
+			_, _, err := getCharacterPlanetHandler("v1", open, store, nil)(context.Background(), nil, GetCharacterPlanetInput{CharacterID: 7, PlanetID: 1})
+			return err
+		},
+		"list_corporation_customs_offices": func(open func(context.Context, int32) (planetsESI, error)) error {
+			_, _, err := listCorporationCustomsOfficesHandler("v1", open, store, nil)(context.Background(), nil, ListCorporationCustomsOfficesInput{CharacterID: 7, CorporationID: 1})
+			return err
+		},
+	}
+	for name, call := range calls {
+		t.Run(name+"/esi error", func(t *testing.T) {
+			if err := call(failingESI); !errors.Is(err, errBoom) {
+				t.Errorf("err = %v, want wrapping errBoom", err)
+			}
+		})
+		t.Run(name+"/open error", func(t *testing.T) {
+			if err := call(failingOpen); !errors.Is(err, errBoom) {
+				t.Errorf("err = %v, want wrapping errBoom", err)
+			}
+		})
 	}
 }

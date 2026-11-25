@@ -5,11 +5,17 @@ import (
 	"fmt"
 	"time"
 
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-
-	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
+
+// calendarESI is the ESI calls the calendar tools make.
+type calendarESI interface {
+	CalendarEvents(ctx context.Context) ([]esiapi.CharactersCharacterIdCalendarGetInner, error)
+	CalendarEventDetail(ctx context.Context, eventID int64) (*esiapi.CharactersCharacterIdCalendarEventIdGet, error)
+	CalendarEventAttendees(ctx context.Context, eventID int64) ([]esiapi.CharactersCharacterIdCalendarEventIdAttendeesGetInner, error)
+	RespondToCalendarEvent(ctx context.Context, eventID int64, response string) error
+}
 
 // CalendarEventSummary is one calendar event's bare-ID summary. All fields are pointers — a
 // still-pending invite can have some fields unset (verified from ESI's response model).
@@ -21,12 +27,7 @@ type CalendarEventSummary struct {
 	Title         *string    `json:"title,omitempty"`
 }
 
-// listCalendarEvents is overridable in tests.
-var listCalendarEvents = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]CalendarEventSummary, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
+func listCalendarEvents(ctx context.Context, client calendarESI) ([]CalendarEventSummary, error) {
 	events, err := client.CalendarEvents(ctx)
 	if err != nil {
 		return nil, err
@@ -52,23 +53,29 @@ type ListCalendarEventsOutput struct {
 	Events      []CalendarEventSummary `json:"events"`
 }
 
-func listCalendarEventsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCalendarEventsInput, ListCalendarEventsOutput] {
+// AddListCalendarEvents registers list_calendar_events. open builds the ESI client; any client with the
+// calendarESI methods will do.
+func AddListCalendarEvents[C calendarESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_calendar_events",
+		Description: "List a logged-in EVE Online character's calendar events.",
+	}, listCalendarEventsHandler(open, store))
+}
+
+func listCalendarEventsHandler[C calendarESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListCalendarEventsInput, ListCalendarEventsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCalendarEventsInput) (*mcpsdk.CallToolResult, ListCalendarEventsOutput, error) {
-		cfg, err := store.Load()
+		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
-			return nil, ListCalendarEventsOutput{}, fmt.Errorf("load config: %w", err)
-		}
-		found := false
-		for _, c := range cfg.Characters {
-			if c.ID == in.CharacterID {
-				found = true
-				break
-			}
+			return nil, ListCalendarEventsOutput{}, err
 		}
 		if !found {
 			return nil, ListCalendarEventsOutput{}, fmt.Errorf("list calendar events for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		events, err := listCalendarEvents(ctx, clientID, in.CharacterID, sso.UserAgent(version))
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCalendarEventsOutput{}, fmt.Errorf("build ESI client: %w", err)
+		}
+		events, err := listCalendarEvents(ctx, client)
 		if err != nil {
 			return nil, ListCalendarEventsOutput{}, fmt.Errorf("list calendar events: %w", err)
 		}
@@ -90,12 +97,7 @@ type CalendarEventDetailResult struct {
 	Title      string
 }
 
-// getCalendarEventDetail is overridable in tests.
-var getCalendarEventDetail = func(ctx context.Context, clientID string, characterID int32, userAgent string, eventID int64) (CalendarEventDetailResult, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return CalendarEventDetailResult{}, fmt.Errorf("build ESI client: %w", err)
-	}
+func getCalendarEventDetail(ctx context.Context, client calendarESI, eventID int64) (CalendarEventDetailResult, error) {
 	detail, err := client.CalendarEventDetail(ctx, eventID)
 	if err != nil {
 		return CalendarEventDetailResult{}, err
@@ -128,23 +130,29 @@ type GetCalendarEventOutput struct {
 	Title       string    `json:"title"`
 }
 
-func getCalendarEventHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetCalendarEventInput, GetCalendarEventOutput] {
+// AddGetCalendarEvent registers get_calendar_event. open builds the ESI client; any client with the
+// calendarESI methods will do.
+func AddGetCalendarEvent[C calendarESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_calendar_event",
+		Description: "Get detail (date, duration, owner, description, RSVP status) for one calendar event.",
+	}, getCalendarEventHandler(open, store))
+}
+
+func getCalendarEventHandler[C calendarESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[GetCalendarEventInput, GetCalendarEventOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCalendarEventInput) (*mcpsdk.CallToolResult, GetCalendarEventOutput, error) {
-		cfg, err := store.Load()
+		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
-			return nil, GetCalendarEventOutput{}, fmt.Errorf("load config: %w", err)
-		}
-		found := false
-		for _, c := range cfg.Characters {
-			if c.ID == in.CharacterID {
-				found = true
-				break
-			}
+			return nil, GetCalendarEventOutput{}, err
 		}
 		if !found {
 			return nil, GetCalendarEventOutput{}, fmt.Errorf("get calendar event for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		result, err := getCalendarEventDetail(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.EventID)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, GetCalendarEventOutput{}, fmt.Errorf("build ESI client: %w", err)
+		}
+		result, err := getCalendarEventDetail(ctx, client, in.EventID)
 		if err != nil {
 			return nil, GetCalendarEventOutput{}, fmt.Errorf("get calendar event: %w", err)
 		}
@@ -162,12 +170,7 @@ type CalendarAttendee struct {
 	EventResponse *string `json:"eventResponse,omitempty"`
 }
 
-// listCalendarEventAttendees is overridable in tests.
-var listCalendarEventAttendees = func(ctx context.Context, clientID string, characterID int32, userAgent string, eventID int64) ([]CalendarAttendee, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
+func listCalendarEventAttendees(ctx context.Context, client calendarESI, eventID int64) ([]CalendarAttendee, error) {
 	attendees, err := client.CalendarEventAttendees(ctx, eventID)
 	if err != nil {
 		return nil, err
@@ -192,23 +195,29 @@ type ListCalendarEventAttendeesOutput struct {
 	Attendees   []CalendarAttendee `json:"attendees"`
 }
 
-func listCalendarEventAttendeesHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCalendarEventAttendeesInput, ListCalendarEventAttendeesOutput] {
+// AddListCalendarEventAttendees registers list_calendar_event_attendees. open builds the ESI client; any client with the
+// calendarESI methods will do.
+func AddListCalendarEventAttendees[C calendarESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_calendar_event_attendees",
+		Description: "List the attendees and their RSVP status for one calendar event.",
+	}, listCalendarEventAttendeesHandler(open, store))
+}
+
+func listCalendarEventAttendeesHandler[C calendarESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListCalendarEventAttendeesInput, ListCalendarEventAttendeesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCalendarEventAttendeesInput) (*mcpsdk.CallToolResult, ListCalendarEventAttendeesOutput, error) {
-		cfg, err := store.Load()
+		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
-			return nil, ListCalendarEventAttendeesOutput{}, fmt.Errorf("load config: %w", err)
-		}
-		found := false
-		for _, c := range cfg.Characters {
-			if c.ID == in.CharacterID {
-				found = true
-				break
-			}
+			return nil, ListCalendarEventAttendeesOutput{}, err
 		}
 		if !found {
 			return nil, ListCalendarEventAttendeesOutput{}, fmt.Errorf("list calendar event attendees for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		attendees, err := listCalendarEventAttendees(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.EventID)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCalendarEventAttendeesOutput{}, fmt.Errorf("build ESI client: %w", err)
+		}
+		attendees, err := listCalendarEventAttendees(ctx, client, in.EventID)
 		if err != nil {
 			return nil, ListCalendarEventAttendeesOutput{}, fmt.Errorf("list calendar event attendees: %w", err)
 		}
@@ -219,12 +228,7 @@ func listCalendarEventAttendeesHandler(version, clientID string, store ConfigSto
 // validCalendarResponses are ESI's own accepted values for RespondToCalendarEvent.
 var validCalendarResponses = map[string]bool{"accepted": true, "declined": true, "tentative": true}
 
-// respondToCalendarEvent is overridable in tests.
-var respondToCalendarEvent = func(ctx context.Context, clientID string, characterID int32, userAgent string, eventID int64, response string) error {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return fmt.Errorf("build ESI client: %w", err)
-	}
+func respondToCalendarEvent(ctx context.Context, client calendarESI, eventID int64, response string) error {
 	return client.RespondToCalendarEvent(ctx, eventID, response)
 }
 
@@ -244,27 +248,33 @@ type RespondCalendarEventOutput struct {
 
 // respondCalendarEventHandler is neat's first write tool. It changes state on FC's server, so
 // unlike every read-only handler in this project it validates its input BEFORE loading
-// config.Store or calling ESI — failing fast on bad input without an unnecessary IO round-trip.
-func respondCalendarEventHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[RespondCalendarEventInput, RespondCalendarEventOutput] {
+// the config or calling ESI — failing fast on bad input without an unnecessary IO round-trip.
+// AddRespondCalendarEvent registers respond_calendar_event. open builds the ESI client; any client with the
+// calendarESI methods will do.
+func AddRespondCalendarEvent[C calendarESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "respond_calendar_event",
+		Description: "Respond to a calendar event invite (accepted/declined/tentative) — this changes your RSVP status on EVE's server.",
+	}, respondCalendarEventHandler(open, store))
+}
+
+func respondCalendarEventHandler[C calendarESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[RespondCalendarEventInput, RespondCalendarEventOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in RespondCalendarEventInput) (*mcpsdk.CallToolResult, RespondCalendarEventOutput, error) {
 		if !validCalendarResponses[in.Response] {
 			return nil, RespondCalendarEventOutput{}, fmt.Errorf("respond to calendar event: invalid response %q, must be one of accepted, declined, tentative", in.Response)
 		}
-		cfg, err := store.Load()
+		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
-			return nil, RespondCalendarEventOutput{}, fmt.Errorf("load config: %w", err)
-		}
-		found := false
-		for _, c := range cfg.Characters {
-			if c.ID == in.CharacterID {
-				found = true
-				break
-			}
+			return nil, RespondCalendarEventOutput{}, err
 		}
 		if !found {
 			return nil, RespondCalendarEventOutput{}, fmt.Errorf("respond to calendar event for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		if err := respondToCalendarEvent(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.EventID, in.Response); err != nil {
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, RespondCalendarEventOutput{}, fmt.Errorf("build ESI client: %w", err)
+		}
+		if err := respondToCalendarEvent(ctx, client, in.EventID, in.Response); err != nil {
 			return nil, RespondCalendarEventOutput{}, fmt.Errorf("respond to calendar event: %w", err)
 		}
 		return nil, RespondCalendarEventOutput{CharacterID: in.CharacterID, EventID: in.EventID, Response: in.Response}, nil

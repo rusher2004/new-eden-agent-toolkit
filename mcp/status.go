@@ -5,16 +5,18 @@ import (
 	"fmt"
 	"time"
 
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-
-	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
+
+// statusESI is the ESI call get_status makes; it is public.
+type statusESI interface {
+	Status(ctx context.Context) (*esiapi.Status, error)
+}
 
 // --- get_status (public) ---
 
-var getStatus = func(ctx context.Context, userAgent string) (int64, string, time.Time, bool, error) {
-	client := esi.NewPublicClient(userAgent)
+func getStatus(ctx context.Context, client statusESI) (int64, string, time.Time, bool, error) {
 	status, err := client.Status(ctx)
 	if err != nil {
 		return 0, "", time.Time{}, false, err
@@ -30,9 +32,18 @@ type GetStatusOutput struct {
 	Vip           bool      `json:"vip"`
 }
 
-func getStatusHandler(version string) mcpsdk.ToolHandlerFor[GetStatusInput, GetStatusOutput] {
+// AddGetStatus registers get_status. open builds the ESI client; any client with the
+// statusESI methods will do.
+func AddGetStatus[C statusESI](s *mcpsdk.Server, open func() C) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_status",
+		Description: "Get the current EVE Online server status: player count, version, start time, and VIP mode (public data, no character required).",
+	}, getStatusHandler(open))
+}
+
+func getStatusHandler[C statusESI](open func() C) mcpsdk.ToolHandlerFor[GetStatusInput, GetStatusOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetStatusInput) (*mcpsdk.CallToolResult, GetStatusOutput, error) {
-		players, serverVersion, startTime, vip, err := getStatus(ctx, sso.UserAgent(version))
+		players, serverVersion, startTime, vip, err := getStatus(ctx, open())
 		if err != nil {
 			return nil, GetStatusOutput{}, fmt.Errorf("get status: %w", err)
 		}

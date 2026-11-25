@@ -4,13 +4,14 @@ import (
 	"context"
 	"fmt"
 
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
-
-	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+// routeESI is the ESI call get_route makes; it is public.
+type routeESI interface {
+	Route(ctx context.Context, originSystemID, destinationSystemID int64, avoidSystems []int64, connections []esiapi.RouteConnection, preference *string, securityPenalty *int64) ([]int64, error)
+}
 
 // --- get_route (public) ---
 
@@ -19,8 +20,7 @@ type RouteConnectionInput struct {
 	To   int64 `json:"to" jsonschema:"the destination system ID of this one-way connection"`
 }
 
-var getRoute = func(ctx context.Context, userAgent string, originSystemID, destinationSystemID int64, avoidSystems []int64, connections []RouteConnectionInput, preference *string, securityPenalty *int64) ([]int64, error) {
-	client := esi.NewPublicClient(userAgent)
+func getRoute(ctx context.Context, client routeESI, originSystemID, destinationSystemID int64, avoidSystems []int64, connections []RouteConnectionInput, preference *string, securityPenalty *int64) ([]int64, error) {
 	esiConnections := make([]esiapi.RouteConnection, len(connections))
 	for i, c := range connections {
 		esiConnections[i] = esiapi.RouteConnection{From: c.From, To: c.To}
@@ -45,16 +45,25 @@ type GetRouteOutput struct {
 	RouteNames            []string `json:"routeNames,omitempty"`
 }
 
-func getRouteHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetRouteInput, GetRouteOutput] {
+// AddGetRoute registers get_route. open builds the ESI client; any client with the
+// routeESI methods will do.
+func AddGetRoute[C routeESI](s *mcpsdk.Server, userAgent string, open func() C, sdeStore systemNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_route",
+		Description: "Compute a route between two solar systems, optionally avoiding systems or adding extra connections (public data, no character required).",
+	}, getRouteHandler(userAgent, open, sdeStore))
+}
+
+func getRouteHandler[C routeESI](userAgent string, open func() C, sdeStore systemNameCache) mcpsdk.ToolHandlerFor[GetRouteInput, GetRouteOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetRouteInput) (*mcpsdk.CallToolResult, GetRouteOutput, error) {
-		route, err := getRoute(ctx, sso.UserAgent(version), in.OriginSystemID, in.DestinationSystemID, in.AvoidSystems, in.Connections, in.Preference, in.SecurityPenalty)
+		route, err := getRoute(ctx, open(), in.OriginSystemID, in.DestinationSystemID, in.AvoidSystems, in.Connections, in.Preference, in.SecurityPenalty)
 		if err != nil {
 			return nil, GetRouteOutput{}, fmt.Errorf("get route: %w", err)
 		}
 
 		// ESI's route response always includes origin/destination as its first/last elements, so
 		// names already covers both -- no second lookup needed.
-		names := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), route)
+		names := resolveSystemNames(ctx, sdeStore, userAgent, route)
 		routeNames := make([]string, len(route))
 		var resolved bool
 		for i, id := range route {

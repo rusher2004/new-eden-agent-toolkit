@@ -5,13 +5,28 @@ import (
 	"fmt"
 	"time"
 
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
-
-	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+// killmailsESI is the ESI calls the recent-killmail listing tools make.
+type killmailsESI interface {
+	CharacterKillmailsRecent(ctx context.Context, page int32) ([]esiapi.CharactersCharacterIdKillmailsRecentGetInner, int32, error)
+	CorporationKillmailsRecent(ctx context.Context, corporationID int64, page int32) ([]esiapi.CharactersCharacterIdKillmailsRecentGetInner, int32, error)
+}
+
+// killmailDetailESI is the ESI call get_killmail makes; it is public.
+type killmailDetailESI interface {
+	KillmailDetail(ctx context.Context, killmailID int64, killmailHash string) (*esiapi.KillmailsKillmailIdKillmailHashGet, error)
+}
+
+// killmailNameCache is the SDE lookups get_killmail makes: type, system, moon and faction names.
+type killmailNameCache interface {
+	typeNameCache
+	systemNameCache
+	moonNameCache
+	factionNameCache
+}
 
 // KillmailRef is shared by list_character_killmails_recent and list_corporation_killmails_recent
 // since both endpoints return the exact same generated model.
@@ -30,11 +45,7 @@ func toKillmailRefs(refs []esiapi.CharactersCharacterIdKillmailsRecentGetInner) 
 
 // --- list_character_killmails_recent (private, paginated) ---
 
-var listCharacterKillmailsRecent = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]esiapi.CharactersCharacterIdKillmailsRecentGetInner, int32, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, 0, fmt.Errorf("build ESI client: %w", err)
-	}
+func listCharacterKillmailsRecent(ctx context.Context, client killmailsESI, page int32) ([]esiapi.CharactersCharacterIdKillmailsRecentGetInner, int32, error) {
 	return client.CharacterKillmailsRecent(ctx, page)
 }
 
@@ -49,7 +60,16 @@ type ListCharacterKillmailsRecentOutput struct {
 	Killmails   []KillmailRef `json:"killmails"`
 }
 
-func listCharacterKillmailsRecentHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCharacterKillmailsRecentInput, ListCharacterKillmailsRecentOutput] {
+// AddListCharacterKillmailsRecent registers list_character_killmails_recent. open builds the ESI client; any client with the
+// killmailsESI methods will do.
+func AddListCharacterKillmailsRecent[C killmailsESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_character_killmails_recent",
+		Description: "List a logged-in EVE Online character's recent killmail references.",
+	}, listCharacterKillmailsRecentHandler(open, store))
+}
+
+func listCharacterKillmailsRecentHandler[C killmailsESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListCharacterKillmailsRecentInput, ListCharacterKillmailsRecentOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterKillmailsRecentInput) (*mcpsdk.CallToolResult, ListCharacterKillmailsRecentOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -58,7 +78,11 @@ func listCharacterKillmailsRecentHandler(version, clientID string, store ConfigS
 		if !found {
 			return nil, ListCharacterKillmailsRecentOutput{}, fmt.Errorf("list character killmails recent for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		refs, totalPages, err := listCharacterKillmailsRecent(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.Page)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCharacterKillmailsRecentOutput{}, fmt.Errorf("build ESI client: %w", err)
+		}
+		refs, totalPages, err := listCharacterKillmailsRecent(ctx, client, in.Page)
 		if err != nil {
 			return nil, ListCharacterKillmailsRecentOutput{}, fmt.Errorf("list character killmails recent: %w", err)
 		}
@@ -72,11 +96,7 @@ func listCharacterKillmailsRecentHandler(version, clientID string, store ConfigS
 
 // --- list_corporation_killmails_recent (private, corp-scoped, paginated) ---
 
-var listCorporationKillmailsRecent = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]esiapi.CharactersCharacterIdKillmailsRecentGetInner, int32, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, 0, fmt.Errorf("build ESI client: %w", err)
-	}
+func listCorporationKillmailsRecent(ctx context.Context, client killmailsESI, corporationID int64, page int32) ([]esiapi.CharactersCharacterIdKillmailsRecentGetInner, int32, error) {
 	return client.CorporationKillmailsRecent(ctx, corporationID, page)
 }
 
@@ -93,7 +113,16 @@ type ListCorporationKillmailsRecentOutput struct {
 	Killmails     []KillmailRef `json:"killmails"`
 }
 
-func listCorporationKillmailsRecentHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationKillmailsRecentInput, ListCorporationKillmailsRecentOutput] {
+// AddListCorporationKillmailsRecent registers list_corporation_killmails_recent. open builds the ESI client; any client with the
+// killmailsESI methods will do.
+func AddListCorporationKillmailsRecent[C killmailsESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_corporation_killmails_recent",
+		Description: "List a corporation's recent killmail references, using a logged-in character's roles to authorize.",
+	}, listCorporationKillmailsRecentHandler(open, store))
+}
+
+func listCorporationKillmailsRecentHandler[C killmailsESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListCorporationKillmailsRecentInput, ListCorporationKillmailsRecentOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationKillmailsRecentInput) (*mcpsdk.CallToolResult, ListCorporationKillmailsRecentOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -102,7 +131,11 @@ func listCorporationKillmailsRecentHandler(version, clientID string, store Confi
 		if !found {
 			return nil, ListCorporationKillmailsRecentOutput{}, fmt.Errorf("list corporation killmails recent for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		refs, totalPages, err := listCorporationKillmailsRecent(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.Page)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCorporationKillmailsRecentOutput{}, fmt.Errorf("build ESI client: %w", err)
+		}
+		refs, totalPages, err := listCorporationKillmailsRecent(ctx, client, in.CorporationID, in.Page)
 		if err != nil {
 			return nil, ListCorporationKillmailsRecentOutput{}, fmt.Errorf("list corporation killmails recent: %w", err)
 		}
@@ -204,8 +237,7 @@ func toKillmailItems(items []esiapi.KillmailsKillmailIdKillmailHashGetVictimItem
 	return out
 }
 
-var getKillmail = func(ctx context.Context, userAgent string, killmailID int64, killmailHash string) (*esiapi.KillmailsKillmailIdKillmailHashGet, error) {
-	client := esi.NewPublicClient(userAgent)
+func getKillmail(ctx context.Context, client killmailDetailESI, killmailID int64, killmailHash string) (*esiapi.KillmailsKillmailIdKillmailHashGet, error) {
 	return client.KillmailDetail(ctx, killmailID, killmailHash)
 }
 
@@ -225,9 +257,18 @@ type GetKillmailOutput struct {
 	Victim          KillmailVictim     `json:"victim"`
 }
 
-func getKillmailHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetKillmailInput, GetKillmailOutput] {
+// AddGetKillmail registers get_killmail. open builds the ESI client; any client with the
+// killmailDetailESI methods will do.
+func AddGetKillmail[C killmailDetailESI](s *mcpsdk.Server, userAgent string, open func() C, sdeStore killmailNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_killmail",
+		Description: "Get the full details of a killmail, given its ID and hash (public data, no character required).",
+	}, getKillmailHandler(userAgent, open, sdeStore))
+}
+
+func getKillmailHandler[C killmailDetailESI](userAgent string, open func() C, sdeStore killmailNameCache) mcpsdk.ToolHandlerFor[GetKillmailInput, GetKillmailOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetKillmailInput) (*mcpsdk.CallToolResult, GetKillmailOutput, error) {
-		detail, err := getKillmail(ctx, sso.UserAgent(version), in.KillmailID, in.KillmailHash)
+		detail, err := getKillmail(ctx, open(), in.KillmailID, in.KillmailHash)
 		if err != nil {
 			return nil, GetKillmailOutput{}, fmt.Errorf("get killmail: %w", err)
 		}
@@ -266,7 +307,7 @@ func getKillmailHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor
 				ids = append(ids, inner.ItemTypeID)
 			}
 		}
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		names := resolveTypeNames(ctx, sdeStore, userAgent, ids)
 		for i := range attackers {
 			if attackers[i].ShipTypeID != nil {
 				attackers[i].ShipTypeName = names[*attackers[i].ShipTypeID]
@@ -283,10 +324,10 @@ func getKillmailHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor
 			}
 		}
 
-		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), []int64{detail.SolarSystemId})
+		systemNames := resolveSystemNames(ctx, sdeStore, userAgent, []int64{detail.SolarSystemId})
 		var moonNames map[int64]string
 		if detail.MoonId != nil {
-			moonNames = resolveMoonNames(ctx, sdeStore, sso.UserAgent(version), []int64{*detail.MoonId})
+			moonNames = resolveMoonNames(ctx, sdeStore, userAgent, []int64{*detail.MoonId})
 		}
 		var moonName string
 		if detail.MoonId != nil {
@@ -302,7 +343,7 @@ func getKillmailHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor
 		if victim.FactionID != nil {
 			factionIDs = append(factionIDs, *victim.FactionID)
 		}
-		factionNames := resolveFactionNames(ctx, sdeStore, sso.UserAgent(version), factionIDs)
+		factionNames := resolveFactionNames(ctx, sdeStore, userAgent, factionIDs)
 		for i := range attackers {
 			if attackers[i].FactionID != nil {
 				attackers[i].FactionName = factionNames[*attackers[i].FactionID]

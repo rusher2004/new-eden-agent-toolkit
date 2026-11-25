@@ -4,11 +4,14 @@ import (
 	"context"
 	"fmt"
 
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-
-	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
+
+// insuranceESI is the ESI call list_insurance_prices makes; it is public.
+type insuranceESI interface {
+	InsurancePrices(ctx context.Context) ([]esiapi.InsurancePricesGetInner, error)
+}
 
 // --- list_insurance_prices (public, no input) ---
 
@@ -24,8 +27,7 @@ type InsurancePrice struct {
 	Levels   []InsuranceLevel `json:"levels"`
 }
 
-var listInsurancePrices = func(ctx context.Context, userAgent string) ([]InsurancePrice, error) {
-	client := esi.NewPublicClient(userAgent)
+func listInsurancePrices(ctx context.Context, client insuranceESI) ([]InsurancePrice, error) {
 	prices, err := client.InsurancePrices(ctx)
 	if err != nil {
 		return nil, err
@@ -46,9 +48,18 @@ type ListInsurancePricesOutput struct {
 	Prices []InsurancePrice `json:"prices"`
 }
 
-func listInsurancePricesHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListInsurancePricesInput, ListInsurancePricesOutput] {
+// AddListInsurancePrices registers list_insurance_prices. open builds the ESI client; any client with the
+// insuranceESI methods will do.
+func AddListInsurancePrices[C insuranceESI](s *mcpsdk.Server, userAgent string, open func() C, sdeStore typeNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_insurance_prices",
+		Description: "List insurance price levels for every insurable ship type (public data, no character required).",
+	}, listInsurancePricesHandler(userAgent, open, sdeStore))
+}
+
+func listInsurancePricesHandler[C insuranceESI](userAgent string, open func() C, sdeStore typeNameCache) mcpsdk.ToolHandlerFor[ListInsurancePricesInput, ListInsurancePricesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListInsurancePricesInput) (*mcpsdk.CallToolResult, ListInsurancePricesOutput, error) {
-		prices, err := listInsurancePrices(ctx, sso.UserAgent(version))
+		prices, err := listInsurancePrices(ctx, open())
 		if err != nil {
 			return nil, ListInsurancePricesOutput{}, fmt.Errorf("list insurance prices: %w", err)
 		}
@@ -56,7 +67,7 @@ func listInsurancePricesHandler(version string, sdeStore SDEStore) mcpsdk.ToolHa
 		for i, p := range prices {
 			ids[i] = p.TypeID
 		}
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		names := resolveTypeNames(ctx, sdeStore, userAgent, ids)
 		for i := range prices {
 			prices[i].TypeName = names[prices[i].TypeID]
 		}

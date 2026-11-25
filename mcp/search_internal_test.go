@@ -5,12 +5,30 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/zalando/go-keyring"
-
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
+	"github.com/zalando/go-keyring"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 )
+
+// fakeSearchESI fakes search_character's one ESI call and records its arguments.
+type fakeSearchESI struct {
+	result *esiapi.CharactersCharacterIdSearchGet
+	err    error
+
+	gotCategories []string
+	gotSearch     string
+	gotStrict     bool
+}
+
+func (f *fakeSearchESI) CharacterSearch(_ context.Context, categories []string, search string, strict bool) (*esiapi.CharactersCharacterIdSearchGet, error) {
+	f.gotCategories, f.gotSearch, f.gotStrict = categories, search, strict
+	return f.result, f.err
+}
+
+func openSearchFake(c searchESI) func(context.Context, int32) (searchESI, error) {
+	return func(context.Context, int32) (searchESI, error) { return c, nil }
+}
 
 func TestSearchCharacterHandler_MapsFields(t *testing.T) {
 	keyring.MockInit()
@@ -19,33 +37,25 @@ func TestSearchCharacterHandler_MapsFields(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := searchCharacter
-	t.Cleanup(func() { searchCharacter = orig })
-	var gotCategories []string
-	var gotSearch string
-	var gotStrict bool
-	searchCharacter = func(ctx context.Context, clientID string, characterID int32, userAgent string, categories []string, search string, strict bool) (*esiapi.CharactersCharacterIdSearchGet, error) {
-		gotCategories, gotSearch, gotStrict = categories, search, strict
-		return &esiapi.CharactersCharacterIdSearchGet{
-			Character:   []int64{90000001, 90000002},
-			Corporation: []int64{98000001},
-		}, nil
-	}
+	fake := &fakeSearchESI{result: &esiapi.CharactersCharacterIdSearchGet{
+		Character:   []int64{90000001, 90000002},
+		Corporation: []int64{98000001},
+	}}
 
-	handler := searchCharacterHandler("v1", "client-id", store, nil)
+	handler := searchCharacterHandler("v1", openSearchFake(fake), store, nil)
 	input := SearchCharacterInput{CharacterID: 7, Categories: []string{"character", "corporation"}, Search: "wanted", Strict: true}
 	_, out, err := handler(context.Background(), nil, input)
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
 
-	if len(gotCategories) != 2 || gotCategories[0] != "character" || gotCategories[1] != "corporation" {
-		t.Errorf("captured categories = %+v, want [character corporation]", gotCategories)
+	if len(fake.gotCategories) != 2 || fake.gotCategories[0] != "character" || fake.gotCategories[1] != "corporation" {
+		t.Errorf("captured categories = %+v, want [character corporation]", fake.gotCategories)
 	}
-	if gotSearch != "wanted" {
-		t.Errorf("captured search = %q, want \"wanted\"", gotSearch)
+	if fake.gotSearch != "wanted" {
+		t.Errorf("captured search = %q, want \"wanted\"", fake.gotSearch)
 	}
-	if !gotStrict {
+	if !fake.gotStrict {
 		t.Error("captured strict = false, want true")
 	}
 
@@ -69,14 +79,12 @@ func TestSearchCharacterHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := searchCharacter
-	t.Cleanup(func() { searchCharacter = orig })
-	searchCharacter = func(ctx context.Context, clientID string, characterID int32, userAgent string, categories []string, search string, strict bool) (*esiapi.CharactersCharacterIdSearchGet, error) {
-		t.Fatal("searchCharacter should not be called for an unknown character")
+	open := func(context.Context, int32) (searchESI, error) {
+		t.Fatal("no ESI client should be opened for an unknown character")
 		return nil, nil
 	}
 
-	handler := searchCharacterHandler("v1", "client-id", store, nil)
+	handler := searchCharacterHandler("v1", open, store, nil)
 	_, _, err := handler(context.Background(), nil, SearchCharacterInput{CharacterID: 999, Categories: []string{"character"}, Search: "wanted"})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -90,17 +98,27 @@ func TestSearchCharacterHandler_PropagatesError(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := searchCharacter
-	t.Cleanup(func() { searchCharacter = orig })
 	wantErr := errors.New("upstream failure")
-	searchCharacter = func(ctx context.Context, clientID string, characterID int32, userAgent string, categories []string, search string, strict bool) (*esiapi.CharactersCharacterIdSearchGet, error) {
-		return nil, wantErr
-	}
 
-	handler := searchCharacterHandler("v1", "client-id", store, nil)
+	handler := searchCharacterHandler("v1", openSearchFake(&fakeSearchESI{err: wantErr}), store, nil)
 	_, _, err := handler(context.Background(), nil, SearchCharacterInput{CharacterID: 7, Categories: []string{"character"}, Search: "wanted"})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestSearchCharacterHandler_PropagatesOpenError(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	open := func(context.Context, int32) (searchESI, error) { return nil, errBoom }
+	handler := searchCharacterHandler("v1", open, store, nil)
+	_, _, err := handler(context.Background(), nil, SearchCharacterInput{CharacterID: 7, Categories: []string{"character"}, Search: "wanted"})
+	if !errors.Is(err, errBoom) {
+		t.Errorf("err = %v, want wrapping errBoom", err)
 	}
 }
 
@@ -111,11 +129,7 @@ func TestSearchCharacterHandler_ResolvesInventoryTypeNames(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := searchCharacter
-	t.Cleanup(func() { searchCharacter = orig })
-	searchCharacter = func(ctx context.Context, clientID string, characterID int32, userAgent string, categories []string, search string, strict bool) (*esiapi.CharactersCharacterIdSearchGet, error) {
-		return &esiapi.CharactersCharacterIdSearchGet{InventoryType: []int64{587, 588}}, nil
-	}
+	fake := &fakeSearchESI{result: &esiapi.CharactersCharacterIdSearchGet{InventoryType: []int64{587, 588}}}
 
 	origResolve := resolveTypeNames
 	t.Cleanup(func() { resolveTypeNames = origResolve })
@@ -123,7 +137,7 @@ func TestSearchCharacterHandler_ResolvesInventoryTypeNames(t *testing.T) {
 		return map[int64]string{587: "Rifter", 588: "Slasher"}
 	}
 
-	handler := searchCharacterHandler("v1", "client", store, nil)
+	handler := searchCharacterHandler("v1", openSearchFake(fake), store, nil)
 	_, out, err := handler(context.Background(), nil, SearchCharacterInput{CharacterID: 1001, Categories: []string{"inventory_type"}, Search: "rifter"})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -140,11 +154,7 @@ func TestSearchCharacterHandler_InventoryTypeNamesSurvivesPartialMiss(t *testing
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := searchCharacter
-	t.Cleanup(func() { searchCharacter = orig })
-	searchCharacter = func(ctx context.Context, clientID string, characterID int32, userAgent string, categories []string, search string, strict bool) (*esiapi.CharactersCharacterIdSearchGet, error) {
-		return &esiapi.CharactersCharacterIdSearchGet{InventoryType: []int64{587, 999, 588}}, nil
-	}
+	fake := &fakeSearchESI{result: &esiapi.CharactersCharacterIdSearchGet{InventoryType: []int64{587, 999, 588}}}
 
 	origResolve := resolveTypeNames
 	t.Cleanup(func() { resolveTypeNames = origResolve })
@@ -154,7 +164,7 @@ func TestSearchCharacterHandler_InventoryTypeNamesSurvivesPartialMiss(t *testing
 		return map[int64]string{587: "Rifter", 588: "Slasher"}
 	}
 
-	handler := searchCharacterHandler("v1", "client", store, nil)
+	handler := searchCharacterHandler("v1", openSearchFake(fake), store, nil)
 	_, out, err := handler(context.Background(), nil, SearchCharacterInput{CharacterID: 1001, Categories: []string{"inventory_type"}, Search: "rifter"})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)

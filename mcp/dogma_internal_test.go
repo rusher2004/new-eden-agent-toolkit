@@ -4,16 +4,44 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 )
 
-func TestListDogmaAttributesHandler_MapsFields(t *testing.T) {
-	orig := listDogmaAttributes
-	t.Cleanup(func() { listDogmaAttributes = orig })
-	listDogmaAttributes = func(ctx context.Context, userAgent string) ([]int64, error) {
-		return []int64{1, 2, 3}, nil
-	}
+// fakeDogmaESI fakes the dogma tools' ESI calls; err is returned by every call.
+type fakeDogmaESI struct {
+	attributeIDs []int64
+	attribute    *esiapi.DogmaAttributesAttributeIdGet
+	dynamicItem  *esiapi.DogmaDynamicItemsTypeIdItemIdGet
+	effectIDs    []int64
+	effect       *esiapi.DogmaEffectsEffectIdGet
+	err          error
+}
 
-	handler := listDogmaAttributesHandler("v1")
+func (f fakeDogmaESI) DogmaAttributes(context.Context) ([]int64, error) {
+	return f.attributeIDs, f.err
+}
+
+func (f fakeDogmaESI) DogmaAttributeDetail(context.Context, int64) (*esiapi.DogmaAttributesAttributeIdGet, error) {
+	return f.attribute, f.err
+}
+
+func (f fakeDogmaESI) DogmaDynamicItemDetail(context.Context, int64, int64) (*esiapi.DogmaDynamicItemsTypeIdItemIdGet, error) {
+	return f.dynamicItem, f.err
+}
+
+func (f fakeDogmaESI) DogmaEffects(context.Context) ([]int64, error) {
+	return f.effectIDs, f.err
+}
+
+func (f fakeDogmaESI) DogmaEffectDetail(context.Context, int64) (*esiapi.DogmaEffectsEffectIdGet, error) {
+	return f.effect, f.err
+}
+
+func openDogmaFake(c dogmaESI) func() dogmaESI { return func() dogmaESI { return c } }
+
+func TestListDogmaAttributesHandler_MapsFields(t *testing.T) {
+	handler := listDogmaAttributesHandler(openDogmaFake(fakeDogmaESI{attributeIDs: []int64{1, 2, 3}}))
 	_, out, err := handler(context.Background(), nil, ListDogmaAttributesInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -24,8 +52,6 @@ func TestListDogmaAttributesHandler_MapsFields(t *testing.T) {
 }
 
 func TestGetDogmaAttributeHandler_MapsFields(t *testing.T) {
-	orig := getDogmaAttribute
-	t.Cleanup(func() { getDogmaAttribute = orig })
 
 	defaultVal := 1.5
 	description := "Test description"
@@ -37,22 +63,20 @@ func TestGetDogmaAttributeHandler_MapsFields(t *testing.T) {
 	stackable := false
 	unitID := int64(456)
 
-	getDogmaAttribute = func(ctx context.Context, userAgent string, attributeID int64) (GetDogmaAttributeOutput, error) {
-		return GetDogmaAttributeOutput{
-			AttributeID:  attributeID,
-			DefaultValue: &defaultVal,
-			Description:  &description,
-			DisplayName:  &displayName,
-			HighIsGood:   &highIsGood,
-			IconID:       &iconID,
-			Name:         &name,
-			Published:    &published,
-			Stackable:    &stackable,
-			UnitID:       &unitID,
-		}, nil
-	}
+	fake := fakeDogmaESI{attribute: &esiapi.DogmaAttributesAttributeIdGet{
+		AttributeId:  42,
+		DefaultValue: &defaultVal,
+		Description:  &description,
+		DisplayName:  &displayName,
+		HighIsGood:   &highIsGood,
+		IconId:       &iconID,
+		Name:         &name,
+		Published:    &published,
+		Stackable:    &stackable,
+		UnitId:       &unitID,
+	}}
 
-	handler := getDogmaAttributeHandler("v1")
+	handler := getDogmaAttributeHandler(openDogmaFake(fake))
 	_, out, err := handler(context.Background(), nil, GetDogmaAttributeInput{AttributeID: 42})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -90,28 +114,22 @@ func TestGetDogmaAttributeHandler_MapsFields(t *testing.T) {
 }
 
 func TestGetDogmaDynamicItemHandler_MapsFields(t *testing.T) {
-	orig := getDogmaDynamicItem
-	t.Cleanup(func() { getDogmaDynamicItem = orig })
 
-	getDogmaDynamicItem = func(ctx context.Context, userAgent string, typeID, itemID int64) (GetDogmaDynamicItemOutput, error) {
-		return GetDogmaDynamicItemOutput{
-			TypeID:        typeID,
-			ItemID:        itemID,
-			CreatedBy:     100,
-			MutatorTypeID: 200,
-			SourceTypeID:  300,
-			DogmaAttributes: []DynamicItemAttribute{
-				{AttributeID: 1, Value: 10.5},
-				{AttributeID: 2, Value: 20.3},
-			},
-			DogmaEffects: []DynamicItemEffect{
-				{EffectID: 5, IsDefault: true},
-				{EffectID: 6, IsDefault: false},
-			},
-		}, nil
-	}
+	fake := fakeDogmaESI{dynamicItem: &esiapi.DogmaDynamicItemsTypeIdItemIdGet{
+		CreatedBy:     100,
+		MutatorTypeId: 200,
+		SourceTypeId:  300,
+		DogmaAttributes: []esiapi.DogmaDynamicItemsTypeIdItemIdGetDogmaAttributesInner{
+			{AttributeId: 1, Value: 10.5},
+			{AttributeId: 2, Value: 20.3},
+		},
+		DogmaEffects: []esiapi.DogmaDynamicItemsTypeIdItemIdGetDogmaEffectsInner{
+			{EffectId: 5, IsDefault: true},
+			{EffectId: 6, IsDefault: false},
+		},
+	}}
 
-	handler := getDogmaDynamicItemHandler("v1", nil)
+	handler := getDogmaDynamicItemHandler("v1", openDogmaFake(fake), nil)
 	_, out, err := handler(context.Background(), nil, GetDogmaDynamicItemInput{TypeID: 1001, ItemID: 2002})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -156,13 +174,7 @@ func TestGetDogmaDynamicItemHandler_MapsFields(t *testing.T) {
 }
 
 func TestListDogmaEffectsHandler_MapsFields(t *testing.T) {
-	orig := listDogmaEffects
-	t.Cleanup(func() { listDogmaEffects = orig })
-	listDogmaEffects = func(ctx context.Context, userAgent string) ([]int64, error) {
-		return []int64{10, 20}, nil
-	}
-
-	handler := listDogmaEffectsHandler("v1")
+	handler := listDogmaEffectsHandler(openDogmaFake(fakeDogmaESI{effectIDs: []int64{10, 20}}))
 	_, out, err := handler(context.Background(), nil, ListDogmaEffectsInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -173,8 +185,6 @@ func TestListDogmaEffectsHandler_MapsFields(t *testing.T) {
 }
 
 func TestGetDogmaEffectHandler_MapsFields(t *testing.T) {
-	orig := getDogmaEffect
-	t.Cleanup(func() { getDogmaEffect = orig })
 
 	description := "Effect description"
 	displayName := "Effect Display"
@@ -196,36 +206,34 @@ func TestGetDogmaEffectHandler_MapsFields(t *testing.T) {
 	rangeAttributeID := int64(888)
 	trackingSpeedAttributeID := int64(999)
 
-	getDogmaEffect = func(ctx context.Context, userAgent string, effectID int64) (GetDogmaEffectOutput, error) {
-		return GetDogmaEffectOutput{
-			EffectID:                 effectID,
-			Description:              &description,
-			DisplayName:              &displayName,
-			Name:                     &name,
-			DisallowAutoRepeat:       &disallowAutoRepeat,
-			ElectronicChance:         &electronicChance,
-			IsAssistance:             &isAssistance,
-			IsOffensive:              &isOffensive,
-			IsWarpSafe:               &isWarpSafe,
-			Published:                &published,
-			RangeChance:              &rangeChance,
-			DischargeAttributeID:     &dischargeAttributeID,
-			DurationAttributeID:      &durationAttributeID,
-			EffectCategory:           &effectCategory,
-			FalloffAttributeID:       &falloffAttributeID,
-			IconID:                   &iconID,
-			PostExpression:           &postExpression,
-			PreExpression:            &preExpression,
-			RangeAttributeID:         &rangeAttributeID,
-			TrackingSpeedAttributeID: &trackingSpeedAttributeID,
-			Modifiers: []EffectModifier{
-				{Func: "mod1", Domain: nil, EffectID: nil, ModifiedAttributeID: nil, ModifyingAttributeID: nil, Operator: nil},
-				{Func: "mod2", Domain: new("domain1"), EffectID: new(int64(100)), ModifiedAttributeID: new(int64(200)), ModifyingAttributeID: new(int64(300)), Operator: new(int64(1))},
-			},
-		}, nil
-	}
+	fake := fakeDogmaESI{effect: &esiapi.DogmaEffectsEffectIdGet{
+		EffectId:                 50,
+		Description:              &description,
+		DisplayName:              &displayName,
+		Name:                     &name,
+		DisallowAutoRepeat:       &disallowAutoRepeat,
+		ElectronicChance:         &electronicChance,
+		IsAssistance:             &isAssistance,
+		IsOffensive:              &isOffensive,
+		IsWarpSafe:               &isWarpSafe,
+		Published:                &published,
+		RangeChance:              &rangeChance,
+		DischargeAttributeId:     &dischargeAttributeID,
+		DurationAttributeId:      &durationAttributeID,
+		EffectCategory:           &effectCategory,
+		FalloffAttributeId:       &falloffAttributeID,
+		IconId:                   &iconID,
+		PostExpression:           &postExpression,
+		PreExpression:            &preExpression,
+		RangeAttributeId:         &rangeAttributeID,
+		TrackingSpeedAttributeId: &trackingSpeedAttributeID,
+		Modifiers: []esiapi.DogmaEffectsEffectIdGetModifiersInner{
+			{Func: "mod1"},
+			{Func: "mod2", Domain: new("domain1"), EffectId: new(int64(100)), ModifiedAttributeId: new(int64(200)), ModifyingAttributeId: new(int64(300)), Operator: new(int64(1))},
+		},
+	}}
 
-	handler := getDogmaEffectHandler("v1")
+	handler := getDogmaEffectHandler(openDogmaFake(fake))
 	_, out, err := handler(context.Background(), nil, GetDogmaEffectInput{EffectID: 50})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -340,14 +348,9 @@ func pInt64(i int64) *int64 {
 }
 
 func TestListDogmaAttributesHandler_PropagatesError(t *testing.T) {
-	orig := listDogmaAttributes
-	t.Cleanup(func() { listDogmaAttributes = orig })
 	wantErr := errors.New("upstream failure")
-	listDogmaAttributes = func(ctx context.Context, userAgent string) ([]int64, error) {
-		return nil, wantErr
-	}
 
-	handler := listDogmaAttributesHandler("v1")
+	handler := listDogmaAttributesHandler(openDogmaFake(fakeDogmaESI{err: wantErr}))
 	_, _, err := handler(context.Background(), nil, ListDogmaAttributesInput{})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -355,14 +358,9 @@ func TestListDogmaAttributesHandler_PropagatesError(t *testing.T) {
 }
 
 func TestGetDogmaAttributeHandler_PropagatesError(t *testing.T) {
-	orig := getDogmaAttribute
-	t.Cleanup(func() { getDogmaAttribute = orig })
 	wantErr := errors.New("upstream failure")
-	getDogmaAttribute = func(ctx context.Context, userAgent string, attributeID int64) (GetDogmaAttributeOutput, error) {
-		return GetDogmaAttributeOutput{}, wantErr
-	}
 
-	handler := getDogmaAttributeHandler("v1")
+	handler := getDogmaAttributeHandler(openDogmaFake(fakeDogmaESI{err: wantErr}))
 	_, _, err := handler(context.Background(), nil, GetDogmaAttributeInput{AttributeID: 42})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -370,14 +368,9 @@ func TestGetDogmaAttributeHandler_PropagatesError(t *testing.T) {
 }
 
 func TestGetDogmaDynamicItemHandler_PropagatesError(t *testing.T) {
-	orig := getDogmaDynamicItem
-	t.Cleanup(func() { getDogmaDynamicItem = orig })
 	wantErr := errors.New("upstream failure")
-	getDogmaDynamicItem = func(ctx context.Context, userAgent string, typeID, itemID int64) (GetDogmaDynamicItemOutput, error) {
-		return GetDogmaDynamicItemOutput{}, wantErr
-	}
 
-	handler := getDogmaDynamicItemHandler("v1", nil)
+	handler := getDogmaDynamicItemHandler("v1", openDogmaFake(fakeDogmaESI{err: wantErr}), nil)
 	_, _, err := handler(context.Background(), nil, GetDogmaDynamicItemInput{TypeID: 1001, ItemID: 2002})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -385,11 +378,7 @@ func TestGetDogmaDynamicItemHandler_PropagatesError(t *testing.T) {
 }
 
 func TestGetDogmaDynamicItemHandler_ResolvesTypeNames(t *testing.T) {
-	orig := getDogmaDynamicItem
-	t.Cleanup(func() { getDogmaDynamicItem = orig })
-	getDogmaDynamicItem = func(ctx context.Context, userAgent string, typeID, itemID int64) (GetDogmaDynamicItemOutput, error) {
-		return GetDogmaDynamicItemOutput{TypeID: 587, ItemID: 1, CreatedBy: 100, MutatorTypeID: 588, SourceTypeID: 587, DogmaAttributes: []DynamicItemAttribute{}, DogmaEffects: []DynamicItemEffect{}}, nil
-	}
+	fake := fakeDogmaESI{dynamicItem: &esiapi.DogmaDynamicItemsTypeIdItemIdGet{CreatedBy: 100, MutatorTypeId: 588, SourceTypeId: 587}}
 
 	origResolveTypeNames := resolveTypeNames
 	t.Cleanup(func() { resolveTypeNames = origResolveTypeNames })
@@ -397,7 +386,7 @@ func TestGetDogmaDynamicItemHandler_ResolvesTypeNames(t *testing.T) {
 		return map[int64]string{587: "Rifter", 588: "Abyssal Mutaplasmid"}
 	}
 
-	handler := getDogmaDynamicItemHandler("v1", nil)
+	handler := getDogmaDynamicItemHandler("v1", openDogmaFake(fake), nil)
 	_, out, err := handler(context.Background(), nil, GetDogmaDynamicItemInput{TypeID: 587, ItemID: 1})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -414,14 +403,9 @@ func TestGetDogmaDynamicItemHandler_ResolvesTypeNames(t *testing.T) {
 }
 
 func TestListDogmaEffectsHandler_PropagatesError(t *testing.T) {
-	orig := listDogmaEffects
-	t.Cleanup(func() { listDogmaEffects = orig })
 	wantErr := errors.New("upstream failure")
-	listDogmaEffects = func(ctx context.Context, userAgent string) ([]int64, error) {
-		return nil, wantErr
-	}
 
-	handler := listDogmaEffectsHandler("v1")
+	handler := listDogmaEffectsHandler(openDogmaFake(fakeDogmaESI{err: wantErr}))
 	_, _, err := handler(context.Background(), nil, ListDogmaEffectsInput{})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -429,14 +413,9 @@ func TestListDogmaEffectsHandler_PropagatesError(t *testing.T) {
 }
 
 func TestGetDogmaEffectHandler_PropagatesError(t *testing.T) {
-	orig := getDogmaEffect
-	t.Cleanup(func() { getDogmaEffect = orig })
 	wantErr := errors.New("upstream failure")
-	getDogmaEffect = func(ctx context.Context, userAgent string, effectID int64) (GetDogmaEffectOutput, error) {
-		return GetDogmaEffectOutput{}, wantErr
-	}
 
-	handler := getDogmaEffectHandler("v1")
+	handler := getDogmaEffectHandler(openDogmaFake(fakeDogmaESI{err: wantErr}))
 	_, _, err := handler(context.Background(), nil, GetDogmaEffectInput{EffectID: 50})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)

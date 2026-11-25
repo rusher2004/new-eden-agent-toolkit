@@ -220,51 +220,6 @@ func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
 	}, removeCharacterHandler(store))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_access_lists",
-		Description: "List a logged-in EVE Online character's structure/fleet access list IDs.",
-	}, listAccessListsHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_access_list",
-		Description: "Get the name, description, and membership detail of one of a character's access lists.",
-	}, getAccessListHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_mercenary_tactical_operations",
-		Description: "List a logged-in EVE Online character's mercenary tactical operations.",
-	}, listMercenaryTacticalOperationsHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_mercenary_tactical_operation",
-		Description: "Get detail (dungeon type, mercenary den, state, expiry) for one mercenary tactical operation.",
-	}, getMercenaryTacticalOperationHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_raidable_skyhooks",
-		Description: "List upcoming raidable skyhooks (public data, no character scope required).",
-	}, listRaidableSkyhooksHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_alliances",
-		Description: "List every alliance ID currently in EVE Online (public data, no character required).",
-	}, listAlliancesHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_alliance",
-		Description: "Get an alliance's name, ticker, founding info, and executor corporation (public data, no character required).",
-	}, getAllianceHandler(version, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_alliance_corporations",
-		Description: "List the corporation IDs currently in an alliance (public data, no character required).",
-	}, listAllianceCorporationsHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_alliance_icons",
-		Description: "Get an alliance's icon URLs (public data, no character required).",
-	}, getAllianceIconsHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_assets",
 		Description: "List a logged-in EVE Online character's assets.",
 	}, listAssetsHandler(version, clientID, store, sdeStore))
@@ -298,26 +253,6 @@ func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
 		Name:        "get_corporation_asset_names",
 		Description: "Resolve a set of a corporation's asset item IDs into their player-assigned custom names.",
 	}, getCorporationAssetNamesHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_calendar_events",
-		Description: "List a logged-in EVE Online character's calendar events.",
-	}, listCalendarEventsHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_calendar_event",
-		Description: "Get detail (date, duration, owner, description, RSVP status) for one calendar event.",
-	}, getCalendarEventHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_calendar_event_attendees",
-		Description: "List the attendees and their RSVP status for one calendar event.",
-	}, listCalendarEventAttendeesHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "respond_calendar_event",
-		Description: "Respond to a calendar event invite (accepted/declined/tentative) — this changes your RSVP status on EVE's server.",
-	}, respondCalendarEventHandler(version, clientID, store))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_character",
@@ -620,31 +555,6 @@ func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
 	}, listCorporationProjectsHandler(version, clientID, store))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_dogma_attributes",
-		Description: "List every dogma attribute ID currently defined (public data, no character required).",
-	}, listDogmaAttributesHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_dogma_attribute",
-		Description: "Get detail for one dogma attribute (public data, no character required).",
-	}, getDogmaAttributeHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_dogma_dynamic_item",
-		Description: "Get detail for one mutated (\"abyssal\") item, identified by its source type and item ID (public data, no character required).",
-	}, getDogmaDynamicItemHandler(version, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_dogma_effects",
-		Description: "List every dogma effect ID currently defined (public data, no character required).",
-	}, listDogmaEffectsHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_dogma_effect",
-		Description: "Get detail for one dogma effect (public data, no character required).",
-	}, getDogmaEffectHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_character_fw_stats",
 		Description: "Get a logged-in EVE Online character's faction warfare stats.",
 	}, getCharacterFwStatsHandler(version, clientID, store, sdeStore))
@@ -730,26 +640,6 @@ func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
 	}, listIndustrySystemsHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_insurance_prices",
-		Description: "List insurance price levels for every insurable ship type (public data, no character required).",
-	}, listInsurancePricesHandler(version, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_character_killmails_recent",
-		Description: "List a logged-in EVE Online character's recent killmail references.",
-	}, listCharacterKillmailsRecentHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_corporation_killmails_recent",
-		Description: "List a corporation's recent killmail references, using a logged-in character's roles to authorize.",
-	}, listCorporationKillmailsRecentHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_killmail",
-		Description: "Get the full details of a killmail, given its ID and hash (public data, no character required).",
-	}, getKillmailHandler(version, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_character_location",
 		Description: "Get a logged-in EVE Online character's current solar system, and station or structure ID if docked/boarded.",
 	}, getCharacterLocationHandler(version, clientID, store, sdeStore))
@@ -820,56 +710,6 @@ func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
 	}, listStructureMarketOrdersHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_esi_changelog",
-		Description: "Get ESI's own changelog, keyed by date (public data, no character required).",
-	}, getEsiChangelogHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_esi_compatibility_dates",
-		Description: "List every compatibility date ESI currently accepts (public data, no character required).",
-	}, listEsiCompatibilityDatesHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_esi_name",
-		Description: "Get ESI's current and historical names (public data, no character required).",
-	}, getEsiNameHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_esi_status",
-		Description: "Get the health status of every ESI route (public data, no character required).",
-	}, getEsiStatusHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_character_planets",
-		Description: "List a logged-in EVE Online character's colonized planets (Planetary Interaction).",
-	}, listCharacterPlanetsHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_character_planet",
-		Description: "Get the full colony layout (links, pins, routes) of one of a character's planets.",
-	}, getCharacterPlanetHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_corporation_customs_offices",
-		Description: "List a corporation's customs offices (POCOs), including tax rates and reinforcement schedule.",
-	}, listCorporationCustomsOfficesHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_planetary_schematic",
-		Description: "Get a Planetary Interaction schematic's cycle time and name.",
-	}, getPlanetarySchematicHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_route",
-		Description: "Compute a route between two solar systems, optionally avoiding systems or adding extra connections (public data, no character required).",
-	}, getRouteHandler(version, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "search_character",
-		Description: "Search for entities (characters, corporations, systems, etc.) matching a string, scoped to a logged-in character's search permissions.",
-	}, searchCharacterHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "get_character_attributes",
 		Description: "Get a logged-in EVE Online character's neural attributes (Charisma, Intelligence, Memory, Perception, Willpower) and remap history.",
 	}, getCharacterAttributesHandler(version, clientID, store))
@@ -893,11 +733,6 @@ func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
 		Name:        "list_sovereignty_systems",
 		Description: "List every solar system and its current sovereignty claim, if any (public data, no character required).",
 	}, listSovereigntySystemsHandler(version, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_status",
-		Description: "Get the current EVE Online server status: player count, version, start time, and VIP mode (public data, no character required).",
-	}, getStatusHandler(version))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_character_mercenary_dens",

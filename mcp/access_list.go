@@ -4,18 +4,17 @@ import (
 	"context"
 	"fmt"
 
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-
-	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
-// listAccessLists is overridable in tests so no real network/auth runs.
-var listAccessLists = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]int64, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
+// accessListESI is the ESI calls the access list tools make.
+type accessListESI interface {
+	AccessLists(ctx context.Context) ([]esiapi.CharactersAccessListsListingAccesslist, error)
+	AccessListDetail(ctx context.Context, accessListID int64) (*esiapi.CharactersAccessListsDetail, error)
+}
+
+func listAccessLists(ctx context.Context, client accessListESI) ([]int64, error) {
 	lists, err := client.AccessLists(ctx)
 	if err != nil {
 		return nil, err
@@ -38,7 +37,16 @@ type ListAccessListsOutput struct {
 	AccessListIDs []int64 `json:"accessListIds"`
 }
 
-func listAccessListsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListAccessListsInput, ListAccessListsOutput] {
+// AddListAccessLists registers list_access_lists. open builds the ESI client; any client with the
+// accessListESI methods will do.
+func AddListAccessLists[C accessListESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_access_lists",
+		Description: "List a logged-in EVE Online character's structure/fleet access list IDs.",
+	}, listAccessListsHandler(open, store))
+}
+
+func listAccessListsHandler[C accessListESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListAccessListsInput, ListAccessListsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListAccessListsInput) (*mcpsdk.CallToolResult, ListAccessListsOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -55,7 +63,11 @@ func listAccessListsHandler(version, clientID string, store ConfigStore) mcpsdk.
 			return nil, ListAccessListsOutput{}, fmt.Errorf("list access lists for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
 
-		ids, err := listAccessLists(ctx, clientID, in.CharacterID, sso.UserAgent(version))
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListAccessListsOutput{}, fmt.Errorf("build ESI client: %w", err)
+		}
+		ids, err := listAccessLists(ctx, client)
 		if err != nil {
 			return nil, ListAccessListsOutput{}, fmt.Errorf("list access lists: %w", err)
 		}
@@ -81,12 +93,7 @@ type AccessListDetailResult struct {
 	Alliances     []AccessListEntry
 }
 
-// getAccessListDetail is overridable in tests so no real network/auth runs.
-var getAccessListDetail = func(ctx context.Context, clientID string, characterID int32, userAgent string, accessListID int64) (AccessListDetailResult, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return AccessListDetailResult{}, fmt.Errorf("build ESI client: %w", err)
-	}
+func getAccessListDetail(ctx context.Context, client accessListESI, accessListID int64) (AccessListDetailResult, error) {
 	detail, err := client.AccessListDetail(ctx, accessListID)
 	if err != nil {
 		return AccessListDetailResult{}, err
@@ -133,7 +140,16 @@ type GetAccessListOutput struct {
 	Alliances     []AccessListEntry `json:"alliances"`
 }
 
-func getAccessListHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetAccessListInput, GetAccessListOutput] {
+// AddGetAccessList registers get_access_list. open builds the ESI client; any client with the
+// accessListESI methods will do.
+func AddGetAccessList[C accessListESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_access_list",
+		Description: "Get the name, description, and membership detail of one of a character's access lists.",
+	}, getAccessListHandler(open, store))
+}
+
+func getAccessListHandler[C accessListESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[GetAccessListInput, GetAccessListOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetAccessListInput) (*mcpsdk.CallToolResult, GetAccessListOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -150,7 +166,11 @@ func getAccessListHandler(version, clientID string, store ConfigStore) mcpsdk.To
 			return nil, GetAccessListOutput{}, fmt.Errorf("get access list for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
 
-		result, err := getAccessListDetail(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.AccessListID)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, GetAccessListOutput{}, fmt.Errorf("build ESI client: %w", err)
+		}
+		result, err := getAccessListDetail(ctx, client, in.AccessListID)
 		if err != nil {
 			return nil, GetAccessListOutput{}, fmt.Errorf("get access list detail: %w", err)
 		}

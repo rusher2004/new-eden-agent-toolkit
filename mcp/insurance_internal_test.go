@@ -4,24 +4,34 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 )
 
-func TestListInsurancePricesHandler_MapsFields(t *testing.T) {
-	orig := listInsurancePrices
-	t.Cleanup(func() { listInsurancePrices = orig })
-	listInsurancePrices = func(ctx context.Context, userAgent string) ([]InsurancePrice, error) {
-		return []InsurancePrice{
-			{
-				TypeID: 587,
-				Levels: []InsuranceLevel{
-					{Cost: 900.0, Payout: 450.0, Name: "Standard"},
-					{Cost: 1350.0, Payout: 675.0, Name: "Extended"},
-				},
-			},
-		}, nil
-	}
+// fakeInsuranceESI fakes list_insurance_prices's one ESI call.
+type fakeInsuranceESI struct {
+	prices []esiapi.InsurancePricesGetInner
+	err    error
+}
 
-	handler := listInsurancePricesHandler("v1", nil)
+func (f fakeInsuranceESI) InsurancePrices(context.Context) ([]esiapi.InsurancePricesGetInner, error) {
+	return f.prices, f.err
+}
+
+func openInsuranceFake(c insuranceESI) func() insuranceESI { return func() insuranceESI { return c } }
+
+func TestListInsurancePricesHandler_MapsFields(t *testing.T) {
+	fake := fakeInsuranceESI{prices: []esiapi.InsurancePricesGetInner{
+		{
+			TypeId: 587,
+			Levels: []esiapi.InsurancePricesGetInnerLevelsInner{
+				{Cost: 900.0, Payout: 450.0, Name: "Standard"},
+				{Cost: 1350.0, Payout: 675.0, Name: "Extended"},
+			},
+		},
+	}}
+
+	handler := listInsurancePricesHandler("v1", openInsuranceFake(fake), nil)
 	_, out, err := handler(context.Background(), nil, ListInsurancePricesInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -57,14 +67,9 @@ func TestListInsurancePricesHandler_MapsFields(t *testing.T) {
 }
 
 func TestListInsurancePricesHandler_PropagatesError(t *testing.T) {
-	orig := listInsurancePrices
-	t.Cleanup(func() { listInsurancePrices = orig })
 	wantErr := errors.New("upstream failure")
-	listInsurancePrices = func(ctx context.Context, userAgent string) ([]InsurancePrice, error) {
-		return nil, wantErr
-	}
 
-	handler := listInsurancePricesHandler("v1", nil)
+	handler := listInsurancePricesHandler("v1", openInsuranceFake(fakeInsuranceESI{err: wantErr}), nil)
 	_, _, err := handler(context.Background(), nil, ListInsurancePricesInput{})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -72,11 +77,7 @@ func TestListInsurancePricesHandler_PropagatesError(t *testing.T) {
 }
 
 func TestListInsurancePricesHandler_ResolvesTypeName(t *testing.T) {
-	orig := listInsurancePrices
-	t.Cleanup(func() { listInsurancePrices = orig })
-	listInsurancePrices = func(ctx context.Context, userAgent string) ([]InsurancePrice, error) {
-		return []InsurancePrice{{TypeID: 587, Levels: []InsuranceLevel{{Cost: 900.0, Payout: 450.0, Name: "Standard"}}}}, nil
-	}
+	fake := fakeInsuranceESI{prices: []esiapi.InsurancePricesGetInner{{TypeId: 587, Levels: []esiapi.InsurancePricesGetInnerLevelsInner{{Cost: 900.0, Payout: 450.0, Name: "Standard"}}}}}
 
 	orig2 := resolveTypeNames
 	t.Cleanup(func() { resolveTypeNames = orig2 })
@@ -84,7 +85,7 @@ func TestListInsurancePricesHandler_ResolvesTypeName(t *testing.T) {
 		return map[int64]string{587: "Rifter"}
 	}
 
-	handler := listInsurancePricesHandler("v1", nil)
+	handler := listInsurancePricesHandler("v1", openInsuranceFake(fake), nil)
 	_, out, err := handler(context.Background(), nil, ListInsurancePricesInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)

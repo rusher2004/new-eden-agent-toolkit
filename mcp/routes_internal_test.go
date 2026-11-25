@@ -4,21 +4,32 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 )
 
+// fakeRouteESI fakes get_route's one ESI call and records its arguments.
+type fakeRouteESI struct {
+	route []int64
+	err   error
+
+	gotOrigin, gotDestination int64
+	gotAvoid                  []int64
+	gotConnections            []esiapi.RouteConnection
+	gotPreference             *string
+	gotSecurityPenalty        *int64
+}
+
+func (f *fakeRouteESI) Route(_ context.Context, originSystemID, destinationSystemID int64, avoidSystems []int64, connections []esiapi.RouteConnection, preference *string, securityPenalty *int64) ([]int64, error) {
+	f.gotOrigin, f.gotDestination = originSystemID, destinationSystemID
+	f.gotAvoid, f.gotConnections, f.gotPreference, f.gotSecurityPenalty = avoidSystems, connections, preference, securityPenalty
+	return f.route, f.err
+}
+
+func openRouteFake(c routeESI) func() routeESI { return func() routeESI { return c } }
+
 func TestGetRouteHandler_MapsFields(t *testing.T) {
-	orig := getRoute
-	t.Cleanup(func() { getRoute = orig })
-	var gotOriginID, gotDestinationID int64
-	var gotAvoidSystems []int64
-	var gotConnections []RouteConnectionInput
-	var gotPreference *string
-	var gotSecurityPenalty *int64
-	getRoute = func(ctx context.Context, userAgent string, originSystemID, destinationSystemID int64, avoidSystems []int64, connections []RouteConnectionInput, preference *string, securityPenalty *int64) ([]int64, error) {
-		gotOriginID, gotDestinationID = originSystemID, destinationSystemID
-		gotAvoidSystems, gotConnections, gotPreference, gotSecurityPenalty = avoidSystems, connections, preference, securityPenalty
-		return []int64{30000142, 30000144, 30000145}, nil
-	}
+	fake := &fakeRouteESI{route: []int64{30000142, 30000144, 30000145}}
 
 	preference := "secure"
 	securityPenalty := int64(1)
@@ -28,26 +39,26 @@ func TestGetRouteHandler_MapsFields(t *testing.T) {
 		Connections:  []RouteConnectionInput{{From: 30000142, To: 30000144}},
 		Preference:   &preference, SecurityPenalty: &securityPenalty,
 	}
-	handler := getRouteHandler("v1", nil)
+	handler := getRouteHandler("v1", openRouteFake(fake), nil)
 	_, out, err := handler(context.Background(), nil, input)
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
 
-	if gotOriginID != 30000142 || gotDestinationID != 30000145 {
-		t.Errorf("captured origin/destination = %d/%d, want 30000142/30000145", gotOriginID, gotDestinationID)
+	if fake.gotOrigin != 30000142 || fake.gotDestination != 30000145 {
+		t.Errorf("captured origin/destination = %d/%d, want 30000142/30000145", fake.gotOrigin, fake.gotDestination)
 	}
-	if len(gotAvoidSystems) != 1 || gotAvoidSystems[0] != 30000200 {
-		t.Errorf("captured avoidSystems = %+v, want [30000200]", gotAvoidSystems)
+	if len(fake.gotAvoid) != 1 || fake.gotAvoid[0] != 30000200 {
+		t.Errorf("captured avoidSystems = %+v, want [30000200]", fake.gotAvoid)
 	}
-	if len(gotConnections) != 1 || gotConnections[0].From != 30000142 || gotConnections[0].To != 30000144 {
-		t.Errorf("captured connections = %+v, want one entry {From:30000142 To:30000144}", gotConnections)
+	if len(fake.gotConnections) != 1 || fake.gotConnections[0].From != 30000142 || fake.gotConnections[0].To != 30000144 {
+		t.Errorf("captured connections = %+v, want one entry {From:30000142 To:30000144}", fake.gotConnections)
 	}
-	if gotPreference == nil || *gotPreference != "secure" {
-		t.Errorf("captured preference = %v, want \"secure\"", gotPreference)
+	if fake.gotPreference == nil || *fake.gotPreference != "secure" {
+		t.Errorf("captured preference = %v, want \"secure\"", fake.gotPreference)
 	}
-	if gotSecurityPenalty == nil || *gotSecurityPenalty != 1 {
-		t.Errorf("captured securityPenalty = %v, want 1", gotSecurityPenalty)
+	if fake.gotSecurityPenalty == nil || *fake.gotSecurityPenalty != 1 {
+		t.Errorf("captured securityPenalty = %v, want 1", fake.gotSecurityPenalty)
 	}
 
 	if out.OriginSystemID != 30000142 || out.DestinationSystemID != 30000145 {
@@ -59,25 +70,17 @@ func TestGetRouteHandler_MapsFields(t *testing.T) {
 }
 
 func TestGetRouteHandler_PropagatesError(t *testing.T) {
-	orig := getRoute
-	t.Cleanup(func() { getRoute = orig })
-	getRoute = func(ctx context.Context, userAgent string, originSystemID, destinationSystemID int64, avoidSystems []int64, connections []RouteConnectionInput, preference *string, securityPenalty *int64) ([]int64, error) {
-		return nil, errors.New("boom")
-	}
+	wantErr := errors.New("boom")
 
-	handler := getRouteHandler("v1", nil)
+	handler := getRouteHandler("v1", openRouteFake(&fakeRouteESI{err: wantErr}), nil)
 	_, _, err := handler(context.Background(), nil, GetRouteInput{OriginSystemID: 30000142, DestinationSystemID: 30000145})
-	if err == nil {
-		t.Fatal("handler returned nil error, want propagated error")
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
 	}
 }
 
 func TestGetRouteHandler_ResolvesLocationNames(t *testing.T) {
-	orig := getRoute
-	t.Cleanup(func() { getRoute = orig })
-	getRoute = func(ctx context.Context, userAgent string, originSystemID, destinationSystemID int64, avoidSystems []int64, connections []RouteConnectionInput, preference *string, securityPenalty *int64) ([]int64, error) {
-		return []int64{30000142, 30000144, 30002187}, nil
-	}
+	fake := &fakeRouteESI{route: []int64{30000142, 30000144, 30002187}}
 
 	origSystem := resolveSystemNames
 	t.Cleanup(func() { resolveSystemNames = origSystem })
@@ -85,7 +88,7 @@ func TestGetRouteHandler_ResolvesLocationNames(t *testing.T) {
 		return map[int64]string{30000142: "Jita", 30000144: "Perimeter", 30002187: "Amarr"}
 	}
 
-	handler := getRouteHandler("v1", nil)
+	handler := getRouteHandler("v1", openRouteFake(fake), nil)
 	_, out, err := handler(context.Background(), nil, GetRouteInput{OriginSystemID: 30000142, DestinationSystemID: 30002187})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -108,11 +111,7 @@ func TestGetRouteHandler_ResolvesLocationNames(t *testing.T) {
 }
 
 func TestGetRouteHandler_RouteNamesSurvivesPartialMiss(t *testing.T) {
-	orig := getRoute
-	t.Cleanup(func() { getRoute = orig })
-	getRoute = func(ctx context.Context, userAgent string, originSystemID, destinationSystemID int64, avoidSystems []int64, connections []RouteConnectionInput, preference *string, securityPenalty *int64) ([]int64, error) {
-		return []int64{30000142, 999999999, 30002187}, nil
-	}
+	fake := &fakeRouteESI{route: []int64{30000142, 999999999, 30002187}}
 
 	origSystem := resolveSystemNames
 	t.Cleanup(func() { resolveSystemNames = origSystem })
@@ -121,7 +120,7 @@ func TestGetRouteHandler_RouteNamesSurvivesPartialMiss(t *testing.T) {
 		return map[int64]string{30000142: "Jita", 30002187: "Amarr"}
 	}
 
-	handler := getRouteHandler("v1", nil)
+	handler := getRouteHandler("v1", openRouteFake(fake), nil)
 	_, out, err := handler(context.Background(), nil, GetRouteInput{OriginSystemID: 30000142, DestinationSystemID: 30002187})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -138,11 +137,7 @@ func TestGetRouteHandler_RouteNamesSurvivesPartialMiss(t *testing.T) {
 }
 
 func TestGetRouteHandler_RouteNamesNilOnTotalMiss(t *testing.T) {
-	orig := getRoute
-	t.Cleanup(func() { getRoute = orig })
-	getRoute = func(ctx context.Context, userAgent string, originSystemID, destinationSystemID int64, avoidSystems []int64, connections []RouteConnectionInput, preference *string, securityPenalty *int64) ([]int64, error) {
-		return []int64{999999997, 999999998, 999999999}, nil
-	}
+	fake := &fakeRouteESI{route: []int64{999999997, 999999998, 999999999}}
 
 	origSystem := resolveSystemNames
 	t.Cleanup(func() { resolveSystemNames = origSystem })
@@ -153,7 +148,7 @@ func TestGetRouteHandler_RouteNamesNilOnTotalMiss(t *testing.T) {
 		return map[int64]string{}
 	}
 
-	handler := getRouteHandler("v1", nil)
+	handler := getRouteHandler("v1", openRouteFake(fake), nil)
 	_, out, err := handler(context.Background(), nil, GetRouteInput{OriginSystemID: 999999997, DestinationSystemID: 999999999})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)

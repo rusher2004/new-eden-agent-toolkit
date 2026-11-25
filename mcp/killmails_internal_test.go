@@ -6,12 +6,52 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zalando/go-keyring"
-
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
+	"github.com/zalando/go-keyring"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 )
+
+// fakeKillmailsESI fakes the recent-killmail listing calls.
+type fakeKillmailsESI struct {
+	refs       []esiapi.CharactersCharacterIdKillmailsRecentGetInner
+	totalPages int32
+	err        error
+}
+
+func (f fakeKillmailsESI) CharacterKillmailsRecent(context.Context, int32) ([]esiapi.CharactersCharacterIdKillmailsRecentGetInner, int32, error) {
+	return f.refs, f.totalPages, f.err
+}
+
+func (f fakeKillmailsESI) CorporationKillmailsRecent(context.Context, int64, int32) ([]esiapi.CharactersCharacterIdKillmailsRecentGetInner, int32, error) {
+	return f.refs, f.totalPages, f.err
+}
+
+func openKillmailsFake(c killmailsESI) func(context.Context, int32) (killmailsESI, error) {
+	return func(context.Context, int32) (killmailsESI, error) { return c, nil }
+}
+
+func openKillmailsMustNotRun(t *testing.T) func(context.Context, int32) (killmailsESI, error) {
+	t.Helper()
+	return func(context.Context, int32) (killmailsESI, error) {
+		t.Fatal("no ESI client should be opened for an unknown character")
+		return nil, nil
+	}
+}
+
+// fakeKillmailDetailESI fakes get_killmail's one ESI call.
+type fakeKillmailDetailESI struct {
+	detail *esiapi.KillmailsKillmailIdKillmailHashGet
+	err    error
+}
+
+func (f fakeKillmailDetailESI) KillmailDetail(context.Context, int64, string) (*esiapi.KillmailsKillmailIdKillmailHashGet, error) {
+	return f.detail, f.err
+}
+
+func openKillmailDetailFake(c killmailDetailESI) func() killmailDetailESI {
+	return func() killmailDetailESI { return c }
+}
 
 func TestListCharacterKillmailsRecentHandler_MapsFieldsAndDefaultsPageTo1(t *testing.T) {
 	keyring.MockInit()
@@ -20,15 +60,11 @@ func TestListCharacterKillmailsRecentHandler_MapsFieldsAndDefaultsPageTo1(t *tes
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCharacterKillmailsRecent
-	t.Cleanup(func() { listCharacterKillmailsRecent = orig })
-	listCharacterKillmailsRecent = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]esiapi.CharactersCharacterIdKillmailsRecentGetInner, int32, error) {
-		return []esiapi.CharactersCharacterIdKillmailsRecentGetInner{{
-			KillmailId: 123, KillmailHash: "abc123hash",
-		}}, 5, nil
-	}
+	fake := fakeKillmailsESI{refs: []esiapi.CharactersCharacterIdKillmailsRecentGetInner{{
+		KillmailId: 123, KillmailHash: "abc123hash",
+	}}, totalPages: 5}
 
-	handler := listCharacterKillmailsRecentHandler("v1", "client-id", store)
+	handler := listCharacterKillmailsRecentHandler(openKillmailsFake(fake), store)
 	_, out, err := handler(context.Background(), nil, ListCharacterKillmailsRecentInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -46,14 +82,7 @@ func TestListCharacterKillmailsRecentHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := listCharacterKillmailsRecent
-	t.Cleanup(func() { listCharacterKillmailsRecent = orig })
-	listCharacterKillmailsRecent = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]esiapi.CharactersCharacterIdKillmailsRecentGetInner, int32, error) {
-		t.Fatal("listCharacterKillmailsRecent should not be called for an unknown character")
-		return nil, 0, nil
-	}
-
-	handler := listCharacterKillmailsRecentHandler("v1", "client-id", store)
+	handler := listCharacterKillmailsRecentHandler(openKillmailsMustNotRun(t), store)
 	_, _, err := handler(context.Background(), nil, ListCharacterKillmailsRecentInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -67,15 +96,11 @@ func TestListCorporationKillmailsRecentHandler_MapsFieldsAndDefaultsPageTo1(t *t
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationKillmailsRecent
-	t.Cleanup(func() { listCorporationKillmailsRecent = orig })
-	listCorporationKillmailsRecent = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]esiapi.CharactersCharacterIdKillmailsRecentGetInner, int32, error) {
-		return []esiapi.CharactersCharacterIdKillmailsRecentGetInner{{
-			KillmailId: 456, KillmailHash: "def456hash",
-		}}, 3, nil
-	}
+	fake := fakeKillmailsESI{refs: []esiapi.CharactersCharacterIdKillmailsRecentGetInner{{
+		KillmailId: 456, KillmailHash: "def456hash",
+	}}, totalPages: 3}
 
-	handler := listCorporationKillmailsRecentHandler("v1", "client-id", store)
+	handler := listCorporationKillmailsRecentHandler(openKillmailsFake(fake), store)
 	_, out, err := handler(context.Background(), nil, ListCorporationKillmailsRecentInput{CharacterID: 7, CorporationID: 98000001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -93,14 +118,7 @@ func TestListCorporationKillmailsRecentHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := listCorporationKillmailsRecent
-	t.Cleanup(func() { listCorporationKillmailsRecent = orig })
-	listCorporationKillmailsRecent = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]esiapi.CharactersCharacterIdKillmailsRecentGetInner, int32, error) {
-		t.Fatal("listCorporationKillmailsRecent should not be called for an unknown character")
-		return nil, 0, nil
-	}
-
-	handler := listCorporationKillmailsRecentHandler("v1", "client-id", store)
+	handler := listCorporationKillmailsRecentHandler(openKillmailsMustNotRun(t), store)
 	_, _, err := handler(context.Background(), nil, ListCorporationKillmailsRecentInput{CharacterID: 999, CorporationID: 98000001})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -108,8 +126,6 @@ func TestListCorporationKillmailsRecentHandler_UnknownCharacter(t *testing.T) {
 }
 
 func TestGetKillmailHandler_MapsFields(t *testing.T) {
-	orig := getKillmail
-	t.Cleanup(func() { getKillmail = orig })
 
 	killmailTime := time.Unix(1000, 0)
 	moonID := int64(40000001)
@@ -132,35 +148,33 @@ func TestGetKillmailHandler_MapsFields(t *testing.T) {
 	innerQuantityDestroyed := int64(300)
 	innerQuantityDropped := int64(400)
 
-	getKillmail = func(ctx context.Context, userAgent string, killmailID int64, killmailHash string) (*esiapi.KillmailsKillmailIdKillmailHashGet, error) {
-		return &esiapi.KillmailsKillmailIdKillmailHashGet{
-			KillmailId:    999,
-			KillmailTime:  killmailTime,
-			SolarSystemId: 30000142,
-			MoonId:        &moonID,
-			WarId:         &warID,
-			Attackers: []esiapi.KillmailsKillmailIdKillmailHashGetAttackersInner{{
-				AllianceId: &attackerAllianceID, CharacterId: &attackerCharacterID, CorporationId: &attackerCorporationID,
-				DamageDone: 5000, FactionId: &attackerFactionID, FinalBlow: true, SecurityStatus: -1.5,
-				ShipTypeId: &attackerShipTypeID, WeaponTypeId: &attackerWeaponTypeID,
-			}},
-			Victim: esiapi.KillmailsKillmailIdKillmailHashGetVictim{
-				AllianceId: &victimAllianceID, CharacterId: &victimCharacterID, CorporationId: &victimCorporationID,
-				DamageTaken: 12000, FactionId: &victimFactionID, ShipTypeId: 670,
-				Items: []esiapi.KillmailsKillmailIdKillmailHashGetVictimItemsInner{{
-					Flag: 1, ItemTypeId: 2, Singleton: 0,
-					QuantityDestroyed: &outerQuantityDestroyed, QuantityDropped: &outerQuantityDropped,
-					Items: []esiapi.KillmailsKillmailIdKillmailHashGetVictimItemsInnerItemsInner{{
-						Flag: 3, ItemTypeId: 4, Singleton: 1,
-						QuantityDestroyed: &innerQuantityDestroyed, QuantityDropped: &innerQuantityDropped,
-					}},
+	fake := fakeKillmailDetailESI{detail: &esiapi.KillmailsKillmailIdKillmailHashGet{
+		KillmailId:    999,
+		KillmailTime:  killmailTime,
+		SolarSystemId: 30000142,
+		MoonId:        &moonID,
+		WarId:         &warID,
+		Attackers: []esiapi.KillmailsKillmailIdKillmailHashGetAttackersInner{{
+			AllianceId: &attackerAllianceID, CharacterId: &attackerCharacterID, CorporationId: &attackerCorporationID,
+			DamageDone: 5000, FactionId: &attackerFactionID, FinalBlow: true, SecurityStatus: -1.5,
+			ShipTypeId: &attackerShipTypeID, WeaponTypeId: &attackerWeaponTypeID,
+		}},
+		Victim: esiapi.KillmailsKillmailIdKillmailHashGetVictim{
+			AllianceId: &victimAllianceID, CharacterId: &victimCharacterID, CorporationId: &victimCorporationID,
+			DamageTaken: 12000, FactionId: &victimFactionID, ShipTypeId: 670,
+			Items: []esiapi.KillmailsKillmailIdKillmailHashGetVictimItemsInner{{
+				Flag: 1, ItemTypeId: 2, Singleton: 0,
+				QuantityDestroyed: &outerQuantityDestroyed, QuantityDropped: &outerQuantityDropped,
+				Items: []esiapi.KillmailsKillmailIdKillmailHashGetVictimItemsInnerItemsInner{{
+					Flag: 3, ItemTypeId: 4, Singleton: 1,
+					QuantityDestroyed: &innerQuantityDestroyed, QuantityDropped: &innerQuantityDropped,
 				}},
-				Position: &esiapi.KillmailsKillmailIdKillmailHashGetVictimPosition{X: 1.1, Y: 2.2, Z: 3.3},
-			},
-		}, nil
-	}
+			}},
+			Position: &esiapi.KillmailsKillmailIdKillmailHashGetVictimPosition{X: 1.1, Y: 2.2, Z: 3.3},
+		},
+	}}
 
-	handler := getKillmailHandler("v1", nil)
+	handler := getKillmailHandler("v1", openKillmailDetailFake(fake), nil)
 	_, out, err := handler(context.Background(), nil, GetKillmailInput{KillmailID: 999, KillmailHash: "somehash"})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -224,30 +238,26 @@ func TestGetKillmailHandler_MapsFields(t *testing.T) {
 }
 
 func TestGetKillmailHandler_HandlesNilOptionalFields(t *testing.T) {
-	orig := getKillmail
-	t.Cleanup(func() { getKillmail = orig })
 
 	killmailTime := time.Unix(2000, 0)
 
-	getKillmail = func(ctx context.Context, userAgent string, killmailID int64, killmailHash string) (*esiapi.KillmailsKillmailIdKillmailHashGet, error) {
-		return &esiapi.KillmailsKillmailIdKillmailHashGet{
-			KillmailId:    111,
-			KillmailTime:  killmailTime,
-			SolarSystemId: 30000142,
-			MoonId:        nil,
-			WarId:         nil,
-			Attackers: []esiapi.KillmailsKillmailIdKillmailHashGetAttackersInner{{
-				DamageDone: 100, FinalBlow: false, SecurityStatus: 0,
-			}},
-			Victim: esiapi.KillmailsKillmailIdKillmailHashGetVictim{
-				DamageTaken: 200, ShipTypeId: 587,
-				Items:    nil,
-				Position: nil,
-			},
-		}, nil
-	}
+	fake := fakeKillmailDetailESI{detail: &esiapi.KillmailsKillmailIdKillmailHashGet{
+		KillmailId:    111,
+		KillmailTime:  killmailTime,
+		SolarSystemId: 30000142,
+		MoonId:        nil,
+		WarId:         nil,
+		Attackers: []esiapi.KillmailsKillmailIdKillmailHashGetAttackersInner{{
+			DamageDone: 100, FinalBlow: false, SecurityStatus: 0,
+		}},
+		Victim: esiapi.KillmailsKillmailIdKillmailHashGetVictim{
+			DamageTaken: 200, ShipTypeId: 587,
+			Items:    nil,
+			Position: nil,
+		},
+	}}
 
-	handler := getKillmailHandler("v1", nil)
+	handler := getKillmailHandler("v1", openKillmailDetailFake(fake), nil)
 	_, out, err := handler(context.Background(), nil, GetKillmailInput{KillmailID: 111, KillmailHash: "nilhash"})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -294,14 +304,9 @@ func TestListCharacterKillmailsRecentHandler_PropagatesError(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCharacterKillmailsRecent
-	t.Cleanup(func() { listCharacterKillmailsRecent = orig })
 	wantErr := errors.New("upstream failure")
-	listCharacterKillmailsRecent = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]esiapi.CharactersCharacterIdKillmailsRecentGetInner, int32, error) {
-		return nil, 0, wantErr
-	}
 
-	handler := listCharacterKillmailsRecentHandler("v1", "client-id", store)
+	handler := listCharacterKillmailsRecentHandler(openKillmailsFake(fakeKillmailsESI{err: wantErr}), store)
 	_, _, err := handler(context.Background(), nil, ListCharacterKillmailsRecentInput{CharacterID: 7})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -315,14 +320,9 @@ func TestListCorporationKillmailsRecentHandler_PropagatesError(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationKillmailsRecent
-	t.Cleanup(func() { listCorporationKillmailsRecent = orig })
 	wantErr := errors.New("upstream failure")
-	listCorporationKillmailsRecent = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]esiapi.CharactersCharacterIdKillmailsRecentGetInner, int32, error) {
-		return nil, 0, wantErr
-	}
 
-	handler := listCorporationKillmailsRecentHandler("v1", "client-id", store)
+	handler := listCorporationKillmailsRecentHandler(openKillmailsFake(fakeKillmailsESI{err: wantErr}), store)
 	_, _, err := handler(context.Background(), nil, ListCorporationKillmailsRecentInput{CharacterID: 7, CorporationID: 98000001})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -330,14 +330,9 @@ func TestListCorporationKillmailsRecentHandler_PropagatesError(t *testing.T) {
 }
 
 func TestGetKillmailHandler_PropagatesError(t *testing.T) {
-	orig := getKillmail
-	t.Cleanup(func() { getKillmail = orig })
 	wantErr := errors.New("upstream failure")
-	getKillmail = func(ctx context.Context, userAgent string, killmailID int64, killmailHash string) (*esiapi.KillmailsKillmailIdKillmailHashGet, error) {
-		return nil, wantErr
-	}
 
-	handler := getKillmailHandler("v1", nil)
+	handler := getKillmailHandler("v1", openKillmailDetailFake(fakeKillmailDetailESI{err: wantErr}), nil)
 	_, _, err := handler(context.Background(), nil, GetKillmailInput{KillmailID: 999, KillmailHash: "somehash"})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -345,20 +340,16 @@ func TestGetKillmailHandler_PropagatesError(t *testing.T) {
 }
 
 func TestGetKillmailHandler_ResolvesTypeNames(t *testing.T) {
-	orig := getKillmail
-	t.Cleanup(func() { getKillmail = orig })
-	getKillmail = func(ctx context.Context, userAgent string, killmailID int64, killmailHash string) (*esiapi.KillmailsKillmailIdKillmailHashGet, error) {
-		shipTypeID, weaponTypeID := int64(587), int64(2456)
-		return &esiapi.KillmailsKillmailIdKillmailHashGet{
-			Attackers: []esiapi.KillmailsKillmailIdKillmailHashGetAttackersInner{{ShipTypeId: &shipTypeID, WeaponTypeId: &weaponTypeID, FinalBlow: true}},
-			Victim: esiapi.KillmailsKillmailIdKillmailHashGetVictim{
-				ShipTypeId: 587,
-				Items: []esiapi.KillmailsKillmailIdKillmailHashGetVictimItemsInner{
-					{ItemTypeId: 34, Items: []esiapi.KillmailsKillmailIdKillmailHashGetVictimItemsInnerItemsInner{{ItemTypeId: 34}}},
-				},
+	shipTypeID, weaponTypeID := int64(587), int64(2456)
+	fake := fakeKillmailDetailESI{detail: &esiapi.KillmailsKillmailIdKillmailHashGet{
+		Attackers: []esiapi.KillmailsKillmailIdKillmailHashGetAttackersInner{{ShipTypeId: &shipTypeID, WeaponTypeId: &weaponTypeID, FinalBlow: true}},
+		Victim: esiapi.KillmailsKillmailIdKillmailHashGetVictim{
+			ShipTypeId: 587,
+			Items: []esiapi.KillmailsKillmailIdKillmailHashGetVictimItemsInner{
+				{ItemTypeId: 34, Items: []esiapi.KillmailsKillmailIdKillmailHashGetVictimItemsInnerItemsInner{{ItemTypeId: 34}}},
 			},
-		}, nil
-	}
+		},
+	}}
 
 	origResolve := resolveTypeNames
 	t.Cleanup(func() { resolveTypeNames = origResolve })
@@ -366,7 +357,7 @@ func TestGetKillmailHandler_ResolvesTypeNames(t *testing.T) {
 		return map[int64]string{587: "Rifter", 2456: "125mm Gatling AutoCannon II", 34: "Tritanium"}
 	}
 
-	handler := getKillmailHandler("v1", nil)
+	handler := getKillmailHandler("v1", openKillmailDetailFake(fake), nil)
 	_, out, err := handler(context.Background(), nil, GetKillmailInput{KillmailID: 1, KillmailHash: "abc"})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -389,16 +380,12 @@ func TestGetKillmailHandler_ResolvesTypeNames(t *testing.T) {
 }
 
 func TestGetKillmailHandler_ResolvesLocationNames(t *testing.T) {
-	orig := getKillmail
-	t.Cleanup(func() { getKillmail = orig })
 	moonID := int64(40009087)
-	getKillmail = func(ctx context.Context, userAgent string, killmailID int64, killmailHash string) (*esiapi.KillmailsKillmailIdKillmailHashGet, error) {
-		return &esiapi.KillmailsKillmailIdKillmailHashGet{
-			SolarSystemId: 30000142,
-			MoonId:        &moonID,
-			Victim:        esiapi.KillmailsKillmailIdKillmailHashGetVictim{ShipTypeId: 587},
-		}, nil
-	}
+	fake := fakeKillmailDetailESI{detail: &esiapi.KillmailsKillmailIdKillmailHashGet{
+		SolarSystemId: 30000142,
+		MoonId:        &moonID,
+		Victim:        esiapi.KillmailsKillmailIdKillmailHashGetVictim{ShipTypeId: 587},
+	}}
 
 	origSystem := resolveSystemNames
 	t.Cleanup(func() { resolveSystemNames = origSystem })
@@ -411,7 +398,7 @@ func TestGetKillmailHandler_ResolvesLocationNames(t *testing.T) {
 		return map[int64]string{40009087: "Jita IV - Moon 4"}
 	}
 
-	handler := getKillmailHandler("v1", nil)
+	handler := getKillmailHandler("v1", openKillmailDetailFake(fake), nil)
 	_, out, err := handler(context.Background(), nil, GetKillmailInput{KillmailID: 1, KillmailHash: "abc"})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -425,18 +412,14 @@ func TestGetKillmailHandler_ResolvesLocationNames(t *testing.T) {
 }
 
 func TestGetKillmailHandler_ResolvesFactionNames(t *testing.T) {
-	orig := getKillmail
-	t.Cleanup(func() { getKillmail = orig })
 	attackerFactionID := int64(500001)
 	victimFactionID := int64(500002)
-	getKillmail = func(ctx context.Context, userAgent string, killmailID int64, killmailHash string) (*esiapi.KillmailsKillmailIdKillmailHashGet, error) {
-		return &esiapi.KillmailsKillmailIdKillmailHashGet{
-			Attackers: []esiapi.KillmailsKillmailIdKillmailHashGetAttackersInner{
-				{FactionId: &attackerFactionID, FinalBlow: true},
-			},
-			Victim: esiapi.KillmailsKillmailIdKillmailHashGetVictim{FactionId: &victimFactionID, ShipTypeId: 587},
-		}, nil
-	}
+	fake := fakeKillmailDetailESI{detail: &esiapi.KillmailsKillmailIdKillmailHashGet{
+		Attackers: []esiapi.KillmailsKillmailIdKillmailHashGetAttackersInner{
+			{FactionId: &attackerFactionID, FinalBlow: true},
+		},
+		Victim: esiapi.KillmailsKillmailIdKillmailHashGetVictim{FactionId: &victimFactionID, ShipTypeId: 587},
+	}}
 
 	origFaction := resolveFactionNames
 	t.Cleanup(func() { resolveFactionNames = origFaction })
@@ -444,7 +427,7 @@ func TestGetKillmailHandler_ResolvesFactionNames(t *testing.T) {
 		return map[int64]string{500001: "Caldari State", 500002: "Gallente Federation"}
 	}
 
-	handler := getKillmailHandler("v1", nil)
+	handler := getKillmailHandler("v1", openKillmailDetailFake(fake), nil)
 	_, out, err := handler(context.Background(), nil, GetKillmailInput{KillmailID: 1, KillmailHash: "abc"})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -454,5 +437,23 @@ func TestGetKillmailHandler_ResolvesFactionNames(t *testing.T) {
 	}
 	if out.Victim.FactionName != "Gallente Federation" {
 		t.Errorf("Victim.FactionName = %q, want %q", out.Victim.FactionName, "Gallente Federation")
+	}
+}
+
+func TestKillmailListingHandlers_PropagateOpenError(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+	open := func(context.Context, int32) (killmailsESI, error) { return nil, errBoom }
+
+	_, _, err := listCharacterKillmailsRecentHandler(open, store)(context.Background(), nil, ListCharacterKillmailsRecentInput{CharacterID: 7})
+	if !errors.Is(err, errBoom) {
+		t.Errorf("character: err = %v, want wrapping errBoom", err)
+	}
+	_, _, err = listCorporationKillmailsRecentHandler(open, store)(context.Background(), nil, ListCorporationKillmailsRecentInput{CharacterID: 7, CorporationID: 98000001})
+	if !errors.Is(err, errBoom) {
+		t.Errorf("corporation: err = %v, want wrapping errBoom", err)
 	}
 }

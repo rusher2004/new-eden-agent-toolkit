@@ -5,11 +5,26 @@ import (
 	"fmt"
 	"time"
 
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-
-	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
+
+// operationsESI is the ESI calls the mercenary tactical operation tools make.
+type operationsESI interface {
+	MercenaryTacticalOperations(ctx context.Context) ([]esiapi.CharactersMercenaryTacticalOperationsListingOperation, error)
+	MercenaryTacticalOperationDetail(ctx context.Context, operationID string) (*esiapi.CharactersMercenaryTacticalOperationsDetail, error)
+}
+
+// skyhooksESI is the ESI call list_raidable_skyhooks makes; it is public.
+type skyhooksESI interface {
+	RaidableSkyhooks(ctx context.Context) ([]esiapi.SkyhooksRaidableVulnerableskyhook, error)
+}
+
+// skyhookNameCache is the SDE lookups list_raidable_skyhooks makes: system and planet names.
+type skyhookNameCache interface {
+	systemNameCache
+	planetNameCache
+}
 
 // OperationSummary is one mercenary tactical operation's bare-ID summary.
 type OperationSummary struct {
@@ -17,12 +32,7 @@ type OperationSummary struct {
 	MercenaryDenID int64  `json:"mercenaryDenId"`
 }
 
-// listMercenaryTacticalOperations is overridable in tests.
-var listMercenaryTacticalOperations = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]OperationSummary, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
+func listMercenaryTacticalOperations(ctx context.Context, client operationsESI) ([]OperationSummary, error) {
 	ops, err := client.MercenaryTacticalOperations(ctx)
 	if err != nil {
 		return nil, err
@@ -45,24 +55,30 @@ type ListMercenaryTacticalOperationsOutput struct {
 	Operations  []OperationSummary `json:"operations"`
 }
 
-func listMercenaryTacticalOperationsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListMercenaryTacticalOperationsInput, ListMercenaryTacticalOperationsOutput] {
+// AddListMercenaryTacticalOperations registers list_mercenary_tactical_operations. open builds the ESI client; any client with the
+// operationsESI methods will do.
+func AddListMercenaryTacticalOperations[C operationsESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_mercenary_tactical_operations",
+		Description: "List a logged-in EVE Online character's mercenary tactical operations.",
+	}, listMercenaryTacticalOperationsHandler(open, store))
+}
+
+func listMercenaryTacticalOperationsHandler[C operationsESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListMercenaryTacticalOperationsInput, ListMercenaryTacticalOperationsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListMercenaryTacticalOperationsInput) (*mcpsdk.CallToolResult, ListMercenaryTacticalOperationsOutput, error) {
-		cfg, err := store.Load()
+		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
-			return nil, ListMercenaryTacticalOperationsOutput{}, fmt.Errorf("load config: %w", err)
-		}
-		found := false
-		for _, c := range cfg.Characters {
-			if c.ID == in.CharacterID {
-				found = true
-				break
-			}
+			return nil, ListMercenaryTacticalOperationsOutput{}, err
 		}
 		if !found {
 			return nil, ListMercenaryTacticalOperationsOutput{}, fmt.Errorf("list mercenary tactical operations for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
 
-		ops, err := listMercenaryTacticalOperations(ctx, clientID, in.CharacterID, sso.UserAgent(version))
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListMercenaryTacticalOperationsOutput{}, fmt.Errorf("build ESI client: %w", err)
+		}
+		ops, err := listMercenaryTacticalOperations(ctx, client)
 		if err != nil {
 			return nil, ListMercenaryTacticalOperationsOutput{}, fmt.Errorf("list mercenary tactical operations: %w", err)
 		}
@@ -80,12 +96,7 @@ type OperationDetailResult struct {
 	Expires        time.Time
 }
 
-// getMercenaryTacticalOperationDetail is overridable in tests.
-var getMercenaryTacticalOperationDetail = func(ctx context.Context, clientID string, characterID int32, userAgent string, operationID string) (OperationDetailResult, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return OperationDetailResult{}, fmt.Errorf("build ESI client: %w", err)
-	}
+func getMercenaryTacticalOperationDetail(ctx context.Context, client operationsESI, operationID string) (OperationDetailResult, error) {
 	detail, err := client.MercenaryTacticalOperationDetail(ctx, operationID)
 	if err != nil {
 		return OperationDetailResult{}, err
@@ -115,29 +126,35 @@ type GetMercenaryTacticalOperationOutput struct {
 	Expires         time.Time `json:"expires"`
 }
 
-func getMercenaryTacticalOperationHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetMercenaryTacticalOperationInput, GetMercenaryTacticalOperationOutput] {
+// AddGetMercenaryTacticalOperation registers get_mercenary_tactical_operation. open builds the ESI client; any client with the
+// operationsESI methods will do.
+func AddGetMercenaryTacticalOperation[C operationsESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore typeNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_mercenary_tactical_operation",
+		Description: "Get detail (dungeon type, mercenary den, state, expiry) for one mercenary tactical operation.",
+	}, getMercenaryTacticalOperationHandler(userAgent, open, store, sdeStore))
+}
+
+func getMercenaryTacticalOperationHandler[C operationsESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore typeNameCache) mcpsdk.ToolHandlerFor[GetMercenaryTacticalOperationInput, GetMercenaryTacticalOperationOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetMercenaryTacticalOperationInput) (*mcpsdk.CallToolResult, GetMercenaryTacticalOperationOutput, error) {
-		cfg, err := store.Load()
+		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
-			return nil, GetMercenaryTacticalOperationOutput{}, fmt.Errorf("load config: %w", err)
-		}
-		found := false
-		for _, c := range cfg.Characters {
-			if c.ID == in.CharacterID {
-				found = true
-				break
-			}
+			return nil, GetMercenaryTacticalOperationOutput{}, err
 		}
 		if !found {
 			return nil, GetMercenaryTacticalOperationOutput{}, fmt.Errorf("get mercenary tactical operation for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
 
-		result, err := getMercenaryTacticalOperationDetail(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.OperationID)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, GetMercenaryTacticalOperationOutput{}, fmt.Errorf("build ESI client: %w", err)
+		}
+		result, err := getMercenaryTacticalOperationDetail(ctx, client, in.OperationID)
 		if err != nil {
 			return nil, GetMercenaryTacticalOperationOutput{}, fmt.Errorf("get mercenary tactical operation detail: %w", err)
 		}
 
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), []int64{result.DungeonTypeID})
+		names := resolveTypeNames(ctx, sdeStore, userAgent, []int64{result.DungeonTypeID})
 
 		return nil, GetMercenaryTacticalOperationOutput{
 			CharacterID:     in.CharacterID,
@@ -161,12 +178,11 @@ type SkyhookSummary struct {
 	TheftVulnerabilityEnd   time.Time `json:"theftVulnerabilityEnd"`
 }
 
-// listRaidableSkyhooks is overridable in tests. Uses the public client -- RaidableSkyhooks needs
-// no character scope at all, so there's no reason to require a live authenticated token just to
-// call it (unlike ListRaidableSkyhooksInput's characterId, which is kept purely for the
-// existence-check gate below, not for the ESI call itself).
-var listRaidableSkyhooks = func(ctx context.Context, userAgent string) ([]SkyhookSummary, error) {
-	client := esi.NewPublicClient(userAgent)
+// listRaidableSkyhooks uses the public client -- RaidableSkyhooks needs no character scope at
+// all, so there's no reason to require a live authenticated token just to call it (unlike
+// ListRaidableSkyhooksInput's characterId, which is kept purely for the existence-check gate in
+// the handler, not for the ESI call itself).
+func listRaidableSkyhooks(ctx context.Context, client skyhooksESI) ([]SkyhookSummary, error) {
 	skyhooks, err := client.RaidableSkyhooks(ctx)
 	if err != nil {
 		return nil, err
@@ -195,24 +211,26 @@ type ListRaidableSkyhooksOutput struct {
 	Skyhooks []SkyhookSummary `json:"skyhooks"`
 }
 
-func listRaidableSkyhooksHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListRaidableSkyhooksInput, ListRaidableSkyhooksOutput] {
+// AddListRaidableSkyhooks registers list_raidable_skyhooks. open builds the ESI client; any client with the
+// skyhooksESI methods will do.
+func AddListRaidableSkyhooks[C skyhooksESI](s *mcpsdk.Server, userAgent string, open func() C, store configLoader, sdeStore skyhookNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_raidable_skyhooks",
+		Description: "List upcoming raidable skyhooks (public data, no character scope required).",
+	}, listRaidableSkyhooksHandler(userAgent, open, store, sdeStore))
+}
+
+func listRaidableSkyhooksHandler[C skyhooksESI](userAgent string, open func() C, store configLoader, sdeStore skyhookNameCache) mcpsdk.ToolHandlerFor[ListRaidableSkyhooksInput, ListRaidableSkyhooksOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListRaidableSkyhooksInput) (*mcpsdk.CallToolResult, ListRaidableSkyhooksOutput, error) {
-		cfg, err := store.Load()
+		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
-			return nil, ListRaidableSkyhooksOutput{}, fmt.Errorf("load config: %w", err)
-		}
-		found := false
-		for _, c := range cfg.Characters {
-			if c.ID == in.CharacterID {
-				found = true
-				break
-			}
+			return nil, ListRaidableSkyhooksOutput{}, err
 		}
 		if !found {
 			return nil, ListRaidableSkyhooksOutput{}, fmt.Errorf("list raidable skyhooks for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
 
-		skyhooks, err := listRaidableSkyhooks(ctx, sso.UserAgent(version))
+		skyhooks, err := listRaidableSkyhooks(ctx, open())
 		if err != nil {
 			return nil, ListRaidableSkyhooksOutput{}, fmt.Errorf("list raidable skyhooks: %w", err)
 		}
@@ -223,8 +241,8 @@ func listRaidableSkyhooksHandler(version, clientID string, store ConfigStore, sd
 			systemIDs[i] = s.SolarSystemID
 			planetIDs[i] = s.PlanetID
 		}
-		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), systemIDs)
-		planetNames := resolvePlanetNames(ctx, sdeStore, sso.UserAgent(version), planetIDs)
+		systemNames := resolveSystemNames(ctx, sdeStore, userAgent, systemIDs)
+		planetNames := resolvePlanetNames(ctx, sdeStore, userAgent, planetIDs)
 		for i := range skyhooks {
 			skyhooks[i].SolarSystemName = systemNames[skyhooks[i].SolarSystemID]
 			skyhooks[i].PlanetName = planetNames[skyhooks[i].PlanetID]
