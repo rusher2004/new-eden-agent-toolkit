@@ -7,10 +7,6 @@ import (
 
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
-
-	"github.com/rusher2004/new-eden-agent-toolkit/esi"
 )
 
 // Contract is one contract entry, shared by character/corporation/public listings. Status is
@@ -71,11 +67,12 @@ type ContractItem struct {
 
 // --- list_character_contracts ---
 
-var listCharacterContracts = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]Contract, int32, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, 0, fmt.Errorf("build ESI client: %w", err)
-	}
+// characterContractsESI is the ESI call list_character_contracts makes.
+type characterContractsESI interface {
+	CharacterContracts(ctx context.Context, page int32) ([]esiapi.CharactersCharacterIdContractsGetInner, int32, error)
+}
+
+func listCharacterContracts(ctx context.Context, client characterContractsESI, page int32) ([]Contract, int32, error) {
 	contracts, totalPages, err := client.CharacterContracts(ctx, page)
 	if err != nil {
 		return nil, 0, err
@@ -106,7 +103,16 @@ type ListCharacterContractsOutput struct {
 	Contracts   []Contract `json:"contracts"`
 }
 
-func listCharacterContractsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCharacterContractsInput, ListCharacterContractsOutput] {
+// AddListCharacterContracts registers list_character_contracts. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListCharacterContracts[C characterContractsESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_character_contracts",
+		Description: "List a logged-in EVE Online character's contracts.",
+	}, listCharacterContractsHandler(open, store))
+}
+
+func listCharacterContractsHandler[C characterContractsESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListCharacterContractsInput, ListCharacterContractsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterContractsInput) (*mcpsdk.CallToolResult, ListCharacterContractsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -115,7 +121,11 @@ func listCharacterContractsHandler(version, clientID string, store ConfigStore) 
 		if !found {
 			return nil, ListCharacterContractsOutput{}, fmt.Errorf("list character contracts for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		contracts, totalPages, err := listCharacterContracts(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.Page)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCharacterContractsOutput{}, fmt.Errorf("list character contracts: %w", err)
+		}
+		contracts, totalPages, err := listCharacterContracts(ctx, client, in.Page)
 		if err != nil {
 			return nil, ListCharacterContractsOutput{}, fmt.Errorf("list character contracts: %w", err)
 		}
@@ -129,11 +139,12 @@ func listCharacterContractsHandler(version, clientID string, store ConfigStore) 
 
 // --- list_character_contract_bids ---
 
-var listCharacterContractBids = func(ctx context.Context, clientID string, characterID int32, userAgent string, contractID int64) ([]ContractBid, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
+// characterContractBidsESI is the ESI call list_character_contract_bids makes.
+type characterContractBidsESI interface {
+	CharacterContractBids(ctx context.Context, contractID int64) ([]esiapi.CharactersCharacterIdContractsContractIdBidsGetInner, error)
+}
+
+func listCharacterContractBids(ctx context.Context, client characterContractBidsESI, contractID int64) ([]ContractBid, error) {
 	bids, err := client.CharacterContractBids(ctx, contractID)
 	if err != nil {
 		return nil, err
@@ -156,7 +167,16 @@ type ListCharacterContractBidsOutput struct {
 	Bids        []ContractBid `json:"bids"`
 }
 
-func listCharacterContractBidsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCharacterContractBidsInput, ListCharacterContractBidsOutput] {
+// AddListCharacterContractBids registers list_character_contract_bids. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListCharacterContractBids[C characterContractBidsESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_character_contract_bids",
+		Description: "List the bids on one of a logged-in character's contracts.",
+	}, listCharacterContractBidsHandler(open, store))
+}
+
+func listCharacterContractBidsHandler[C characterContractBidsESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListCharacterContractBidsInput, ListCharacterContractBidsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterContractBidsInput) (*mcpsdk.CallToolResult, ListCharacterContractBidsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -165,7 +185,11 @@ func listCharacterContractBidsHandler(version, clientID string, store ConfigStor
 		if !found {
 			return nil, ListCharacterContractBidsOutput{}, fmt.Errorf("list character contract bids for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		bids, err := listCharacterContractBids(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.ContractID)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCharacterContractBidsOutput{}, fmt.Errorf("list character contract bids: %w", err)
+		}
+		bids, err := listCharacterContractBids(ctx, client, in.ContractID)
 		if err != nil {
 			return nil, ListCharacterContractBidsOutput{}, fmt.Errorf("list character contract bids: %w", err)
 		}
@@ -175,11 +199,12 @@ func listCharacterContractBidsHandler(version, clientID string, store ConfigStor
 
 // --- list_character_contract_items ---
 
-var listCharacterContractItems = func(ctx context.Context, clientID string, characterID int32, userAgent string, contractID int64) ([]ContractItem, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
+// characterContractItemsESI is the ESI call list_character_contract_items makes.
+type characterContractItemsESI interface {
+	CharacterContractItems(ctx context.Context, contractID int64) ([]esiapi.CharactersCharacterIdContractsContractIdItemsGetInner, error)
+}
+
+func listCharacterContractItems(ctx context.Context, client characterContractItemsESI, contractID int64) ([]ContractItem, error) {
 	items, err := client.CharacterContractItems(ctx, contractID)
 	if err != nil {
 		return nil, err
@@ -201,7 +226,16 @@ type ListCharacterContractItemsOutput struct {
 	Items       []ContractItem `json:"items"`
 }
 
-func listCharacterContractItemsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCharacterContractItemsInput, ListCharacterContractItemsOutput] {
+// AddListCharacterContractItems registers list_character_contract_items. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListCharacterContractItems[C characterContractItemsESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore typeNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_character_contract_items",
+		Description: "List the items on one of a logged-in character's contracts.",
+	}, listCharacterContractItemsHandler(userAgent, open, store, sdeStore))
+}
+
+func listCharacterContractItemsHandler[C characterContractItemsESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore typeNameCache) mcpsdk.ToolHandlerFor[ListCharacterContractItemsInput, ListCharacterContractItemsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterContractItemsInput) (*mcpsdk.CallToolResult, ListCharacterContractItemsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -210,7 +244,11 @@ func listCharacterContractItemsHandler(version, clientID string, store ConfigSto
 		if !found {
 			return nil, ListCharacterContractItemsOutput{}, fmt.Errorf("list character contract items for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		items, err := listCharacterContractItems(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.ContractID)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCharacterContractItemsOutput{}, fmt.Errorf("list character contract items: %w", err)
+		}
+		items, err := listCharacterContractItems(ctx, client, in.ContractID)
 		if err != nil {
 			return nil, ListCharacterContractItemsOutput{}, fmt.Errorf("list character contract items: %w", err)
 		}
@@ -218,7 +256,7 @@ func listCharacterContractItemsHandler(version, clientID string, store ConfigSto
 		for i, it := range items {
 			ids[i] = it.TypeID
 		}
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		names := resolveTypeNames(ctx, sdeStore, userAgent, ids)
 		for i := range items {
 			items[i].TypeName = names[items[i].TypeID]
 		}
@@ -228,11 +266,12 @@ func listCharacterContractItemsHandler(version, clientID string, store ConfigSto
 
 // --- list_corporation_contracts ---
 
-var listCorporationContracts = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]Contract, int32, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, 0, fmt.Errorf("build ESI client: %w", err)
-	}
+// corporationContractsESI is the ESI call list_corporation_contracts makes.
+type corporationContractsESI interface {
+	CorporationContracts(ctx context.Context, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdContractsGetInner, int32, error)
+}
+
+func listCorporationContracts(ctx context.Context, client corporationContractsESI, corporationID int64, page int32) ([]Contract, int32, error) {
 	contracts, totalPages, err := client.CorporationContracts(ctx, corporationID, page)
 	if err != nil {
 		return nil, 0, err
@@ -265,7 +304,16 @@ type ListCorporationContractsOutput struct {
 	Contracts     []Contract `json:"contracts"`
 }
 
-func listCorporationContractsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationContractsInput, ListCorporationContractsOutput] {
+// AddListCorporationContracts registers list_corporation_contracts. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListCorporationContracts[C corporationContractsESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_corporation_contracts",
+		Description: "List a corporation's contracts, using a logged-in character's roles to authorize.",
+	}, listCorporationContractsHandler(open, store))
+}
+
+func listCorporationContractsHandler[C corporationContractsESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListCorporationContractsInput, ListCorporationContractsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationContractsInput) (*mcpsdk.CallToolResult, ListCorporationContractsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -274,7 +322,11 @@ func listCorporationContractsHandler(version, clientID string, store ConfigStore
 		if !found {
 			return nil, ListCorporationContractsOutput{}, fmt.Errorf("list corporation contracts for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		contracts, totalPages, err := listCorporationContracts(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.Page)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCorporationContractsOutput{}, fmt.Errorf("list corporation contracts: %w", err)
+		}
+		contracts, totalPages, err := listCorporationContracts(ctx, client, in.CorporationID, in.Page)
 		if err != nil {
 			return nil, ListCorporationContractsOutput{}, fmt.Errorf("list corporation contracts: %w", err)
 		}
@@ -288,11 +340,12 @@ func listCorporationContractsHandler(version, clientID string, store ConfigStore
 
 // --- list_corporation_contract_bids ---
 
-var listCorporationContractBids = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, contractID int64, page int32) ([]ContractBid, int32, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, 0, fmt.Errorf("build ESI client: %w", err)
-	}
+// corporationContractBidsESI is the ESI call list_corporation_contract_bids makes.
+type corporationContractBidsESI interface {
+	CorporationContractBids(ctx context.Context, corporationID int64, contractID int64, page int32) ([]esiapi.CharactersCharacterIdContractsContractIdBidsGetInner, int32, error)
+}
+
+func listCorporationContractBids(ctx context.Context, client corporationContractBidsESI, corporationID int64, contractID int64, page int32) ([]ContractBid, int32, error) {
 	bids, totalPages, err := client.CorporationContractBids(ctx, corporationID, contractID, page)
 	if err != nil {
 		return nil, 0, err
@@ -320,7 +373,16 @@ type ListCorporationContractBidsOutput struct {
 	Bids          []ContractBid `json:"bids"`
 }
 
-func listCorporationContractBidsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationContractBidsInput, ListCorporationContractBidsOutput] {
+// AddListCorporationContractBids registers list_corporation_contract_bids. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListCorporationContractBids[C corporationContractBidsESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_corporation_contract_bids",
+		Description: "List the bids on one of a corporation's contracts, using a logged-in character's roles to authorize.",
+	}, listCorporationContractBidsHandler(open, store))
+}
+
+func listCorporationContractBidsHandler[C corporationContractBidsESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListCorporationContractBidsInput, ListCorporationContractBidsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationContractBidsInput) (*mcpsdk.CallToolResult, ListCorporationContractBidsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -329,7 +391,11 @@ func listCorporationContractBidsHandler(version, clientID string, store ConfigSt
 		if !found {
 			return nil, ListCorporationContractBidsOutput{}, fmt.Errorf("list corporation contract bids for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		bids, totalPages, err := listCorporationContractBids(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.ContractID, in.Page)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCorporationContractBidsOutput{}, fmt.Errorf("list corporation contract bids: %w", err)
+		}
+		bids, totalPages, err := listCorporationContractBids(ctx, client, in.CorporationID, in.ContractID, in.Page)
 		if err != nil {
 			return nil, ListCorporationContractBidsOutput{}, fmt.Errorf("list corporation contract bids: %w", err)
 		}
@@ -343,11 +409,12 @@ func listCorporationContractBidsHandler(version, clientID string, store ConfigSt
 
 // --- list_corporation_contract_items ---
 
-var listCorporationContractItems = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, contractID int64) ([]ContractItem, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
+// corporationContractItemsESI is the ESI call list_corporation_contract_items makes.
+type corporationContractItemsESI interface {
+	CorporationContractItems(ctx context.Context, corporationID int64, contractID int64) ([]esiapi.CharactersCharacterIdContractsContractIdItemsGetInner, error)
+}
+
+func listCorporationContractItems(ctx context.Context, client corporationContractItemsESI, corporationID int64, contractID int64) ([]ContractItem, error) {
 	items, err := client.CorporationContractItems(ctx, corporationID, contractID)
 	if err != nil {
 		return nil, err
@@ -371,7 +438,16 @@ type ListCorporationContractItemsOutput struct {
 	Items         []ContractItem `json:"items"`
 }
 
-func listCorporationContractItemsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCorporationContractItemsInput, ListCorporationContractItemsOutput] {
+// AddListCorporationContractItems registers list_corporation_contract_items. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListCorporationContractItems[C corporationContractItemsESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore typeNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_corporation_contract_items",
+		Description: "List the items on one of a corporation's contracts, using a logged-in character's roles to authorize.",
+	}, listCorporationContractItemsHandler(userAgent, open, store, sdeStore))
+}
+
+func listCorporationContractItemsHandler[C corporationContractItemsESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore typeNameCache) mcpsdk.ToolHandlerFor[ListCorporationContractItemsInput, ListCorporationContractItemsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationContractItemsInput) (*mcpsdk.CallToolResult, ListCorporationContractItemsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -380,7 +456,11 @@ func listCorporationContractItemsHandler(version, clientID string, store ConfigS
 		if !found {
 			return nil, ListCorporationContractItemsOutput{}, fmt.Errorf("list corporation contract items for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		items, err := listCorporationContractItems(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.ContractID)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCorporationContractItemsOutput{}, fmt.Errorf("list corporation contract items: %w", err)
+		}
+		items, err := listCorporationContractItems(ctx, client, in.CorporationID, in.ContractID)
 		if err != nil {
 			return nil, ListCorporationContractItemsOutput{}, fmt.Errorf("list corporation contract items: %w", err)
 		}
@@ -388,7 +468,7 @@ func listCorporationContractItemsHandler(version, clientID string, store ConfigS
 		for i, it := range items {
 			ids[i] = it.TypeID
 		}
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		names := resolveTypeNames(ctx, sdeStore, userAgent, ids)
 		for i := range items {
 			items[i].TypeName = names[items[i].TypeID]
 		}
@@ -461,8 +541,12 @@ func listPublicContractsHandler[C publicContractsESI](open func() C) mcpsdk.Tool
 
 // --- list_public_contract_bids ---
 
-var listPublicContractBids = func(ctx context.Context, userAgent string, contractID int64, page int32) ([]ContractBid, int32, error) {
-	client := esi.NewPublicClient(userAgent)
+// publicContractBidsESI is the public ESI call list_public_contract_bids makes.
+type publicContractBidsESI interface {
+	PublicContractBids(ctx context.Context, contractID int64, page int32) ([]esiapi.ContractsPublicBidsContractIdGetInner, int32, error)
+}
+
+func listPublicContractBids(ctx context.Context, client publicContractBidsESI, contractID int64, page int32) ([]ContractBid, int32, error) {
 	bids, totalPages, err := client.PublicContractBids(ctx, contractID, page)
 	if err != nil {
 		return nil, 0, err
@@ -485,9 +569,18 @@ type ListPublicContractBidsOutput struct {
 	Bids       []ContractBid `json:"bids"`
 }
 
-func listPublicContractBidsHandler(version string) mcpsdk.ToolHandlerFor[ListPublicContractBidsInput, ListPublicContractBidsOutput] {
+// AddListPublicContractBids registers list_public_contract_bids. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListPublicContractBids[C publicContractBidsESI](s *mcpsdk.Server, open func() C) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_public_contract_bids",
+		Description: "List the bids on a public contract (public data, no character required).",
+	}, listPublicContractBidsHandler(open))
+}
+
+func listPublicContractBidsHandler[C publicContractBidsESI](open func() C) mcpsdk.ToolHandlerFor[ListPublicContractBidsInput, ListPublicContractBidsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListPublicContractBidsInput) (*mcpsdk.CallToolResult, ListPublicContractBidsOutput, error) {
-		bids, totalPages, err := listPublicContractBids(ctx, sso.UserAgent(version), in.ContractID, in.Page)
+		bids, totalPages, err := listPublicContractBids(ctx, open(), in.ContractID, in.Page)
 		if err != nil {
 			return nil, ListPublicContractBidsOutput{}, fmt.Errorf("list public contract bids: %w", err)
 		}

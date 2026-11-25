@@ -103,16 +103,14 @@ func TestGetAssetLocationsHandler_ReturnsLocations(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getAssetLocations
-	t.Cleanup(func() { getAssetLocations = orig })
-	getAssetLocations = func(ctx context.Context, clientID string, characterID int32, userAgent string, itemIDs []int64) ([]AssetLocation, error) {
+	fake := fakeAssetLocationsESI{assetLocations: func(_ context.Context, itemIDs []int64) ([]esiapi.CharactersCharacterIdAssetsLocationsPostInner, error) {
 		if len(itemIDs) != 2 || itemIDs[0] != 1 || itemIDs[1] != 2 {
 			t.Errorf("itemIDs = %v, want [1 2]", itemIDs)
 		}
-		return []AssetLocation{{ItemID: 1, X: 1.5, Y: 2.5, Z: 3.5}}, nil
-	}
+		return []esiapi.CharactersCharacterIdAssetsLocationsPostInner{{ItemId: 1, Position: esiapi.CharactersCharacterIdAssetsLocationsPostInnerPosition{X: 1.5, Y: 2.5, Z: 3.5}}}, nil
+	}}
 
-	handler := getAssetLocationsHandler("v1", "client-id", store)
+	handler := getAssetLocationsHandler(openNarrow[assetLocationsESI](fake), store)
 	_, out, err := handler(context.Background(), nil, GetAssetLocationsInput{CharacterID: 7, ItemIDs: []int64{1, 2}})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -126,17 +124,43 @@ func TestGetAssetLocationsHandler_UnknownCharacter_ReturnsErrCharacterNotFound(t
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := getAssetLocations
-	t.Cleanup(func() { getAssetLocations = orig })
-	getAssetLocations = func(ctx context.Context, clientID string, characterID int32, userAgent string, itemIDs []int64) ([]AssetLocation, error) {
-		t.Fatal("getAssetLocations should not be called for an unknown character")
-		return nil, nil
-	}
-
-	handler := getAssetLocationsHandler("v1", "client-id", store)
+	handler := getAssetLocationsHandler(noNarrow[assetLocationsESI](t), store)
 	_, _, err := handler(context.Background(), nil, GetAssetLocationsInput{CharacterID: 999, ItemIDs: []int64{1}})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
+	}
+}
+
+func TestGetAssetLocationsHandler_PropagatesESIError(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	wantErr := errors.New("upstream failure")
+	fake := fakeAssetLocationsESI{assetLocations: func(context.Context, []int64) ([]esiapi.CharactersCharacterIdAssetsLocationsPostInner, error) {
+		return nil, wantErr
+	}}
+	handler := getAssetLocationsHandler(openNarrow[assetLocationsESI](fake), store)
+	_, _, err := handler(context.Background(), nil, GetAssetLocationsInput{CharacterID: 7, ItemIDs: []int64{1}})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestGetAssetLocationsHandler_PropagatesOpenError(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	wantErr := errors.New("keychain locked")
+	handler := getAssetLocationsHandler(failNarrow[assetLocationsESI](wantErr), store)
+	_, _, err := handler(context.Background(), nil, GetAssetLocationsInput{CharacterID: 7, ItemIDs: []int64{1}})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
 	}
 }
 
@@ -265,13 +289,11 @@ func TestGetCorporationAssetLocationsHandler_ReturnsLocations(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCorporationAssetLocations
-	t.Cleanup(func() { getCorporationAssetLocations = orig })
-	getCorporationAssetLocations = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, itemIDs []int64) ([]AssetLocation, error) {
-		return []AssetLocation{{ItemID: 2, X: 4, Y: 5, Z: 6}}, nil
-	}
+	fake := fakeCorporationAssetLocationsESI{corporationAssetLocations: func(context.Context, int64, []int64) ([]esiapi.CharactersCharacterIdAssetsLocationsPostInner, error) {
+		return []esiapi.CharactersCharacterIdAssetsLocationsPostInner{{ItemId: 2, Position: esiapi.CharactersCharacterIdAssetsLocationsPostInnerPosition{X: 4, Y: 5, Z: 6}}}, nil
+	}}
 
-	handler := getCorporationAssetLocationsHandler("v1", "client-id", store)
+	handler := getCorporationAssetLocationsHandler(openNarrow[corporationAssetLocationsESI](fake), store)
 	_, out, err := handler(context.Background(), nil, GetCorporationAssetLocationsInput{CharacterID: 7, CorporationID: 98000001, ItemIDs: []int64{2}})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -285,17 +307,43 @@ func TestGetCorporationAssetLocationsHandler_UnknownCharacter_ReturnsErrCharacte
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := getCorporationAssetLocations
-	t.Cleanup(func() { getCorporationAssetLocations = orig })
-	getCorporationAssetLocations = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, itemIDs []int64) ([]AssetLocation, error) {
-		t.Fatal("getCorporationAssetLocations should not be called for an unknown character")
-		return nil, nil
-	}
-
-	handler := getCorporationAssetLocationsHandler("v1", "client-id", store)
+	handler := getCorporationAssetLocationsHandler(noNarrow[corporationAssetLocationsESI](t), store)
 	_, _, err := handler(context.Background(), nil, GetCorporationAssetLocationsInput{CharacterID: 999, CorporationID: 98000001, ItemIDs: []int64{2}})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
+	}
+}
+
+func TestGetCorporationAssetLocationsHandler_PropagatesESIError(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	wantErr := errors.New("upstream failure")
+	fake := fakeCorporationAssetLocationsESI{corporationAssetLocations: func(context.Context, int64, []int64) ([]esiapi.CharactersCharacterIdAssetsLocationsPostInner, error) {
+		return nil, wantErr
+	}}
+	handler := getCorporationAssetLocationsHandler(openNarrow[corporationAssetLocationsESI](fake), store)
+	_, _, err := handler(context.Background(), nil, GetCorporationAssetLocationsInput{CharacterID: 7, CorporationID: 98000001, ItemIDs: []int64{2}})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestGetCorporationAssetLocationsHandler_PropagatesOpenError(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	wantErr := errors.New("keychain locked")
+	handler := getCorporationAssetLocationsHandler(failNarrow[corporationAssetLocationsESI](wantErr), store)
+	_, _, err := handler(context.Background(), nil, GetCorporationAssetLocationsInput{CharacterID: 7, CorporationID: 98000001, ItemIDs: []int64{2}})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
 	}
 }
 
@@ -341,6 +389,30 @@ func (f fakeAssetsESI) Assets(ctx context.Context, page int32) ([]esiapi.Charact
 		return nil, 0, errNotFaked
 	}
 	return f.assets(ctx, page)
+}
+
+// fakeAssetLocationsESI fakes assetLocationsESI; a nil assetLocations fails as an unfaked call.
+type fakeAssetLocationsESI struct {
+	assetLocations func(ctx context.Context, itemIDs []int64) ([]esiapi.CharactersCharacterIdAssetsLocationsPostInner, error)
+}
+
+func (f fakeAssetLocationsESI) AssetLocations(ctx context.Context, itemIDs []int64) ([]esiapi.CharactersCharacterIdAssetsLocationsPostInner, error) {
+	if f.assetLocations == nil {
+		return nil, errNotFaked
+	}
+	return f.assetLocations(ctx, itemIDs)
+}
+
+// fakeCorporationAssetLocationsESI fakes corporationAssetLocationsESI; a nil corporationAssetLocations fails as an unfaked call.
+type fakeCorporationAssetLocationsESI struct {
+	corporationAssetLocations func(ctx context.Context, corporationID int64, itemIDs []int64) ([]esiapi.CharactersCharacterIdAssetsLocationsPostInner, error)
+}
+
+func (f fakeCorporationAssetLocationsESI) CorporationAssetLocations(ctx context.Context, corporationID int64, itemIDs []int64) ([]esiapi.CharactersCharacterIdAssetsLocationsPostInner, error) {
+	if f.corporationAssetLocations == nil {
+		return nil, errNotFaked
+	}
+	return f.corporationAssetLocations(ctx, corporationID, itemIDs)
 }
 
 // fakeAssetNamesESI fakes assetNamesESI; a nil assetNames fails as an unfaked call.

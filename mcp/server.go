@@ -188,7 +188,7 @@ func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
 	case deps.SDE == nil:
 		return nil, errors.New("new server: Deps.SDE is required")
 	}
-	clientID, store, sdeStore := deps.ClientID, deps.Config, deps.SDE
+	clientID, store := deps.ClientID, deps.Config
 	server := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "neat", Version: version}, &mcpsdk.ServerOptions{Instructions: Instructions})
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
@@ -218,91 +218,6 @@ func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
 		Name:        "remove_character",
 		Description: "Remove a logged-in EVE Online character, deleting its stored credentials.",
 	}, removeCharacterHandler(store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_asset_locations",
-		Description: "Resolve a set of a character's asset item IDs into their positions.",
-	}, getAssetLocationsHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_corporation_asset_locations",
-		Description: "Resolve a set of a corporation's asset item IDs into their positions.",
-	}, getCorporationAssetLocationsHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_character_contracts",
-		Description: "List a logged-in EVE Online character's contracts.",
-	}, listCharacterContractsHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_character_contract_bids",
-		Description: "List the bids on one of a logged-in character's contracts.",
-	}, listCharacterContractBidsHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_character_contract_items",
-		Description: "List the items on one of a logged-in character's contracts.",
-	}, listCharacterContractItemsHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_corporation_contracts",
-		Description: "List a corporation's contracts, using a logged-in character's roles to authorize.",
-	}, listCorporationContractsHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_corporation_contract_bids",
-		Description: "List the bids on one of a corporation's contracts, using a logged-in character's roles to authorize.",
-	}, listCorporationContractBidsHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_corporation_contract_items",
-		Description: "List the items on one of a corporation's contracts, using a logged-in character's roles to authorize.",
-	}, listCorporationContractItemsHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_public_contract_bids",
-		Description: "List the bids on a public contract (public data, no character required).",
-	}, listPublicContractBidsHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_character_market_orders",
-		Description: "List a logged-in EVE Online character's open market orders.",
-	}, listCharacterMarketOrdersHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_character_market_order_history",
-		Description: "List a logged-in EVE Online character's cancelled/expired market orders from the last 90 days.",
-	}, listCharacterMarketOrderHistoryHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_corporation_market_orders",
-		Description: "List a corporation's open market orders, using a logged-in character's roles to authorize.",
-	}, listCorporationMarketOrdersHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_corporation_market_order_history",
-		Description: "List a corporation's cancelled/expired market orders from the last 90 days, using a logged-in character's roles to authorize.",
-	}, listCorporationMarketOrderHistoryHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_market_groups",
-		Description: "List every market group ID in the game (public data, no character required).",
-	}, listMarketGroupsHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_market_group",
-		Description: "Get detail for one market group, including its item types (public data, no character required).",
-	}, getMarketGroupHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_market_history",
-		Description: "Get daily historical market statistics for one item type in one region (public data, no character required).",
-	}, getMarketHistoryHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_market_types",
-		Description: "List the item type IDs with at least one active market order in a region (public data, no character required).",
-	}, listMarketTypesHandler(version, sdeStore))
 
 	return server, nil
 }
