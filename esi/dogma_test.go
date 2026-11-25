@@ -118,7 +118,7 @@ func TestDogmaDynamicItemDetail_ParsesResponseAndUsesCorrectArgumentOrder(t *tes
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestPath = r.URL.Path
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(fmt.Sprintf(`{
+		w.Write(fmt.Appendf(nil, `{
 			"created_by":2112625428,
 			"dogma_attributes":[
 				{"attribute_id":6,"value":100.5},
@@ -130,7 +130,7 @@ func TestDogmaDynamicItemDetail_ParsesResponseAndUsesCorrectArgumentOrder(t *tes
 			],
 			"mutator_type_id":33468,
 			"source_type_id":%d
-		}`, typeID)))
+		}`, typeID))
 	}))
 	defer srv.Close()
 
