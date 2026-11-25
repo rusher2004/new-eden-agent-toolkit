@@ -362,7 +362,7 @@ func otherCharactersClones[C characterClonesESI](ctx context.Context, open func(
 func readClones[C characterClonesESI](ctx context.Context, open func(ctx context.Context, characterID int32) (C, error), characterID int32) (GetCharacterClonesOutput, error) {
 	client, err := open(ctx, characterID)
 	if err != nil {
-		return GetCharacterClonesOutput{}, err
+		return GetCharacterClonesOutput{}, fmt.Errorf("open ESI client to read clones of character %d: %w", characterID, err)
 	}
 	return getCharacterClones(ctx, client, characterID)
 }
