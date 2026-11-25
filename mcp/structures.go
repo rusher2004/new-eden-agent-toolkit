@@ -5,11 +5,57 @@ import (
 	"fmt"
 	"time"
 
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-
-	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
+
+// mercenaryDensESI is the ESI call list_character_mercenary_dens makes.
+type mercenaryDensESI interface {
+	CharacterMercenaryDens(ctx context.Context) ([]esiapi.CharactersStructuresMercenaryDensListingMercenaryden, error)
+}
+
+// mercenaryDenESI is the ESI call get_character_mercenary_den makes.
+type mercenaryDenESI interface {
+	CharacterMercenaryDenDetail(ctx context.Context, mercenaryDenID int64) (*esiapi.CharactersStructuresMercenaryDensDetail, error)
+}
+
+// mercenaryDenSDE is the SDE name lookups get_character_mercenary_den makes.
+type mercenaryDenSDE interface {
+	typeNameCache
+	planetNameCache
+}
+
+// corporationSkyhooksESI is the ESI call list_corporation_skyhooks makes.
+type corporationSkyhooksESI interface {
+	CorporationSkyhooks(ctx context.Context, corporationID int64) ([]esiapi.CorporationsStructuresSkyhooksListingSkyhook, error)
+}
+
+// skyhookESI is the ESI call get_corporation_skyhook makes.
+type skyhookESI interface {
+	CorporationSkyhookDetail(ctx context.Context, corporationID, skyhookID int64) (*esiapi.CorporationsStructuresSkyhooksDetail, error)
+}
+
+// skyhookSDE is the SDE name lookups get_corporation_skyhook makes.
+type skyhookSDE interface {
+	typeNameCache
+	planetNameCache
+}
+
+// sovereigntyHubsESI is the ESI call list_corporation_sovereignty_hubs makes.
+type sovereigntyHubsESI interface {
+	CorporationSovereigntyHubs(ctx context.Context, corporationID int64) ([]esiapi.CorporationsStructuresSovereigntyHubsListingSovereigntyhub, error)
+}
+
+// sovereigntyHubESI is the ESI call get_corporation_sovereignty_hub makes.
+type sovereigntyHubESI interface {
+	CorporationSovereigntyHubDetail(ctx context.Context, corporationID, sovereigntyHubID int64) (*esiapi.CorporationsStructuresSovereigntyHubsDetail, error)
+}
+
+// sovereigntyHubSDE is the SDE name lookups get_corporation_sovereignty_hub makes.
+type sovereigntyHubSDE interface {
+	typeNameCache
+	systemNameCache
+}
 
 // --- list_character_mercenary_dens (private, "my own character") ---
 
@@ -19,14 +65,10 @@ type MercenaryDen struct {
 	PlanetName string `json:"planetName,omitempty"`
 }
 
-var listCharacterMercenaryDens = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]MercenaryDen, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
+func listCharacterMercenaryDens(ctx context.Context, client mercenaryDensESI) ([]MercenaryDen, error) {
 	dens, err := client.CharacterMercenaryDens(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read mercenary dens: %w", err)
 	}
 	out := make([]MercenaryDen, len(dens))
 	for i, d := range dens {
@@ -43,7 +85,16 @@ type ListCharacterMercenaryDensOutput struct {
 	Dens        []MercenaryDen `json:"dens"`
 }
 
-func listCharacterMercenaryDensHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCharacterMercenaryDensInput, ListCharacterMercenaryDensOutput] {
+// AddListCharacterMercenaryDens registers list_character_mercenary_dens. open builds the ESI client; any client with the
+// mercenaryDensESI methods will do.
+func AddListCharacterMercenaryDens[C mercenaryDensESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore planetNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_character_mercenary_dens",
+		Description: "List the given character's mercenary dens (includes resolved planet name).",
+	}, listCharacterMercenaryDensHandler(userAgent, open, store, sdeStore))
+}
+
+func listCharacterMercenaryDensHandler[C mercenaryDensESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore planetNameCache) mcpsdk.ToolHandlerFor[ListCharacterMercenaryDensInput, ListCharacterMercenaryDensOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterMercenaryDensInput) (*mcpsdk.CallToolResult, ListCharacterMercenaryDensOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -52,7 +103,11 @@ func listCharacterMercenaryDensHandler(version, clientID string, store ConfigSto
 		if !found {
 			return nil, ListCharacterMercenaryDensOutput{}, fmt.Errorf("list character mercenary dens for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		dens, err := listCharacterMercenaryDens(ctx, clientID, in.CharacterID, sso.UserAgent(version))
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCharacterMercenaryDensOutput{}, fmt.Errorf("list character mercenary dens: build ESI client: %w", err)
+		}
+		dens, err := listCharacterMercenaryDens(ctx, client)
 		if err != nil {
 			return nil, ListCharacterMercenaryDensOutput{}, fmt.Errorf("list character mercenary dens: %w", err)
 		}
@@ -60,7 +115,7 @@ func listCharacterMercenaryDensHandler(version, clientID string, store ConfigSto
 		for i, d := range dens {
 			ids[i] = d.PlanetID
 		}
-		names := resolvePlanetNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		names := resolvePlanetNames(ctx, sdeStore, userAgent, ids)
 		for i := range dens {
 			dens[i].PlanetName = names[dens[i].PlanetID]
 		}
@@ -98,14 +153,10 @@ type MercenaryDenDetail struct {
 	Skyhook          MercenaryDenSkyhookRef `json:"skyhook"`
 }
 
-var getCharacterMercenaryDen = func(ctx context.Context, clientID string, characterID int32, userAgent string, mercenaryDenID int64) (MercenaryDenDetail, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return MercenaryDenDetail{}, fmt.Errorf("build ESI client: %w", err)
-	}
+func getCharacterMercenaryDen(ctx context.Context, client mercenaryDenESI, mercenaryDenID int64) (MercenaryDenDetail, error) {
 	d, err := client.CharacterMercenaryDenDetail(ctx, mercenaryDenID)
 	if err != nil {
-		return MercenaryDenDetail{}, err
+		return MercenaryDenDetail{}, fmt.Errorf("read mercenary den %d: %w", mercenaryDenID, err)
 	}
 	out := MercenaryDenDetail{
 		ID:     d.Id,
@@ -133,7 +184,16 @@ type GetCharacterMercenaryDenInput struct {
 	MercenaryDenID int64 `json:"mercenaryDenId" jsonschema:"the mercenary den ID to look up"`
 }
 
-func getCharacterMercenaryDenHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetCharacterMercenaryDenInput, MercenaryDenDetail] {
+// AddGetCharacterMercenaryDen registers get_character_mercenary_den. open builds the ESI client; any client with the
+// mercenaryDenESI methods will do.
+func AddGetCharacterMercenaryDen[C mercenaryDenESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore mercenaryDenSDE) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_character_mercenary_den",
+		Description: "Get full detail on one of the given character's mercenary dens: evolution stats, infomorph count, reinforcement timer, and attached skyhook.",
+	}, getCharacterMercenaryDenHandler(userAgent, open, store, sdeStore))
+}
+
+func getCharacterMercenaryDenHandler[C mercenaryDenESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore mercenaryDenSDE) mcpsdk.ToolHandlerFor[GetCharacterMercenaryDenInput, MercenaryDenDetail] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterMercenaryDenInput) (*mcpsdk.CallToolResult, MercenaryDenDetail, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -142,13 +202,17 @@ func getCharacterMercenaryDenHandler(version, clientID string, store ConfigStore
 		if !found {
 			return nil, MercenaryDenDetail{}, fmt.Errorf("get character mercenary den for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		detail, err := getCharacterMercenaryDen(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.MercenaryDenID)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, MercenaryDenDetail{}, fmt.Errorf("get character mercenary den: build ESI client: %w", err)
+		}
+		detail, err := getCharacterMercenaryDen(ctx, client, in.MercenaryDenID)
 		if err != nil {
 			return nil, MercenaryDenDetail{}, fmt.Errorf("get character mercenary den: %w", err)
 		}
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), []int64{detail.TypeID})
+		names := resolveTypeNames(ctx, sdeStore, userAgent, []int64{detail.TypeID})
 		detail.TypeName = names[detail.TypeID]
-		planetNames := resolvePlanetNames(ctx, sdeStore, sso.UserAgent(version), []int64{detail.Skyhook.PlanetID})
+		planetNames := resolvePlanetNames(ctx, sdeStore, userAgent, []int64{detail.Skyhook.PlanetID})
 		detail.Skyhook.PlanetName = planetNames[detail.Skyhook.PlanetID]
 		return nil, detail, nil
 	}
@@ -162,14 +226,10 @@ type Skyhook struct {
 	PlanetName string `json:"planetName,omitempty"`
 }
 
-var listCorporationSkyhooks = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64) ([]Skyhook, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
+func listCorporationSkyhooks(ctx context.Context, client corporationSkyhooksESI, corporationID int64) ([]Skyhook, error) {
 	hooks, err := client.CorporationSkyhooks(ctx, corporationID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read skyhooks of corporation %d: %w", corporationID, err)
 	}
 	out := make([]Skyhook, len(hooks))
 	for i, h := range hooks {
@@ -188,7 +248,16 @@ type ListCorporationSkyhooksOutput struct {
 	Skyhooks      []Skyhook `json:"skyhooks"`
 }
 
-func listCorporationSkyhooksHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCorporationSkyhooksInput, ListCorporationSkyhooksOutput] {
+// AddListCorporationSkyhooks registers list_corporation_skyhooks. open builds the ESI client; any client with the
+// corporationSkyhooksESI methods will do.
+func AddListCorporationSkyhooks[C corporationSkyhooksESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore planetNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_corporation_skyhooks",
+		Description: "List the given corporation's skyhooks (includes resolved planet name).",
+	}, listCorporationSkyhooksHandler(userAgent, open, store, sdeStore))
+}
+
+func listCorporationSkyhooksHandler[C corporationSkyhooksESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore planetNameCache) mcpsdk.ToolHandlerFor[ListCorporationSkyhooksInput, ListCorporationSkyhooksOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationSkyhooksInput) (*mcpsdk.CallToolResult, ListCorporationSkyhooksOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -197,7 +266,11 @@ func listCorporationSkyhooksHandler(version, clientID string, store ConfigStore,
 		if !found {
 			return nil, ListCorporationSkyhooksOutput{}, fmt.Errorf("list corporation skyhooks for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		hooks, err := listCorporationSkyhooks(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCorporationSkyhooksOutput{}, fmt.Errorf("list corporation skyhooks: build ESI client: %w", err)
+		}
+		hooks, err := listCorporationSkyhooks(ctx, client, in.CorporationID)
 		if err != nil {
 			return nil, ListCorporationSkyhooksOutput{}, fmt.Errorf("list corporation skyhooks: %w", err)
 		}
@@ -205,7 +278,7 @@ func listCorporationSkyhooksHandler(version, clientID string, store ConfigStore,
 		for i, h := range hooks {
 			ids[i] = h.PlanetID
 		}
-		names := resolvePlanetNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		names := resolvePlanetNames(ctx, sdeStore, userAgent, ids)
 		for i := range hooks {
 			hooks[i].PlanetName = names[hooks[i].PlanetID]
 		}
@@ -236,14 +309,10 @@ type SkyhookDetail struct {
 	TheftVulnerabilityEnd   *time.Time       `json:"theftVulnerabilityEnd,omitempty"`
 }
 
-var getCorporationSkyhook = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID, skyhookID int64) (SkyhookDetail, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return SkyhookDetail{}, fmt.Errorf("build ESI client: %w", err)
-	}
+func getCorporationSkyhook(ctx context.Context, client skyhookESI, corporationID, skyhookID int64) (SkyhookDetail, error) {
 	d, err := client.CorporationSkyhookDetail(ctx, corporationID, skyhookID)
 	if err != nil {
-		return SkyhookDetail{}, err
+		return SkyhookDetail{}, fmt.Errorf("read skyhook %d of corporation %d: %w", skyhookID, corporationID, err)
 	}
 	out := SkyhookDetail{
 		EffectiveWorkforce: d.EffectiveWorkforce,
@@ -276,7 +345,16 @@ type GetCorporationSkyhookInput struct {
 	SkyhookID     int64 `json:"skyhookId" jsonschema:"the skyhook ID to look up"`
 }
 
-func getCorporationSkyhookHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetCorporationSkyhookInput, SkyhookDetail] {
+// AddGetCorporationSkyhook registers get_corporation_skyhook. open builds the ESI client; any client with the
+// skyhookESI methods will do.
+func AddGetCorporationSkyhook[C skyhookESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore skyhookSDE) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_corporation_skyhook",
+		Description: "Get full detail on one of the given corporation's skyhooks: workforce, reagent stock, active/reinforcement state, and theft vulnerability window.",
+	}, getCorporationSkyhookHandler(userAgent, open, store, sdeStore))
+}
+
+func getCorporationSkyhookHandler[C skyhookESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore skyhookSDE) mcpsdk.ToolHandlerFor[GetCorporationSkyhookInput, SkyhookDetail] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCorporationSkyhookInput) (*mcpsdk.CallToolResult, SkyhookDetail, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -285,7 +363,11 @@ func getCorporationSkyhookHandler(version, clientID string, store ConfigStore, s
 		if !found {
 			return nil, SkyhookDetail{}, fmt.Errorf("get corporation skyhook for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		detail, err := getCorporationSkyhook(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.SkyhookID)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, SkyhookDetail{}, fmt.Errorf("get corporation skyhook: build ESI client: %w", err)
+		}
+		detail, err := getCorporationSkyhook(ctx, client, in.CorporationID, in.SkyhookID)
 		if err != nil {
 			return nil, SkyhookDetail{}, fmt.Errorf("get corporation skyhook: %w", err)
 		}
@@ -293,11 +375,11 @@ func getCorporationSkyhookHandler(version, clientID string, store ConfigStore, s
 		for i, r := range detail.Reagents {
 			ids[i] = r.TypeID
 		}
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		names := resolveTypeNames(ctx, sdeStore, userAgent, ids)
 		for i := range detail.Reagents {
 			detail.Reagents[i].TypeName = names[detail.Reagents[i].TypeID]
 		}
-		planetNames := resolvePlanetNames(ctx, sdeStore, sso.UserAgent(version), []int64{detail.PlanetID})
+		planetNames := resolvePlanetNames(ctx, sdeStore, userAgent, []int64{detail.PlanetID})
 		detail.PlanetName = planetNames[detail.PlanetID]
 		return nil, detail, nil
 	}
@@ -311,14 +393,10 @@ type StructureSovereigntyHub struct {
 	SolarSystemName string `json:"solarSystemName,omitempty"`
 }
 
-var listCorporationSovereigntyHubs = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64) ([]StructureSovereigntyHub, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
+func listCorporationSovereigntyHubs(ctx context.Context, client sovereigntyHubsESI, corporationID int64) ([]StructureSovereigntyHub, error) {
 	hubs, err := client.CorporationSovereigntyHubs(ctx, corporationID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read sovereignty hubs of corporation %d: %w", corporationID, err)
 	}
 	out := make([]StructureSovereigntyHub, len(hubs))
 	for i, h := range hubs {
@@ -337,7 +415,16 @@ type ListCorporationSovereigntyHubsOutput struct {
 	Hubs          []StructureSovereigntyHub `json:"hubs"`
 }
 
-func listCorporationSovereigntyHubsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCorporationSovereigntyHubsInput, ListCorporationSovereigntyHubsOutput] {
+// AddListCorporationSovereigntyHubs registers list_corporation_sovereignty_hubs. open builds the ESI client; any client with the
+// sovereigntyHubsESI methods will do.
+func AddListCorporationSovereigntyHubs[C sovereigntyHubsESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore systemNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_corporation_sovereignty_hubs",
+		Description: "List the given corporation's sovereignty hubs (includes resolved solar system name).",
+	}, listCorporationSovereigntyHubsHandler(userAgent, open, store, sdeStore))
+}
+
+func listCorporationSovereigntyHubsHandler[C sovereigntyHubsESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore systemNameCache) mcpsdk.ToolHandlerFor[ListCorporationSovereigntyHubsInput, ListCorporationSovereigntyHubsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationSovereigntyHubsInput) (*mcpsdk.CallToolResult, ListCorporationSovereigntyHubsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -346,7 +433,11 @@ func listCorporationSovereigntyHubsHandler(version, clientID string, store Confi
 		if !found {
 			return nil, ListCorporationSovereigntyHubsOutput{}, fmt.Errorf("list corporation sovereignty hubs for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		hubs, err := listCorporationSovereigntyHubs(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCorporationSovereigntyHubsOutput{}, fmt.Errorf("list corporation sovereignty hubs: build ESI client: %w", err)
+		}
+		hubs, err := listCorporationSovereigntyHubs(ctx, client, in.CorporationID)
 		if err != nil {
 			return nil, ListCorporationSovereigntyHubsOutput{}, fmt.Errorf("list corporation sovereignty hubs: %w", err)
 		}
@@ -354,7 +445,7 @@ func listCorporationSovereigntyHubsHandler(version, clientID string, store Confi
 		for i, h := range hubs {
 			ids[i] = h.SolarSystemID
 		}
-		names := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		names := resolveSystemNames(ctx, sdeStore, userAgent, ids)
 		for i := range hubs {
 			hubs[i].SolarSystemName = names[hubs[i].SolarSystemID]
 		}
@@ -447,14 +538,10 @@ type GetCorporationSovereigntyHubInput struct {
 	SovereigntyHubID int64 `json:"sovereigntyHubId" jsonschema:"the sovereignty hub ID to look up"`
 }
 
-var getCorporationSovereigntyHub = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID, sovereigntyHubID int64) (StructureSovereigntyHubDetail, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return StructureSovereigntyHubDetail{}, fmt.Errorf("build ESI client: %w", err)
-	}
+func getCorporationSovereigntyHub(ctx context.Context, client sovereigntyHubESI, corporationID, sovereigntyHubID int64) (StructureSovereigntyHubDetail, error) {
 	d, err := client.CorporationSovereigntyHubDetail(ctx, corporationID, sovereigntyHubID)
 	if err != nil {
-		return StructureSovereigntyHubDetail{}, err
+		return StructureSovereigntyHubDetail{}, fmt.Errorf("read sovereignty hub %d of corporation %d: %w", sovereigntyHubID, corporationID, err)
 	}
 	out := StructureSovereigntyHubDetail{
 		FuelAccessListID: d.FuelAccessListId,
@@ -524,7 +611,16 @@ var getCorporationSovereigntyHub = func(ctx context.Context, clientID string, ch
 	return out, nil
 }
 
-func getCorporationSovereigntyHubHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetCorporationSovereigntyHubInput, StructureSovereigntyHubDetail] {
+// AddGetCorporationSovereigntyHub registers get_corporation_sovereignty_hub. open builds the ESI client; any client with the
+// sovereigntyHubESI methods will do.
+func AddGetCorporationSovereigntyHub[C sovereigntyHubESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore sovereigntyHubSDE) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_corporation_sovereignty_hub",
+		Description: "Get full detail on one of the given corporation's sovereignty hubs: reagent bay, power/workforce resources, upgrades, vulnerability window, and workforce transport configuration/state.",
+	}, getCorporationSovereigntyHubHandler(userAgent, open, store, sdeStore))
+}
+
+func getCorporationSovereigntyHubHandler[C sovereigntyHubESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore sovereigntyHubSDE) mcpsdk.ToolHandlerFor[GetCorporationSovereigntyHubInput, StructureSovereigntyHubDetail] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCorporationSovereigntyHubInput) (*mcpsdk.CallToolResult, StructureSovereigntyHubDetail, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -533,7 +629,11 @@ func getCorporationSovereigntyHubHandler(version, clientID string, store ConfigS
 		if !found {
 			return nil, StructureSovereigntyHubDetail{}, fmt.Errorf("get corporation sovereignty hub for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		detail, err := getCorporationSovereigntyHub(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.SovereigntyHubID)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, StructureSovereigntyHubDetail{}, fmt.Errorf("get corporation sovereignty hub: build ESI client: %w", err)
+		}
+		detail, err := getCorporationSovereigntyHub(ctx, client, in.CorporationID, in.SovereigntyHubID)
 		if err != nil {
 			return nil, StructureSovereigntyHubDetail{}, fmt.Errorf("get corporation sovereignty hub: %w", err)
 		}
@@ -544,7 +644,7 @@ func getCorporationSovereigntyHubHandler(version, clientID string, store ConfigS
 		for _, u := range detail.Upgrades {
 			ids = append(ids, u.TypeID)
 		}
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		names := resolveTypeNames(ctx, sdeStore, userAgent, ids)
 		for i := range detail.ReagentBay.Reagents {
 			detail.ReagentBay.Reagents[i].TypeName = names[detail.ReagentBay.Reagents[i].TypeID]
 		}
@@ -563,7 +663,7 @@ func getCorporationSovereigntyHubHandler(version, clientID string, store ConfigS
 		for _, src := range detail.WorkforceTransport.State.ImportSources {
 			systemIDs = append(systemIDs, src.SolarSystemID)
 		}
-		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), systemIDs)
+		systemNames := resolveSystemNames(ctx, sdeStore, userAgent, systemIDs)
 		detail.SolarSystemName = systemNames[detail.SolarSystemID]
 		if detail.WorkforceTransport.Configuration.ExportSolarSystemID != nil {
 			detail.WorkforceTransport.Configuration.ExportSolarSystemName = systemNames[*detail.WorkforceTransport.Configuration.ExportSolarSystemID]

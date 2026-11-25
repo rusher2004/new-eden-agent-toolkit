@@ -26,9 +26,6 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
-
-	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
 // --- shared Configuration matcher types ---
@@ -502,12 +499,35 @@ type ProjectDetails struct {
 
 // --- get_corporation_project_contribution (private) ---
 
-var getCorporationProjectContribution = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, projectID string, targetCharacterID int64) (*esiapi.CorporationsProjectsContribution, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
-	return client.CorporationProjectContribution(ctx, corporationID, projectID, targetCharacterID)
+// projectContributionESI is the ESI call get_corporation_project_contribution makes.
+type projectContributionESI interface {
+	CorporationProjectContribution(ctx context.Context, corporationID int64, projectID string, targetCharacterID int64) (*esiapi.CorporationsProjectsContribution, error)
+}
+
+// projectContributorsESI is the ESI call list_corporation_project_contributors makes.
+type projectContributorsESI interface {
+	CorporationProjectContributors(ctx context.Context, corporationID int64, projectID string, after, before string, limit int64) ([]esiapi.CorporationsProjectsContributorsContributor, *esiapi.Cursor, error)
+}
+
+// projectDetailESI is the ESI call get_corporation_project_detail makes.
+type projectDetailESI interface {
+	CorporationProjectDetail(ctx context.Context, corporationID int64, projectID string) (*esiapi.CorporationsProjectsDetail, error)
+}
+
+// projectDetailSDE is the SDE name lookups get_corporation_project_detail makes.
+type projectDetailSDE interface {
+	typeNameCache
+	systemNameCache
+	regionNameCache
+	constellationNameCache
+	stationNameCache
+	groupNameCache
+	factionNameCache
+}
+
+// projectListingESI is the ESI call list_corporation_projects makes.
+type projectListingESI interface {
+	CorporationProjectListing(ctx context.Context, corporationID int64, after, before string, limit int64, state string) ([]esiapi.CorporationsProjectsDetailProject, *esiapi.Cursor, error)
 }
 
 type GetCorporationProjectContributionInput struct {
@@ -525,7 +545,16 @@ type GetCorporationProjectContributionOutput struct {
 	LastModified      *time.Time `json:"lastModified,omitempty"`
 }
 
-func getCorporationProjectContributionHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetCorporationProjectContributionInput, GetCorporationProjectContributionOutput] {
+// AddGetCorporationProjectContribution registers get_corporation_project_contribution. open builds the ESI client; any client with the
+// projectContributionESI methods will do.
+func AddGetCorporationProjectContribution[C projectContributionESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_corporation_project_contribution",
+		Description: "Get a character's contribution to a corporation project, using a logged-in character's roles to authorize.",
+	}, getCorporationProjectContributionHandler(open, store))
+}
+
+func getCorporationProjectContributionHandler[C projectContributionESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[GetCorporationProjectContributionInput, GetCorporationProjectContributionOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCorporationProjectContributionInput) (*mcpsdk.CallToolResult, GetCorporationProjectContributionOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -534,7 +563,11 @@ func getCorporationProjectContributionHandler(version, clientID string, store Co
 		if !found {
 			return nil, GetCorporationProjectContributionOutput{}, fmt.Errorf("get corporation project contribution for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		contribution, err := getCorporationProjectContribution(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.ProjectID, in.TargetCharacterID)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, GetCorporationProjectContributionOutput{}, fmt.Errorf("get corporation project contribution: build ESI client: %w", err)
+		}
+		contribution, err := client.CorporationProjectContribution(ctx, in.CorporationID, in.ProjectID, in.TargetCharacterID)
 		if err != nil {
 			return nil, GetCorporationProjectContributionOutput{}, fmt.Errorf("get corporation project contribution: %w", err)
 		}
@@ -557,14 +590,6 @@ type ProjectContributor struct {
 	Contributed   int64  `json:"contributed"`
 }
 
-var listCorporationProjectContributors = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, projectID string, after, before string, limit int64) ([]esiapi.CorporationsProjectsContributorsContributor, *esiapi.Cursor, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, nil, fmt.Errorf("build ESI client: %w", err)
-	}
-	return client.CorporationProjectContributors(ctx, corporationID, projectID, after, before, limit)
-}
-
 type ListCorporationProjectContributorsInput struct {
 	CharacterID   int32  `json:"characterId" jsonschema:"the character ID to check"`
 	CorporationID int64  `json:"corporationId" jsonschema:"the corporation ID the project belongs to"`
@@ -582,7 +607,16 @@ type ListCorporationProjectContributorsOutput struct {
 	NextBefore    *string              `json:"nextBefore,omitempty"`
 }
 
-func listCorporationProjectContributorsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationProjectContributorsInput, ListCorporationProjectContributorsOutput] {
+// AddListCorporationProjectContributors registers list_corporation_project_contributors. open builds the ESI client; any client with the
+// projectContributorsESI methods will do.
+func AddListCorporationProjectContributors[C projectContributorsESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_corporation_project_contributors",
+		Description: "List the contributors to a corporation project, using a logged-in character's roles to authorize.",
+	}, listCorporationProjectContributorsHandler(open, store))
+}
+
+func listCorporationProjectContributorsHandler[C projectContributorsESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListCorporationProjectContributorsInput, ListCorporationProjectContributorsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationProjectContributorsInput) (*mcpsdk.CallToolResult, ListCorporationProjectContributorsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -591,7 +625,11 @@ func listCorporationProjectContributorsHandler(version, clientID string, store C
 		if !found {
 			return nil, ListCorporationProjectContributorsOutput{}, fmt.Errorf("list corporation project contributors for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		contributors, cursor, err := listCorporationProjectContributors(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.ProjectID, in.After, in.Before, in.Limit)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCorporationProjectContributorsOutput{}, fmt.Errorf("list corporation project contributors: build ESI client: %w", err)
+		}
+		contributors, cursor, err := client.CorporationProjectContributors(ctx, in.CorporationID, in.ProjectID, in.After, in.Before, in.Limit)
 		if err != nil {
 			return nil, ListCorporationProjectContributorsOutput{}, fmt.Errorf("list corporation project contributors: %w", err)
 		}
@@ -611,14 +649,6 @@ func listCorporationProjectContributorsHandler(version, clientID string, store C
 }
 
 // --- get_corporation_project_detail (private) ---
-
-var getCorporationProjectDetail = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, projectID string) (*esiapi.CorporationsProjectsDetail, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
-	return client.CorporationProjectDetail(ctx, corporationID, projectID)
-}
 
 type GetCorporationProjectDetailInput struct {
 	CharacterID   int32  `json:"characterId" jsonschema:"the character ID to check"`
@@ -640,7 +670,16 @@ type GetCorporationProjectDetailOutput struct {
 	State         string                     `json:"state"`
 }
 
-func getCorporationProjectDetailHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetCorporationProjectDetailInput, GetCorporationProjectDetailOutput] {
+// AddGetCorporationProjectDetail registers get_corporation_project_detail. open builds the ESI client; any client with the
+// projectDetailESI methods will do.
+func AddGetCorporationProjectDetail[C projectDetailESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore projectDetailSDE) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_corporation_project_detail",
+		Description: "Get the full details (configuration, progress, reward) of a corporation project, using a logged-in character's roles to authorize.",
+	}, getCorporationProjectDetailHandler(userAgent, open, store, sdeStore))
+}
+
+func getCorporationProjectDetailHandler[C projectDetailESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore projectDetailSDE) mcpsdk.ToolHandlerFor[GetCorporationProjectDetailInput, GetCorporationProjectDetailOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCorporationProjectDetailInput) (*mcpsdk.CallToolResult, GetCorporationProjectDetailOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -649,7 +688,11 @@ func getCorporationProjectDetailHandler(version, clientID string, store ConfigSt
 		if !found {
 			return nil, GetCorporationProjectDetailOutput{}, fmt.Errorf("get corporation project detail for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		detail, err := getCorporationProjectDetail(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.ProjectID)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, GetCorporationProjectDetailOutput{}, fmt.Errorf("get corporation project detail: build ESI client: %w", err)
+		}
+		detail, err := client.CorporationProjectDetail(ctx, in.CorporationID, in.ProjectID)
 		if err != nil {
 			return nil, GetCorporationProjectDetailOutput{}, fmt.Errorf("get corporation project detail: %w", err)
 		}
@@ -663,7 +706,7 @@ func getCorporationProjectDetailHandler(version, clientID string, store ConfigSt
 				}
 			}
 		}
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		names := resolveTypeNames(ctx, sdeStore, userAgent, ids)
 		for _, group := range [][]ShipTypeMatcher{configuration.Ships, configuration.Items, configuration.Materials} {
 			for i := range group {
 				if group[i].TypeID != nil {
@@ -689,10 +732,10 @@ func getCorporationProjectDetailHandler(version, clientID string, store ConfigSt
 				stationIDs = append(stationIDs, *d.StationID)
 			}
 		}
-		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), systemIDs)
-		regionNames := resolveRegionNames(ctx, sdeStore, sso.UserAgent(version), regionIDs)
-		constellationNames := resolveConstellationNames(ctx, sdeStore, sso.UserAgent(version), constellationIDs)
-		stationNames := resolveStationNames(ctx, sdeStore, sso.UserAgent(version), stationIDs)
+		systemNames := resolveSystemNames(ctx, sdeStore, userAgent, systemIDs)
+		regionNames := resolveRegionNames(ctx, sdeStore, userAgent, regionIDs)
+		constellationNames := resolveConstellationNames(ctx, sdeStore, userAgent, constellationIDs)
+		stationNames := resolveStationNames(ctx, sdeStore, userAgent, stationIDs)
 		for i := range configuration.Locations {
 			if configuration.Locations[i].SolarSystemID != nil {
 				configuration.Locations[i].SolarSystemName = systemNames[*configuration.Locations[i].SolarSystemID]
@@ -728,8 +771,8 @@ func getCorporationProjectDetailHandler(version, clientID string, store ConfigSt
 				factionIDs = append(factionIDs, *fm.FactionID)
 			}
 		}
-		groupNames := resolveGroupNames(ctx, sdeStore, sso.UserAgent(version), groupIDs)
-		factionNames := resolveFactionNames(ctx, sdeStore, sso.UserAgent(version), factionIDs)
+		groupNames := resolveGroupNames(ctx, sdeStore, userAgent, groupIDs)
+		factionNames := resolveFactionNames(ctx, sdeStore, userAgent, factionIDs)
 		for _, group := range [][]ShipTypeMatcher{configuration.Ships, configuration.Items, configuration.Materials} {
 			for i := range group {
 				if group[i].GroupID != nil {
@@ -770,14 +813,6 @@ func getCorporationProjectDetailHandler(version, clientID string, store ConfigSt
 
 // --- list_corporation_projects (private, cursor-paginated) ---
 
-var listCorporationProjects = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, after, before string, limit int64, state string) ([]esiapi.CorporationsProjectsDetailProject, *esiapi.Cursor, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, nil, fmt.Errorf("build ESI client: %w", err)
-	}
-	return client.CorporationProjectListing(ctx, corporationID, after, before, limit, state)
-}
-
 type ListCorporationProjectsInput struct {
 	CharacterID   int32  `json:"characterId" jsonschema:"the character ID to check"`
 	CorporationID int64  `json:"corporationId" jsonschema:"the corporation ID to look up"`
@@ -794,7 +829,16 @@ type ListCorporationProjectsOutput struct {
 	NextBefore    *string          `json:"nextBefore,omitempty"`
 }
 
-func listCorporationProjectsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationProjectsInput, ListCorporationProjectsOutput] {
+// AddListCorporationProjects registers list_corporation_projects. open builds the ESI client; any client with the
+// projectListingESI methods will do.
+func AddListCorporationProjects[C projectListingESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_corporation_projects",
+		Description: "List a corporation's projects, using a logged-in character's roles to authorize.",
+	}, listCorporationProjectsHandler(open, store))
+}
+
+func listCorporationProjectsHandler[C projectListingESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListCorporationProjectsInput, ListCorporationProjectsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationProjectsInput) (*mcpsdk.CallToolResult, ListCorporationProjectsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -803,7 +847,11 @@ func listCorporationProjectsHandler(version, clientID string, store ConfigStore)
 		if !found {
 			return nil, ListCorporationProjectsOutput{}, fmt.Errorf("list corporation projects for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		projects, cursor, err := listCorporationProjects(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.After, in.Before, in.Limit, in.State)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCorporationProjectsOutput{}, fmt.Errorf("list corporation projects: build ESI client: %w", err)
+		}
+		projects, cursor, err := client.CorporationProjectListing(ctx, in.CorporationID, in.After, in.Before, in.Limit, in.State)
 		if err != nil {
 			return nil, ListCorporationProjectsOutput{}, fmt.Errorf("list corporation projects: %w", err)
 		}
