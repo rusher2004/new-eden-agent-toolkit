@@ -13,13 +13,11 @@ import (
 )
 
 func TestGetCharacterHandler_ReturnsDetail(t *testing.T) {
-	orig := getCharacterDetail
-	t.Cleanup(func() { getCharacterDetail = orig })
-	getCharacterDetail = func(ctx context.Context, userAgent string, characterID int64) (GetCharacterOutput, error) {
-		return GetCharacterOutput{CharacterID: characterID, Name: "Test Character", CorporationID: 98000001}, nil
-	}
+	fake := fakeCharacterDetailESI{characterDetail: func(ctx context.Context, characterID int64) (*esiapi.CharactersDetail, error) {
+		return &esiapi.CharactersDetail{Name: "Test Character", CorporationId: 98000001}, nil
+	}}
 
-	handler := getCharacterHandler("v1", nil)
+	handler := getCharacterHandler("v1", publicNarrow[characterDetailESI](fake), nil)
 	_, out, err := handler(context.Background(), nil, GetCharacterInput{CharacterID: 998877})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -63,13 +61,11 @@ func TestGetCharacterAffiliationsHandler_PropagatesError(t *testing.T) {
 }
 
 func TestListCharacterCorporationHistoryHandler_ReturnsHistory(t *testing.T) {
-	orig := listCharacterCorporationHistory
-	t.Cleanup(func() { listCharacterCorporationHistory = orig })
-	listCharacterCorporationHistory = func(ctx context.Context, userAgent string, characterID int64) ([]CorporationHistoryEntry, error) {
-		return []CorporationHistoryEntry{{CorporationID: 98000001, RecordID: 1}}, nil
-	}
+	fake := fakeCharacterCorporationHistoryESI{characterCorporationHistory: func(ctx context.Context, characterID int64) ([]esiapi.CharactersCharacterIdCorporationhistoryGetInner, error) {
+		return []esiapi.CharactersCharacterIdCorporationhistoryGetInner{{CorporationId: 98000001, RecordId: 1}}, nil
+	}}
 
-	handler := listCharacterCorporationHistoryHandler("v1")
+	handler := listCharacterCorporationHistoryHandler(publicNarrow[characterCorporationHistoryESI](fake))
 	_, out, err := handler(context.Background(), nil, ListCharacterCorporationHistoryInput{CharacterID: 998877})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -80,14 +76,12 @@ func TestListCharacterCorporationHistoryHandler_ReturnsHistory(t *testing.T) {
 }
 
 func TestGetCharacterPortraitHandler_ReturnsPortrait(t *testing.T) {
-	orig := getCharacterPortrait
-	t.Cleanup(func() { getCharacterPortrait = orig })
 	url := "https://images.evetech.net/a.png"
-	getCharacterPortrait = func(ctx context.Context, userAgent string, characterID int64) (GetCharacterPortraitOutput, error) {
-		return GetCharacterPortraitOutput{CharacterID: characterID, Px64x64: &url}, nil
-	}
+	fake := fakeCharacterPortraitESI{characterPortrait: func(ctx context.Context, characterID int64) (*esiapi.CharactersCharacterIdPortraitGet, error) {
+		return &esiapi.CharactersCharacterIdPortraitGet{Px64x64: &url}, nil
+	}}
 
-	handler := getCharacterPortraitHandler("v1")
+	handler := getCharacterPortraitHandler(publicNarrow[characterPortraitESI](fake))
 	_, out, err := handler(context.Background(), nil, GetCharacterPortraitInput{CharacterID: 998877})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -104,13 +98,11 @@ func TestListCharacterAgentsResearchHandler_ReturnsAgents(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCharacterAgentsResearch
-	t.Cleanup(func() { listCharacterAgentsResearch = orig })
-	listCharacterAgentsResearch = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]AgentResearch, error) {
-		return []AgentResearch{{AgentID: 1}}, nil
-	}
+	fake := fakeCharacterAgentsResearchESI{characterAgentsResearch: func(ctx context.Context) ([]esiapi.CharactersCharacterIdAgentsResearchGetInner, error) {
+		return []esiapi.CharactersCharacterIdAgentsResearchGetInner{{AgentId: 1}}, nil
+	}}
 
-	handler := listCharacterAgentsResearchHandler("v1", "client-id", store, nil)
+	handler := listCharacterAgentsResearchHandler("v1", openNarrow[characterAgentsResearchESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, ListCharacterAgentsResearchInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -124,14 +116,7 @@ func TestListCharacterAgentsResearchHandler_UnknownCharacter_ReturnsErrCharacter
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := listCharacterAgentsResearch
-	t.Cleanup(func() { listCharacterAgentsResearch = orig })
-	listCharacterAgentsResearch = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]AgentResearch, error) {
-		t.Fatal("listCharacterAgentsResearch should not be called for an unknown character")
-		return nil, nil
-	}
-
-	handler := listCharacterAgentsResearchHandler("v1", "client-id", store, nil)
+	handler := listCharacterAgentsResearchHandler("v1", noNarrow[characterAgentsResearchESI](t), store, nil)
 	_, _, err := handler(context.Background(), nil, ListCharacterAgentsResearchInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -274,13 +259,11 @@ func TestListCharacterMedalsHandler_ReturnsMedals(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCharacterMedals
-	t.Cleanup(func() { listCharacterMedals = orig })
-	listCharacterMedals = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]Medal, error) {
-		return []Medal{{MedalID: 1, Title: "Title"}}, nil
-	}
+	fake := fakeCharacterMedalsESI{characterMedals: func(ctx context.Context) ([]esiapi.CharactersCharacterIdMedalsGetInner, error) {
+		return []esiapi.CharactersCharacterIdMedalsGetInner{{MedalId: 1, Title: "Title"}}, nil
+	}}
 
-	handler := listCharacterMedalsHandler("v1", "client-id", store)
+	handler := listCharacterMedalsHandler(openNarrow[characterMedalsESI](fake), store)
 	_, out, err := handler(context.Background(), nil, ListCharacterMedalsInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -294,14 +277,7 @@ func TestListCharacterMedalsHandler_UnknownCharacter_ReturnsErrCharacterNotFound
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := listCharacterMedals
-	t.Cleanup(func() { listCharacterMedals = orig })
-	listCharacterMedals = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]Medal, error) {
-		t.Fatal("listCharacterMedals should not be called for an unknown character")
-		return nil, nil
-	}
-
-	handler := listCharacterMedalsHandler("v1", "client-id", store)
+	handler := listCharacterMedalsHandler(noNarrow[characterMedalsESI](t), store)
 	_, _, err := handler(context.Background(), nil, ListCharacterMedalsInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -315,13 +291,11 @@ func TestListCharacterNotificationsHandler_ReturnsNotifications(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCharacterNotifications
-	t.Cleanup(func() { listCharacterNotifications = orig })
-	listCharacterNotifications = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]Notification, error) {
-		return []Notification{{NotificationID: 1}}, nil
-	}
+	fake := fakeCharacterNotificationsESI{characterNotifications: func(ctx context.Context) ([]esiapi.CharactersCharacterIdNotificationsGetInner, error) {
+		return []esiapi.CharactersCharacterIdNotificationsGetInner{{NotificationId: 1}}, nil
+	}}
 
-	handler := listCharacterNotificationsHandler("v1", "client-id", store)
+	handler := listCharacterNotificationsHandler(openNarrow[characterNotificationsESI](fake), store)
 	_, out, err := handler(context.Background(), nil, ListCharacterNotificationsInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -335,14 +309,7 @@ func TestListCharacterNotificationsHandler_UnknownCharacter_ReturnsErrCharacterN
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := listCharacterNotifications
-	t.Cleanup(func() { listCharacterNotifications = orig })
-	listCharacterNotifications = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]Notification, error) {
-		t.Fatal("listCharacterNotifications should not be called for an unknown character")
-		return nil, nil
-	}
-
-	handler := listCharacterNotificationsHandler("v1", "client-id", store)
+	handler := listCharacterNotificationsHandler(noNarrow[characterNotificationsESI](t), store)
 	_, _, err := handler(context.Background(), nil, ListCharacterNotificationsInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -356,13 +323,11 @@ func TestListCharacterNotificationContactsHandler_ReturnsNotifications(t *testin
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCharacterNotificationContacts
-	t.Cleanup(func() { listCharacterNotificationContacts = orig })
-	listCharacterNotificationContacts = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]ContactNotification, error) {
-		return []ContactNotification{{NotificationID: 1, StandingLevel: 5}}, nil
-	}
+	fake := fakeCharacterNotificationContactsESI{characterNotificationContacts: func(ctx context.Context) ([]esiapi.CharactersCharacterIdNotificationsContactsGetInner, error) {
+		return []esiapi.CharactersCharacterIdNotificationsContactsGetInner{{NotificationId: 1, StandingLevel: 5}}, nil
+	}}
 
-	handler := listCharacterNotificationContactsHandler("v1", "client-id", store)
+	handler := listCharacterNotificationContactsHandler(openNarrow[characterNotificationContactsESI](fake), store)
 	_, out, err := handler(context.Background(), nil, ListCharacterNotificationContactsInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -376,14 +341,7 @@ func TestListCharacterNotificationContactsHandler_UnknownCharacter_ReturnsErrCha
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := listCharacterNotificationContacts
-	t.Cleanup(func() { listCharacterNotificationContacts = orig })
-	listCharacterNotificationContacts = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]ContactNotification, error) {
-		t.Fatal("listCharacterNotificationContacts should not be called for an unknown character")
-		return nil, nil
-	}
-
-	handler := listCharacterNotificationContactsHandler("v1", "client-id", store)
+	handler := listCharacterNotificationContactsHandler(noNarrow[characterNotificationContactsESI](t), store)
 	_, _, err := handler(context.Background(), nil, ListCharacterNotificationContactsInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -397,13 +355,11 @@ func TestGetCharacterRolesHandler_ReturnsRoles(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCharacterRoles
-	t.Cleanup(func() { getCharacterRoles = orig })
-	getCharacterRoles = func(ctx context.Context, clientID string, characterID int32, userAgent string) (GetCharacterRolesOutput, error) {
-		return GetCharacterRolesOutput{CharacterID: characterID, Roles: []string{"Director"}}, nil
-	}
+	fake := fakeCharacterRolesESI{characterRoles: func(ctx context.Context) (*esiapi.CharactersCharacterIdRolesGet, error) {
+		return &esiapi.CharactersCharacterIdRolesGet{Roles: []string{"Director"}}, nil
+	}}
 
-	handler := getCharacterRolesHandler("v1", "client-id", store)
+	handler := getCharacterRolesHandler(openNarrow[characterRolesESI](fake), store)
 	_, out, err := handler(context.Background(), nil, GetCharacterRolesInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -417,14 +373,7 @@ func TestGetCharacterRolesHandler_UnknownCharacter_ReturnsErrCharacterNotFound(t
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := getCharacterRoles
-	t.Cleanup(func() { getCharacterRoles = orig })
-	getCharacterRoles = func(ctx context.Context, clientID string, characterID int32, userAgent string) (GetCharacterRolesOutput, error) {
-		t.Fatal("getCharacterRoles should not be called for an unknown character")
-		return GetCharacterRolesOutput{}, nil
-	}
-
-	handler := getCharacterRolesHandler("v1", "client-id", store)
+	handler := getCharacterRolesHandler(noNarrow[characterRolesESI](t), store)
 	_, _, err := handler(context.Background(), nil, GetCharacterRolesInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -438,13 +387,11 @@ func TestListCharacterStandingsHandler_ReturnsStandings(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCharacterStandings
-	t.Cleanup(func() { listCharacterStandings = orig })
-	listCharacterStandings = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]Standing, error) {
-		return []Standing{{FromID: 500001, Standing: 5.5}}, nil
-	}
+	fake := fakeCharacterStandingsESI{characterStandings: func(ctx context.Context) ([]esiapi.CharactersCharacterIdStandingsGetInner, error) {
+		return []esiapi.CharactersCharacterIdStandingsGetInner{{FromId: 500001, Standing: 5.5}}, nil
+	}}
 
-	handler := listCharacterStandingsHandler("v1", "client-id", store)
+	handler := listCharacterStandingsHandler(openNarrow[characterStandingsESI](fake), store)
 	_, out, err := handler(context.Background(), nil, ListCharacterStandingsInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -458,14 +405,7 @@ func TestListCharacterStandingsHandler_UnknownCharacter_ReturnsErrCharacterNotFo
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := listCharacterStandings
-	t.Cleanup(func() { listCharacterStandings = orig })
-	listCharacterStandings = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]Standing, error) {
-		t.Fatal("listCharacterStandings should not be called for an unknown character")
-		return nil, nil
-	}
-
-	handler := listCharacterStandingsHandler("v1", "client-id", store)
+	handler := listCharacterStandingsHandler(noNarrow[characterStandingsESI](t), store)
 	_, _, err := handler(context.Background(), nil, ListCharacterStandingsInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -479,14 +419,12 @@ func TestListCharacterTitlesHandler_ReturnsTitles(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCharacterTitles
-	t.Cleanup(func() { listCharacterTitles = orig })
 	name := "CEO"
-	listCharacterTitles = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]Title, error) {
-		return []Title{{Name: &name}}, nil
-	}
+	fake := fakeCharacterTitlesESI{characterTitles: func(ctx context.Context) ([]esiapi.CharactersCharacterIdTitlesGetInner, error) {
+		return []esiapi.CharactersCharacterIdTitlesGetInner{{Name: &name}}, nil
+	}}
 
-	handler := listCharacterTitlesHandler("v1", "client-id", store)
+	handler := listCharacterTitlesHandler(openNarrow[characterTitlesESI](fake), store)
 	_, out, err := handler(context.Background(), nil, ListCharacterTitlesInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -500,14 +438,7 @@ func TestListCharacterTitlesHandler_UnknownCharacter_ReturnsErrCharacterNotFound
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := listCharacterTitles
-	t.Cleanup(func() { listCharacterTitles = orig })
-	listCharacterTitles = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]Title, error) {
-		t.Fatal("listCharacterTitles should not be called for an unknown character")
-		return nil, nil
-	}
-
-	handler := listCharacterTitlesHandler("v1", "client-id", store)
+	handler := listCharacterTitlesHandler(noNarrow[characterTitlesESI](t), store)
 	_, _, err := handler(context.Background(), nil, ListCharacterTitlesInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -521,13 +452,11 @@ func TestGetCharacterCSPACostHandler_ReturnsCost(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCharacterCSPACost
-	t.Cleanup(func() { getCharacterCSPACost = orig })
-	getCharacterCSPACost = func(ctx context.Context, clientID string, characterID int32, userAgent string, targetCharacterIDs []int64) (float64, error) {
+	fake := fakeCharacterCSPACostESI{characterCSPACost: func(ctx context.Context, targetCharacterIDs []int64) (float64, error) {
 		return 1000000.0, nil
-	}
+	}}
 
-	handler := getCharacterCSPACostHandler("v1", "client-id", store)
+	handler := getCharacterCSPACostHandler(openNarrow[characterCSPACostESI](fake), store)
 	_, out, err := handler(context.Background(), nil, GetCharacterCSPACostInput{CharacterID: 7, TargetCharacterIDs: []int64{998878}})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -541,14 +470,7 @@ func TestGetCharacterCSPACostHandler_UnknownCharacter_ReturnsErrCharacterNotFoun
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := getCharacterCSPACost
-	t.Cleanup(func() { getCharacterCSPACost = orig })
-	getCharacterCSPACost = func(ctx context.Context, clientID string, characterID int32, userAgent string, targetCharacterIDs []int64) (float64, error) {
-		t.Fatal("getCharacterCSPACost should not be called for an unknown character")
-		return 0, nil
-	}
-
-	handler := getCharacterCSPACostHandler("v1", "client-id", store)
+	handler := getCharacterCSPACostHandler(noNarrow[characterCSPACostESI](t), store)
 	_, _, err := handler(context.Background(), nil, GetCharacterCSPACostInput{CharacterID: 999, TargetCharacterIDs: []int64{998878}})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -562,11 +484,9 @@ func TestListCharacterAgentsResearchHandler_ResolvesSkillTypeName(t *testing.T) 
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCharacterAgentsResearch
-	t.Cleanup(func() { listCharacterAgentsResearch = orig })
-	listCharacterAgentsResearch = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]AgentResearch, error) {
-		return []AgentResearch{{AgentID: 1, SkillTypeID: 3403}}, nil
-	}
+	fake := fakeCharacterAgentsResearchESI{characterAgentsResearch: func(ctx context.Context) ([]esiapi.CharactersCharacterIdAgentsResearchGetInner, error) {
+		return []esiapi.CharactersCharacterIdAgentsResearchGetInner{{AgentId: 1, SkillTypeId: 3403}}, nil
+	}}
 
 	origResolve := resolveTypeNames
 	t.Cleanup(func() { resolveTypeNames = origResolve })
@@ -576,7 +496,7 @@ func TestListCharacterAgentsResearchHandler_ResolvesSkillTypeName(t *testing.T) 
 		return map[int64]string{3403: "Mining"}
 	}
 
-	handler := listCharacterAgentsResearchHandler("v1", "client-id", store, nil)
+	handler := listCharacterAgentsResearchHandler("v1", openNarrow[characterAgentsResearchESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, ListCharacterAgentsResearchInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -622,12 +542,10 @@ func TestListCharacterBlueprintsHandler_ResolvesTypeName(t *testing.T) {
 }
 
 func TestGetCharacterHandler_ResolvesFactionRaceBloodlineNames(t *testing.T) {
-	orig := getCharacterDetail
-	t.Cleanup(func() { getCharacterDetail = orig })
 	factionID := int64(500001)
-	getCharacterDetail = func(ctx context.Context, userAgent string, characterID int64) (GetCharacterOutput, error) {
-		return GetCharacterOutput{CharacterID: characterID, FactionID: &factionID, BloodlineID: 1, RaceID: 1}, nil
-	}
+	fake := fakeCharacterDetailESI{characterDetail: func(ctx context.Context, characterID int64) (*esiapi.CharactersDetail, error) {
+		return &esiapi.CharactersDetail{FactionId: &factionID, BloodlineId: 1, RaceId: 1}, nil
+	}}
 
 	origFaction := resolveFactionNames
 	t.Cleanup(func() { resolveFactionNames = origFaction })
@@ -645,7 +563,7 @@ func TestGetCharacterHandler_ResolvesFactionRaceBloodlineNames(t *testing.T) {
 		return map[int64]string{1: "Deteis"}
 	}
 
-	handler := getCharacterHandler("v1", nil)
+	handler := getCharacterHandler("v1", publicNarrow[characterDetailESI](fake), nil)
 	_, out, err := handler(context.Background(), nil, GetCharacterInput{CharacterID: 998877})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -662,13 +580,11 @@ func TestGetCharacterHandler_ResolvesFactionRaceBloodlineNames(t *testing.T) {
 }
 
 func TestGetCharacterHandler_FactionNameEmptyWhenFactionIDNil(t *testing.T) {
-	orig := getCharacterDetail
-	t.Cleanup(func() { getCharacterDetail = orig })
-	getCharacterDetail = func(ctx context.Context, userAgent string, characterID int64) (GetCharacterOutput, error) {
-		return GetCharacterOutput{CharacterID: characterID, BloodlineID: 1, RaceID: 1}, nil
-	}
+	fake := fakeCharacterDetailESI{characterDetail: func(ctx context.Context, characterID int64) (*esiapi.CharactersDetail, error) {
+		return &esiapi.CharactersDetail{BloodlineId: 1, RaceId: 1}, nil
+	}}
 
-	handler := getCharacterHandler("v1", nil)
+	handler := getCharacterHandler("v1", publicNarrow[characterDetailESI](fake), nil)
 	_, out, err := handler(context.Background(), nil, GetCharacterInput{CharacterID: 998877})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -734,4 +650,261 @@ func (f fakeCharacterFatigueESI) CharacterFatigue(ctx context.Context) (*esiapi.
 		return nil, errNotFaked
 	}
 	return f.characterFatigue(ctx)
+}
+
+// fakeCharacterDetailESI fakes characterDetailESI; a nil characterDetail fails as an unfaked call.
+type fakeCharacterDetailESI struct {
+	characterDetail func(ctx context.Context, characterID int64) (*esiapi.CharactersDetail, error)
+}
+
+func (f fakeCharacterDetailESI) CharacterDetail(ctx context.Context, characterID int64) (*esiapi.CharactersDetail, error) {
+	if f.characterDetail == nil {
+		return nil, errNotFaked
+	}
+	return f.characterDetail(ctx, characterID)
+}
+
+// fakeCharacterCorporationHistoryESI fakes characterCorporationHistoryESI; a nil characterCorporationHistory fails as an unfaked call.
+type fakeCharacterCorporationHistoryESI struct {
+	characterCorporationHistory func(ctx context.Context, characterID int64) ([]esiapi.CharactersCharacterIdCorporationhistoryGetInner, error)
+}
+
+func (f fakeCharacterCorporationHistoryESI) CharacterCorporationHistory(ctx context.Context, characterID int64) ([]esiapi.CharactersCharacterIdCorporationhistoryGetInner, error) {
+	if f.characterCorporationHistory == nil {
+		return nil, errNotFaked
+	}
+	return f.characterCorporationHistory(ctx, characterID)
+}
+
+// fakeCharacterPortraitESI fakes characterPortraitESI; a nil characterPortrait fails as an unfaked call.
+type fakeCharacterPortraitESI struct {
+	characterPortrait func(ctx context.Context, characterID int64) (*esiapi.CharactersCharacterIdPortraitGet, error)
+}
+
+func (f fakeCharacterPortraitESI) CharacterPortrait(ctx context.Context, characterID int64) (*esiapi.CharactersCharacterIdPortraitGet, error) {
+	if f.characterPortrait == nil {
+		return nil, errNotFaked
+	}
+	return f.characterPortrait(ctx, characterID)
+}
+
+// fakeCharacterAgentsResearchESI fakes characterAgentsResearchESI; a nil characterAgentsResearch fails as an unfaked call.
+type fakeCharacterAgentsResearchESI struct {
+	characterAgentsResearch func(ctx context.Context) ([]esiapi.CharactersCharacterIdAgentsResearchGetInner, error)
+}
+
+func (f fakeCharacterAgentsResearchESI) CharacterAgentsResearch(ctx context.Context) ([]esiapi.CharactersCharacterIdAgentsResearchGetInner, error) {
+	if f.characterAgentsResearch == nil {
+		return nil, errNotFaked
+	}
+	return f.characterAgentsResearch(ctx)
+}
+
+// fakeCharacterMedalsESI fakes characterMedalsESI; a nil characterMedals fails as an unfaked call.
+type fakeCharacterMedalsESI struct {
+	characterMedals func(ctx context.Context) ([]esiapi.CharactersCharacterIdMedalsGetInner, error)
+}
+
+func (f fakeCharacterMedalsESI) CharacterMedals(ctx context.Context) ([]esiapi.CharactersCharacterIdMedalsGetInner, error) {
+	if f.characterMedals == nil {
+		return nil, errNotFaked
+	}
+	return f.characterMedals(ctx)
+}
+
+// fakeCharacterNotificationsESI fakes characterNotificationsESI; a nil characterNotifications fails as an unfaked call.
+type fakeCharacterNotificationsESI struct {
+	characterNotifications func(ctx context.Context) ([]esiapi.CharactersCharacterIdNotificationsGetInner, error)
+}
+
+func (f fakeCharacterNotificationsESI) CharacterNotifications(ctx context.Context) ([]esiapi.CharactersCharacterIdNotificationsGetInner, error) {
+	if f.characterNotifications == nil {
+		return nil, errNotFaked
+	}
+	return f.characterNotifications(ctx)
+}
+
+// fakeCharacterNotificationContactsESI fakes characterNotificationContactsESI; a nil characterNotificationContacts fails as an unfaked call.
+type fakeCharacterNotificationContactsESI struct {
+	characterNotificationContacts func(ctx context.Context) ([]esiapi.CharactersCharacterIdNotificationsContactsGetInner, error)
+}
+
+func (f fakeCharacterNotificationContactsESI) CharacterNotificationContacts(ctx context.Context) ([]esiapi.CharactersCharacterIdNotificationsContactsGetInner, error) {
+	if f.characterNotificationContacts == nil {
+		return nil, errNotFaked
+	}
+	return f.characterNotificationContacts(ctx)
+}
+
+// fakeCharacterRolesESI fakes characterRolesESI; a nil characterRoles fails as an unfaked call.
+type fakeCharacterRolesESI struct {
+	characterRoles func(ctx context.Context) (*esiapi.CharactersCharacterIdRolesGet, error)
+}
+
+func (f fakeCharacterRolesESI) CharacterRoles(ctx context.Context) (*esiapi.CharactersCharacterIdRolesGet, error) {
+	if f.characterRoles == nil {
+		return nil, errNotFaked
+	}
+	return f.characterRoles(ctx)
+}
+
+// fakeCharacterStandingsESI fakes characterStandingsESI; a nil characterStandings fails as an unfaked call.
+type fakeCharacterStandingsESI struct {
+	characterStandings func(ctx context.Context) ([]esiapi.CharactersCharacterIdStandingsGetInner, error)
+}
+
+func (f fakeCharacterStandingsESI) CharacterStandings(ctx context.Context) ([]esiapi.CharactersCharacterIdStandingsGetInner, error) {
+	if f.characterStandings == nil {
+		return nil, errNotFaked
+	}
+	return f.characterStandings(ctx)
+}
+
+// fakeCharacterTitlesESI fakes characterTitlesESI; a nil characterTitles fails as an unfaked call.
+type fakeCharacterTitlesESI struct {
+	characterTitles func(ctx context.Context) ([]esiapi.CharactersCharacterIdTitlesGetInner, error)
+}
+
+func (f fakeCharacterTitlesESI) CharacterTitles(ctx context.Context) ([]esiapi.CharactersCharacterIdTitlesGetInner, error) {
+	if f.characterTitles == nil {
+		return nil, errNotFaked
+	}
+	return f.characterTitles(ctx)
+}
+
+// fakeCharacterCSPACostESI fakes characterCSPACostESI; a nil characterCSPACost fails as an unfaked call.
+type fakeCharacterCSPACostESI struct {
+	characterCSPACost func(ctx context.Context, targetCharacterIDs []int64) (float64, error)
+}
+
+func (f fakeCharacterCSPACostESI) CharacterCSPACost(ctx context.Context, targetCharacterIDs []int64) (float64, error) {
+	if f.characterCSPACost == nil {
+		return 0, errNotFaked
+	}
+	return f.characterCSPACost(ctx, targetCharacterIDs)
+}
+
+// openOrESIFailure calls a handler once with an opener that fails and once with
+// a client whose ESI call is unfaked, returning both errors.
+type openOrESIFailure func(failOpen bool) error
+
+// Each private character handler reports a client that can't be opened, and an
+// ESI call that fails, wrapping the cause.
+func TestCharacterHandlers_PropagateOpenAndESIErrors(t *testing.T) {
+	store := characterStore(t, config.Character{ID: 7, Name: "Test Pilot"})
+	ctx := context.Background()
+	openErr := errors.New("no refresh token")
+	for name, call := range map[string]openOrESIFailure{
+		"list_character_agents_research": func(failOpen bool) error {
+			open := openNarrow[characterAgentsResearchESI](fakeCharacterAgentsResearchESI{})
+			if failOpen {
+				open = failNarrow[characterAgentsResearchESI](openErr)
+			}
+			_, _, err := listCharacterAgentsResearchHandler("v1", open, store, nil)(ctx, nil, ListCharacterAgentsResearchInput{CharacterID: 7})
+			return err
+		},
+		"list_character_medals": func(failOpen bool) error {
+			open := openNarrow[characterMedalsESI](fakeCharacterMedalsESI{})
+			if failOpen {
+				open = failNarrow[characterMedalsESI](openErr)
+			}
+			_, _, err := listCharacterMedalsHandler(open, store)(ctx, nil, ListCharacterMedalsInput{CharacterID: 7})
+			return err
+		},
+		"list_character_notifications": func(failOpen bool) error {
+			open := openNarrow[characterNotificationsESI](fakeCharacterNotificationsESI{})
+			if failOpen {
+				open = failNarrow[characterNotificationsESI](openErr)
+			}
+			_, _, err := listCharacterNotificationsHandler(open, store)(ctx, nil, ListCharacterNotificationsInput{CharacterID: 7})
+			return err
+		},
+		"list_character_notification_contacts": func(failOpen bool) error {
+			open := openNarrow[characterNotificationContactsESI](fakeCharacterNotificationContactsESI{})
+			if failOpen {
+				open = failNarrow[characterNotificationContactsESI](openErr)
+			}
+			_, _, err := listCharacterNotificationContactsHandler(open, store)(ctx, nil, ListCharacterNotificationContactsInput{CharacterID: 7})
+			return err
+		},
+		"get_character_roles": func(failOpen bool) error {
+			open := openNarrow[characterRolesESI](fakeCharacterRolesESI{})
+			if failOpen {
+				open = failNarrow[characterRolesESI](openErr)
+			}
+			_, _, err := getCharacterRolesHandler(open, store)(ctx, nil, GetCharacterRolesInput{CharacterID: 7})
+			return err
+		},
+		"list_character_standings": func(failOpen bool) error {
+			open := openNarrow[characterStandingsESI](fakeCharacterStandingsESI{})
+			if failOpen {
+				open = failNarrow[characterStandingsESI](openErr)
+			}
+			_, _, err := listCharacterStandingsHandler(open, store)(ctx, nil, ListCharacterStandingsInput{CharacterID: 7})
+			return err
+		},
+		"list_character_titles": func(failOpen bool) error {
+			open := openNarrow[characterTitlesESI](fakeCharacterTitlesESI{})
+			if failOpen {
+				open = failNarrow[characterTitlesESI](openErr)
+			}
+			_, _, err := listCharacterTitlesHandler(open, store)(ctx, nil, ListCharacterTitlesInput{CharacterID: 7})
+			return err
+		},
+		"get_character_cspa_cost": func(failOpen bool) error {
+			open := openNarrow[characterCSPACostESI](fakeCharacterCSPACostESI{})
+			if failOpen {
+				open = failNarrow[characterCSPACostESI](openErr)
+			}
+			_, _, err := getCharacterCSPACostHandler(open, store)(ctx, nil, GetCharacterCSPACostInput{CharacterID: 7})
+			return err
+		},
+	} {
+		if err := call(true); !errors.Is(err, openErr) {
+			t.Errorf("%s: open err = %v, want wrapping %v", name, err, openErr)
+		}
+		if err := call(false); !errors.Is(err, errNotFaked) {
+			t.Errorf("%s: ESI err = %v, want wrapping errNotFaked", name, err)
+		}
+	}
+}
+
+// Each public character handler reports an ESI call that fails, wrapping the cause.
+func TestCharacterPublicHandlers_PropagateESIErrors(t *testing.T) {
+	ctx := context.Background()
+	for name, call := range map[string]func() error{
+		"get_character": func() error {
+			_, _, err := getCharacterHandler("v1", publicNarrow[characterDetailESI](fakeCharacterDetailESI{}), nil)(ctx, nil, GetCharacterInput{CharacterID: 998877})
+			return err
+		},
+		"list_character_corporation_history": func() error {
+			_, _, err := listCharacterCorporationHistoryHandler(publicNarrow[characterCorporationHistoryESI](fakeCharacterCorporationHistoryESI{}))(ctx, nil, ListCharacterCorporationHistoryInput{CharacterID: 998877})
+			return err
+		},
+		"get_character_portrait": func() error {
+			_, _, err := getCharacterPortraitHandler(publicNarrow[characterPortraitESI](fakeCharacterPortraitESI{}))(ctx, nil, GetCharacterPortraitInput{CharacterID: 998877})
+			return err
+		},
+	} {
+		if err := call(); !errors.Is(err, errNotFaked) {
+			t.Errorf("%s: err = %v, want wrapping errNotFaked", name, err)
+		}
+	}
+}
+
+// get_character_cspa_cost passes the target characters to ESI.
+func TestGetCharacterCSPACostHandler_PassesTargets(t *testing.T) {
+	store := characterStore(t, config.Character{ID: 7, Name: "Test Pilot"})
+	var got []int64
+	fake := fakeCharacterCSPACostESI{characterCSPACost: func(_ context.Context, targets []int64) (float64, error) {
+		got = targets
+		return 1, nil
+	}}
+	_, _, err := getCharacterCSPACostHandler(openNarrow[characterCSPACostESI](fake), store)(context.Background(), nil, GetCharacterCSPACostInput{CharacterID: 7, TargetCharacterIDs: []int64{1, 2}})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(got) != 2 || got[0] != 1 || got[1] != 2 {
+		t.Errorf("ESI got targets = %v, want [1 2]", got)
+	}
 }
