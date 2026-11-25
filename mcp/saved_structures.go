@@ -11,7 +11,6 @@ import (
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -21,7 +20,7 @@ var today = func() string { return time.Now().UTC().Format("2006-01-02") }
 // registerStructureTools adds the tools for the stations and structures the
 // user works from (~/.neat/structures.yaml). See
 // docs/superpowers/specs/2026-11-20-logistics-planning-design.md.
-func registerStructureTools(server *mcpsdk.Server, version, clientID string, store *config.Store, sdeStore *sde.Store) {
+func registerStructureTools(server *mcpsdk.Server, version, clientID string, store ConfigStore, sdeStore SDEStore) {
 	add := func(name, desc string) *mcpsdk.Tool { return &mcpsdk.Tool{Name: name, Description: desc} }
 	mcpsdk.AddTool(server, add("list_structures", fmt.Sprintf("List the NPC stations and Upwell structures the user works from (~/.neat/structures.yaml), with what the game won't tell neat: what they use each for, whether it has a working clone bay and how that's known, their corporation offices, and their notes. Each call checks every logged-in character's jump clones and records any clone bay they prove; a clone bay neat can't prove stays unknown, and only the user can check it in game. Pass characterIds to check, live, which characters have docking access to each Upwell structure: one ESI lookup per Upwell structure and character, and ESI counts every refused lookup (usually no docking access) against its error limit, so after %d refusals in one call the rest are returned as access not_checked with a warning. Pass only the characters you need, and don't call again to fill in not_checked entries for characters that were already refused. Use it before planning a clone jump, a staging move or anything that needs to dock somewhere.", maxDockingRefusals)), listStructuresHandler(version, clientID, store, sdeStore))
 	mcpsdk.AddTool(server, add("save_structure", "Save an NPC station or Upwell structure the user works from, or update one. Its name, type, system and owner are filled in from the game (an Upwell structure needs a character with docking access the first time). Record what the user tells you: what they use it for, its facility profile, a clone bay they checked in game (cloneBay yes or no), and notes. Offer to save a location whenever a plan uses one that isn't saved yet. Returns every value it changed, old and new, so you can tell the user what was recorded. Writes to ~/.neat/structures.yaml only."), saveStructureHandler(version, clientID, store, sdeStore))
@@ -46,7 +45,7 @@ type SaveStructureOutput struct {
 }
 
 // structureFacts reads what the game says about a station or structure.
-func structureFacts(ctx context.Context, clientID, ua string, sdeStore *sde.Store, id int64, characterID int32) (config.Structure, error) {
+func structureFacts(ctx context.Context, clientID, ua string, sdeStore SDEStore, id int64, characterID int32) (config.Structure, error) {
 	if st, ok, err := sdeStore.Station(ctx, ua, id); err != nil {
 		return config.Structure{}, fmt.Errorf("look up station %d: %w", id, err)
 	} else if ok {
@@ -104,7 +103,7 @@ func keepNames(facts *config.Structure, saved config.Structure) {
 	keep(facts.Owner, saved.Owner)
 }
 
-func saveStructureHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[SaveStructureInput, SaveStructureOutput] {
+func saveStructureHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[SaveStructureInput, SaveStructureOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in SaveStructureInput) (*mcpsdk.CallToolResult, SaveStructureOutput, error) {
 		if in.ID == 0 {
 			return nil, SaveStructureOutput{}, fmt.Errorf("save structure: id is required")
@@ -216,7 +215,7 @@ type ListStructuresOutput struct {
 	Warnings   []string        `json:"warnings,omitempty"`
 }
 
-func listStructuresHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListStructuresInput, ListStructuresOutput] {
+func listStructuresHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListStructuresInput, ListStructuresOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListStructuresInput) (*mcpsdk.CallToolResult, ListStructuresOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -301,7 +300,7 @@ type DeleteStructureInput struct {
 	ID int64 `json:"id" jsonschema:"the saved station or structure's ID"`
 }
 
-func deleteStructureHandler(store *config.Store) mcpsdk.ToolHandlerFor[DeleteStructureInput, DeletedOutput] {
+func deleteStructureHandler(store ConfigStore) mcpsdk.ToolHandlerFor[DeleteStructureInput, DeletedOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in DeleteStructureInput) (*mcpsdk.CallToolResult, DeletedOutput, error) {
 		var name string
 		if _, err := store.Update(func(cfg *config.Config) error {

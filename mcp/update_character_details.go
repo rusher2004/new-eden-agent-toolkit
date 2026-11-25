@@ -40,7 +40,7 @@ type UpdateCharacterDetailsOutput struct {
 	Warnings   []string        `json:"warnings,omitempty"`
 }
 
-func updateCharacterDetailsHandler(store *config.Store) mcpsdk.ToolHandlerFor[UpdateCharacterDetailsInput, UpdateCharacterDetailsOutput] {
+func updateCharacterDetailsHandler(store ConfigStore) mcpsdk.ToolHandlerFor[UpdateCharacterDetailsInput, UpdateCharacterDetailsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in UpdateCharacterDetailsInput) (*mcpsdk.CallToolResult, UpdateCharacterDetailsOutput, error) {
 		if in.Account == nil && in.Notes == nil && in.RenameAccount == nil {
 			return nil, UpdateCharacterDetailsOutput{}, fmt.Errorf("update character details: give account, notes or renameAccount")

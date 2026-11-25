@@ -25,7 +25,7 @@ type RemoveCharacterInput struct {
 	CharacterID int32 `json:"characterId" jsonschema:"the character ID to remove"`
 }
 
-func removeCharacterHandler(store *config.Store) mcpsdk.ToolHandlerFor[RemoveCharacterInput, CharacterInfo] {
+func removeCharacterHandler(store ConfigStore) mcpsdk.ToolHandlerFor[RemoveCharacterInput, CharacterInfo] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in RemoveCharacterInput) (*mcpsdk.CallToolResult, CharacterInfo, error) {
 		var removed config.Character
 		credsRemoved := false

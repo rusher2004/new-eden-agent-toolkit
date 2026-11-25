@@ -9,7 +9,6 @@ import (
 
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 
-	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
@@ -199,7 +198,7 @@ type ListCharacterMilitaryCampaignObjectivesOutput struct {
 	NextBefore  *string                      `json:"nextBefore,omitempty"`
 }
 
-func listCharacterMilitaryCampaignObjectivesHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCharacterMilitaryCampaignObjectivesInput, ListCharacterMilitaryCampaignObjectivesOutput] {
+func listCharacterMilitaryCampaignObjectivesHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCharacterMilitaryCampaignObjectivesInput, ListCharacterMilitaryCampaignObjectivesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterMilitaryCampaignObjectivesInput) (*mcpsdk.CallToolResult, ListCharacterMilitaryCampaignObjectivesOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -248,7 +247,7 @@ type GetCharacterMilitaryCampaignObjectiveParticipationOutput struct {
 	LastModified time.Time `json:"lastModified"`
 }
 
-func getCharacterMilitaryCampaignObjectiveParticipationHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[GetCharacterMilitaryCampaignObjectiveParticipationInput, GetCharacterMilitaryCampaignObjectiveParticipationOutput] {
+func getCharacterMilitaryCampaignObjectiveParticipationHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetCharacterMilitaryCampaignObjectiveParticipationInput, GetCharacterMilitaryCampaignObjectiveParticipationOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterMilitaryCampaignObjectiveParticipationInput) (*mcpsdk.CallToolResult, GetCharacterMilitaryCampaignObjectiveParticipationOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {

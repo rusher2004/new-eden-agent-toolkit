@@ -5,10 +5,36 @@ import (
 	"errors"
 	"testing"
 
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	"github.com/zalando/go-keyring"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
+	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 )
+
+// fakeLoyaltyESI fakes the one ESI call list_character_loyalty_points makes.
+type fakeLoyaltyESI struct {
+	points []esiapi.CharactersCharacterIdLoyaltyPointsGetInner
+	err    error
+}
+
+func (f fakeLoyaltyESI) CharacterLoyaltyPoints(context.Context) ([]esiapi.CharactersCharacterIdLoyaltyPointsGetInner, error) {
+	return f.points, f.err
+}
+
+// fakeLoyaltyStoreESI fakes list_loyalty_store_offers's one ESI call.
+type fakeLoyaltyStoreESI struct {
+	offers []esiapi.LoyaltyStoresCorporationIdOffersGetInner
+	err    error
+}
+
+func (f fakeLoyaltyStoreESI) LoyaltyStoreOffers(context.Context, int64) ([]esiapi.LoyaltyStoresCorporationIdOffersGetInner, error) {
+	return f.offers, f.err
+}
+
+func openLoyaltyFake(c loyaltyESI) func(context.Context, int32) (loyaltyESI, error) {
+	return func(context.Context, int32) (loyaltyESI, error) { return c, nil }
+}
 
 func TestListCharacterLoyaltyPointsHandler_MapsFields(t *testing.T) {
 	keyring.MockInit()
@@ -17,13 +43,8 @@ func TestListCharacterLoyaltyPointsHandler_MapsFields(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCharacterLoyaltyPoints
-	t.Cleanup(func() { listCharacterLoyaltyPoints = orig })
-	listCharacterLoyaltyPoints = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]LoyaltyPointsEntry, error) {
-		return []LoyaltyPointsEntry{{CorporationID: 1000167, LoyaltyPoints: 15000}}, nil
-	}
-
-	handler := listCharacterLoyaltyPointsHandler("v1", "client-id", store)
+	fake := fakeLoyaltyESI{points: []esiapi.CharactersCharacterIdLoyaltyPointsGetInner{{CorporationId: 1000167, LoyaltyPoints: 15000}}}
+	handler := listCharacterLoyaltyPointsHandler(openLoyaltyFake(fake), store)
 	_, out, err := handler(context.Background(), nil, ListCharacterLoyaltyPointsInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -40,32 +61,54 @@ func TestListCharacterLoyaltyPointsHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := listCharacterLoyaltyPoints
-	t.Cleanup(func() { listCharacterLoyaltyPoints = orig })
-	listCharacterLoyaltyPoints = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]LoyaltyPointsEntry, error) {
-		t.Fatal("listCharacterLoyaltyPoints should not be called for an unknown character")
+	open := func(context.Context, int32) (loyaltyESI, error) {
+		t.Fatal("no ESI client should be opened for an unknown character")
 		return nil, nil
 	}
-
-	handler := listCharacterLoyaltyPointsHandler("v1", "client-id", store)
+	handler := listCharacterLoyaltyPointsHandler(open, store)
 	_, _, err := handler(context.Background(), nil, ListCharacterLoyaltyPointsInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
 	}
 }
 
-func TestListLoyaltyStoreOffersHandler_MapsFields(t *testing.T) {
-	orig := listLoyaltyStoreOffers
-	t.Cleanup(func() { listLoyaltyStoreOffers = orig })
-	akCost := int64(50)
-	listLoyaltyStoreOffers = func(ctx context.Context, userAgent string, corporationID int64) ([]LoyaltyStoreOffer, error) {
-		return []LoyaltyStoreOffer{{
-			OfferID: 1, TypeID: 588, Quantity: 1, IskCost: 10000, LpCost: 100, AkCost: &akCost,
-			RequiredItems: []LoyaltyRequiredItem{{TypeID: 34, Quantity: 2}},
-		}}, nil
+func TestListCharacterLoyaltyPointsHandler_PropagatesESIError(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
 	}
 
-	handler := listLoyaltyStoreOffersHandler("v1", nil)
+	handler := listCharacterLoyaltyPointsHandler(openLoyaltyFake(fakeLoyaltyESI{err: errBoom}), store)
+	_, _, err := handler(context.Background(), nil, ListCharacterLoyaltyPointsInput{CharacterID: 7})
+	if !errors.Is(err, errBoom) {
+		t.Errorf("err = %v, want wrapping errBoom", err)
+	}
+}
+
+func TestListCharacterLoyaltyPointsHandler_PropagatesOpenError(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	open := func(context.Context, int32) (loyaltyESI, error) { return nil, errBoom }
+	handler := listCharacterLoyaltyPointsHandler(open, store)
+	_, _, err := handler(context.Background(), nil, ListCharacterLoyaltyPointsInput{CharacterID: 7})
+	if !errors.Is(err, errBoom) {
+		t.Errorf("err = %v, want wrapping errBoom", err)
+	}
+}
+
+func TestListLoyaltyStoreOffersHandler_MapsFields(t *testing.T) {
+	akCost := int64(50)
+	fake := fakeLoyaltyStoreESI{offers: []esiapi.LoyaltyStoresCorporationIdOffersGetInner{{
+		OfferId: 1, TypeId: 588, Quantity: 1, IskCost: 10000, LpCost: 100, AkCost: &akCost,
+		RequiredItems: []esiapi.LoyaltyStoresCorporationIdOffersGetInnerRequiredItemsInner{{TypeId: 34, Quantity: 2}},
+	}}}
+
+	handler := listLoyaltyStoreOffersHandler("test-agent", func() loyaltyStoreESI { return fake }, noTypesSDE{})
 	_, out, err := handler(context.Background(), nil, ListLoyaltyStoreOffersInput{CorporationID: 1000167})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -86,28 +129,18 @@ func TestListLoyaltyStoreOffersHandler_MapsFields(t *testing.T) {
 }
 
 func TestListLoyaltyStoreOffersHandler_PropagatesError(t *testing.T) {
-	orig := listLoyaltyStoreOffers
-	t.Cleanup(func() { listLoyaltyStoreOffers = orig })
-	listLoyaltyStoreOffers = func(ctx context.Context, userAgent string, corporationID int64) ([]LoyaltyStoreOffer, error) {
-		return nil, errBoom
-	}
-
-	handler := listLoyaltyStoreOffersHandler("v1", nil)
+	handler := listLoyaltyStoreOffersHandler("test-agent", func() loyaltyStoreESI { return fakeLoyaltyStoreESI{err: errBoom} }, noTypesSDE{})
 	_, _, err := handler(context.Background(), nil, ListLoyaltyStoreOffersInput{CorporationID: 1000167})
-	if err == nil {
-		t.Fatal("handler returned nil error, want the propagated error")
+	if !errors.Is(err, errBoom) {
+		t.Errorf("err = %v, want wrapping errBoom", err)
 	}
 }
 
 func TestListLoyaltyStoreOffersHandler_ResolvesTypeNames(t *testing.T) {
-	orig := listLoyaltyStoreOffers
-	t.Cleanup(func() { listLoyaltyStoreOffers = orig })
-	listLoyaltyStoreOffers = func(ctx context.Context, userAgent string, corporationID int64) ([]LoyaltyStoreOffer, error) {
-		return []LoyaltyStoreOffer{{
-			OfferID: 1, TypeID: 587,
-			RequiredItems: []LoyaltyRequiredItem{{TypeID: 588, Quantity: 1}},
-		}}, nil
-	}
+	fake := fakeLoyaltyStoreESI{offers: []esiapi.LoyaltyStoresCorporationIdOffersGetInner{{
+		OfferId: 1, TypeId: 587,
+		RequiredItems: []esiapi.LoyaltyStoresCorporationIdOffersGetInnerRequiredItemsInner{{TypeId: 588, Quantity: 1}},
+	}}}
 
 	origResolve := resolveTypeNames
 	t.Cleanup(func() { resolveTypeNames = origResolve })
@@ -115,7 +148,7 @@ func TestListLoyaltyStoreOffersHandler_ResolvesTypeNames(t *testing.T) {
 		return map[int64]string{587: "Rifter", 588: "Tritanium"}
 	}
 
-	handler := listLoyaltyStoreOffersHandler("v1", nil)
+	handler := listLoyaltyStoreOffersHandler("test-agent", func() loyaltyStoreESI { return fake }, noTypesSDE{})
 	_, out, err := handler(context.Background(), nil, ListLoyaltyStoreOffersInput{CorporationID: 1})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -129,3 +162,12 @@ func TestListLoyaltyStoreOffersHandler_ResolvesTypeNames(t *testing.T) {
 }
 
 var errBoom = errors.New("boom")
+
+// noTypesSDE is an SDEStore that knows no types: every lookup misses, so name
+// enrichment adds nothing. It embeds the interface so only Type needs a body;
+// any other call panics, which would flag a handler reaching past what it needs.
+type noTypesSDE struct{}
+
+func (noTypesSDE) Type(context.Context, string, int64) (sde.Type, bool, error) {
+	return sde.Type{}, false, nil
+}

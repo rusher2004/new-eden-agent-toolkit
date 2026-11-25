@@ -6,6 +6,13 @@ import (
 	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 )
 
+// Every resolver in this file treats a nil cache as "nothing to look up" and
+// returns no names. That is part of the additive-enrichment exception in
+// CLAUDE.md, not a guard against a wiring bug: NewServer rejects a missing
+// Deps.SDE, and the composition root passes a nil *sde.Store (whose methods
+// are nil-safe) when the cache can't open, so a missing SDE degrades to
+// unenriched output instead of failing the tool.
+
 // typeNameCache is the minimal read-only view of sde.Store.Type() that
 // resolveTypeNames needs -- narrower than universe.go's typeCache, which
 // also exposes PutType/TypeIDs for the Universe tag's own write-back and
@@ -26,7 +33,7 @@ type typeNameCache interface {
 // required, so one bad ID must not fail an entire tool call over data ESI
 // already returned successfully.
 var resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
-	if len(ids) == 0 {
+	if len(ids) == 0 || sdeStore == nil {
 		return nil
 	}
 	seen := make(map[int64]struct{}, len(ids))
@@ -55,7 +62,7 @@ type systemNameCache interface {
 // resolveTypeNames's exact contract: dedup, drop a miss or error rather than
 // erroring, never fall back to a live ESI call.
 var resolveSystemNames = func(ctx context.Context, sdeStore systemNameCache, userAgent string, ids []int64) map[int64]string {
-	if len(ids) == 0 {
+	if len(ids) == 0 || sdeStore == nil {
 		return nil
 	}
 	seen := make(map[int64]struct{}, len(ids))
@@ -81,7 +88,7 @@ type regionNameCache interface {
 }
 
 var resolveRegionNames = func(ctx context.Context, sdeStore regionNameCache, userAgent string, ids []int64) map[int64]string {
-	if len(ids) == 0 {
+	if len(ids) == 0 || sdeStore == nil {
 		return nil
 	}
 	seen := make(map[int64]struct{}, len(ids))
@@ -107,7 +114,7 @@ type constellationNameCache interface {
 }
 
 var resolveConstellationNames = func(ctx context.Context, sdeStore constellationNameCache, userAgent string, ids []int64) map[int64]string {
-	if len(ids) == 0 {
+	if len(ids) == 0 || sdeStore == nil {
 		return nil
 	}
 	seen := make(map[int64]struct{}, len(ids))
@@ -136,7 +143,7 @@ type stationNameCache interface {
 // sde.Station.Name is a plain string (station names are generated
 // server-side, never localized) -- not a map[string]string like System's.
 var resolveStationNames = func(ctx context.Context, sdeStore stationNameCache, userAgent string, ids []int64) map[int64]string {
-	if len(ids) == 0 {
+	if len(ids) == 0 || sdeStore == nil {
 		return nil
 	}
 	seen := make(map[int64]struct{}, len(ids))
@@ -164,7 +171,7 @@ type planetNameCache interface {
 // resolvePlanetNames follows resolveStationNames's plain-string shape --
 // sde.Planet.Name is also a plain string, not a localized map.
 var resolvePlanetNames = func(ctx context.Context, sdeStore planetNameCache, userAgent string, ids []int64) map[int64]string {
-	if len(ids) == 0 {
+	if len(ids) == 0 || sdeStore == nil {
 		return nil
 	}
 	seen := make(map[int64]struct{}, len(ids))
@@ -192,7 +199,7 @@ type moonNameCache interface {
 // resolveMoonNames follows resolveStationNames's plain-string shape --
 // sde.Moon.Name is also a plain string, not a localized map.
 var resolveMoonNames = func(ctx context.Context, sdeStore moonNameCache, userAgent string, ids []int64) map[int64]string {
-	if len(ids) == 0 {
+	if len(ids) == 0 || sdeStore == nil {
 		return nil
 	}
 	seen := make(map[int64]struct{}, len(ids))
@@ -218,7 +225,7 @@ type raceNameCache interface {
 }
 
 var resolveRaceNames = func(ctx context.Context, sdeStore raceNameCache, userAgent string, ids []int64) map[int64]string {
-	if len(ids) == 0 {
+	if len(ids) == 0 || sdeStore == nil {
 		return nil
 	}
 	seen := make(map[int64]struct{}, len(ids))
@@ -244,7 +251,7 @@ type bloodlineNameCache interface {
 }
 
 var resolveBloodlineNames = func(ctx context.Context, sdeStore bloodlineNameCache, userAgent string, ids []int64) map[int64]string {
-	if len(ids) == 0 {
+	if len(ids) == 0 || sdeStore == nil {
 		return nil
 	}
 	seen := make(map[int64]struct{}, len(ids))
@@ -270,7 +277,7 @@ type factionNameCache interface {
 }
 
 var resolveFactionNames = func(ctx context.Context, sdeStore factionNameCache, userAgent string, ids []int64) map[int64]string {
-	if len(ids) == 0 {
+	if len(ids) == 0 || sdeStore == nil {
 		return nil
 	}
 	seen := make(map[int64]struct{}, len(ids))
@@ -298,7 +305,7 @@ type groupNameCache interface {
 }
 
 var resolveGroupNames = func(ctx context.Context, sdeStore groupNameCache, userAgent string, ids []int64) map[int64]string {
-	if len(ids) == 0 {
+	if len(ids) == 0 || sdeStore == nil {
 		return nil
 	}
 	seen := make(map[int64]struct{}, len(ids))
@@ -328,7 +335,7 @@ type skinrComponentNameCache interface {
 // erroring. Unlike the other resolvers, a miss has no ESI resource to fall back to even in
 // principle -- SKINR components exist only in the SDE.
 var resolveSkinrComponentNames = func(ctx context.Context, sdeStore skinrComponentNameCache, userAgent string, ids []int64) map[int64]string {
-	if len(ids) == 0 {
+	if len(ids) == 0 || sdeStore == nil {
 		return nil
 	}
 	seen := make(map[int64]struct{}, len(ids))
@@ -356,7 +363,7 @@ type skinrSlotNameCache interface {
 // resolveSkinrSlotNames looks up SKINR cosmetic slot names for a set of slot IDs, following
 // resolveTypeNames's exact contract.
 var resolveSkinrSlotNames = func(ctx context.Context, sdeStore skinrSlotNameCache, userAgent string, ids []int64) map[int64]string {
-	if len(ids) == 0 {
+	if len(ids) == 0 || sdeStore == nil {
 		return nil
 	}
 	seen := make(map[int64]struct{}, len(ids))
@@ -385,7 +392,7 @@ type typeBasicsCache interface {
 // IDs in one batch, deduplicated. Like resolveTypeNames it's additive: a
 // failed lookup returns nothing rather than failing the tool call.
 var resolveTypeBasics = func(ctx context.Context, sdeStore typeBasicsCache, userAgent string, ids []int64) map[int64]sde.TypeBasic {
-	if len(ids) == 0 {
+	if len(ids) == 0 || sdeStore == nil {
 		return nil
 	}
 	seen := make(map[int64]bool, len(ids))

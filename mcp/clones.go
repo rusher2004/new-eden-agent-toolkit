@@ -7,7 +7,6 @@ import (
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
@@ -62,7 +61,7 @@ type GetCharacterClonesInput struct {
 	CharacterID int32 `json:"characterId" jsonschema:"the character ID to check"`
 }
 
-func getCharacterClonesHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[GetCharacterClonesInput, GetCharacterClonesOutput] {
+func getCharacterClonesHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetCharacterClonesInput, GetCharacterClonesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterClonesInput) (*mcpsdk.CallToolResult, GetCharacterClonesOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -106,7 +105,7 @@ type ListCharacterImplantsOutput struct {
 	ImplantTypeIDs []int64 `json:"implantTypeIds"`
 }
 
-func listCharacterImplantsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCharacterImplantsInput, ListCharacterImplantsOutput] {
+func listCharacterImplantsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCharacterImplantsInput, ListCharacterImplantsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterImplantsInput) (*mcpsdk.CallToolResult, ListCharacterImplantsOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {

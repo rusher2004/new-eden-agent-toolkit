@@ -13,9 +13,7 @@ import (
 
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 
-	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -39,7 +37,7 @@ type GetWalletBalanceOutput struct {
 	BalanceISK  float64 `json:"balanceIsk"`
 }
 
-func getWalletBalanceHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[GetWalletBalanceInput, GetWalletBalanceOutput] {
+func getWalletBalanceHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetWalletBalanceInput, GetWalletBalanceOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetWalletBalanceInput) (*mcpsdk.CallToolResult, GetWalletBalanceOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -153,7 +151,7 @@ type ListCharacterWalletJournalOutput struct {
 	Entries     []WalletJournalEntry `json:"entries"`
 }
 
-func listCharacterWalletJournalHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCharacterWalletJournalInput, ListCharacterWalletJournalOutput] {
+func listCharacterWalletJournalHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCharacterWalletJournalInput, ListCharacterWalletJournalOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterWalletJournalInput) (*mcpsdk.CallToolResult, ListCharacterWalletJournalOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -197,7 +195,7 @@ type ListCharacterWalletTransactionsOutput struct {
 	Transactions []WalletTransaction `json:"transactions"`
 }
 
-func listCharacterWalletTransactionsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCharacterWalletTransactionsInput, ListCharacterWalletTransactionsOutput] {
+func listCharacterWalletTransactionsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCharacterWalletTransactionsInput, ListCharacterWalletTransactionsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterWalletTransactionsInput) (*mcpsdk.CallToolResult, ListCharacterWalletTransactionsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -251,7 +249,7 @@ type ListCorporationWalletsOutput struct {
 	Wallets       []CorporationWalletDivision `json:"wallets"`
 }
 
-func listCorporationWalletsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCorporationWalletsInput, ListCorporationWalletsOutput] {
+func listCorporationWalletsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationWalletsInput, ListCorporationWalletsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationWalletsInput) (*mcpsdk.CallToolResult, ListCorporationWalletsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -297,7 +295,7 @@ type ListCorporationWalletJournalOutput struct {
 	Entries       []WalletJournalEntry `json:"entries"`
 }
 
-func listCorporationWalletJournalHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCorporationWalletJournalInput, ListCorporationWalletJournalOutput] {
+func listCorporationWalletJournalHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationWalletJournalInput, ListCorporationWalletJournalOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationWalletJournalInput) (*mcpsdk.CallToolResult, ListCorporationWalletJournalOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -348,7 +346,7 @@ type ListCorporationWalletTransactionsOutput struct {
 	Transactions  []WalletTransaction `json:"transactions"`
 }
 
-func listCorporationWalletTransactionsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCorporationWalletTransactionsInput, ListCorporationWalletTransactionsOutput] {
+func listCorporationWalletTransactionsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCorporationWalletTransactionsInput, ListCorporationWalletTransactionsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationWalletTransactionsInput) (*mcpsdk.CallToolResult, ListCorporationWalletTransactionsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {

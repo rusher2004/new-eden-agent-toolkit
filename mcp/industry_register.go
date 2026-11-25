@@ -4,12 +4,11 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
-	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 )
 
 // registerIndustryPlanningTools adds the industry planning tools. See
 // docs/superpowers/specs/2026-11-18-industry-planning-design.md.
-func registerIndustryPlanningTools(server *mcpsdk.Server, version, clientID string, store *config.Store, sdeStore *sde.Store) {
+func registerIndustryPlanningTools(server *mcpsdk.Server, version, clientID string, store ConfigStore, sdeStore SDEStore) {
 	add := func(name, desc string) *mcpsdk.Tool { return &mcpsdk.Tool{Name: name, Description: desc} }
 
 	// Facility profiles (the only tools here that write anything, and only to ~/.neat/facilities.yaml).

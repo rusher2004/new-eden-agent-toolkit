@@ -7,7 +7,6 @@ import (
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
 	"github.com/rusher2004/new-eden-agent-toolkit/nav"
 	"github.com/rusher2004/new-eden-agent-toolkit/sde"
@@ -65,7 +64,7 @@ type ListUniverseAncestriesOutput struct {
 	Ancestries []UniverseAncestry `json:"ancestries"`
 }
 
-func listUniverseAncestriesHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListUniverseAncestriesInput, ListUniverseAncestriesOutput] {
+func listUniverseAncestriesHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListUniverseAncestriesInput, ListUniverseAncestriesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListUniverseAncestriesInput) (*mcpsdk.CallToolResult, ListUniverseAncestriesOutput, error) {
 		ancestries, err := listUniverseAncestries(ctx, sdeStore, sso.UserAgent(version))
 		if err != nil {
@@ -136,7 +135,7 @@ type ListUniverseBloodlinesOutput struct {
 	Bloodlines []UniverseBloodline `json:"bloodlines"`
 }
 
-func listUniverseBloodlinesHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListUniverseBloodlinesInput, ListUniverseBloodlinesOutput] {
+func listUniverseBloodlinesHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListUniverseBloodlinesInput, ListUniverseBloodlinesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListUniverseBloodlinesInput) (*mcpsdk.CallToolResult, ListUniverseBloodlinesOutput, error) {
 		bloodlines, err := listUniverseBloodlines(ctx, sdeStore, sso.UserAgent(version))
 		if err != nil {
@@ -192,7 +191,7 @@ type ListUniverseRacesOutput struct {
 	Races []UniverseRace `json:"races"`
 }
 
-func listUniverseRacesHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListUniverseRacesInput, ListUniverseRacesOutput] {
+func listUniverseRacesHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListUniverseRacesInput, ListUniverseRacesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListUniverseRacesInput) (*mcpsdk.CallToolResult, ListUniverseRacesOutput, error) {
 		races, err := listUniverseRaces(ctx, sdeStore, sso.UserAgent(version))
 		if err != nil {
@@ -262,7 +261,7 @@ type ListUniverseFactionsOutput struct {
 	Factions []UniverseFaction `json:"factions"`
 }
 
-func listUniverseFactionsHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListUniverseFactionsInput, ListUniverseFactionsOutput] {
+func listUniverseFactionsHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListUniverseFactionsInput, ListUniverseFactionsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListUniverseFactionsInput) (*mcpsdk.CallToolResult, ListUniverseFactionsOutput, error) {
 		factions, err := listUniverseFactions(ctx, sdeStore, sso.UserAgent(version))
 		if err != nil {
@@ -300,9 +299,9 @@ func paginateIDs(ids []int64, page int32) ([]int64, int32) {
 
 // --- list_universe_categories (public, no input) ---
 
-// categoryCache is the subset of *sde.Store's category methods the
+// categoryCache is the subset of SDEStore's category methods the
 // read-through cache needs -- narrow enough that tests can substitute a
-// fake without a real (network-touching) *sde.Store. *sde.Store satisfies
+// fake without a real (network-touching) SDEStore. SDEStore satisfies
 // this structurally; no sde/ changes are needed to pass one in.
 type categoryCache interface {
 	Category(ctx context.Context, userAgent string, id int64) (sde.Category, bool, error)
@@ -328,7 +327,7 @@ type ListUniverseCategoriesOutput struct {
 	IDs []int64 `json:"ids"`
 }
 
-func listUniverseCategoriesHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListUniverseCategoriesInput, ListUniverseCategoriesOutput] {
+func listUniverseCategoriesHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListUniverseCategoriesInput, ListUniverseCategoriesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListUniverseCategoriesInput) (*mcpsdk.CallToolResult, ListUniverseCategoriesOutput, error) {
 		ids, err := listUniverseCategories(ctx, sdeStore, sso.UserAgent(version))
 		if err != nil {
@@ -373,7 +372,7 @@ type GetUniverseCategoryInput struct {
 	CategoryID int64 `json:"categoryId" jsonschema:"the category ID to look up"`
 }
 
-func getUniverseCategoryHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetUniverseCategoryInput, UniverseCategory] {
+func getUniverseCategoryHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetUniverseCategoryInput, UniverseCategory] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetUniverseCategoryInput) (*mcpsdk.CallToolResult, UniverseCategory, error) {
 		out, err := getUniverseCategory(ctx, sdeStore, sso.UserAgent(version), in.CategoryID)
 		if err != nil {
@@ -413,7 +412,7 @@ type ListUniverseGroupsOutput struct {
 	TotalPages int32   `json:"totalPages"`
 }
 
-func listUniverseGroupsHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListUniverseGroupsInput, ListUniverseGroupsOutput] {
+func listUniverseGroupsHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListUniverseGroupsInput, ListUniverseGroupsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListUniverseGroupsInput) (*mcpsdk.CallToolResult, ListUniverseGroupsOutput, error) {
 		ids, totalPages, err := listUniverseGroups(ctx, sdeStore, sso.UserAgent(version), in.Page)
 		if err != nil {
@@ -460,7 +459,7 @@ type GetUniverseGroupInput struct {
 	GroupID int64 `json:"groupId" jsonschema:"the group ID to look up"`
 }
 
-func getUniverseGroupHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetUniverseGroupInput, UniverseGroup] {
+func getUniverseGroupHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetUniverseGroupInput, UniverseGroup] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetUniverseGroupInput) (*mcpsdk.CallToolResult, UniverseGroup, error) {
 		out, err := getUniverseGroup(ctx, sdeStore, sso.UserAgent(version), in.GroupID)
 		if err != nil {
@@ -500,7 +499,7 @@ type ListUniverseTypesOutput struct {
 	TotalPages int32   `json:"totalPages"`
 }
 
-func listUniverseTypesHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListUniverseTypesInput, ListUniverseTypesOutput] {
+func listUniverseTypesHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListUniverseTypesInput, ListUniverseTypesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListUniverseTypesInput) (*mcpsdk.CallToolResult, ListUniverseTypesOutput, error) {
 		ids, totalPages, err := listUniverseTypes(ctx, sdeStore, sso.UserAgent(version), in.Page)
 		if err != nil {
@@ -594,7 +593,7 @@ type GetUniverseTypeInput struct {
 	TypeID int64 `json:"typeId" jsonschema:"the type ID to look up"`
 }
 
-func getUniverseTypeHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetUniverseTypeInput, UniverseType] {
+func getUniverseTypeHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetUniverseTypeInput, UniverseType] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetUniverseTypeInput) (*mcpsdk.CallToolResult, UniverseType, error) {
 		out, err := getUniverseType(ctx, sdeStore, sso.UserAgent(version), in.TypeID)
 		if err != nil {
@@ -636,7 +635,7 @@ type ListUniverseRegionsOutput struct {
 	IDs []int64 `json:"ids"`
 }
 
-func listUniverseRegionsHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListUniverseRegionsInput, ListUniverseRegionsOutput] {
+func listUniverseRegionsHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListUniverseRegionsInput, ListUniverseRegionsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListUniverseRegionsInput) (*mcpsdk.CallToolResult, ListUniverseRegionsOutput, error) {
 		ids, err := listUniverseRegions(ctx, sdeStore, sso.UserAgent(version))
 		if err != nil {
@@ -678,7 +677,7 @@ type GetUniverseRegionInput struct {
 	RegionID int64 `json:"regionId" jsonschema:"the region ID to look up"`
 }
 
-func getUniverseRegionHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetUniverseRegionInput, UniverseRegion] {
+func getUniverseRegionHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetUniverseRegionInput, UniverseRegion] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetUniverseRegionInput) (*mcpsdk.CallToolResult, UniverseRegion, error) {
 		out, err := getUniverseRegion(ctx, sdeStore, sso.UserAgent(version), in.RegionID)
 		if err != nil {
@@ -713,7 +712,7 @@ type ListUniverseConstellationsOutput struct {
 	IDs []int64 `json:"ids"`
 }
 
-func listUniverseConstellationsHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListUniverseConstellationsInput, ListUniverseConstellationsOutput] {
+func listUniverseConstellationsHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListUniverseConstellationsInput, ListUniverseConstellationsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListUniverseConstellationsInput) (*mcpsdk.CallToolResult, ListUniverseConstellationsOutput, error) {
 		ids, err := listUniverseConstellations(ctx, sdeStore, sso.UserAgent(version))
 		if err != nil {
@@ -764,7 +763,7 @@ type GetUniverseConstellationInput struct {
 	ConstellationID int64 `json:"constellationId" jsonschema:"the constellation ID to look up"`
 }
 
-func getUniverseConstellationHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetUniverseConstellationInput, UniverseConstellation] {
+func getUniverseConstellationHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetUniverseConstellationInput, UniverseConstellation] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetUniverseConstellationInput) (*mcpsdk.CallToolResult, UniverseConstellation, error) {
 		out, err := getUniverseConstellation(ctx, sdeStore, sso.UserAgent(version), in.ConstellationID)
 		if err != nil {
@@ -799,7 +798,7 @@ type ListUniverseSystemsOutput struct {
 	IDs []int64 `json:"ids"`
 }
 
-func listUniverseSystemsHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListUniverseSystemsInput, ListUniverseSystemsOutput] {
+func listUniverseSystemsHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListUniverseSystemsInput, ListUniverseSystemsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListUniverseSystemsInput) (*mcpsdk.CallToolResult, ListUniverseSystemsOutput, error) {
 		ids, err := listUniverseSystems(ctx, sdeStore, sso.UserAgent(version))
 		if err != nil {
@@ -881,7 +880,7 @@ type GetUniverseSystemInput struct {
 	SystemID int64 `json:"systemId" jsonschema:"the solar system ID to look up"`
 }
 
-func getUniverseSystemHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetUniverseSystemInput, UniverseSystem] {
+func getUniverseSystemHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetUniverseSystemInput, UniverseSystem] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetUniverseSystemInput) (*mcpsdk.CallToolResult, UniverseSystem, error) {
 		out, err := getUniverseSystem(ctx, sdeStore, sso.UserAgent(version), in.SystemID)
 		if err != nil {
@@ -930,7 +929,7 @@ type GetUniverseAsteroidBeltInput struct {
 	AsteroidBeltID int64 `json:"asteroidBeltId" jsonschema:"the asteroid belt ID to look up"`
 }
 
-func getUniverseAsteroidBeltHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetUniverseAsteroidBeltInput, UniverseAsteroidBelt] {
+func getUniverseAsteroidBeltHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetUniverseAsteroidBeltInput, UniverseAsteroidBelt] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetUniverseAsteroidBeltInput) (*mcpsdk.CallToolResult, UniverseAsteroidBelt, error) {
 		out, err := getUniverseAsteroidBelt(ctx, sdeStore, sso.UserAgent(version), in.AsteroidBeltID)
 		if err != nil {
@@ -980,7 +979,7 @@ type GetUniverseMoonInput struct {
 	MoonID int64 `json:"moonId" jsonschema:"the moon ID to look up"`
 }
 
-func getUniverseMoonHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetUniverseMoonInput, UniverseMoon] {
+func getUniverseMoonHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetUniverseMoonInput, UniverseMoon] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetUniverseMoonInput) (*mcpsdk.CallToolResult, UniverseMoon, error) {
 		out, err := getUniverseMoon(ctx, sdeStore, sso.UserAgent(version), in.MoonID)
 		if err != nil {
@@ -1034,7 +1033,7 @@ type GetUniversePlanetInput struct {
 	PlanetID int64 `json:"planetId" jsonschema:"the planet ID to look up"`
 }
 
-func getUniversePlanetHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetUniversePlanetInput, UniversePlanet] {
+func getUniversePlanetHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetUniversePlanetInput, UniversePlanet] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetUniversePlanetInput) (*mcpsdk.CallToolResult, UniversePlanet, error) {
 		out, err := getUniversePlanet(ctx, sdeStore, sso.UserAgent(version), in.PlanetID)
 		if err != nil {
@@ -1092,7 +1091,7 @@ type GetUniverseStargateInput struct {
 	StargateID int64 `json:"stargateId" jsonschema:"the stargate ID to look up"`
 }
 
-func getUniverseStargateHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetUniverseStargateInput, UniverseStargate] {
+func getUniverseStargateHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetUniverseStargateInput, UniverseStargate] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetUniverseStargateInput) (*mcpsdk.CallToolResult, UniverseStargate, error) {
 		out, err := getUniverseStargate(ctx, sdeStore, sso.UserAgent(version), in.StargateID)
 		if err != nil {
@@ -1150,7 +1149,7 @@ type GetUniverseStarInput struct {
 	StarID int64 `json:"starId" jsonschema:"the star ID to look up"`
 }
 
-func getUniverseStarHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetUniverseStarInput, UniverseStar] {
+func getUniverseStarHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetUniverseStarInput, UniverseStar] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetUniverseStarInput) (*mcpsdk.CallToolResult, UniverseStar, error) {
 		out, err := getUniverseStar(ctx, sdeStore, sso.UserAgent(version), in.StarID)
 		if err != nil {
@@ -1217,7 +1216,7 @@ type GetUniverseStationInput struct {
 	StationID int64 `json:"stationId" jsonschema:"the station ID to look up"`
 }
 
-func getUniverseStationHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetUniverseStationInput, UniverseStation] {
+func getUniverseStationHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetUniverseStationInput, UniverseStation] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetUniverseStationInput) (*mcpsdk.CallToolResult, UniverseStation, error) {
 		out, err := getUniverseStation(ctx, sdeStore, sso.UserAgent(version), in.StationID)
 		if err != nil {
@@ -1252,7 +1251,7 @@ type ListUniverseGraphicsOutput struct {
 	IDs []int64 `json:"ids"`
 }
 
-func listUniverseGraphicsHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListUniverseGraphicsInput, ListUniverseGraphicsOutput] {
+func listUniverseGraphicsHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListUniverseGraphicsInput, ListUniverseGraphicsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListUniverseGraphicsInput) (*mcpsdk.CallToolResult, ListUniverseGraphicsOutput, error) {
 		ids, err := listUniverseGraphics(ctx, sdeStore, sso.UserAgent(version))
 		if err != nil {
@@ -1314,7 +1313,7 @@ type GetUniverseGraphicInput struct {
 	GraphicID int64 `json:"graphicId" jsonschema:"the graphic ID to look up"`
 }
 
-func getUniverseGraphicHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetUniverseGraphicInput, UniverseGraphic] {
+func getUniverseGraphicHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetUniverseGraphicInput, UniverseGraphic] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetUniverseGraphicInput) (*mcpsdk.CallToolResult, UniverseGraphic, error) {
 		out, err := getUniverseGraphic(ctx, sdeStore, sso.UserAgent(version), in.GraphicID)
 		if err != nil {
@@ -1392,7 +1391,7 @@ type GetUniverseStructureInput struct {
 	StructureID int64 `json:"structureId" jsonschema:"the structure ID to look up"`
 }
 
-func getUniverseStructureHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[GetUniverseStructureInput, UniverseStructure] {
+func getUniverseStructureHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetUniverseStructureInput, UniverseStructure] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetUniverseStructureInput) (*mcpsdk.CallToolResult, UniverseStructure, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {

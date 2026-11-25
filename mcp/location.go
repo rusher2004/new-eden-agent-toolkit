@@ -7,9 +7,7 @@ import (
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -39,7 +37,7 @@ type GetCharacterLocationOutput struct {
 	StructureID     *int64 `json:"structureId,omitempty"`
 }
 
-func getCharacterLocationHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetCharacterLocationInput, GetCharacterLocationOutput] {
+func getCharacterLocationHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetCharacterLocationInput, GetCharacterLocationOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterLocationInput) (*mcpsdk.CallToolResult, GetCharacterLocationOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -83,7 +81,7 @@ type GetCharacterOnlineOutput struct {
 	Logins      *int64     `json:"logins,omitempty"`
 }
 
-func getCharacterOnlineHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[GetCharacterOnlineInput, GetCharacterOnlineOutput] {
+func getCharacterOnlineHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetCharacterOnlineInput, GetCharacterOnlineOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterOnlineInput) (*mcpsdk.CallToolResult, GetCharacterOnlineOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -125,7 +123,7 @@ type GetCharacterShipOutput struct {
 	ShipTypeName string `json:"shipTypeName,omitempty"`
 }
 
-func getCharacterShipHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetCharacterShipInput, GetCharacterShipOutput] {
+func getCharacterShipHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetCharacterShipInput, GetCharacterShipOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterShipInput) (*mcpsdk.CallToolResult, GetCharacterShipOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {

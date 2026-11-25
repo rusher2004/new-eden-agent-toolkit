@@ -9,7 +9,6 @@ import (
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -46,7 +45,7 @@ type GetRouteOutput struct {
 	RouteNames            []string `json:"routeNames,omitempty"`
 }
 
-func getRouteHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetRouteInput, GetRouteOutput] {
+func getRouteHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetRouteInput, GetRouteOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetRouteInput) (*mcpsdk.CallToolResult, GetRouteOutput, error) {
 		route, err := getRoute(ctx, sso.UserAgent(version), in.OriginSystemID, in.DestinationSystemID, in.AvoidSystems, in.Connections, in.Preference, in.SecurityPenalty)
 		if err != nil {

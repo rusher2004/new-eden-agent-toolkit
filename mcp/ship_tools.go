@@ -9,7 +9,6 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/cargo"
-	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/dogma"
 	"github.com/rusher2004/new-eden-agent-toolkit/nav"
 	"github.com/rusher2004/new-eden-agent-toolkit/sde"
@@ -205,7 +204,7 @@ func (p *planner) shipHold(ctx context.Context, ship resolvedShip, pilot int32) 
 	return out, f, nil
 }
 
-func estimateShipHoldHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[EstimateShipHoldInput, EstimateShipHoldOutput] {
+func estimateShipHoldHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[EstimateShipHoldInput, EstimateShipHoldOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in EstimateShipHoldInput) (*mcpsdk.CallToolResult, EstimateShipHoldOutput, error) {
 		p := newPlanner(version, clientID, store, sdeStore)
 		pilot := in.PilotID
@@ -267,7 +266,7 @@ type EstimateCynoOutput struct {
 	GeneratorNotFits bool               `json:"generatorDoesntFit,omitempty" jsonschema:"the generator can't be fitted to this hull"`
 }
 
-func estimateCynoHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[EstimateCynoInput, EstimateCynoOutput] {
+func estimateCynoHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[EstimateCynoInput, EstimateCynoOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in EstimateCynoInput) (*mcpsdk.CallToolResult, EstimateCynoOutput, error) {
 		gen, ok := cynoGenerators[strings.ToLower(strings.TrimSpace(in.Cyno))]
 		if !ok {

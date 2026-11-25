@@ -9,9 +9,7 @@ import (
 
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 
-	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -143,7 +141,7 @@ type ListCharacterMarketOrdersOutput struct {
 	Orders      []MarketOrder `json:"orders"`
 }
 
-func listCharacterMarketOrdersHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCharacterMarketOrdersInput, ListCharacterMarketOrdersOutput] {
+func listCharacterMarketOrdersHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCharacterMarketOrdersInput, ListCharacterMarketOrdersOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterMarketOrdersInput) (*mcpsdk.CallToolResult, ListCharacterMarketOrdersOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -201,7 +199,7 @@ type ListCharacterMarketOrderHistoryOutput struct {
 	Orders      []MarketOrder `json:"orders"`
 }
 
-func listCharacterMarketOrderHistoryHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCharacterMarketOrderHistoryInput, ListCharacterMarketOrderHistoryOutput] {
+func listCharacterMarketOrderHistoryHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCharacterMarketOrderHistoryInput, ListCharacterMarketOrderHistoryOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterMarketOrderHistoryInput) (*mcpsdk.CallToolResult, ListCharacterMarketOrderHistoryOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -265,7 +263,7 @@ type ListCorporationMarketOrdersOutput struct {
 	Orders        []MarketOrder `json:"orders"`
 }
 
-func listCorporationMarketOrdersHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCorporationMarketOrdersInput, ListCorporationMarketOrdersOutput] {
+func listCorporationMarketOrdersHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCorporationMarketOrdersInput, ListCorporationMarketOrdersOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationMarketOrdersInput) (*mcpsdk.CallToolResult, ListCorporationMarketOrdersOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -329,7 +327,7 @@ type ListCorporationMarketOrderHistoryOutput struct {
 	Orders        []MarketOrder `json:"orders"`
 }
 
-func listCorporationMarketOrderHistoryHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCorporationMarketOrderHistoryInput, ListCorporationMarketOrderHistoryOutput] {
+func listCorporationMarketOrderHistoryHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCorporationMarketOrderHistoryInput, ListCorporationMarketOrderHistoryOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationMarketOrderHistoryInput) (*mcpsdk.CallToolResult, ListCorporationMarketOrderHistoryOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -447,7 +445,7 @@ type ListMarketPricesOutput struct {
 	Prices []MarketPrice `json:"prices"`
 }
 
-func listMarketPricesHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListMarketPricesInput, ListMarketPricesOutput] {
+func listMarketPricesHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListMarketPricesInput, ListMarketPricesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListMarketPricesInput) (*mcpsdk.CallToolResult, ListMarketPricesOutput, error) {
 		prices, err := listMarketPrices(ctx, sso.UserAgent(version))
 		if err != nil {
@@ -530,7 +528,7 @@ type ListMarketOrdersOutput struct {
 	Orders     []MarketOrderBookEntry `json:"orders"`
 }
 
-func listMarketOrdersHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListMarketOrdersInput, ListMarketOrdersOutput] {
+func listMarketOrdersHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListMarketOrdersInput, ListMarketOrdersOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListMarketOrdersInput) (*mcpsdk.CallToolResult, ListMarketOrdersOutput, error) {
 		orders, totalPages, err := listMarketOrders(ctx, sso.UserAgent(version), in.RegionID, in.OrderType, in.TypeID, in.Page)
 		if err != nil {
@@ -583,7 +581,7 @@ type ListMarketTypesOutput struct {
 	TypeNames  []string `json:"typeNames,omitempty"`
 }
 
-func listMarketTypesHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListMarketTypesInput, ListMarketTypesOutput] {
+func listMarketTypesHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListMarketTypesInput, ListMarketTypesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListMarketTypesInput) (*mcpsdk.CallToolResult, ListMarketTypesOutput, error) {
 		types, totalPages, err := listMarketTypes(ctx, sso.UserAgent(version), in.RegionID, in.Page)
 		if err != nil {
@@ -632,7 +630,7 @@ type ListStructureMarketOrdersOutput struct {
 	Orders      []MarketOrderBookEntry `json:"orders"`
 }
 
-func listStructureMarketOrdersHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListStructureMarketOrdersInput, ListStructureMarketOrdersOutput] {
+func listStructureMarketOrdersHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListStructureMarketOrdersInput, ListStructureMarketOrdersOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListStructureMarketOrdersInput) (*mcpsdk.CallToolResult, ListStructureMarketOrdersOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {

@@ -6,7 +6,6 @@ import (
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
@@ -38,7 +37,7 @@ type SetAutopilotWaypointOutput struct {
 	ClearOtherWaypoints bool  `json:"clearOtherWaypoints"`
 }
 
-func setAutopilotWaypointHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[SetAutopilotWaypointInput, SetAutopilotWaypointOutput] {
+func setAutopilotWaypointHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[SetAutopilotWaypointInput, SetAutopilotWaypointOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in SetAutopilotWaypointInput) (*mcpsdk.CallToolResult, SetAutopilotWaypointOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -76,7 +75,7 @@ type OpenContractWindowOutput struct {
 	ContractID  int64 `json:"contractId"`
 }
 
-func openContractWindowHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[OpenContractWindowInput, OpenContractWindowOutput] {
+func openContractWindowHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[OpenContractWindowInput, OpenContractWindowOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in OpenContractWindowInput) (*mcpsdk.CallToolResult, OpenContractWindowOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -111,7 +110,7 @@ type OpenInformationWindowOutput struct {
 	TargetID    int64 `json:"targetId"`
 }
 
-func openInformationWindowHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[OpenInformationWindowInput, OpenInformationWindowOutput] {
+func openInformationWindowHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[OpenInformationWindowInput, OpenInformationWindowOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in OpenInformationWindowInput) (*mcpsdk.CallToolResult, OpenInformationWindowOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -146,7 +145,7 @@ type OpenMarketDetailsWindowOutput struct {
 	TypeID      int64 `json:"typeId"`
 }
 
-func openMarketDetailsWindowHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[OpenMarketDetailsWindowInput, OpenMarketDetailsWindowOutput] {
+func openMarketDetailsWindowHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[OpenMarketDetailsWindowInput, OpenMarketDetailsWindowOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in OpenMarketDetailsWindowInput) (*mcpsdk.CallToolResult, OpenMarketDetailsWindowOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -189,7 +188,7 @@ type OpenNewMailWindowOutput struct {
 	ToMailingListID    *int64  `json:"toMailingListId,omitempty"`
 }
 
-func openNewMailWindowHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[OpenNewMailWindowInput, OpenNewMailWindowOutput] {
+func openNewMailWindowHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[OpenNewMailWindowInput, OpenNewMailWindowOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in OpenNewMailWindowInput) (*mcpsdk.CallToolResult, OpenNewMailWindowOutput, error) {
 		if in.ToCorpOrAllianceID != nil && in.ToMailingListID != nil {
 			return nil, OpenNewMailWindowOutput{}, fmt.Errorf("open new mail window: toCorpOrAllianceId and toMailingListId are mutually exclusive, set at most one")

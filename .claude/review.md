@@ -7,7 +7,7 @@ The checklist for reviewing a PR (human or Claude) on top of the generic review 
 1. **Consumer-defined interfaces** (`CLAUDE.md` "Go standards", rules 1-7). Flag:
    - an interface declared in a producer package (`sde/`, `esi/`, `sso/`, `creds/`, `config/`, `analytics/`)
    - new or changed code that takes a concrete producer type (`*sde.Store`, `*esi.Client`, ...) instead of a small interface of exactly the methods it calls
-   - an interface with methods none of its callers use, or one declared away from its consumer
+   - an interface with methods none of its callers use, or one declared away from its consumer. A concrete value with more methods than the interface lists is fine and expected (an `*http.Client` passed as a one-method `doer`), so do not ask for a narrower wrapper
    - a file that only declares types, or any `*_iface.go` file
    - a factory that returns a typed nil inside an interface; it must return an untyped `nil, err`
 

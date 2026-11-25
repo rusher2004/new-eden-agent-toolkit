@@ -6,7 +6,6 @@ import (
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
@@ -39,7 +38,7 @@ type ListAccessListsOutput struct {
 	AccessListIDs []int64 `json:"accessListIds"`
 }
 
-func listAccessListsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListAccessListsInput, ListAccessListsOutput] {
+func listAccessListsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListAccessListsInput, ListAccessListsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListAccessListsInput) (*mcpsdk.CallToolResult, ListAccessListsOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -134,7 +133,7 @@ type GetAccessListOutput struct {
 	Alliances     []AccessListEntry `json:"alliances"`
 }
 
-func getAccessListHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[GetAccessListInput, GetAccessListOutput] {
+func getAccessListHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetAccessListInput, GetAccessListOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetAccessListInput) (*mcpsdk.CallToolResult, GetAccessListOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {

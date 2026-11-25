@@ -7,9 +7,7 @@ import (
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -53,7 +51,7 @@ type GetCharacterInput struct {
 	CharacterID int64 `json:"characterId" jsonschema:"the character ID to look up"`
 }
 
-func getCharacterHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetCharacterInput, GetCharacterOutput] {
+func getCharacterHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetCharacterInput, GetCharacterOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterInput) (*mcpsdk.CallToolResult, GetCharacterOutput, error) {
 		out, err := getCharacterDetail(ctx, sso.UserAgent(version), in.CharacterID)
 		if err != nil {
@@ -101,7 +99,7 @@ type GetCharacterAffiliationsOutput struct {
 	Affiliations []CharacterAffiliation `json:"affiliations"`
 }
 
-func getCharacterAffiliationsHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetCharacterAffiliationsInput, GetCharacterAffiliationsOutput] {
+func getCharacterAffiliationsHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetCharacterAffiliationsInput, GetCharacterAffiliationsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterAffiliationsInput) (*mcpsdk.CallToolResult, GetCharacterAffiliationsOutput, error) {
 		affs, err := getCharacterAffiliations(ctx, sso.UserAgent(version), in.CharacterIDs)
 		if err != nil {
@@ -204,7 +202,7 @@ func getCharacterPortraitHandler(version string) mcpsdk.ToolHandlerFor[GetCharac
 // characterExists reports whether characterID is a logged-in character in store. New in this
 // file: with 10 private tools sharing the same check, duplicating the loop 10 times crosses the
 // DRY threshold that made sense for smaller batches.
-func characterExists(store *config.Store, characterID int32) (bool, error) {
+func characterExists(store configLoader, characterID int32) (bool, error) {
 	cfg, err := store.Load()
 	if err != nil {
 		return false, fmt.Errorf("load config: %w", err)
@@ -252,7 +250,7 @@ type ListCharacterAgentsResearchOutput struct {
 	Agents      []AgentResearch `json:"agents"`
 }
 
-func listCharacterAgentsResearchHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCharacterAgentsResearchInput, ListCharacterAgentsResearchOutput] {
+func listCharacterAgentsResearchHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCharacterAgentsResearchInput, ListCharacterAgentsResearchOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterAgentsResearchInput) (*mcpsdk.CallToolResult, ListCharacterAgentsResearchOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -318,7 +316,7 @@ type ListCharacterBlueprintsOutput struct {
 	Blueprints  []Blueprint `json:"blueprints"`
 }
 
-func listCharacterBlueprintsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCharacterBlueprintsInput, ListCharacterBlueprintsOutput] {
+func listCharacterBlueprintsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCharacterBlueprintsInput, ListCharacterBlueprintsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterBlueprintsInput) (*mcpsdk.CallToolResult, ListCharacterBlueprintsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -372,7 +370,7 @@ type GetCharacterFatigueInput struct {
 	CharacterID int32 `json:"characterId" jsonschema:"the character ID to check"`
 }
 
-func getCharacterFatigueHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[GetCharacterFatigueInput, GetCharacterFatigueOutput] {
+func getCharacterFatigueHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetCharacterFatigueInput, GetCharacterFatigueOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterFatigueInput) (*mcpsdk.CallToolResult, GetCharacterFatigueOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -437,7 +435,7 @@ type ListCharacterMedalsOutput struct {
 	Medals      []Medal `json:"medals"`
 }
 
-func listCharacterMedalsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCharacterMedalsInput, ListCharacterMedalsOutput] {
+func listCharacterMedalsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCharacterMedalsInput, ListCharacterMedalsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterMedalsInput) (*mcpsdk.CallToolResult, ListCharacterMedalsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -490,7 +488,7 @@ type ListCharacterNotificationsOutput struct {
 	Notifications []Notification `json:"notifications"`
 }
 
-func listCharacterNotificationsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCharacterNotificationsInput, ListCharacterNotificationsOutput] {
+func listCharacterNotificationsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCharacterNotificationsInput, ListCharacterNotificationsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterNotificationsInput) (*mcpsdk.CallToolResult, ListCharacterNotificationsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -541,7 +539,7 @@ type ListCharacterNotificationContactsOutput struct {
 	Notifications []ContactNotification `json:"notifications"`
 }
 
-func listCharacterNotificationContactsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCharacterNotificationContactsInput, ListCharacterNotificationContactsOutput] {
+func listCharacterNotificationContactsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCharacterNotificationContactsInput, ListCharacterNotificationContactsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterNotificationContactsInput) (*mcpsdk.CallToolResult, ListCharacterNotificationContactsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -584,7 +582,7 @@ type GetCharacterRolesInput struct {
 	CharacterID int32 `json:"characterId" jsonschema:"the character ID to check"`
 }
 
-func getCharacterRolesHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[GetCharacterRolesInput, GetCharacterRolesOutput] {
+func getCharacterRolesHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetCharacterRolesInput, GetCharacterRolesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterRolesInput) (*mcpsdk.CallToolResult, GetCharacterRolesOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -633,7 +631,7 @@ type ListCharacterStandingsOutput struct {
 	Standings   []Standing `json:"standings"`
 }
 
-func listCharacterStandingsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCharacterStandingsInput, ListCharacterStandingsOutput] {
+func listCharacterStandingsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCharacterStandingsInput, ListCharacterStandingsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterStandingsInput) (*mcpsdk.CallToolResult, ListCharacterStandingsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -681,7 +679,7 @@ type ListCharacterTitlesOutput struct {
 	Titles      []Title `json:"titles"`
 }
 
-func listCharacterTitlesHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCharacterTitlesInput, ListCharacterTitlesOutput] {
+func listCharacterTitlesHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCharacterTitlesInput, ListCharacterTitlesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterTitlesInput) (*mcpsdk.CallToolResult, ListCharacterTitlesOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -717,7 +715,7 @@ type GetCharacterCSPACostOutput struct {
 	Cost        float64 `json:"cost"`
 }
 
-func getCharacterCSPACostHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[GetCharacterCSPACostInput, GetCharacterCSPACostOutput] {
+func getCharacterCSPACostHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetCharacterCSPACostInput, GetCharacterCSPACostOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterCSPACostInput) (*mcpsdk.CallToolResult, GetCharacterCSPACostOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {

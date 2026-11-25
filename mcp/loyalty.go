@@ -4,13 +4,19 @@ import (
 	"context"
 	"fmt"
 
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-
-	"github.com/rusher2004/new-eden-agent-toolkit/config"
-	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sde"
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
+
+// loyaltyESI is the ESI calls list_character_loyalty_points makes.
+type loyaltyESI interface {
+	CharacterLoyaltyPoints(ctx context.Context) ([]esiapi.CharactersCharacterIdLoyaltyPointsGetInner, error)
+}
+
+// loyaltyStoreESI is the ESI call list_loyalty_store_offers makes.
+type loyaltyStoreESI interface {
+	LoyaltyStoreOffers(ctx context.Context, corporationID int64) ([]esiapi.LoyaltyStoresCorporationIdOffersGetInner, error)
+}
 
 // --- list_character_loyalty_points (private) ---
 
@@ -19,11 +25,7 @@ type LoyaltyPointsEntry struct {
 	LoyaltyPoints int64 `json:"loyaltyPoints"`
 }
 
-var listCharacterLoyaltyPoints = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]LoyaltyPointsEntry, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
+func listCharacterLoyaltyPoints(ctx context.Context, client loyaltyESI) ([]LoyaltyPointsEntry, error) {
 	entries, err := client.CharacterLoyaltyPoints(ctx)
 	if err != nil {
 		return nil, err
@@ -43,7 +45,17 @@ type ListCharacterLoyaltyPointsOutput struct {
 	Points      []LoyaltyPointsEntry `json:"points"`
 }
 
-func listCharacterLoyaltyPointsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCharacterLoyaltyPointsInput, ListCharacterLoyaltyPointsOutput] {
+// AddListCharacterLoyaltyPoints registers list_character_loyalty_points. open
+// builds the character's ESI client; any client with the loyaltyESI methods
+// will do.
+func AddListCharacterLoyaltyPoints[C loyaltyESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_character_loyalty_points",
+		Description: "List a logged-in EVE Online character's loyalty point balances with every corporation they've worked for.",
+	}, listCharacterLoyaltyPointsHandler(open, store))
+}
+
+func listCharacterLoyaltyPointsHandler[C loyaltyESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListCharacterLoyaltyPointsInput, ListCharacterLoyaltyPointsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterLoyaltyPointsInput) (*mcpsdk.CallToolResult, ListCharacterLoyaltyPointsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -52,7 +64,11 @@ func listCharacterLoyaltyPointsHandler(version, clientID string, store *config.S
 		if !found {
 			return nil, ListCharacterLoyaltyPointsOutput{}, fmt.Errorf("list character loyalty points for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		points, err := listCharacterLoyaltyPoints(ctx, clientID, in.CharacterID, sso.UserAgent(version))
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCharacterLoyaltyPointsOutput{}, fmt.Errorf("list character loyalty points: %w", err)
+		}
+		points, err := listCharacterLoyaltyPoints(ctx, client)
 		if err != nil {
 			return nil, ListCharacterLoyaltyPointsOutput{}, fmt.Errorf("list character loyalty points: %w", err)
 		}
@@ -79,8 +95,7 @@ type LoyaltyStoreOffer struct {
 	RequiredItems []LoyaltyRequiredItem `json:"requiredItems"`
 }
 
-var listLoyaltyStoreOffers = func(ctx context.Context, userAgent string, corporationID int64) ([]LoyaltyStoreOffer, error) {
-	client := esi.NewPublicClient(userAgent)
+func listLoyaltyStoreOffers(ctx context.Context, client loyaltyStoreESI, corporationID int64) ([]LoyaltyStoreOffer, error) {
 	offers, err := client.LoyaltyStoreOffers(ctx, corporationID)
 	if err != nil {
 		return nil, err
@@ -107,9 +122,18 @@ type ListLoyaltyStoreOffersOutput struct {
 	Offers        []LoyaltyStoreOffer `json:"offers"`
 }
 
-func listLoyaltyStoreOffersHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListLoyaltyStoreOffersInput, ListLoyaltyStoreOffersOutput] {
+// AddListLoyaltyStoreOffers registers list_loyalty_store_offers. open builds a
+// public ESI client; names resolves the type names added to each offer.
+func AddListLoyaltyStoreOffers[C loyaltyStoreESI](s *mcpsdk.Server, userAgent string, open func() C, names typeNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_loyalty_store_offers",
+		Description: "List a corporation's loyalty store offers (public data, no character required).",
+	}, listLoyaltyStoreOffersHandler(userAgent, open, names))
+}
+
+func listLoyaltyStoreOffersHandler[C loyaltyStoreESI](userAgent string, open func() C, sdeStore typeNameCache) mcpsdk.ToolHandlerFor[ListLoyaltyStoreOffersInput, ListLoyaltyStoreOffersOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListLoyaltyStoreOffersInput) (*mcpsdk.CallToolResult, ListLoyaltyStoreOffersOutput, error) {
-		offers, err := listLoyaltyStoreOffers(ctx, sso.UserAgent(version), in.CorporationID)
+		offers, err := listLoyaltyStoreOffers(ctx, open(), in.CorporationID)
 		if err != nil {
 			return nil, ListLoyaltyStoreOffersOutput{}, fmt.Errorf("list loyalty store offers: %w", err)
 		}
@@ -121,7 +145,7 @@ func listLoyaltyStoreOffersHandler(version string, sdeStore *sde.Store) mcpsdk.T
 				ids = append(ids, it.TypeID)
 			}
 		}
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		names := resolveTypeNames(ctx, sdeStore, userAgent, ids)
 		// Enrich both outer offer type and nested required item types
 		for i := range offers {
 			offers[i].TypeName = names[offers[i].TypeID]

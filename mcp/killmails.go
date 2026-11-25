@@ -9,9 +9,7 @@ import (
 
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 
-	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -51,7 +49,7 @@ type ListCharacterKillmailsRecentOutput struct {
 	Killmails   []KillmailRef `json:"killmails"`
 }
 
-func listCharacterKillmailsRecentHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCharacterKillmailsRecentInput, ListCharacterKillmailsRecentOutput] {
+func listCharacterKillmailsRecentHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCharacterKillmailsRecentInput, ListCharacterKillmailsRecentOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterKillmailsRecentInput) (*mcpsdk.CallToolResult, ListCharacterKillmailsRecentOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -95,7 +93,7 @@ type ListCorporationKillmailsRecentOutput struct {
 	Killmails     []KillmailRef `json:"killmails"`
 }
 
-func listCorporationKillmailsRecentHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCorporationKillmailsRecentInput, ListCorporationKillmailsRecentOutput] {
+func listCorporationKillmailsRecentHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationKillmailsRecentInput, ListCorporationKillmailsRecentOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationKillmailsRecentInput) (*mcpsdk.CallToolResult, ListCorporationKillmailsRecentOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -227,7 +225,7 @@ type GetKillmailOutput struct {
 	Victim          KillmailVictim     `json:"victim"`
 }
 
-func getKillmailHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetKillmailInput, GetKillmailOutput] {
+func getKillmailHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetKillmailInput, GetKillmailOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetKillmailInput) (*mcpsdk.CallToolResult, GetKillmailOutput, error) {
 		detail, err := getKillmail(ctx, sso.UserAgent(version), in.KillmailID, in.KillmailHash)
 		if err != nil {

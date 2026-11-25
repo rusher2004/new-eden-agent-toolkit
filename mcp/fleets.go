@@ -15,9 +15,7 @@ import (
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -62,7 +60,7 @@ type GetCharacterFleetInput struct {
 	CharacterID int32 `json:"characterId" jsonschema:"the character ID to check"`
 }
 
-func getCharacterFleetHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[GetCharacterFleetInput, GetCharacterFleetOutput] {
+func getCharacterFleetHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetCharacterFleetInput, GetCharacterFleetOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterFleetInput) (*mcpsdk.CallToolResult, GetCharacterFleetOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -111,7 +109,7 @@ type GetFleetInput struct {
 	FleetID     int64 `json:"fleetId" jsonschema:"the fleet ID, from get_character_fleet"`
 }
 
-func getFleetHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[GetFleetInput, GetFleetOutput] {
+func getFleetHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetFleetInput, GetFleetOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetFleetInput) (*mcpsdk.CallToolResult, GetFleetOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -151,7 +149,7 @@ type UpdateFleetOutput struct {
 	Motd        *string `json:"motd,omitempty"`
 }
 
-func updateFleetHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[UpdateFleetInput, UpdateFleetOutput] {
+func updateFleetHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[UpdateFleetInput, UpdateFleetOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in UpdateFleetInput) (*mcpsdk.CallToolResult, UpdateFleetOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -216,7 +214,7 @@ type ListFleetMembersOutput struct {
 	Members     []FleetMember `json:"members"`
 }
 
-func listFleetMembersHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListFleetMembersInput, ListFleetMembersOutput] {
+func listFleetMembersHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListFleetMembersInput, ListFleetMembersOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListFleetMembersInput) (*mcpsdk.CallToolResult, ListFleetMembersOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -284,7 +282,7 @@ type InviteFleetMemberOutput struct {
 
 // inviteFleetMemberHandler is a write tool: it changes state on FC's server, so -- like
 // respond_calendar_event -- it validates its input BEFORE loading config.Store or calling ESI.
-func inviteFleetMemberHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[InviteFleetMemberInput, InviteFleetMemberOutput] {
+func inviteFleetMemberHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[InviteFleetMemberInput, InviteFleetMemberOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in InviteFleetMemberInput) (*mcpsdk.CallToolResult, InviteFleetMemberOutput, error) {
 		if !validFleetRoles[in.Role] {
 			return nil, InviteFleetMemberOutput{}, fmt.Errorf("invite fleet member: invalid role %q, must be one of fleet_commander, wing_commander, squad_commander, squad_member", in.Role)
@@ -328,7 +326,7 @@ type MoveFleetMemberOutput struct {
 	Role        string `json:"role"`
 }
 
-func moveFleetMemberHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[MoveFleetMemberInput, MoveFleetMemberOutput] {
+func moveFleetMemberHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[MoveFleetMemberInput, MoveFleetMemberOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in MoveFleetMemberInput) (*mcpsdk.CallToolResult, MoveFleetMemberOutput, error) {
 		if !validFleetRoles[in.Role] {
 			return nil, MoveFleetMemberOutput{}, fmt.Errorf("move fleet member: invalid role %q, must be one of fleet_commander, wing_commander, squad_commander, squad_member", in.Role)
@@ -368,7 +366,7 @@ type KickFleetMemberOutput struct {
 	MemberID    int64 `json:"memberId"`
 }
 
-func kickFleetMemberHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[KickFleetMemberInput, KickFleetMemberOutput] {
+func kickFleetMemberHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[KickFleetMemberInput, KickFleetMemberOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in KickFleetMemberInput) (*mcpsdk.CallToolResult, KickFleetMemberOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -429,7 +427,7 @@ type ListFleetWingsOutput struct {
 	Wings       []FleetWing `json:"wings"`
 }
 
-func listFleetWingsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListFleetWingsInput, ListFleetWingsOutput] {
+func listFleetWingsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListFleetWingsInput, ListFleetWingsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListFleetWingsInput) (*mcpsdk.CallToolResult, ListFleetWingsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -466,7 +464,7 @@ type CreateFleetWingOutput struct {
 	WingID      int64 `json:"wingId"`
 }
 
-func createFleetWingHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[CreateFleetWingInput, CreateFleetWingOutput] {
+func createFleetWingHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[CreateFleetWingInput, CreateFleetWingOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in CreateFleetWingInput) (*mcpsdk.CallToolResult, CreateFleetWingOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -506,7 +504,7 @@ type RenameFleetWingOutput struct {
 	Name        string `json:"name"`
 }
 
-func renameFleetWingHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[RenameFleetWingInput, RenameFleetWingOutput] {
+func renameFleetWingHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[RenameFleetWingInput, RenameFleetWingOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in RenameFleetWingInput) (*mcpsdk.CallToolResult, RenameFleetWingOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -543,7 +541,7 @@ type DeleteFleetWingOutput struct {
 	WingID      int64 `json:"wingId"`
 }
 
-func deleteFleetWingHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[DeleteFleetWingInput, DeleteFleetWingOutput] {
+func deleteFleetWingHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[DeleteFleetWingInput, DeleteFleetWingOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in DeleteFleetWingInput) (*mcpsdk.CallToolResult, DeleteFleetWingOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -581,7 +579,7 @@ type CreateFleetSquadOutput struct {
 	SquadID     int64 `json:"squadId"`
 }
 
-func createFleetSquadHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[CreateFleetSquadInput, CreateFleetSquadOutput] {
+func createFleetSquadHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[CreateFleetSquadInput, CreateFleetSquadOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in CreateFleetSquadInput) (*mcpsdk.CallToolResult, CreateFleetSquadOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -621,7 +619,7 @@ type RenameFleetSquadOutput struct {
 	Name        string `json:"name"`
 }
 
-func renameFleetSquadHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[RenameFleetSquadInput, RenameFleetSquadOutput] {
+func renameFleetSquadHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[RenameFleetSquadInput, RenameFleetSquadOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in RenameFleetSquadInput) (*mcpsdk.CallToolResult, RenameFleetSquadOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -658,7 +656,7 @@ type DeleteFleetSquadOutput struct {
 	SquadID     int64 `json:"squadId"`
 }
 
-func deleteFleetSquadHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[DeleteFleetSquadInput, DeleteFleetSquadOutput] {
+func deleteFleetSquadHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[DeleteFleetSquadInput, DeleteFleetSquadOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in DeleteFleetSquadInput) (*mcpsdk.CallToolResult, DeleteFleetSquadOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {

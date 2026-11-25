@@ -9,7 +9,6 @@ import (
 
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 
-	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
@@ -79,7 +78,7 @@ type ListCharacterFreelanceJobsOutput struct {
 	Jobs        []FreelanceJobSummary `json:"jobs"`
 }
 
-func listCharacterFreelanceJobsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCharacterFreelanceJobsInput, ListCharacterFreelanceJobsOutput] {
+func listCharacterFreelanceJobsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCharacterFreelanceJobsInput, ListCharacterFreelanceJobsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterFreelanceJobsInput) (*mcpsdk.CallToolResult, ListCharacterFreelanceJobsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -118,7 +117,7 @@ type GetCharacterFreelanceJobParticipationOutput struct {
 	LastModified time.Time `json:"lastModified"`
 }
 
-func getCharacterFreelanceJobParticipationHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[GetCharacterFreelanceJobParticipationInput, GetCharacterFreelanceJobParticipationOutput] {
+func getCharacterFreelanceJobParticipationHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetCharacterFreelanceJobParticipationInput, GetCharacterFreelanceJobParticipationOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterFreelanceJobParticipationInput) (*mcpsdk.CallToolResult, GetCharacterFreelanceJobParticipationOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -162,7 +161,7 @@ type ListCorporationFreelanceJobsOutput struct {
 	NextBefore    *string               `json:"nextBefore,omitempty"`
 }
 
-func listCorporationFreelanceJobsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCorporationFreelanceJobsInput, ListCorporationFreelanceJobsOutput] {
+func listCorporationFreelanceJobsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationFreelanceJobsInput, ListCorporationFreelanceJobsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationFreelanceJobsInput) (*mcpsdk.CallToolResult, ListCorporationFreelanceJobsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -218,7 +217,7 @@ type ListCorporationFreelanceJobParticipantsOutput struct {
 	NextBefore    *string          `json:"nextBefore,omitempty"`
 }
 
-func listCorporationFreelanceJobParticipantsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCorporationFreelanceJobParticipantsInput, ListCorporationFreelanceJobParticipantsOutput] {
+func listCorporationFreelanceJobParticipantsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationFreelanceJobParticipantsInput, ListCorporationFreelanceJobParticipantsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationFreelanceJobParticipantsInput) (*mcpsdk.CallToolResult, ListCorporationFreelanceJobParticipantsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {

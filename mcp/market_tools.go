@@ -8,7 +8,6 @@ import (
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/industry"
 	"github.com/rusher2004/new-eden-agent-toolkit/market"
-	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 )
 
 // ItemInput names an item by name or type ID, with a quantity.
@@ -127,7 +126,7 @@ type QuoteMarketPurchaseOutput struct {
 	Multibuy string      `json:"multibuy" jsonschema:"paste into the in-game Multibuy window's import"`
 }
 
-func quoteMarketPurchaseHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[QuoteMarketPurchaseInput, QuoteMarketPurchaseOutput] {
+func quoteMarketPurchaseHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[QuoteMarketPurchaseInput, QuoteMarketPurchaseOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in QuoteMarketPurchaseInput) (*mcpsdk.CallToolResult, QuoteMarketPurchaseOutput, error) {
 		p := newPlanner(version, clientID, store, sdeStore)
 		p.marketCharacter = in.CharacterID

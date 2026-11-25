@@ -7,9 +7,7 @@ import (
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -106,7 +104,7 @@ type ListCharacterContractsOutput struct {
 	Contracts   []Contract `json:"contracts"`
 }
 
-func listCharacterContractsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCharacterContractsInput, ListCharacterContractsOutput] {
+func listCharacterContractsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCharacterContractsInput, ListCharacterContractsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterContractsInput) (*mcpsdk.CallToolResult, ListCharacterContractsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -156,7 +154,7 @@ type ListCharacterContractBidsOutput struct {
 	Bids        []ContractBid `json:"bids"`
 }
 
-func listCharacterContractBidsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCharacterContractBidsInput, ListCharacterContractBidsOutput] {
+func listCharacterContractBidsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCharacterContractBidsInput, ListCharacterContractBidsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterContractBidsInput) (*mcpsdk.CallToolResult, ListCharacterContractBidsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -201,7 +199,7 @@ type ListCharacterContractItemsOutput struct {
 	Items       []ContractItem `json:"items"`
 }
 
-func listCharacterContractItemsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCharacterContractItemsInput, ListCharacterContractItemsOutput] {
+func listCharacterContractItemsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCharacterContractItemsInput, ListCharacterContractItemsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterContractItemsInput) (*mcpsdk.CallToolResult, ListCharacterContractItemsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -265,7 +263,7 @@ type ListCorporationContractsOutput struct {
 	Contracts     []Contract `json:"contracts"`
 }
 
-func listCorporationContractsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCorporationContractsInput, ListCorporationContractsOutput] {
+func listCorporationContractsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationContractsInput, ListCorporationContractsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationContractsInput) (*mcpsdk.CallToolResult, ListCorporationContractsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -320,7 +318,7 @@ type ListCorporationContractBidsOutput struct {
 	Bids          []ContractBid `json:"bids"`
 }
 
-func listCorporationContractBidsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCorporationContractBidsInput, ListCorporationContractBidsOutput] {
+func listCorporationContractBidsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationContractBidsInput, ListCorporationContractBidsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationContractBidsInput) (*mcpsdk.CallToolResult, ListCorporationContractBidsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -371,7 +369,7 @@ type ListCorporationContractItemsOutput struct {
 	Items         []ContractItem `json:"items"`
 }
 
-func listCorporationContractItemsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCorporationContractItemsInput, ListCorporationContractItemsOutput] {
+func listCorporationContractItemsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCorporationContractItemsInput, ListCorporationContractItemsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationContractItemsInput) (*mcpsdk.CallToolResult, ListCorporationContractItemsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -515,7 +513,7 @@ type ListPublicContractItemsOutput struct {
 	Items      []ContractItem `json:"items"`
 }
 
-func listPublicContractItemsHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListPublicContractItemsInput, ListPublicContractItemsOutput] {
+func listPublicContractItemsHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListPublicContractItemsInput, ListPublicContractItemsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListPublicContractItemsInput) (*mcpsdk.CallToolResult, ListPublicContractItemsOutput, error) {
 		items, totalPages, err := listPublicContractItems(ctx, sso.UserAgent(version), in.ContractID, in.Page)
 		if err != nil {

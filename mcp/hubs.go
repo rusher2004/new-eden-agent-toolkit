@@ -14,7 +14,6 @@ import (
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
 	"github.com/rusher2004/new-eden-agent-toolkit/market"
 	"github.com/rusher2004/new-eden-agent-toolkit/nav"
-	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 )
 
 // staleValidationDays is how old a hub's validation can be before tools say
@@ -108,7 +107,7 @@ type ListHubProfilesOutput struct {
 	Hubs []HubView `json:"hubs" jsonschema:"saved hubs; the first is the default"`
 }
 
-func listHubProfilesHandler(store *config.Store) mcpsdk.ToolHandlerFor[struct{}, ListHubProfilesOutput] {
+func listHubProfilesHandler(store ConfigStore) mcpsdk.ToolHandlerFor[struct{}, ListHubProfilesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, _ struct{}) (*mcpsdk.CallToolResult, ListHubProfilesOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -166,7 +165,7 @@ func (p *planner) hubFacts(ctx context.Context, id int64, characterID int32) (co
 	return h, nil
 }
 
-func saveHubProfileHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[SaveHubProfileInput, SaveHubProfileOutput] {
+func saveHubProfileHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[SaveHubProfileInput, SaveHubProfileOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in SaveHubProfileInput) (*mcpsdk.CallToolResult, SaveHubProfileOutput, error) {
 		if in.ID == 0 {
 			return nil, SaveHubProfileOutput{}, fmt.Errorf("save hub profile: id is required")
@@ -237,7 +236,7 @@ type DeleteHubProfileInput struct {
 	Hub string `json:"hub" jsonschema:"the hub's name or ID"`
 }
 
-func deleteHubProfileHandler(store *config.Store) mcpsdk.ToolHandlerFor[DeleteHubProfileInput, DeletedOutput] {
+func deleteHubProfileHandler(store ConfigStore) mcpsdk.ToolHandlerFor[DeleteHubProfileInput, DeletedOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in DeleteHubProfileInput) (*mcpsdk.CallToolResult, DeletedOutput, error) {
 		if strings.TrimSpace(in.Hub) == "" {
 			return nil, DeletedOutput{}, fmt.Errorf("no hub named %q", in.Hub)
@@ -274,7 +273,7 @@ type ValidateTradeHubOutput struct {
 	Changes []config.Change   `json:"changes"`
 }
 
-func validateTradeHubHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ValidateTradeHubInput, ValidateTradeHubOutput] {
+func validateTradeHubHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ValidateTradeHubInput, ValidateTradeHubOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ValidateTradeHubInput) (*mcpsdk.CallToolResult, ValidateTradeHubOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -483,7 +482,7 @@ type CompareTradeHubsOutput struct {
 	Warnings []string        `json:"warnings,omitempty"`
 }
 
-func compareTradeHubsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[CompareTradeHubsInput, CompareTradeHubsOutput] {
+func compareTradeHubsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[CompareTradeHubsInput, CompareTradeHubsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in CompareTradeHubsInput) (*mcpsdk.CallToolResult, CompareTradeHubsOutput, error) {
 		if len(in.Items) == 0 {
 			return nil, CompareTradeHubsOutput{}, fmt.Errorf("compare trade hubs: give at least one item")

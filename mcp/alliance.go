@@ -8,7 +8,6 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -86,7 +85,7 @@ type GetAllianceOutput struct {
 	FactionName           string    `json:"factionName,omitempty"`
 }
 
-func getAllianceHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetAllianceInput, GetAllianceOutput] {
+func getAllianceHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetAllianceInput, GetAllianceOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetAllianceInput) (*mcpsdk.CallToolResult, GetAllianceOutput, error) {
 		result, err := getAllianceDetail(ctx, sso.UserAgent(version), in.AllianceID)
 		if err != nil {

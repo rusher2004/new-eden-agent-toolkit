@@ -14,7 +14,6 @@ import (
 
 	"github.com/rusher2004/new-eden-agent-toolkit/analytics"
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
-	"github.com/rusher2004/new-eden-agent-toolkit/mcp"
 	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
@@ -60,7 +59,10 @@ func mcpCommand(version, clientID, aptabaseAppKey string, analyticsDebug bool) *
 				}
 			}()
 
-			server := mcp.NewServer(version, clientID, store, sdeStore)
+			server, err := NewMCPServer(version, clientID, store, sdeStore)
+			if err != nil {
+				return err
+			}
 			if tracker != nil {
 				registered, err := analytics.RegisteredTools(ctx, server)
 				if err != nil {

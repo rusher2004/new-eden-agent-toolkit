@@ -4,13 +4,12 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
-	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 )
 
 // registerNavigationTools adds the jump route and hauling tools, which serve
 // any move through New Eden (PvP, PvE or industry), not only builds. See
 // docs/superpowers/specs/2026-11-20-logistics-planning-design.md.
-func registerNavigationTools(server *mcpsdk.Server, version, clientID string, store *config.Store, sdeStore *sde.Store) {
+func registerNavigationTools(server *mcpsdk.Server, version, clientID string, store ConfigStore, sdeStore SDEStore) {
 	add := func(name, desc string) *mcpsdk.Tool { return &mcpsdk.Tool{Name: name, Description: desc} }
 
 	// Haul profiles and saved routes (written to ~/.neat/haul_profiles.yaml and routes.yaml only).

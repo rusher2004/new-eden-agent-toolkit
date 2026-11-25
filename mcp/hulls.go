@@ -9,7 +9,6 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/cargo"
-	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/nav"
 	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 )
@@ -78,7 +77,7 @@ type CompareHaulHullsOutput struct {
 	Hulls []HaulHull `json:"hulls"`
 }
 
-func compareHaulHullsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[CompareHaulHullsInput, CompareHaulHullsOutput] {
+func compareHaulHullsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[CompareHaulHullsInput, CompareHaulHullsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in CompareHaulHullsInput) (*mcpsdk.CallToolResult, CompareHaulHullsOutput, error) {
 		p := newPlanner(version, clientID, store, sdeStore)
 		classTypes, err := sdeStore.PublishedTypesInGroups(ctx, p.ua(), hullClassGroups)

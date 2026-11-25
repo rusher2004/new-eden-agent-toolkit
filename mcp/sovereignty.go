@@ -10,7 +10,6 @@ import (
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -46,7 +45,7 @@ type ListSovereigntyCampaignsOutput struct {
 	Campaigns []SovereigntyCampaign `json:"campaigns"`
 }
 
-func listSovereigntyCampaignsHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListSovereigntyCampaignsInput, ListSovereigntyCampaignsOutput] {
+func listSovereigntyCampaignsHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListSovereigntyCampaignsInput, ListSovereigntyCampaignsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListSovereigntyCampaignsInput) (*mcpsdk.CallToolResult, ListSovereigntyCampaignsOutput, error) {
 		campaigns, err := listSovereigntyCampaigns(ctx, sso.UserAgent(version))
 		if err != nil {
@@ -171,7 +170,7 @@ type ListSovereigntySystemsOutput struct {
 	Systems []SovereigntySystem `json:"systems"`
 }
 
-func listSovereigntySystemsHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListSovereigntySystemsInput, ListSovereigntySystemsOutput] {
+func listSovereigntySystemsHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListSovereigntySystemsInput, ListSovereigntySystemsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListSovereigntySystemsInput) (*mcpsdk.CallToolResult, ListSovereigntySystemsOutput, error) {
 		systems, err := listSovereigntySystems(ctx, sso.UserAgent(version))
 		if err != nil {

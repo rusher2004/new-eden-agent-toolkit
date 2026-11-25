@@ -11,7 +11,6 @@ import (
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/nav"
-	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 )
 
 // cynoClass is the class list_haul_ships gives a ship that's in none of the
@@ -84,7 +83,7 @@ func rootOf(byID map[int64]AssetItem, a AssetItem) (loc int64, kind string, hold
 	return cur.LocationID, cur.LocationType, holder
 }
 
-func listHaulShipsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListHaulShipsInput, ListHaulShipsOutput] {
+func listHaulShipsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListHaulShipsInput, ListHaulShipsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListHaulShipsInput) (*mcpsdk.CallToolResult, ListHaulShipsOutput, error) {
 		if (in.CorporationID == 0) != (in.CorporationCharacterID == 0) {
 			return nil, ListHaulShipsOutput{}, fmt.Errorf("list haul ships: corporationId and corporationCharacterId go together")

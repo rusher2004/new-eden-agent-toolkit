@@ -7,9 +7,7 @@ import (
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -66,7 +64,7 @@ type GetCorporationInput struct {
 	CorporationID int64 `json:"corporationId" jsonschema:"the corporation ID to look up"`
 }
 
-func getCorporationHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetCorporationInput, GetCorporationOutput] {
+func getCorporationHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetCorporationInput, GetCorporationOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCorporationInput) (*mcpsdk.CallToolResult, GetCorporationOutput, error) {
 		out, err := getCorporationDetail(ctx, sso.UserAgent(version), in.CorporationID)
 		if err != nil {
@@ -196,7 +194,7 @@ type ListCorporationMembersOutput struct {
 	MemberIDs     []int64 `json:"memberIds"`
 }
 
-func listCorporationMembersHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCorporationMembersInput, ListCorporationMembersOutput] {
+func listCorporationMembersHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationMembersInput, ListCorporationMembersOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationMembersInput) (*mcpsdk.CallToolResult, ListCorporationMembersOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -233,7 +231,7 @@ type GetCorporationMembersLimitOutput struct {
 	Limit         int64 `json:"limit"`
 }
 
-func getCorporationMembersLimitHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[GetCorporationMembersLimitInput, GetCorporationMembersLimitOutput] {
+func getCorporationMembersLimitHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetCorporationMembersLimitInput, GetCorporationMembersLimitOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCorporationMembersLimitInput) (*mcpsdk.CallToolResult, GetCorporationMembersLimitOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -283,7 +281,7 @@ type ListCorporationMemberTitlesOutput struct {
 	MemberTitles  []MemberTitles `json:"memberTitles"`
 }
 
-func listCorporationMemberTitlesHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCorporationMemberTitlesInput, ListCorporationMemberTitlesOutput] {
+func listCorporationMemberTitlesHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationMemberTitlesInput, ListCorporationMemberTitlesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationMemberTitlesInput) (*mcpsdk.CallToolResult, ListCorporationMemberTitlesOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -339,7 +337,7 @@ type ListCorporationMemberTrackingOutput struct {
 	Members       []MemberTracking `json:"members"`
 }
 
-func listCorporationMemberTrackingHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCorporationMemberTrackingInput, ListCorporationMemberTrackingOutput] {
+func listCorporationMemberTrackingHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCorporationMemberTrackingInput, ListCorporationMemberTrackingOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationMemberTrackingInput) (*mcpsdk.CallToolResult, ListCorporationMemberTrackingOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -411,7 +409,7 @@ type ListCorporationRolesOutput struct {
 	Roles         []MemberRoles `json:"roles"`
 }
 
-func listCorporationRolesHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCorporationRolesInput, ListCorporationRolesOutput] {
+func listCorporationRolesHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationRolesInput, ListCorporationRolesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationRolesInput) (*mcpsdk.CallToolResult, ListCorporationRolesOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -468,7 +466,7 @@ type ListCorporationRolesHistoryOutput struct {
 	History       []RoleChange `json:"history"`
 }
 
-func listCorporationRolesHistoryHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCorporationRolesHistoryInput, ListCorporationRolesHistoryOutput] {
+func listCorporationRolesHistoryHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationRolesHistoryInput, ListCorporationRolesHistoryOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationRolesHistoryInput) (*mcpsdk.CallToolResult, ListCorporationRolesHistoryOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -522,7 +520,7 @@ type ListCorporationTitlesOutput struct {
 	Titles        []CorporationTitle `json:"titles"`
 }
 
-func listCorporationTitlesHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCorporationTitlesInput, ListCorporationTitlesOutput] {
+func listCorporationTitlesHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationTitlesInput, ListCorporationTitlesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationTitlesInput) (*mcpsdk.CallToolResult, ListCorporationTitlesOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -577,7 +575,7 @@ type GetCorporationDivisionsOutput struct {
 	Wallets       []Division `json:"wallets"`
 }
 
-func getCorporationDivisionsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[GetCorporationDivisionsInput, GetCorporationDivisionsOutput] {
+func getCorporationDivisionsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetCorporationDivisionsInput, GetCorporationDivisionsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCorporationDivisionsInput) (*mcpsdk.CallToolResult, GetCorporationDivisionsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -631,7 +629,7 @@ type ListCorporationShareholdersOutput struct {
 	Shareholders  []Shareholder `json:"shareholders"`
 }
 
-func listCorporationShareholdersHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCorporationShareholdersInput, ListCorporationShareholdersOutput] {
+func listCorporationShareholdersHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationShareholdersInput, ListCorporationShareholdersOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationShareholdersInput) (*mcpsdk.CallToolResult, ListCorporationShareholdersOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -685,7 +683,7 @@ type ListCorporationStandingsOutput struct {
 	Standings     []Standing `json:"standings"`
 }
 
-func listCorporationStandingsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCorporationStandingsInput, ListCorporationStandingsOutput] {
+func listCorporationStandingsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationStandingsInput, ListCorporationStandingsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationStandingsInput) (*mcpsdk.CallToolResult, ListCorporationStandingsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -753,7 +751,7 @@ type ListCorporationBlueprintsOutput struct {
 	Blueprints    []CorporationBlueprint `json:"blueprints"`
 }
 
-func listCorporationBlueprintsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCorporationBlueprintsInput, ListCorporationBlueprintsOutput] {
+func listCorporationBlueprintsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCorporationBlueprintsInput, ListCorporationBlueprintsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationBlueprintsInput) (*mcpsdk.CallToolResult, ListCorporationBlueprintsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -835,7 +833,7 @@ type ListCorporationContainerLogsOutput struct {
 	Logs          []ContainerLog `json:"logs"`
 }
 
-func listCorporationContainerLogsHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCorporationContainerLogsInput, ListCorporationContainerLogsOutput] {
+func listCorporationContainerLogsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCorporationContainerLogsInput, ListCorporationContainerLogsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationContainerLogsInput) (*mcpsdk.CallToolResult, ListCorporationContainerLogsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -906,7 +904,7 @@ type ListCorporationFacilitiesOutput struct {
 	Facilities    []Facility `json:"facilities"`
 }
 
-func listCorporationFacilitiesHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCorporationFacilitiesInput, ListCorporationFacilitiesOutput] {
+func listCorporationFacilitiesHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCorporationFacilitiesInput, ListCorporationFacilitiesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationFacilitiesInput) (*mcpsdk.CallToolResult, ListCorporationFacilitiesOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -978,7 +976,7 @@ type ListCorporationMedalsOutput struct {
 	Medals        []CorporationMedal `json:"medals"`
 }
 
-func listCorporationMedalsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCorporationMedalsInput, ListCorporationMedalsOutput] {
+func listCorporationMedalsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationMedalsInput, ListCorporationMedalsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationMedalsInput) (*mcpsdk.CallToolResult, ListCorporationMedalsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -1039,7 +1037,7 @@ type ListCorporationMedalsIssuedOutput struct {
 	Issued        []MedalIssued `json:"issued"`
 }
 
-func listCorporationMedalsIssuedHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListCorporationMedalsIssuedInput, ListCorporationMedalsIssuedOutput] {
+func listCorporationMedalsIssuedHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationMedalsIssuedInput, ListCorporationMedalsIssuedOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationMedalsIssuedInput) (*mcpsdk.CallToolResult, ListCorporationMedalsIssuedOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -1108,7 +1106,7 @@ type ListCorporationStarbasesOutput struct {
 	Starbases     []Starbase `json:"starbases"`
 }
 
-func listCorporationStarbasesHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCorporationStarbasesInput, ListCorporationStarbasesOutput] {
+func listCorporationStarbasesHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCorporationStarbasesInput, ListCorporationStarbasesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationStarbasesInput) (*mcpsdk.CallToolResult, ListCorporationStarbasesOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -1213,7 +1211,7 @@ type GetCorporationStarbaseOutput struct {
 	Detail        StarbaseDetail `json:"detail"`
 }
 
-func getCorporationStarbaseHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetCorporationStarbaseInput, GetCorporationStarbaseOutput] {
+func getCorporationStarbaseHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetCorporationStarbaseInput, GetCorporationStarbaseOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCorporationStarbaseInput) (*mcpsdk.CallToolResult, GetCorporationStarbaseOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -1304,7 +1302,7 @@ type ListCorporationStructuresOutput struct {
 	Structures    []Structure `json:"structures"`
 }
 
-func listCorporationStructuresHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListCorporationStructuresInput, ListCorporationStructuresOutput] {
+func listCorporationStructuresHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCorporationStructuresInput, ListCorporationStructuresOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationStructuresInput) (*mcpsdk.CallToolResult, ListCorporationStructuresOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {

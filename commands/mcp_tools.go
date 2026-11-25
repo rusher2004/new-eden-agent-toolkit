@@ -1,0 +1,63 @@
+package commands
+
+import (
+	"context"
+	"fmt"
+
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/rusher2004/new-eden-agent-toolkit/config"
+	"github.com/rusher2004/new-eden-agent-toolkit/esi"
+	"github.com/rusher2004/new-eden-agent-toolkit/mcp"
+	"github.com/rusher2004/new-eden-agent-toolkit/sde"
+	"github.com/rusher2004/new-eden-agent-toolkit/sso"
+)
+
+// toolDeps are the concrete producers this composition root builds once and
+// hands to each converted tool. The mcp package never names these types: each
+// Add function takes only the small interface its tool needs, and the value
+// here satisfies it. A value with far more methods than the interface lists is
+// the point, as with an *http.Client passed as a one-method doer.
+type toolDeps struct {
+	userAgent string
+	store     *config.Store
+	sde       *sde.Store
+	clientID  string
+}
+
+// openESI builds an authenticated ESI client for a logged-in character.
+func (d toolDeps) openESI(ctx context.Context, characterID int32) (*esi.Client, error) {
+	c, err := esi.NewClient(ctx, d.clientID, characterID, d.userAgent)
+	if err != nil {
+		return nil, fmt.Errorf("open ESI client for character %d: %w", characterID, err)
+	}
+	return c, nil
+}
+
+// openPublicESI builds an ESI client for endpoints that need no character.
+func (d toolDeps) openPublicESI() *esi.Client { return esi.NewPublicClient(d.userAgent) }
+
+// NewMCPServer builds neat's MCP server with every tool registered. sdeStore
+// may be nil: every sde.Store method is nil-safe, so name enrichment and the
+// Universe tools fall through to ESI.
+//
+// Tools whose file has moved to its own small interfaces are registered here,
+// one explicit call each (addConvertedTools); the rest are still registered by
+// mcp.NewServer through mcp.Deps. A file moves by exporting Add functions,
+// deleting its registrations from mcp.NewServer and adding one line below.
+func NewMCPServer(version, clientID string, store *config.Store, sdeStore *sde.Store) (*mcpsdk.Server, error) {
+	server, err := mcp.NewServer(version, mcp.Deps{ClientID: clientID, Config: store, SDE: sdeStore})
+	if err != nil {
+		return nil, fmt.Errorf("build MCP server: %w", err)
+	}
+	addConvertedTools(server, toolDeps{userAgent: sso.UserAgent(version), store: store, sde: sdeStore, clientID: clientID})
+	return server, nil
+}
+
+// addConvertedTools registers the tools in files converted to the pattern in
+// mcp/loyalty.go. Each call passes the concrete values the tool's interfaces
+// ask for; the compiler checks that they satisfy them.
+func addConvertedTools(s *mcpsdk.Server, d toolDeps) {
+	mcp.AddListCharacterLoyaltyPoints(s, d.openESI, d.store)
+	mcp.AddListLoyaltyStoreOffers(s, d.userAgent, d.openPublicESI, d.sde)
+}

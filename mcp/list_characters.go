@@ -10,6 +10,13 @@ import (
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 )
 
+// configLoader is the one config call most tools make: read the saved config,
+// usually to check that a character is logged in. The tool files share it;
+// ones that write declare their own interface.
+type configLoader interface {
+	Load() (config.Config, error)
+}
+
 // CharacterInfo is the MCP-facing representation of a known character,
 // deliberately distinct from config.Character so the tool contract doesn't
 // leak the internal storage schema.
@@ -30,7 +37,7 @@ type ListCharactersOutput struct {
 	Warnings   []string        `json:"warnings,omitempty"`
 }
 
-func listCharactersHandler(store *config.Store) mcpsdk.ToolHandlerFor[any, ListCharactersOutput] {
+func listCharactersHandler(store configLoader) mcpsdk.ToolHandlerFor[any, ListCharactersOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, _ any) (*mcpsdk.CallToolResult, ListCharactersOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {

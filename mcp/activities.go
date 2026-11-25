@@ -7,9 +7,7 @@ import (
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -47,7 +45,7 @@ type ListMercenaryTacticalOperationsOutput struct {
 	Operations  []OperationSummary `json:"operations"`
 }
 
-func listMercenaryTacticalOperationsHandler(version, clientID string, store *config.Store) mcpsdk.ToolHandlerFor[ListMercenaryTacticalOperationsInput, ListMercenaryTacticalOperationsOutput] {
+func listMercenaryTacticalOperationsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListMercenaryTacticalOperationsInput, ListMercenaryTacticalOperationsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListMercenaryTacticalOperationsInput) (*mcpsdk.CallToolResult, ListMercenaryTacticalOperationsOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -117,7 +115,7 @@ type GetMercenaryTacticalOperationOutput struct {
 	Expires         time.Time `json:"expires"`
 }
 
-func getMercenaryTacticalOperationHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[GetMercenaryTacticalOperationInput, GetMercenaryTacticalOperationOutput] {
+func getMercenaryTacticalOperationHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetMercenaryTacticalOperationInput, GetMercenaryTacticalOperationOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetMercenaryTacticalOperationInput) (*mcpsdk.CallToolResult, GetMercenaryTacticalOperationOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {
@@ -197,7 +195,7 @@ type ListRaidableSkyhooksOutput struct {
 	Skyhooks []SkyhookSummary `json:"skyhooks"`
 }
 
-func listRaidableSkyhooksHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListRaidableSkyhooksInput, ListRaidableSkyhooksOutput] {
+func listRaidableSkyhooksHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListRaidableSkyhooksInput, ListRaidableSkyhooksOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListRaidableSkyhooksInput) (*mcpsdk.CallToolResult, ListRaidableSkyhooksOutput, error) {
 		cfg, err := store.Load()
 		if err != nil {

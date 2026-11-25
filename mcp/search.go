@@ -8,9 +8,7 @@ import (
 
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 
-	"github.com/rusher2004/new-eden-agent-toolkit/config"
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -50,7 +48,7 @@ type SearchCharacterOutput struct {
 	Results     SearchResults `json:"results"`
 }
 
-func searchCharacterHandler(version, clientID string, store *config.Store, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[SearchCharacterInput, SearchCharacterOutput] {
+func searchCharacterHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[SearchCharacterInput, SearchCharacterOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in SearchCharacterInput) (*mcpsdk.CallToolResult, SearchCharacterOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {

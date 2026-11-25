@@ -2,15 +2,12 @@ package mcp
 
 import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-
-	"github.com/rusher2004/new-eden-agent-toolkit/config"
-	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 )
 
 // registerMarketPlanningTools adds the trade hub and purchase pricing tools,
 // which serve any purchase, not only build materials. See
 // docs/superpowers/specs/2026-11-20-logistics-planning-design.md.
-func registerMarketPlanningTools(server *mcpsdk.Server, version, clientID string, store *config.Store, sdeStore *sde.Store) {
+func registerMarketPlanningTools(server *mcpsdk.Server, version, clientID string, store ConfigStore, sdeStore SDEStore) {
 	add := func(name, desc string) *mcpsdk.Tool { return &mcpsdk.Tool{Name: name, Description: desc} }
 
 	// Trade hubs (written to ~/.neat/hubs.yaml only).

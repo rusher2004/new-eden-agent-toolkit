@@ -7,7 +7,6 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sde"
 	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
@@ -47,7 +46,7 @@ type ListInsurancePricesOutput struct {
 	Prices []InsurancePrice `json:"prices"`
 }
 
-func listInsurancePricesHandler(version string, sdeStore *sde.Store) mcpsdk.ToolHandlerFor[ListInsurancePricesInput, ListInsurancePricesOutput] {
+func listInsurancePricesHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListInsurancePricesInput, ListInsurancePricesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListInsurancePricesInput) (*mcpsdk.CallToolResult, ListInsurancePricesOutput, error) {
 		prices, err := listInsurancePrices(ctx, sso.UserAgent(version))
 		if err != nil {
