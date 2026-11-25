@@ -8,10 +8,53 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
-
-	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
+
+// fwCharacterESI is the ESI call get_character_fw_stats makes.
+type fwCharacterESI interface {
+	CharacterFwStats(ctx context.Context) (*esiapi.CharactersCharacterIdFwStatsGet, error)
+}
+
+// fwCorporationESI is the ESI call get_corporation_fw_stats makes.
+type fwCorporationESI interface {
+	CorporationFwStats(ctx context.Context, corporationID int64) (*esiapi.CorporationsCorporationIdFwStatsGet, error)
+}
+
+// fwLeaderboardsESI is the ESI call get_fw_leaderboards makes.
+type fwLeaderboardsESI interface {
+	FwLeaderboards(ctx context.Context) (*esiapi.FwLeaderboardsGet, error)
+}
+
+// fwCharacterLeaderboardsESI is the ESI call get_fw_character_leaderboards makes.
+type fwCharacterLeaderboardsESI interface {
+	FwCharacterLeaderboards(ctx context.Context) (*esiapi.FwLeaderboardsCharactersGet, error)
+}
+
+// fwCorporationLeaderboardsESI is the ESI call get_fw_corporation_leaderboards makes.
+type fwCorporationLeaderboardsESI interface {
+	FwCorporationLeaderboards(ctx context.Context) (*esiapi.FwLeaderboardsCorporationsGet, error)
+}
+
+// fwStatsESI is the ESI call list_fw_stats makes.
+type fwStatsESI interface {
+	FwStats(ctx context.Context) ([]esiapi.FwStatsGetInner, error)
+}
+
+// fwSystemsESI is the ESI call list_fw_systems makes.
+type fwSystemsESI interface {
+	FwSystems(ctx context.Context) ([]esiapi.FwSystemsGetInner, error)
+}
+
+// fwSystemsSDE is the SDE lookups list_fw_systems makes: system and faction names.
+type fwSystemsSDE interface {
+	systemNameCache
+	factionNameCache
+}
+
+// fwWarsESI is the ESI call list_fw_wars makes.
+type fwWarsESI interface {
+	FwWars(ctx context.Context) ([]esiapi.FwWarsGetInner, error)
+}
 
 // KillsOrPointsStats is the shared {last_week, total, yesterday} shape used by every FW
 // endpoint's Kills/VictoryPoints sub-fields (character, corporation, and per-faction stats) --
@@ -23,14 +66,6 @@ type KillsOrPointsStats struct {
 }
 
 // --- get_character_fw_stats (private) ---
-
-var getCharacterFwStats = func(ctx context.Context, clientID string, characterID int32, userAgent string) (*esiapi.CharactersCharacterIdFwStatsGet, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
-	return client.CharacterFwStats(ctx)
-}
 
 type GetCharacterFwStatsInput struct {
 	CharacterID int32 `json:"characterId" jsonschema:"the character ID to check"`
@@ -46,7 +81,16 @@ type GetCharacterFwStatsOutput struct {
 	VictoryPoints KillsOrPointsStats `json:"victoryPoints"`
 }
 
-func getCharacterFwStatsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetCharacterFwStatsInput, GetCharacterFwStatsOutput] {
+// AddGetCharacterFwStats registers get_character_fw_stats. open builds the ESI client; any client with the
+// fwCharacterESI methods will do.
+func AddGetCharacterFwStats[C fwCharacterESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore factionNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_character_fw_stats",
+		Description: "Get a logged-in EVE Online character's faction warfare stats.",
+	}, getCharacterFwStatsHandler(userAgent, open, store, sdeStore))
+}
+
+func getCharacterFwStatsHandler[C fwCharacterESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore factionNameCache) mcpsdk.ToolHandlerFor[GetCharacterFwStatsInput, GetCharacterFwStatsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterFwStatsInput) (*mcpsdk.CallToolResult, GetCharacterFwStatsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -55,13 +99,17 @@ func getCharacterFwStatsHandler(version, clientID string, store ConfigStore, sde
 		if !found {
 			return nil, GetCharacterFwStatsOutput{}, fmt.Errorf("get character fw stats for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		stats, err := getCharacterFwStats(ctx, clientID, in.CharacterID, sso.UserAgent(version))
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, GetCharacterFwStatsOutput{}, fmt.Errorf("get character fw stats: build ESI client: %w", err)
+		}
+		stats, err := client.CharacterFwStats(ctx)
 		if err != nil {
 			return nil, GetCharacterFwStatsOutput{}, fmt.Errorf("get character fw stats: %w", err)
 		}
 		var factionName string
 		if stats.FactionId != nil {
-			names := resolveFactionNames(ctx, sdeStore, sso.UserAgent(version), []int64{*stats.FactionId})
+			names := resolveFactionNames(ctx, sdeStore, userAgent, []int64{*stats.FactionId})
 			factionName = names[*stats.FactionId]
 		}
 		return nil, GetCharacterFwStatsOutput{
@@ -74,14 +122,6 @@ func getCharacterFwStatsHandler(version, clientID string, store ConfigStore, sde
 }
 
 // --- get_corporation_fw_stats (private) ---
-
-var getCorporationFwStats = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64) (*esiapi.CorporationsCorporationIdFwStatsGet, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
-	return client.CorporationFwStats(ctx, corporationID)
-}
 
 type GetCorporationFwStatsInput struct {
 	CharacterID   int32 `json:"characterId" jsonschema:"the character ID to check"`
@@ -98,7 +138,16 @@ type GetCorporationFwStatsOutput struct {
 	VictoryPoints KillsOrPointsStats `json:"victoryPoints"`
 }
 
-func getCorporationFwStatsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetCorporationFwStatsInput, GetCorporationFwStatsOutput] {
+// AddGetCorporationFwStats registers get_corporation_fw_stats. open builds the ESI client; any client with the
+// fwCorporationESI methods will do.
+func AddGetCorporationFwStats[C fwCorporationESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore factionNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_corporation_fw_stats",
+		Description: "Get a corporation's faction warfare stats, using a logged-in character's roles to authorize.",
+	}, getCorporationFwStatsHandler(userAgent, open, store, sdeStore))
+}
+
+func getCorporationFwStatsHandler[C fwCorporationESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore factionNameCache) mcpsdk.ToolHandlerFor[GetCorporationFwStatsInput, GetCorporationFwStatsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCorporationFwStatsInput) (*mcpsdk.CallToolResult, GetCorporationFwStatsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -107,13 +156,17 @@ func getCorporationFwStatsHandler(version, clientID string, store ConfigStore, s
 		if !found {
 			return nil, GetCorporationFwStatsOutput{}, fmt.Errorf("get corporation fw stats for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		stats, err := getCorporationFwStats(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, GetCorporationFwStatsOutput{}, fmt.Errorf("get corporation fw stats: build ESI client: %w", err)
+		}
+		stats, err := client.CorporationFwStats(ctx, in.CorporationID)
 		if err != nil {
 			return nil, GetCorporationFwStatsOutput{}, fmt.Errorf("get corporation fw stats: %w", err)
 		}
 		var factionName string
 		if stats.FactionId != nil {
-			names := resolveFactionNames(ctx, sdeStore, sso.UserAgent(version), []int64{*stats.FactionId})
+			names := resolveFactionNames(ctx, sdeStore, userAgent, []int64{*stats.FactionId})
 			factionName = names[*stats.FactionId]
 		}
 		return nil, GetCorporationFwStatsOutput{
@@ -138,20 +191,24 @@ type FactionLeaderboardMetric struct {
 	Yesterday   []LeaderboardFactionEntry `json:"yesterday"`
 }
 
-var getFwLeaderboards = func(ctx context.Context, userAgent string) (*esiapi.FwLeaderboardsGet, error) {
-	client := esi.NewPublicClient(userAgent)
-	return client.FwLeaderboards(ctx)
-}
-
 type GetFwLeaderboardsInput struct{}
 type GetFwLeaderboardsOutput struct {
 	Kills         FactionLeaderboardMetric `json:"kills"`
 	VictoryPoints FactionLeaderboardMetric `json:"victoryPoints"`
 }
 
-func getFwLeaderboardsHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetFwLeaderboardsInput, GetFwLeaderboardsOutput] {
+// AddGetFwLeaderboards registers get_fw_leaderboards. open builds the ESI client; any client with the
+// fwLeaderboardsESI methods will do.
+func AddGetFwLeaderboards[C fwLeaderboardsESI](s *mcpsdk.Server, userAgent string, open func() C, sdeStore factionNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_fw_leaderboards",
+		Description: "Get the top faction rankings by kills and victory points (public data, no character required).",
+	}, getFwLeaderboardsHandler(userAgent, open, sdeStore))
+}
+
+func getFwLeaderboardsHandler[C fwLeaderboardsESI](userAgent string, open func() C, sdeStore factionNameCache) mcpsdk.ToolHandlerFor[GetFwLeaderboardsInput, GetFwLeaderboardsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetFwLeaderboardsInput) (*mcpsdk.CallToolResult, GetFwLeaderboardsOutput, error) {
-		lb, err := getFwLeaderboards(ctx, sso.UserAgent(version))
+		lb, err := open().FwLeaderboards(ctx)
 		if err != nil {
 			return nil, GetFwLeaderboardsOutput{}, fmt.Errorf("get fw leaderboards: %w", err)
 		}
@@ -187,7 +244,7 @@ func getFwLeaderboardsHandler(version string, sdeStore SDEStore) mcpsdk.ToolHand
 				}
 			}
 		}
-		factionNames := resolveFactionNames(ctx, sdeStore, sso.UserAgent(version), factionIDs)
+		factionNames := resolveFactionNames(ctx, sdeStore, userAgent, factionIDs)
 		for _, group := range [][]LeaderboardFactionEntry{killsActiveTotal, killsLastWeek, killsYesterday, vpActiveTotal, vpLastWeek, vpYesterday} {
 			for i := range group {
 				if group[i].FactionID != nil {
@@ -214,20 +271,24 @@ type CharacterLeaderboardMetric struct {
 	Yesterday   []LeaderboardCharacterEntry `json:"yesterday"`
 }
 
-var getFwCharacterLeaderboards = func(ctx context.Context, userAgent string) (*esiapi.FwLeaderboardsCharactersGet, error) {
-	client := esi.NewPublicClient(userAgent)
-	return client.FwCharacterLeaderboards(ctx)
-}
-
 type GetFwCharacterLeaderboardsInput struct{}
 type GetFwCharacterLeaderboardsOutput struct {
 	Kills         CharacterLeaderboardMetric `json:"kills"`
 	VictoryPoints CharacterLeaderboardMetric `json:"victoryPoints"`
 }
 
-func getFwCharacterLeaderboardsHandler(version string) mcpsdk.ToolHandlerFor[GetFwCharacterLeaderboardsInput, GetFwCharacterLeaderboardsOutput] {
+// AddGetFwCharacterLeaderboards registers get_fw_character_leaderboards. open builds the ESI client; any client with the
+// fwCharacterLeaderboardsESI methods will do.
+func AddGetFwCharacterLeaderboards[C fwCharacterLeaderboardsESI](s *mcpsdk.Server, open func() C) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_fw_character_leaderboards",
+		Description: "Get the top pilot rankings by kills and victory points (public data, no character required).",
+	}, getFwCharacterLeaderboardsHandler(open))
+}
+
+func getFwCharacterLeaderboardsHandler[C fwCharacterLeaderboardsESI](open func() C) mcpsdk.ToolHandlerFor[GetFwCharacterLeaderboardsInput, GetFwCharacterLeaderboardsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetFwCharacterLeaderboardsInput) (*mcpsdk.CallToolResult, GetFwCharacterLeaderboardsOutput, error) {
-		lb, err := getFwCharacterLeaderboards(ctx, sso.UserAgent(version))
+		lb, err := open().FwCharacterLeaderboards(ctx)
 		if err != nil {
 			return nil, GetFwCharacterLeaderboardsOutput{}, fmt.Errorf("get fw character leaderboards: %w", err)
 		}
@@ -274,20 +335,24 @@ type CorporationLeaderboardMetric struct {
 	Yesterday   []LeaderboardCorporationEntry `json:"yesterday"`
 }
 
-var getFwCorporationLeaderboards = func(ctx context.Context, userAgent string) (*esiapi.FwLeaderboardsCorporationsGet, error) {
-	client := esi.NewPublicClient(userAgent)
-	return client.FwCorporationLeaderboards(ctx)
-}
-
 type GetFwCorporationLeaderboardsInput struct{}
 type GetFwCorporationLeaderboardsOutput struct {
 	Kills         CorporationLeaderboardMetric `json:"kills"`
 	VictoryPoints CorporationLeaderboardMetric `json:"victoryPoints"`
 }
 
-func getFwCorporationLeaderboardsHandler(version string) mcpsdk.ToolHandlerFor[GetFwCorporationLeaderboardsInput, GetFwCorporationLeaderboardsOutput] {
+// AddGetFwCorporationLeaderboards registers get_fw_corporation_leaderboards. open builds the ESI client; any client with the
+// fwCorporationLeaderboardsESI methods will do.
+func AddGetFwCorporationLeaderboards[C fwCorporationLeaderboardsESI](s *mcpsdk.Server, open func() C) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_fw_corporation_leaderboards",
+		Description: "Get the top corporation rankings by kills and victory points (public data, no character required).",
+	}, getFwCorporationLeaderboardsHandler(open))
+}
+
+func getFwCorporationLeaderboardsHandler[C fwCorporationLeaderboardsESI](open func() C) mcpsdk.ToolHandlerFor[GetFwCorporationLeaderboardsInput, GetFwCorporationLeaderboardsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetFwCorporationLeaderboardsInput) (*mcpsdk.CallToolResult, GetFwCorporationLeaderboardsOutput, error) {
-		lb, err := getFwCorporationLeaderboards(ctx, sso.UserAgent(version))
+		lb, err := open().FwCorporationLeaderboards(ctx)
 		if err != nil {
 			return nil, GetFwCorporationLeaderboardsOutput{}, fmt.Errorf("get fw corporation leaderboards: %w", err)
 		}
@@ -333,19 +398,23 @@ type FwFactionStats struct {
 	VictoryPoints     KillsOrPointsStats `json:"victoryPoints"`
 }
 
-var listFwStats = func(ctx context.Context, userAgent string) ([]esiapi.FwStatsGetInner, error) {
-	client := esi.NewPublicClient(userAgent)
-	return client.FwStats(ctx)
-}
-
 type ListFwStatsInput struct{}
 type ListFwStatsOutput struct {
 	Stats []FwFactionStats `json:"stats"`
 }
 
-func listFwStatsHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListFwStatsInput, ListFwStatsOutput] {
+// AddListFwStats registers list_fw_stats. open builds the ESI client; any client with the
+// fwStatsESI methods will do.
+func AddListFwStats[C fwStatsESI](s *mcpsdk.Server, userAgent string, open func() C, sdeStore factionNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_fw_stats",
+		Description: "List every faction's faction warfare stats (public data, no character required).",
+	}, listFwStatsHandler(userAgent, open, sdeStore))
+}
+
+func listFwStatsHandler[C fwStatsESI](userAgent string, open func() C, sdeStore factionNameCache) mcpsdk.ToolHandlerFor[ListFwStatsInput, ListFwStatsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListFwStatsInput) (*mcpsdk.CallToolResult, ListFwStatsOutput, error) {
-		stats, err := listFwStats(ctx, sso.UserAgent(version))
+		stats, err := open().FwStats(ctx)
 		if err != nil {
 			return nil, ListFwStatsOutput{}, fmt.Errorf("list fw stats: %w", err)
 		}
@@ -361,7 +430,7 @@ func listFwStatsHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor
 		for i, s := range out {
 			factionIDs[i] = s.FactionID
 		}
-		factionNames := resolveFactionNames(ctx, sdeStore, sso.UserAgent(version), factionIDs)
+		factionNames := resolveFactionNames(ctx, sdeStore, userAgent, factionIDs)
 		for i := range out {
 			out[i].FactionName = factionNames[out[i].FactionID]
 		}
@@ -383,19 +452,23 @@ type FwSystem struct {
 	VictoryPointsThreshold int64  `json:"victoryPointsThreshold"`
 }
 
-var listFwSystems = func(ctx context.Context, userAgent string) ([]esiapi.FwSystemsGetInner, error) {
-	client := esi.NewPublicClient(userAgent)
-	return client.FwSystems(ctx)
-}
-
 type ListFwSystemsInput struct{}
 type ListFwSystemsOutput struct {
 	Systems []FwSystem `json:"systems"`
 }
 
-func listFwSystemsHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListFwSystemsInput, ListFwSystemsOutput] {
+// AddListFwSystems registers list_fw_systems. open builds the ESI client; any client with the
+// fwSystemsESI methods will do.
+func AddListFwSystems[C fwSystemsESI](s *mcpsdk.Server, userAgent string, open func() C, sdeStore fwSystemsSDE) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_fw_systems",
+		Description: "List every solar system's faction warfare occupation/contest state (public data, no character required).",
+	}, listFwSystemsHandler(userAgent, open, sdeStore))
+}
+
+func listFwSystemsHandler[C fwSystemsESI](userAgent string, open func() C, sdeStore fwSystemsSDE) mcpsdk.ToolHandlerFor[ListFwSystemsInput, ListFwSystemsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListFwSystemsInput) (*mcpsdk.CallToolResult, ListFwSystemsOutput, error) {
-		systems, err := listFwSystems(ctx, sso.UserAgent(version))
+		systems, err := open().FwSystems(ctx)
 		if err != nil {
 			return nil, ListFwSystemsOutput{}, fmt.Errorf("list fw systems: %w", err)
 		}
@@ -410,7 +483,7 @@ func listFwSystemsHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerF
 		for i, s := range out {
 			systemIDs[i] = s.SolarSystemID
 		}
-		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), systemIDs)
+		systemNames := resolveSystemNames(ctx, sdeStore, userAgent, systemIDs)
 		for i := range out {
 			out[i].SolarSystemName = systemNames[out[i].SolarSystemID]
 		}
@@ -418,7 +491,7 @@ func listFwSystemsHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerF
 		for _, s := range out {
 			factionIDs = append(factionIDs, s.OccupierFactionID, s.OwnerFactionID)
 		}
-		factionNames := resolveFactionNames(ctx, sdeStore, sso.UserAgent(version), factionIDs)
+		factionNames := resolveFactionNames(ctx, sdeStore, userAgent, factionIDs)
 		for i := range out {
 			out[i].OccupierFactionName = factionNames[out[i].OccupierFactionID]
 			out[i].OwnerFactionName = factionNames[out[i].OwnerFactionID]
@@ -436,19 +509,23 @@ type FwWar struct {
 	FactionName        string `json:"factionName,omitempty"`
 }
 
-var listFwWars = func(ctx context.Context, userAgent string) ([]esiapi.FwWarsGetInner, error) {
-	client := esi.NewPublicClient(userAgent)
-	return client.FwWars(ctx)
-}
-
 type ListFwWarsInput struct{}
 type ListFwWarsOutput struct {
 	Wars []FwWar `json:"wars"`
 }
 
-func listFwWarsHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListFwWarsInput, ListFwWarsOutput] {
+// AddListFwWars registers list_fw_wars. open builds the ESI client; any client with the
+// fwWarsESI methods will do.
+func AddListFwWars[C fwWarsESI](s *mcpsdk.Server, userAgent string, open func() C, sdeStore factionNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_fw_wars",
+		Description: "List every faction warfare declaration (public data, no character required).",
+	}, listFwWarsHandler(userAgent, open, sdeStore))
+}
+
+func listFwWarsHandler[C fwWarsESI](userAgent string, open func() C, sdeStore factionNameCache) mcpsdk.ToolHandlerFor[ListFwWarsInput, ListFwWarsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListFwWarsInput) (*mcpsdk.CallToolResult, ListFwWarsOutput, error) {
-		wars, err := listFwWars(ctx, sso.UserAgent(version))
+		wars, err := open().FwWars(ctx)
 		if err != nil {
 			return nil, ListFwWarsOutput{}, fmt.Errorf("list fw wars: %w", err)
 		}
@@ -460,7 +537,7 @@ func listFwWarsHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[
 		for _, w := range out {
 			factionIDs = append(factionIDs, w.AgainstID, w.FactionID)
 		}
-		factionNames := resolveFactionNames(ctx, sdeStore, sso.UserAgent(version), factionIDs)
+		factionNames := resolveFactionNames(ctx, sdeStore, userAgent, factionIDs)
 		for i := range out {
 			out[i].AgainstFactionName = factionNames[out[i].AgainstID]
 			out[i].FactionName = factionNames[out[i].FactionID]

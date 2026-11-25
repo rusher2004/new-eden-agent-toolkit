@@ -13,6 +13,86 @@ import (
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 )
 
+// fakeFwESI fakes every ESI call the faction warfare tools make; a test sets the
+// function for the call it exercises.
+type fakeFwESI struct {
+	getCharacterFwStats          func(ctx context.Context) (*esiapi.CharactersCharacterIdFwStatsGet, error)
+	getCorporationFwStats        func(ctx context.Context, corporationID int64) (*esiapi.CorporationsCorporationIdFwStatsGet, error)
+	getFwLeaderboards            func(ctx context.Context) (*esiapi.FwLeaderboardsGet, error)
+	getFwCharacterLeaderboards   func(ctx context.Context) (*esiapi.FwLeaderboardsCharactersGet, error)
+	getFwCorporationLeaderboards func(ctx context.Context) (*esiapi.FwLeaderboardsCorporationsGet, error)
+	listFwStats                  func(ctx context.Context) ([]esiapi.FwStatsGetInner, error)
+	listFwSystems                func(ctx context.Context) ([]esiapi.FwSystemsGetInner, error)
+	listFwWars                   func(ctx context.Context) ([]esiapi.FwWarsGetInner, error)
+}
+
+func (f *fakeFwESI) CharacterFwStats(ctx context.Context) (*esiapi.CharactersCharacterIdFwStatsGet, error) {
+	return f.getCharacterFwStats(ctx)
+}
+func (f *fakeFwESI) CorporationFwStats(ctx context.Context, corporationID int64) (*esiapi.CorporationsCorporationIdFwStatsGet, error) {
+	return f.getCorporationFwStats(ctx, corporationID)
+}
+func (f *fakeFwESI) FwLeaderboards(ctx context.Context) (*esiapi.FwLeaderboardsGet, error) {
+	return f.getFwLeaderboards(ctx)
+}
+func (f *fakeFwESI) FwCharacterLeaderboards(ctx context.Context) (*esiapi.FwLeaderboardsCharactersGet, error) {
+	return f.getFwCharacterLeaderboards(ctx)
+}
+func (f *fakeFwESI) FwCorporationLeaderboards(ctx context.Context) (*esiapi.FwLeaderboardsCorporationsGet, error) {
+	return f.getFwCorporationLeaderboards(ctx)
+}
+func (f *fakeFwESI) FwStats(ctx context.Context) ([]esiapi.FwStatsGetInner, error) {
+	return f.listFwStats(ctx)
+}
+func (f *fakeFwESI) FwSystems(ctx context.Context) ([]esiapi.FwSystemsGetInner, error) {
+	return f.listFwSystems(ctx)
+}
+func (f *fakeFwESI) FwWars(ctx context.Context) ([]esiapi.FwWarsGetInner, error) {
+	return f.listFwWars(ctx)
+}
+
+// openFwFake opens the fake as the small interface one authenticated tool needs.
+func openFwFake[C any](c C) func(context.Context, int32) (C, error) {
+	return func(context.Context, int32) (C, error) { return c, nil }
+}
+
+// fwPublic opens the fake as the small interface one public tool needs.
+func fwPublic[C any](c C) func() C {
+	return func() C { return c }
+}
+
+func TestGetCharacterFwStatsHandler_PropagatesOpenError(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	wantErr := errors.New("keychain locked")
+	open := func(context.Context, int32) (fwCharacterESI, error) { return nil, wantErr }
+	handler := getCharacterFwStatsHandler("v1", open, store, nil)
+	_, _, err := handler(context.Background(), nil, GetCharacterFwStatsInput{CharacterID: 7})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestGetCorporationFwStatsHandler_PropagatesOpenError(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	wantErr := errors.New("keychain locked")
+	open := func(context.Context, int32) (fwCorporationESI, error) { return nil, wantErr }
+	handler := getCorporationFwStatsHandler("v1", open, store, nil)
+	_, _, err := handler(context.Background(), nil, GetCorporationFwStatsInput{CharacterID: 7, CorporationID: 98000001})
+	if !errors.Is(err, wantErr) {
+		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
 func TestGetCharacterFwStatsHandler_MapsFields(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
@@ -20,13 +100,12 @@ func TestGetCharacterFwStatsHandler_MapsFields(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCharacterFwStats
-	t.Cleanup(func() { getCharacterFwStats = orig })
+	fake := &fakeFwESI{}
 	currentRank := int64(5)
 	highestRank := int64(3)
 	factionID := int64(500001)
 	enlistedOn := time.Unix(1000, 0)
-	getCharacterFwStats = func(ctx context.Context, clientID string, characterID int32, userAgent string) (*esiapi.CharactersCharacterIdFwStatsGet, error) {
+	fake.getCharacterFwStats = func(ctx context.Context) (*esiapi.CharactersCharacterIdFwStatsGet, error) {
 		return &esiapi.CharactersCharacterIdFwStatsGet{
 			CurrentRank: &currentRank, HighestRank: &highestRank, FactionId: &factionID, EnlistedOn: &enlistedOn,
 			Kills:         esiapi.CharactersCharacterIdFwStatsGetKills{LastWeek: 1, Total: 2, Yesterday: 3},
@@ -34,7 +113,7 @@ func TestGetCharacterFwStatsHandler_MapsFields(t *testing.T) {
 		}, nil
 	}
 
-	handler := getCharacterFwStatsHandler("v1", "client-id", store, nil)
+	handler := getCharacterFwStatsHandler("v1", openFwFake[fwCharacterESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, GetCharacterFwStatsInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -55,14 +134,13 @@ func TestGetCharacterFwStatsHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := getCharacterFwStats
-	t.Cleanup(func() { getCharacterFwStats = orig })
-	getCharacterFwStats = func(ctx context.Context, clientID string, characterID int32, userAgent string) (*esiapi.CharactersCharacterIdFwStatsGet, error) {
+	fake := &fakeFwESI{}
+	fake.getCharacterFwStats = func(ctx context.Context) (*esiapi.CharactersCharacterIdFwStatsGet, error) {
 		t.Fatal("getCharacterFwStats should not be called for an unknown character")
 		return nil, nil
 	}
 
-	handler := getCharacterFwStatsHandler("v1", "client-id", store, nil)
+	handler := getCharacterFwStatsHandler("v1", openFwFake[fwCharacterESI](fake), store, nil)
 	_, _, err := handler(context.Background(), nil, GetCharacterFwStatsInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -76,12 +154,11 @@ func TestGetCorporationFwStatsHandler_MapsFields(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCorporationFwStats
-	t.Cleanup(func() { getCorporationFwStats = orig })
+	fake := &fakeFwESI{}
 	factionID := int64(500001)
 	pilots := int64(42)
 	enlistedOn := time.Unix(2000, 0)
-	getCorporationFwStats = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64) (*esiapi.CorporationsCorporationIdFwStatsGet, error) {
+	fake.getCorporationFwStats = func(ctx context.Context, corporationID int64) (*esiapi.CorporationsCorporationIdFwStatsGet, error) {
 		return &esiapi.CorporationsCorporationIdFwStatsGet{
 			FactionId: &factionID, Pilots: &pilots, EnlistedOn: &enlistedOn,
 			Kills:         esiapi.CorporationsCorporationIdFwStatsGetKills{LastWeek: 10, Total: 20, Yesterday: 30},
@@ -89,7 +166,7 @@ func TestGetCorporationFwStatsHandler_MapsFields(t *testing.T) {
 		}, nil
 	}
 
-	handler := getCorporationFwStatsHandler("v1", "client-id", store, nil)
+	handler := getCorporationFwStatsHandler("v1", openFwFake[fwCorporationESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, GetCorporationFwStatsInput{CharacterID: 7, CorporationID: 98000001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -109,14 +186,13 @@ func TestGetCorporationFwStatsHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := getCorporationFwStats
-	t.Cleanup(func() { getCorporationFwStats = orig })
-	getCorporationFwStats = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64) (*esiapi.CorporationsCorporationIdFwStatsGet, error) {
+	fake := &fakeFwESI{}
+	fake.getCorporationFwStats = func(ctx context.Context, corporationID int64) (*esiapi.CorporationsCorporationIdFwStatsGet, error) {
 		t.Fatal("getCorporationFwStats should not be called for an unknown character")
 		return nil, nil
 	}
 
-	handler := getCorporationFwStatsHandler("v1", "client-id", store, nil)
+	handler := getCorporationFwStatsHandler("v1", openFwFake[fwCorporationESI](fake), store, nil)
 	_, _, err := handler(context.Background(), nil, GetCorporationFwStatsInput{CharacterID: 999, CorporationID: 98000001})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -124,8 +200,7 @@ func TestGetCorporationFwStatsHandler_UnknownCharacter(t *testing.T) {
 }
 
 func TestGetFwLeaderboardsHandler_MapsFields(t *testing.T) {
-	orig := getFwLeaderboards
-	t.Cleanup(func() { getFwLeaderboards = orig })
+	fake := &fakeFwESI{}
 
 	killsActiveTotalFaction, killsActiveTotalAmount := int64(1001), int64(101)
 	killsLastWeekFaction, killsLastWeekAmount := int64(1002), int64(102)
@@ -134,7 +209,7 @@ func TestGetFwLeaderboardsHandler_MapsFields(t *testing.T) {
 	vpLastWeekFaction, vpLastWeekAmount := int64(1005), int64(105)
 	vpYesterdayFaction, vpYesterdayAmount := int64(1006), int64(106)
 
-	getFwLeaderboards = func(ctx context.Context, userAgent string) (*esiapi.FwLeaderboardsGet, error) {
+	fake.getFwLeaderboards = func(ctx context.Context) (*esiapi.FwLeaderboardsGet, error) {
 		return &esiapi.FwLeaderboardsGet{
 			Kills: esiapi.FwLeaderboardsGetKills{
 				ActiveTotal: []esiapi.FwLeaderboardsGetKillsActiveTotalInner{{FactionId: &killsActiveTotalFaction, Amount: &killsActiveTotalAmount}},
@@ -149,7 +224,7 @@ func TestGetFwLeaderboardsHandler_MapsFields(t *testing.T) {
 		}, nil
 	}
 
-	handler := getFwLeaderboardsHandler("v1", nil)
+	handler := getFwLeaderboardsHandler("v1", fwPublic[fwLeaderboardsESI](fake), nil)
 	_, out, err := handler(context.Background(), nil, GetFwLeaderboardsInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -170,8 +245,7 @@ func TestGetFwLeaderboardsHandler_MapsFields(t *testing.T) {
 }
 
 func TestGetFwCharacterLeaderboardsHandler_MapsFields(t *testing.T) {
-	orig := getFwCharacterLeaderboards
-	t.Cleanup(func() { getFwCharacterLeaderboards = orig })
+	fake := &fakeFwESI{}
 
 	killsActiveTotalChar, killsActiveTotalAmount := int64(2001), int64(201)
 	killsLastWeekChar, killsLastWeekAmount := int64(2002), int64(202)
@@ -180,7 +254,7 @@ func TestGetFwCharacterLeaderboardsHandler_MapsFields(t *testing.T) {
 	vpLastWeekChar, vpLastWeekAmount := int64(2005), int64(205)
 	vpYesterdayChar, vpYesterdayAmount := int64(2006), int64(206)
 
-	getFwCharacterLeaderboards = func(ctx context.Context, userAgent string) (*esiapi.FwLeaderboardsCharactersGet, error) {
+	fake.getFwCharacterLeaderboards = func(ctx context.Context) (*esiapi.FwLeaderboardsCharactersGet, error) {
 		return &esiapi.FwLeaderboardsCharactersGet{
 			Kills: esiapi.FwLeaderboardsCharactersGetKills{
 				ActiveTotal: []esiapi.FwLeaderboardsCharactersGetKillsActiveTotalInner{{CharacterId: &killsActiveTotalChar, Amount: &killsActiveTotalAmount}},
@@ -195,7 +269,7 @@ func TestGetFwCharacterLeaderboardsHandler_MapsFields(t *testing.T) {
 		}, nil
 	}
 
-	handler := getFwCharacterLeaderboardsHandler("v1")
+	handler := getFwCharacterLeaderboardsHandler(fwPublic[fwCharacterLeaderboardsESI](fake))
 	_, out, err := handler(context.Background(), nil, GetFwCharacterLeaderboardsInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -216,8 +290,7 @@ func TestGetFwCharacterLeaderboardsHandler_MapsFields(t *testing.T) {
 }
 
 func TestGetFwCorporationLeaderboardsHandler_MapsFields(t *testing.T) {
-	orig := getFwCorporationLeaderboards
-	t.Cleanup(func() { getFwCorporationLeaderboards = orig })
+	fake := &fakeFwESI{}
 
 	killsActiveTotalCorp, killsActiveTotalAmount := int64(3001), int64(301)
 	killsLastWeekCorp, killsLastWeekAmount := int64(3002), int64(302)
@@ -226,7 +299,7 @@ func TestGetFwCorporationLeaderboardsHandler_MapsFields(t *testing.T) {
 	vpLastWeekCorp, vpLastWeekAmount := int64(3005), int64(305)
 	vpYesterdayCorp, vpYesterdayAmount := int64(3006), int64(306)
 
-	getFwCorporationLeaderboards = func(ctx context.Context, userAgent string) (*esiapi.FwLeaderboardsCorporationsGet, error) {
+	fake.getFwCorporationLeaderboards = func(ctx context.Context) (*esiapi.FwLeaderboardsCorporationsGet, error) {
 		return &esiapi.FwLeaderboardsCorporationsGet{
 			Kills: esiapi.FwLeaderboardsCorporationsGetKills{
 				ActiveTotal: []esiapi.FwLeaderboardsCorporationsGetKillsActiveTotalInner{{CorporationId: &killsActiveTotalCorp, Amount: &killsActiveTotalAmount}},
@@ -241,7 +314,7 @@ func TestGetFwCorporationLeaderboardsHandler_MapsFields(t *testing.T) {
 		}, nil
 	}
 
-	handler := getFwCorporationLeaderboardsHandler("v1")
+	handler := getFwCorporationLeaderboardsHandler(fwPublic[fwCorporationLeaderboardsESI](fake))
 	_, out, err := handler(context.Background(), nil, GetFwCorporationLeaderboardsInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -262,9 +335,8 @@ func TestGetFwCorporationLeaderboardsHandler_MapsFields(t *testing.T) {
 }
 
 func TestListFwStatsHandler_MapsFields(t *testing.T) {
-	orig := listFwStats
-	t.Cleanup(func() { listFwStats = orig })
-	listFwStats = func(ctx context.Context, userAgent string) ([]esiapi.FwStatsGetInner, error) {
+	fake := &fakeFwESI{}
+	fake.listFwStats = func(ctx context.Context) ([]esiapi.FwStatsGetInner, error) {
 		return []esiapi.FwStatsGetInner{{
 			FactionId: 500001, Pilots: 1000, SystemsControlled: 25,
 			Kills:         esiapi.FwStatsGetInnerKills{LastWeek: 1, Total: 2, Yesterday: 3},
@@ -272,7 +344,7 @@ func TestListFwStatsHandler_MapsFields(t *testing.T) {
 		}}, nil
 	}
 
-	handler := listFwStatsHandler("v1", nil)
+	handler := listFwStatsHandler("v1", fwPublic[fwStatsESI](fake), nil)
 	_, out, err := handler(context.Background(), nil, ListFwStatsInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -289,16 +361,15 @@ func TestListFwStatsHandler_MapsFields(t *testing.T) {
 }
 
 func TestListFwSystemsHandler_MapsFields(t *testing.T) {
-	orig := listFwSystems
-	t.Cleanup(func() { listFwSystems = orig })
-	listFwSystems = func(ctx context.Context, userAgent string) ([]esiapi.FwSystemsGetInner, error) {
+	fake := &fakeFwESI{}
+	fake.listFwSystems = func(ctx context.Context) ([]esiapi.FwSystemsGetInner, error) {
 		return []esiapi.FwSystemsGetInner{{
 			Contested: "contested", OccupierFactionId: 500001, OwnerFactionId: 500002,
 			SolarSystemId: 30000142, VictoryPoints: 100, VictoryPointsThreshold: 500,
 		}}, nil
 	}
 
-	handler := listFwSystemsHandler("v1", nil)
+	handler := listFwSystemsHandler("v1", fwPublic[fwSystemsESI](fake), nil)
 	_, out, err := handler(context.Background(), nil, ListFwSystemsInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -314,13 +385,12 @@ func TestListFwSystemsHandler_MapsFields(t *testing.T) {
 }
 
 func TestListFwWarsHandler_MapsFields(t *testing.T) {
-	orig := listFwWars
-	t.Cleanup(func() { listFwWars = orig })
-	listFwWars = func(ctx context.Context, userAgent string) ([]esiapi.FwWarsGetInner, error) {
+	fake := &fakeFwESI{}
+	fake.listFwWars = func(ctx context.Context) ([]esiapi.FwWarsGetInner, error) {
 		return []esiapi.FwWarsGetInner{{AgainstId: 500001, FactionId: 500002}}, nil
 	}
 
-	handler := listFwWarsHandler("v1", nil)
+	handler := listFwWarsHandler("v1", fwPublic[fwWarsESI](fake), nil)
 	_, out, err := handler(context.Background(), nil, ListFwWarsInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -341,14 +411,13 @@ func TestGetCharacterFwStatsHandler_PropagatesError(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCharacterFwStats
-	t.Cleanup(func() { getCharacterFwStats = orig })
+	fake := &fakeFwESI{}
 	wantErr := errors.New("upstream failure")
-	getCharacterFwStats = func(ctx context.Context, clientID string, characterID int32, userAgent string) (*esiapi.CharactersCharacterIdFwStatsGet, error) {
+	fake.getCharacterFwStats = func(ctx context.Context) (*esiapi.CharactersCharacterIdFwStatsGet, error) {
 		return nil, wantErr
 	}
 
-	handler := getCharacterFwStatsHandler("v1", "client-id", store, nil)
+	handler := getCharacterFwStatsHandler("v1", openFwFake[fwCharacterESI](fake), store, nil)
 	_, _, err := handler(context.Background(), nil, GetCharacterFwStatsInput{CharacterID: 7})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -362,14 +431,13 @@ func TestGetCorporationFwStatsHandler_PropagatesError(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCorporationFwStats
-	t.Cleanup(func() { getCorporationFwStats = orig })
+	fake := &fakeFwESI{}
 	wantErr := errors.New("upstream failure")
-	getCorporationFwStats = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64) (*esiapi.CorporationsCorporationIdFwStatsGet, error) {
+	fake.getCorporationFwStats = func(ctx context.Context, corporationID int64) (*esiapi.CorporationsCorporationIdFwStatsGet, error) {
 		return nil, wantErr
 	}
 
-	handler := getCorporationFwStatsHandler("v1", "client-id", store, nil)
+	handler := getCorporationFwStatsHandler("v1", openFwFake[fwCorporationESI](fake), store, nil)
 	_, _, err := handler(context.Background(), nil, GetCorporationFwStatsInput{CharacterID: 7, CorporationID: 98000001})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -377,14 +445,13 @@ func TestGetCorporationFwStatsHandler_PropagatesError(t *testing.T) {
 }
 
 func TestGetFwLeaderboardsHandler_PropagatesError(t *testing.T) {
-	orig := getFwLeaderboards
-	t.Cleanup(func() { getFwLeaderboards = orig })
+	fake := &fakeFwESI{}
 	wantErr := errors.New("upstream failure")
-	getFwLeaderboards = func(ctx context.Context, userAgent string) (*esiapi.FwLeaderboardsGet, error) {
+	fake.getFwLeaderboards = func(ctx context.Context) (*esiapi.FwLeaderboardsGet, error) {
 		return nil, wantErr
 	}
 
-	handler := getFwLeaderboardsHandler("v1", nil)
+	handler := getFwLeaderboardsHandler("v1", fwPublic[fwLeaderboardsESI](fake), nil)
 	_, _, err := handler(context.Background(), nil, GetFwLeaderboardsInput{})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -392,14 +459,13 @@ func TestGetFwLeaderboardsHandler_PropagatesError(t *testing.T) {
 }
 
 func TestGetFwCharacterLeaderboardsHandler_PropagatesError(t *testing.T) {
-	orig := getFwCharacterLeaderboards
-	t.Cleanup(func() { getFwCharacterLeaderboards = orig })
+	fake := &fakeFwESI{}
 	wantErr := errors.New("upstream failure")
-	getFwCharacterLeaderboards = func(ctx context.Context, userAgent string) (*esiapi.FwLeaderboardsCharactersGet, error) {
+	fake.getFwCharacterLeaderboards = func(ctx context.Context) (*esiapi.FwLeaderboardsCharactersGet, error) {
 		return nil, wantErr
 	}
 
-	handler := getFwCharacterLeaderboardsHandler("v1")
+	handler := getFwCharacterLeaderboardsHandler(fwPublic[fwCharacterLeaderboardsESI](fake))
 	_, _, err := handler(context.Background(), nil, GetFwCharacterLeaderboardsInput{})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -407,14 +473,13 @@ func TestGetFwCharacterLeaderboardsHandler_PropagatesError(t *testing.T) {
 }
 
 func TestGetFwCorporationLeaderboardsHandler_PropagatesError(t *testing.T) {
-	orig := getFwCorporationLeaderboards
-	t.Cleanup(func() { getFwCorporationLeaderboards = orig })
+	fake := &fakeFwESI{}
 	wantErr := errors.New("upstream failure")
-	getFwCorporationLeaderboards = func(ctx context.Context, userAgent string) (*esiapi.FwLeaderboardsCorporationsGet, error) {
+	fake.getFwCorporationLeaderboards = func(ctx context.Context) (*esiapi.FwLeaderboardsCorporationsGet, error) {
 		return nil, wantErr
 	}
 
-	handler := getFwCorporationLeaderboardsHandler("v1")
+	handler := getFwCorporationLeaderboardsHandler(fwPublic[fwCorporationLeaderboardsESI](fake))
 	_, _, err := handler(context.Background(), nil, GetFwCorporationLeaderboardsInput{})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -422,14 +487,13 @@ func TestGetFwCorporationLeaderboardsHandler_PropagatesError(t *testing.T) {
 }
 
 func TestListFwStatsHandler_PropagatesError(t *testing.T) {
-	orig := listFwStats
-	t.Cleanup(func() { listFwStats = orig })
+	fake := &fakeFwESI{}
 	wantErr := errors.New("upstream failure")
-	listFwStats = func(ctx context.Context, userAgent string) ([]esiapi.FwStatsGetInner, error) {
+	fake.listFwStats = func(ctx context.Context) ([]esiapi.FwStatsGetInner, error) {
 		return nil, wantErr
 	}
 
-	handler := listFwStatsHandler("v1", nil)
+	handler := listFwStatsHandler("v1", fwPublic[fwStatsESI](fake), nil)
 	_, _, err := handler(context.Background(), nil, ListFwStatsInput{})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -437,14 +501,13 @@ func TestListFwStatsHandler_PropagatesError(t *testing.T) {
 }
 
 func TestListFwSystemsHandler_PropagatesError(t *testing.T) {
-	orig := listFwSystems
-	t.Cleanup(func() { listFwSystems = orig })
+	fake := &fakeFwESI{}
 	wantErr := errors.New("upstream failure")
-	listFwSystems = func(ctx context.Context, userAgent string) ([]esiapi.FwSystemsGetInner, error) {
+	fake.listFwSystems = func(ctx context.Context) ([]esiapi.FwSystemsGetInner, error) {
 		return nil, wantErr
 	}
 
-	handler := listFwSystemsHandler("v1", nil)
+	handler := listFwSystemsHandler("v1", fwPublic[fwSystemsESI](fake), nil)
 	_, _, err := handler(context.Background(), nil, ListFwSystemsInput{})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -452,14 +515,13 @@ func TestListFwSystemsHandler_PropagatesError(t *testing.T) {
 }
 
 func TestListFwWarsHandler_PropagatesError(t *testing.T) {
-	orig := listFwWars
-	t.Cleanup(func() { listFwWars = orig })
+	fake := &fakeFwESI{}
 	wantErr := errors.New("upstream failure")
-	listFwWars = func(ctx context.Context, userAgent string) ([]esiapi.FwWarsGetInner, error) {
+	fake.listFwWars = func(ctx context.Context) ([]esiapi.FwWarsGetInner, error) {
 		return nil, wantErr
 	}
 
-	handler := listFwWarsHandler("v1", nil)
+	handler := listFwWarsHandler("v1", fwPublic[fwWarsESI](fake), nil)
 	_, _, err := handler(context.Background(), nil, ListFwWarsInput{})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -467,9 +529,8 @@ func TestListFwWarsHandler_PropagatesError(t *testing.T) {
 }
 
 func TestListFwSystemsHandler_ResolvesSystemName(t *testing.T) {
-	orig := listFwSystems
-	t.Cleanup(func() { listFwSystems = orig })
-	listFwSystems = func(ctx context.Context, userAgent string) ([]esiapi.FwSystemsGetInner, error) {
+	fake := &fakeFwESI{}
+	fake.listFwSystems = func(ctx context.Context) ([]esiapi.FwSystemsGetInner, error) {
 		return []esiapi.FwSystemsGetInner{{SolarSystemId: 30000142}}, nil
 	}
 
@@ -479,7 +540,7 @@ func TestListFwSystemsHandler_ResolvesSystemName(t *testing.T) {
 		return map[int64]string{30000142: "Jita"}
 	}
 
-	handler := listFwSystemsHandler("v1", nil)
+	handler := listFwSystemsHandler("v1", fwPublic[fwSystemsESI](fake), nil)
 	_, out, err := handler(context.Background(), nil, ListFwSystemsInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -496,10 +557,9 @@ func TestGetCharacterFwStatsHandler_ResolvesFactionName(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCharacterFwStats
-	t.Cleanup(func() { getCharacterFwStats = orig })
+	fake := &fakeFwESI{}
 	factionID := int64(500001)
-	getCharacterFwStats = func(ctx context.Context, clientID string, characterID int32, userAgent string) (*esiapi.CharactersCharacterIdFwStatsGet, error) {
+	fake.getCharacterFwStats = func(ctx context.Context) (*esiapi.CharactersCharacterIdFwStatsGet, error) {
 		return &esiapi.CharactersCharacterIdFwStatsGet{FactionId: &factionID}, nil
 	}
 
@@ -509,7 +569,7 @@ func TestGetCharacterFwStatsHandler_ResolvesFactionName(t *testing.T) {
 		return map[int64]string{500001: "Caldari State"}
 	}
 
-	handler := getCharacterFwStatsHandler("v1", "client-id", store, nil)
+	handler := getCharacterFwStatsHandler("v1", openFwFake[fwCharacterESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, GetCharacterFwStatsInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -526,10 +586,9 @@ func TestGetCorporationFwStatsHandler_ResolvesFactionName(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCorporationFwStats
-	t.Cleanup(func() { getCorporationFwStats = orig })
+	fake := &fakeFwESI{}
 	factionID := int64(500001)
-	getCorporationFwStats = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64) (*esiapi.CorporationsCorporationIdFwStatsGet, error) {
+	fake.getCorporationFwStats = func(ctx context.Context, corporationID int64) (*esiapi.CorporationsCorporationIdFwStatsGet, error) {
 		return &esiapi.CorporationsCorporationIdFwStatsGet{FactionId: &factionID}, nil
 	}
 
@@ -539,7 +598,7 @@ func TestGetCorporationFwStatsHandler_ResolvesFactionName(t *testing.T) {
 		return map[int64]string{500001: "Caldari State"}
 	}
 
-	handler := getCorporationFwStatsHandler("v1", "client-id", store, nil)
+	handler := getCorporationFwStatsHandler("v1", openFwFake[fwCorporationESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, GetCorporationFwStatsInput{CharacterID: 7, CorporationID: 98000001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -550,13 +609,12 @@ func TestGetCorporationFwStatsHandler_ResolvesFactionName(t *testing.T) {
 }
 
 func TestGetFwLeaderboardsHandler_ResolvesFactionNames(t *testing.T) {
-	orig := getFwLeaderboards
-	t.Cleanup(func() { getFwLeaderboards = orig })
+	fake := &fakeFwESI{}
 	killsFactionID := int64(500001)
 	killsAmount := int64(42)
 	vpFactionID := int64(500002)
 	vpAmount := int64(7)
-	getFwLeaderboards = func(ctx context.Context, userAgent string) (*esiapi.FwLeaderboardsGet, error) {
+	fake.getFwLeaderboards = func(ctx context.Context) (*esiapi.FwLeaderboardsGet, error) {
 		return &esiapi.FwLeaderboardsGet{
 			Kills: esiapi.FwLeaderboardsGetKills{
 				ActiveTotal: []esiapi.FwLeaderboardsGetKillsActiveTotalInner{{FactionId: &killsFactionID, Amount: &killsAmount}},
@@ -575,7 +633,7 @@ func TestGetFwLeaderboardsHandler_ResolvesFactionNames(t *testing.T) {
 		return map[int64]string{500001: "Caldari State", 500002: "Gallente Federation"}
 	}
 
-	handler := getFwLeaderboardsHandler("v1", nil)
+	handler := getFwLeaderboardsHandler("v1", fwPublic[fwLeaderboardsESI](fake), nil)
 	_, out, err := handler(context.Background(), nil, GetFwLeaderboardsInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -592,9 +650,8 @@ func TestGetFwLeaderboardsHandler_ResolvesFactionNames(t *testing.T) {
 }
 
 func TestListFwStatsHandler_ResolvesFactionName(t *testing.T) {
-	orig := listFwStats
-	t.Cleanup(func() { listFwStats = orig })
-	listFwStats = func(ctx context.Context, userAgent string) ([]esiapi.FwStatsGetInner, error) {
+	fake := &fakeFwESI{}
+	fake.listFwStats = func(ctx context.Context) ([]esiapi.FwStatsGetInner, error) {
 		return []esiapi.FwStatsGetInner{{FactionId: 500001}}, nil
 	}
 
@@ -604,7 +661,7 @@ func TestListFwStatsHandler_ResolvesFactionName(t *testing.T) {
 		return map[int64]string{500001: "Caldari State"}
 	}
 
-	handler := listFwStatsHandler("v1", nil)
+	handler := listFwStatsHandler("v1", fwPublic[fwStatsESI](fake), nil)
 	_, out, err := handler(context.Background(), nil, ListFwStatsInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -615,9 +672,8 @@ func TestListFwStatsHandler_ResolvesFactionName(t *testing.T) {
 }
 
 func TestListFwSystemsHandler_ResolvesOccupierAndOwnerFactionNames(t *testing.T) {
-	orig := listFwSystems
-	t.Cleanup(func() { listFwSystems = orig })
-	listFwSystems = func(ctx context.Context, userAgent string) ([]esiapi.FwSystemsGetInner, error) {
+	fake := &fakeFwESI{}
+	fake.listFwSystems = func(ctx context.Context) ([]esiapi.FwSystemsGetInner, error) {
 		return []esiapi.FwSystemsGetInner{{OccupierFactionId: 500001, OwnerFactionId: 500002, SolarSystemId: 30000142}}, nil
 	}
 
@@ -632,7 +688,7 @@ func TestListFwSystemsHandler_ResolvesOccupierAndOwnerFactionNames(t *testing.T)
 		return map[int64]string{30000142: "Jita"}
 	}
 
-	handler := listFwSystemsHandler("v1", nil)
+	handler := listFwSystemsHandler("v1", fwPublic[fwSystemsESI](fake), nil)
 	_, out, err := handler(context.Background(), nil, ListFwSystemsInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -643,9 +699,8 @@ func TestListFwSystemsHandler_ResolvesOccupierAndOwnerFactionNames(t *testing.T)
 }
 
 func TestListFwWarsHandler_ResolvesFactionName(t *testing.T) {
-	orig := listFwWars
-	t.Cleanup(func() { listFwWars = orig })
-	listFwWars = func(ctx context.Context, userAgent string) ([]esiapi.FwWarsGetInner, error) {
+	fake := &fakeFwESI{}
+	fake.listFwWars = func(ctx context.Context) ([]esiapi.FwWarsGetInner, error) {
 		return []esiapi.FwWarsGetInner{{AgainstId: 500002, FactionId: 500001}}, nil
 	}
 
@@ -655,7 +710,7 @@ func TestListFwWarsHandler_ResolvesFactionName(t *testing.T) {
 		return map[int64]string{500001: "Caldari State", 500002: "Minmatar Republic"}
 	}
 
-	handler := listFwWarsHandler("v1", nil)
+	handler := listFwWarsHandler("v1", fwPublic[fwWarsESI](fake), nil)
 	_, out, err := handler(context.Background(), nil, ListFwWarsInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)

@@ -535,66 +535,6 @@ func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
 	}, listCorporationStructuresHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_corporation_project_contribution",
-		Description: "Get a character's contribution to a corporation project, using a logged-in character's roles to authorize.",
-	}, getCorporationProjectContributionHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_corporation_project_contributors",
-		Description: "List the contributors to a corporation project, using a logged-in character's roles to authorize.",
-	}, listCorporationProjectContributorsHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_corporation_project_detail",
-		Description: "Get the full details (configuration, progress, reward) of a corporation project, using a logged-in character's roles to authorize.",
-	}, getCorporationProjectDetailHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_corporation_projects",
-		Description: "List a corporation's projects, using a logged-in character's roles to authorize.",
-	}, listCorporationProjectsHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_character_fw_stats",
-		Description: "Get a logged-in EVE Online character's faction warfare stats.",
-	}, getCharacterFwStatsHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_corporation_fw_stats",
-		Description: "Get a corporation's faction warfare stats, using a logged-in character's roles to authorize.",
-	}, getCorporationFwStatsHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_fw_leaderboards",
-		Description: "Get the top faction rankings by kills and victory points (public data, no character required).",
-	}, getFwLeaderboardsHandler(version, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_fw_character_leaderboards",
-		Description: "Get the top pilot rankings by kills and victory points (public data, no character required).",
-	}, getFwCharacterLeaderboardsHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_fw_corporation_leaderboards",
-		Description: "Get the top corporation rankings by kills and victory points (public data, no character required).",
-	}, getFwCorporationLeaderboardsHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_fw_stats",
-		Description: "List every faction's faction warfare stats (public data, no character required).",
-	}, listFwStatsHandler(version, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_fw_systems",
-		Description: "List every solar system's faction warfare occupation/contest state (public data, no character required).",
-	}, listFwSystemsHandler(version, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_fw_wars",
-		Description: "List every faction warfare declaration (public data, no character required).",
-	}, listFwWarsHandler(version, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_incursions",
 		Description: "List every currently active incursion (public data, no character required).",
 	}, listIncursionsHandler(version, sdeStore))
@@ -733,36 +673,6 @@ func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
 		Name:        "list_sovereignty_systems",
 		Description: "List every solar system and its current sovereignty claim, if any (public data, no character required).",
 	}, listSovereigntySystemsHandler(version, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_character_mercenary_dens",
-		Description: "List the given character's mercenary dens (includes resolved planet name).",
-	}, listCharacterMercenaryDensHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_character_mercenary_den",
-		Description: "Get full detail on one of the given character's mercenary dens: evolution stats, infomorph count, reinforcement timer, and attached skyhook.",
-	}, getCharacterMercenaryDenHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_corporation_skyhooks",
-		Description: "List the given corporation's skyhooks (includes resolved planet name).",
-	}, listCorporationSkyhooksHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_corporation_skyhook",
-		Description: "Get full detail on one of the given corporation's skyhooks: workforce, reagent stock, active/reinforcement state, and theft vulnerability window.",
-	}, getCorporationSkyhookHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_corporation_sovereignty_hubs",
-		Description: "List the given corporation's sovereignty hubs (includes resolved solar system name).",
-	}, listCorporationSovereigntyHubsHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_corporation_sovereignty_hub",
-		Description: "Get full detail on one of the given corporation's sovereignty hubs: reagent bay, power/workforce resources, upgrades, vulnerability window, and workforce transport configuration/state.",
-	}, getCorporationSovereigntyHubHandler(version, clientID, store, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_universe_ancestries",

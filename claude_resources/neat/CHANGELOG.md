@@ -1,5 +1,8 @@
 # neat plugin — changelog
 
+## 0.20.7
+- No change for players. Internal refactor: the faction warfare, corporation project and structure tools get their ESI client from the command that starts the server instead of building it themselves.
+
 ## 0.20.6
 - No change for players. Internal refactor: the calendar, dogma, planetary interaction, alliance, killmail and other small tools get their ESI client from the command that starts the server instead of building it themselves.
 

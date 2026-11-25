@@ -6,10 +6,99 @@ import (
 	"testing"
 	"time"
 
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	"github.com/zalando/go-keyring"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 )
+
+// fakeStructuresESI fakes every ESI call the structure tools make; a test sets
+// the function for the call it exercises.
+type fakeStructuresESI struct {
+	listCharacterMercenaryDens     func(ctx context.Context) ([]esiapi.CharactersStructuresMercenaryDensListingMercenaryden, error)
+	getCharacterMercenaryDen       func(ctx context.Context, mercenaryDenID int64) (*esiapi.CharactersStructuresMercenaryDensDetail, error)
+	listCorporationSkyhooks        func(ctx context.Context, corporationID int64) ([]esiapi.CorporationsStructuresSkyhooksListingSkyhook, error)
+	getCorporationSkyhook          func(ctx context.Context, corporationID, skyhookID int64) (*esiapi.CorporationsStructuresSkyhooksDetail, error)
+	listCorporationSovereigntyHubs func(ctx context.Context, corporationID int64) ([]esiapi.CorporationsStructuresSovereigntyHubsListingSovereigntyhub, error)
+	getCorporationSovereigntyHub   func(ctx context.Context, corporationID, sovereigntyHubID int64) (*esiapi.CorporationsStructuresSovereigntyHubsDetail, error)
+}
+
+func (f *fakeStructuresESI) CharacterMercenaryDens(ctx context.Context) ([]esiapi.CharactersStructuresMercenaryDensListingMercenaryden, error) {
+	return f.listCharacterMercenaryDens(ctx)
+}
+func (f *fakeStructuresESI) CharacterMercenaryDenDetail(ctx context.Context, mercenaryDenID int64) (*esiapi.CharactersStructuresMercenaryDensDetail, error) {
+	return f.getCharacterMercenaryDen(ctx, mercenaryDenID)
+}
+func (f *fakeStructuresESI) CorporationSkyhooks(ctx context.Context, corporationID int64) ([]esiapi.CorporationsStructuresSkyhooksListingSkyhook, error) {
+	return f.listCorporationSkyhooks(ctx, corporationID)
+}
+func (f *fakeStructuresESI) CorporationSkyhookDetail(ctx context.Context, corporationID, skyhookID int64) (*esiapi.CorporationsStructuresSkyhooksDetail, error) {
+	return f.getCorporationSkyhook(ctx, corporationID, skyhookID)
+}
+func (f *fakeStructuresESI) CorporationSovereigntyHubs(ctx context.Context, corporationID int64) ([]esiapi.CorporationsStructuresSovereigntyHubsListingSovereigntyhub, error) {
+	return f.listCorporationSovereigntyHubs(ctx, corporationID)
+}
+func (f *fakeStructuresESI) CorporationSovereigntyHubDetail(ctx context.Context, corporationID, sovereigntyHubID int64) (*esiapi.CorporationsStructuresSovereigntyHubsDetail, error) {
+	return f.getCorporationSovereigntyHub(ctx, corporationID, sovereigntyHubID)
+}
+
+// openStructuresFake opens the fake as the small interface one tool needs.
+func openStructuresFake[C any](c C) func(context.Context, int32) (C, error) {
+	return func(context.Context, int32) (C, error) { return c, nil }
+}
+
+func TestStructureHandlers_PropagateOpenError(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+	wantErr := errors.New("keychain locked")
+	ctx := context.Background()
+
+	t.Run("list_character_mercenary_dens", func(t *testing.T) {
+		open := func(context.Context, int32) (mercenaryDensESI, error) { return nil, wantErr }
+		_, _, err := listCharacterMercenaryDensHandler("v1", open, store, nil)(ctx, nil, ListCharacterMercenaryDensInput{CharacterID: 7})
+		if !errors.Is(err, wantErr) {
+			t.Errorf("err = %v, want wrapping %v", err, wantErr)
+		}
+	})
+	t.Run("get_character_mercenary_den", func(t *testing.T) {
+		open := func(context.Context, int32) (mercenaryDenESI, error) { return nil, wantErr }
+		_, _, err := getCharacterMercenaryDenHandler("v1", open, store, nil)(ctx, nil, GetCharacterMercenaryDenInput{CharacterID: 7})
+		if !errors.Is(err, wantErr) {
+			t.Errorf("err = %v, want wrapping %v", err, wantErr)
+		}
+	})
+	t.Run("list_corporation_skyhooks", func(t *testing.T) {
+		open := func(context.Context, int32) (corporationSkyhooksESI, error) { return nil, wantErr }
+		_, _, err := listCorporationSkyhooksHandler("v1", open, store, nil)(ctx, nil, ListCorporationSkyhooksInput{CharacterID: 7})
+		if !errors.Is(err, wantErr) {
+			t.Errorf("err = %v, want wrapping %v", err, wantErr)
+		}
+	})
+	t.Run("get_corporation_skyhook", func(t *testing.T) {
+		open := func(context.Context, int32) (skyhookESI, error) { return nil, wantErr }
+		_, _, err := getCorporationSkyhookHandler("v1", open, store, nil)(ctx, nil, GetCorporationSkyhookInput{CharacterID: 7})
+		if !errors.Is(err, wantErr) {
+			t.Errorf("err = %v, want wrapping %v", err, wantErr)
+		}
+	})
+	t.Run("list_corporation_sovereignty_hubs", func(t *testing.T) {
+		open := func(context.Context, int32) (sovereigntyHubsESI, error) { return nil, wantErr }
+		_, _, err := listCorporationSovereigntyHubsHandler("v1", open, store, nil)(ctx, nil, ListCorporationSovereigntyHubsInput{CharacterID: 7})
+		if !errors.Is(err, wantErr) {
+			t.Errorf("err = %v, want wrapping %v", err, wantErr)
+		}
+	})
+	t.Run("get_corporation_sovereignty_hub", func(t *testing.T) {
+		open := func(context.Context, int32) (sovereigntyHubESI, error) { return nil, wantErr }
+		_, _, err := getCorporationSovereigntyHubHandler("v1", open, store, nil)(ctx, nil, GetCorporationSovereigntyHubInput{CharacterID: 7})
+		if !errors.Is(err, wantErr) {
+			t.Errorf("err = %v, want wrapping %v", err, wantErr)
+		}
+	})
+}
 
 // --- list_character_mercenary_dens ---
 
@@ -20,13 +109,12 @@ func TestListCharacterMercenaryDensHandler_MapsFields(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCharacterMercenaryDens
-	t.Cleanup(func() { listCharacterMercenaryDens = orig })
-	listCharacterMercenaryDens = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]MercenaryDen, error) {
-		return []MercenaryDen{{ID: 1001, PlanetID: 40000001}}, nil
+	fake := &fakeStructuresESI{}
+	fake.listCharacterMercenaryDens = func(ctx context.Context) ([]esiapi.CharactersStructuresMercenaryDensListingMercenaryden, error) {
+		return []esiapi.CharactersStructuresMercenaryDensListingMercenaryden{{Id: 1001, PlanetId: 40000001}}, nil
 	}
 
-	handler := listCharacterMercenaryDensHandler("v1", "client-id", store, nil)
+	handler := listCharacterMercenaryDensHandler("v1", openStructuresFake[mercenaryDensESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, ListCharacterMercenaryDensInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -43,10 +131,9 @@ func TestListCharacterMercenaryDensHandler_ResolvesPlanetName(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCharacterMercenaryDens
-	t.Cleanup(func() { listCharacterMercenaryDens = orig })
-	listCharacterMercenaryDens = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]MercenaryDen, error) {
-		return []MercenaryDen{{ID: 1, PlanetID: 40009086}}, nil
+	fake := &fakeStructuresESI{}
+	fake.listCharacterMercenaryDens = func(ctx context.Context) ([]esiapi.CharactersStructuresMercenaryDensListingMercenaryden, error) {
+		return []esiapi.CharactersStructuresMercenaryDensListingMercenaryden{{Id: 1, PlanetId: 40009086}}, nil
 	}
 
 	origPlanet := resolvePlanetNames
@@ -55,7 +142,7 @@ func TestListCharacterMercenaryDensHandler_ResolvesPlanetName(t *testing.T) {
 		return map[int64]string{40009086: "Jita IV"}
 	}
 
-	handler := listCharacterMercenaryDensHandler("v1", "client-id", store, nil)
+	handler := listCharacterMercenaryDensHandler("v1", openStructuresFake[mercenaryDensESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, ListCharacterMercenaryDensInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -69,14 +156,13 @@ func TestListCharacterMercenaryDensHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := listCharacterMercenaryDens
-	t.Cleanup(func() { listCharacterMercenaryDens = orig })
-	listCharacterMercenaryDens = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]MercenaryDen, error) {
+	fake := &fakeStructuresESI{}
+	fake.listCharacterMercenaryDens = func(ctx context.Context) ([]esiapi.CharactersStructuresMercenaryDensListingMercenaryden, error) {
 		t.Fatal("listCharacterMercenaryDens should not be called for an unknown character")
 		return nil, nil
 	}
 
-	handler := listCharacterMercenaryDensHandler("v1", "client-id", store, nil)
+	handler := listCharacterMercenaryDensHandler("v1", openStructuresFake[mercenaryDensESI](fake), store, nil)
 	_, _, err := handler(context.Background(), nil, ListCharacterMercenaryDensInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -90,14 +176,13 @@ func TestListCharacterMercenaryDensHandler_PropagatesError(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCharacterMercenaryDens
-	t.Cleanup(func() { listCharacterMercenaryDens = orig })
+	fake := &fakeStructuresESI{}
 	wantErr := errors.New("upstream failure")
-	listCharacterMercenaryDens = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]MercenaryDen, error) {
+	fake.listCharacterMercenaryDens = func(ctx context.Context) ([]esiapi.CharactersStructuresMercenaryDensListingMercenaryden, error) {
 		return nil, wantErr
 	}
 
-	handler := listCharacterMercenaryDensHandler("v1", "client-id", store, nil)
+	handler := listCharacterMercenaryDensHandler("v1", openStructuresFake[mercenaryDensESI](fake), store, nil)
 	_, _, err := handler(context.Background(), nil, ListCharacterMercenaryDensInput{CharacterID: 7})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -113,23 +198,22 @@ func TestGetCharacterMercenaryDenHandler_MapsFields_WithReinforcementTimer(t *te
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCharacterMercenaryDen
-	t.Cleanup(func() { getCharacterMercenaryDen = orig })
+	fake := &fakeStructuresESI{}
 	reinforcementEnd := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
-	getCharacterMercenaryDen = func(ctx context.Context, clientID string, characterID int32, userAgent string, mercenaryDenID int64) (MercenaryDenDetail, error) {
-		return MercenaryDenDetail{
-			ID: 1001, TypeID: 85230, State: "online",
-			Evolution: MercenaryDenEvolution{
-				Anarchy:     MercenaryDenEvolutionStat{Amount: 10, Level: "low"},
-				Development: MercenaryDenEvolutionStat{Amount: 20, Level: "medium"},
+	fake.getCharacterMercenaryDen = func(ctx context.Context, mercenaryDenID int64) (*esiapi.CharactersStructuresMercenaryDensDetail, error) {
+		return &esiapi.CharactersStructuresMercenaryDensDetail{
+			Id: 1001, TypeId: 85230, State: "online",
+			Evolution: esiapi.CharactersStructuresMercenaryDensDetailEvolution{
+				Anarchy:     esiapi.CharactersStructuresMercenaryDensDetailEvolutionanarchy{Amount: 10, Level: "low"},
+				Development: esiapi.CharactersStructuresMercenaryDensDetailEvolutiondevelopment{Amount: 20, Level: "medium"},
 			},
-			InfomorphsAmount: 3,
-			ReinforcementEnd: &reinforcementEnd,
-			Skyhook:          MercenaryDenSkyhookRef{CorporationID: 98000001, ID: 2001, PlanetID: 40000001},
+			Infomorphs:         esiapi.CharactersStructuresMercenaryDensDetailInfomorphs{Amount: 3},
+			ReinforcementTimer: &esiapi.CharactersStructuresMercenaryDensDetailReinforcementtimer{End: reinforcementEnd},
+			Skyhook:            esiapi.CharactersStructuresMercenaryDensDetailSkyhook{CorporationId: 98000001, Id: 2001, PlanetId: 40000001},
 		}, nil
 	}
 
-	handler := getCharacterMercenaryDenHandler("v1", "client-id", store, nil)
+	handler := getCharacterMercenaryDenHandler("v1", openStructuresFake[mercenaryDenESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, GetCharacterMercenaryDenInput{CharacterID: 7, MercenaryDenID: 1001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -158,13 +242,12 @@ func TestGetCharacterMercenaryDenHandler_MapsFields_NoReinforcementTimer(t *test
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCharacterMercenaryDen
-	t.Cleanup(func() { getCharacterMercenaryDen = orig })
-	getCharacterMercenaryDen = func(ctx context.Context, clientID string, characterID int32, userAgent string, mercenaryDenID int64) (MercenaryDenDetail, error) {
-		return MercenaryDenDetail{ID: 1001, TypeID: 85230, State: "offline"}, nil
+	fake := &fakeStructuresESI{}
+	fake.getCharacterMercenaryDen = func(ctx context.Context, mercenaryDenID int64) (*esiapi.CharactersStructuresMercenaryDensDetail, error) {
+		return &esiapi.CharactersStructuresMercenaryDensDetail{Id: 1001, TypeId: 85230, State: "offline"}, nil
 	}
 
-	handler := getCharacterMercenaryDenHandler("v1", "client-id", store, nil)
+	handler := getCharacterMercenaryDenHandler("v1", openStructuresFake[mercenaryDenESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, GetCharacterMercenaryDenInput{CharacterID: 7, MercenaryDenID: 1001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -181,10 +264,9 @@ func TestGetCharacterMercenaryDenHandler_ResolvesTypeName(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCharacterMercenaryDen
-	t.Cleanup(func() { getCharacterMercenaryDen = orig })
-	getCharacterMercenaryDen = func(ctx context.Context, clientID string, characterID int32, userAgent string, mercenaryDenID int64) (MercenaryDenDetail, error) {
-		return MercenaryDenDetail{ID: 1001, TypeID: 56674}, nil
+	fake := &fakeStructuresESI{}
+	fake.getCharacterMercenaryDen = func(ctx context.Context, mercenaryDenID int64) (*esiapi.CharactersStructuresMercenaryDensDetail, error) {
+		return &esiapi.CharactersStructuresMercenaryDensDetail{Id: 1001, TypeId: 56674}, nil
 	}
 
 	origResolve := resolveTypeNames
@@ -195,7 +277,7 @@ func TestGetCharacterMercenaryDenHandler_ResolvesTypeName(t *testing.T) {
 		return map[int64]string{56674: "Mercenary Den"}
 	}
 
-	handler := getCharacterMercenaryDenHandler("v1", "client-id", store, nil)
+	handler := getCharacterMercenaryDenHandler("v1", openStructuresFake[mercenaryDenESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, GetCharacterMercenaryDenInput{CharacterID: 7, MercenaryDenID: 1001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -215,10 +297,9 @@ func TestGetCharacterMercenaryDenHandler_ResolvesSkyhookPlanetName(t *testing.T)
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCharacterMercenaryDen
-	t.Cleanup(func() { getCharacterMercenaryDen = orig })
-	getCharacterMercenaryDen = func(ctx context.Context, clientID string, characterID int32, userAgent string, mercenaryDenID int64) (MercenaryDenDetail, error) {
-		return MercenaryDenDetail{ID: 1, Skyhook: MercenaryDenSkyhookRef{ID: 2, PlanetID: 40009086}}, nil
+	fake := &fakeStructuresESI{}
+	fake.getCharacterMercenaryDen = func(ctx context.Context, mercenaryDenID int64) (*esiapi.CharactersStructuresMercenaryDensDetail, error) {
+		return &esiapi.CharactersStructuresMercenaryDensDetail{Id: 1, Skyhook: esiapi.CharactersStructuresMercenaryDensDetailSkyhook{Id: 2, PlanetId: 40009086}}, nil
 	}
 
 	origPlanet := resolvePlanetNames
@@ -227,7 +308,7 @@ func TestGetCharacterMercenaryDenHandler_ResolvesSkyhookPlanetName(t *testing.T)
 		return map[int64]string{40009086: "Jita IV"}
 	}
 
-	handler := getCharacterMercenaryDenHandler("v1", "client-id", store, nil)
+	handler := getCharacterMercenaryDenHandler("v1", openStructuresFake[mercenaryDenESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, GetCharacterMercenaryDenInput{CharacterID: 7, MercenaryDenID: 1})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -241,14 +322,13 @@ func TestGetCharacterMercenaryDenHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := getCharacterMercenaryDen
-	t.Cleanup(func() { getCharacterMercenaryDen = orig })
-	getCharacterMercenaryDen = func(ctx context.Context, clientID string, characterID int32, userAgent string, mercenaryDenID int64) (MercenaryDenDetail, error) {
+	fake := &fakeStructuresESI{}
+	fake.getCharacterMercenaryDen = func(ctx context.Context, mercenaryDenID int64) (*esiapi.CharactersStructuresMercenaryDensDetail, error) {
 		t.Fatal("getCharacterMercenaryDen should not be called for an unknown character")
-		return MercenaryDenDetail{}, nil
+		return nil, nil
 	}
 
-	handler := getCharacterMercenaryDenHandler("v1", "client-id", store, nil)
+	handler := getCharacterMercenaryDenHandler("v1", openStructuresFake[mercenaryDenESI](fake), store, nil)
 	_, _, err := handler(context.Background(), nil, GetCharacterMercenaryDenInput{CharacterID: 999, MercenaryDenID: 1001})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -262,14 +342,13 @@ func TestGetCharacterMercenaryDenHandler_PropagatesError(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCharacterMercenaryDen
-	t.Cleanup(func() { getCharacterMercenaryDen = orig })
+	fake := &fakeStructuresESI{}
 	wantErr := errors.New("upstream failure")
-	getCharacterMercenaryDen = func(ctx context.Context, clientID string, characterID int32, userAgent string, mercenaryDenID int64) (MercenaryDenDetail, error) {
-		return MercenaryDenDetail{}, wantErr
+	fake.getCharacterMercenaryDen = func(ctx context.Context, mercenaryDenID int64) (*esiapi.CharactersStructuresMercenaryDensDetail, error) {
+		return nil, wantErr
 	}
 
-	handler := getCharacterMercenaryDenHandler("v1", "client-id", store, nil)
+	handler := getCharacterMercenaryDenHandler("v1", openStructuresFake[mercenaryDenESI](fake), store, nil)
 	_, _, err := handler(context.Background(), nil, GetCharacterMercenaryDenInput{CharacterID: 7, MercenaryDenID: 1001})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -285,13 +364,12 @@ func TestListCorporationSkyhooksHandler_MapsFields(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationSkyhooks
-	t.Cleanup(func() { listCorporationSkyhooks = orig })
-	listCorporationSkyhooks = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64) ([]Skyhook, error) {
-		return []Skyhook{{ID: 2001, PlanetID: 40000001}}, nil
+	fake := &fakeStructuresESI{}
+	fake.listCorporationSkyhooks = func(ctx context.Context, corporationID int64) ([]esiapi.CorporationsStructuresSkyhooksListingSkyhook, error) {
+		return []esiapi.CorporationsStructuresSkyhooksListingSkyhook{{Id: 2001, PlanetId: 40000001}}, nil
 	}
 
-	handler := listCorporationSkyhooksHandler("v1", "client-id", store, nil)
+	handler := listCorporationSkyhooksHandler("v1", openStructuresFake[corporationSkyhooksESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, ListCorporationSkyhooksInput{CharacterID: 7, CorporationID: 98000001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -308,10 +386,9 @@ func TestListCorporationSkyhooksHandler_ResolvesPlanetName(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationSkyhooks
-	t.Cleanup(func() { listCorporationSkyhooks = orig })
-	listCorporationSkyhooks = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64) ([]Skyhook, error) {
-		return []Skyhook{{ID: 1, PlanetID: 40009086}}, nil
+	fake := &fakeStructuresESI{}
+	fake.listCorporationSkyhooks = func(ctx context.Context, corporationID int64) ([]esiapi.CorporationsStructuresSkyhooksListingSkyhook, error) {
+		return []esiapi.CorporationsStructuresSkyhooksListingSkyhook{{Id: 1, PlanetId: 40009086}}, nil
 	}
 
 	origPlanet := resolvePlanetNames
@@ -320,7 +397,7 @@ func TestListCorporationSkyhooksHandler_ResolvesPlanetName(t *testing.T) {
 		return map[int64]string{40009086: "Jita IV"}
 	}
 
-	handler := listCorporationSkyhooksHandler("v1", "client-id", store, nil)
+	handler := listCorporationSkyhooksHandler("v1", openStructuresFake[corporationSkyhooksESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, ListCorporationSkyhooksInput{CharacterID: 7, CorporationID: 98000001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -334,14 +411,13 @@ func TestListCorporationSkyhooksHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := listCorporationSkyhooks
-	t.Cleanup(func() { listCorporationSkyhooks = orig })
-	listCorporationSkyhooks = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64) ([]Skyhook, error) {
+	fake := &fakeStructuresESI{}
+	fake.listCorporationSkyhooks = func(ctx context.Context, corporationID int64) ([]esiapi.CorporationsStructuresSkyhooksListingSkyhook, error) {
 		t.Fatal("listCorporationSkyhooks should not be called for an unknown character")
 		return nil, nil
 	}
 
-	handler := listCorporationSkyhooksHandler("v1", "client-id", store, nil)
+	handler := listCorporationSkyhooksHandler("v1", openStructuresFake[corporationSkyhooksESI](fake), store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationSkyhooksInput{CharacterID: 999, CorporationID: 98000001})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -355,14 +431,13 @@ func TestListCorporationSkyhooksHandler_PropagatesError(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationSkyhooks
-	t.Cleanup(func() { listCorporationSkyhooks = orig })
+	fake := &fakeStructuresESI{}
 	wantErr := errors.New("upstream failure")
-	listCorporationSkyhooks = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64) ([]Skyhook, error) {
+	fake.listCorporationSkyhooks = func(ctx context.Context, corporationID int64) ([]esiapi.CorporationsStructuresSkyhooksListingSkyhook, error) {
 		return nil, wantErr
 	}
 
-	handler := listCorporationSkyhooksHandler("v1", "client-id", store, nil)
+	handler := listCorporationSkyhooksHandler("v1", openStructuresFake[corporationSkyhooksESI](fake), store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationSkyhooksInput{CharacterID: 7, CorporationID: 98000001})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -378,26 +453,24 @@ func TestGetCorporationSkyhookHandler_MapsFields_FullFixture(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCorporationSkyhook
-	t.Cleanup(func() { getCorporationSkyhook = orig })
+	fake := &fakeStructuresESI{}
 	effectiveWorkforce := int64(500)
 	reinforcementEnd := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
 	theftStart := time.Date(2026, 7, 15, 0, 0, 0, 0, time.UTC)
 	theftEnd := time.Date(2026, 7, 16, 0, 0, 0, 0, time.UTC)
-	getCorporationSkyhook = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID, skyhookID int64) (SkyhookDetail, error) {
-		return SkyhookDetail{
+	fake.getCorporationSkyhook = func(ctx context.Context, corporationID, skyhookID int64) (*esiapi.CorporationsStructuresSkyhooksDetail, error) {
+		return &esiapi.CorporationsStructuresSkyhooksDetail{
 			EffectiveWorkforce: &effectiveWorkforce,
-			ID:                 2001, PlanetID: 40000001, IsActive: true, State: "gathering_workforce",
-			Reagents: []SkyhookReagent{
-				{LastCycle: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC), SecuredStock: 100, TypeID: 16274, UnsecuredStock: 50},
+			Id:                 2001, PlanetId: 40000001, IsActive: true, State: "gathering_workforce",
+			Reagents: []esiapi.CorporationsStructuresSkyhooksDetailReagent{
+				{LastCycle: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC), SecuredStock: 100, TypeId: 16274, UnsecuredStock: 50},
 			},
-			ReinforcementEnd:        &reinforcementEnd,
-			TheftVulnerabilityStart: &theftStart,
-			TheftVulnerabilityEnd:   &theftEnd,
+			ReinforcementTimer: &esiapi.CorporationsStructuresSkyhooksDetailReinforcementtimer{End: reinforcementEnd},
+			TheftVulnerability: &esiapi.CorporationsStructuresSkyhooksDetailTheftvulnerability{Start: theftStart, End: theftEnd},
 		}, nil
 	}
 
-	handler := getCorporationSkyhookHandler("v1", "client-id", store, nil)
+	handler := getCorporationSkyhookHandler("v1", openStructuresFake[skyhookESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, GetCorporationSkyhookInput{CharacterID: 7, CorporationID: 98000001, SkyhookID: 2001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -429,13 +502,12 @@ func TestGetCorporationSkyhookHandler_MapsFields_SparseFixture(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCorporationSkyhook
-	t.Cleanup(func() { getCorporationSkyhook = orig })
-	getCorporationSkyhook = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID, skyhookID int64) (SkyhookDetail, error) {
-		return SkyhookDetail{ID: 2001, PlanetID: 40000001, IsActive: false, State: "unpowered"}, nil
+	fake := &fakeStructuresESI{}
+	fake.getCorporationSkyhook = func(ctx context.Context, corporationID, skyhookID int64) (*esiapi.CorporationsStructuresSkyhooksDetail, error) {
+		return &esiapi.CorporationsStructuresSkyhooksDetail{Id: 2001, PlanetId: 40000001, IsActive: false, State: "unpowered"}, nil
 	}
 
-	handler := getCorporationSkyhookHandler("v1", "client-id", store, nil)
+	handler := getCorporationSkyhookHandler("v1", openStructuresFake[skyhookESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, GetCorporationSkyhookInput{CharacterID: 7, CorporationID: 98000001, SkyhookID: 2001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -452,10 +524,9 @@ func TestGetCorporationSkyhookHandler_ResolvesReagentTypeName(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCorporationSkyhook
-	t.Cleanup(func() { getCorporationSkyhook = orig })
-	getCorporationSkyhook = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID, skyhookID int64) (SkyhookDetail, error) {
-		return SkyhookDetail{Reagents: []SkyhookReagent{{TypeID: 16273}}}, nil
+	fake := &fakeStructuresESI{}
+	fake.getCorporationSkyhook = func(ctx context.Context, corporationID, skyhookID int64) (*esiapi.CorporationsStructuresSkyhooksDetail, error) {
+		return &esiapi.CorporationsStructuresSkyhooksDetail{Reagents: []esiapi.CorporationsStructuresSkyhooksDetailReagent{{TypeId: 16273}}}, nil
 	}
 
 	origResolve := resolveTypeNames
@@ -466,7 +537,7 @@ func TestGetCorporationSkyhookHandler_ResolvesReagentTypeName(t *testing.T) {
 		return map[int64]string{16273: "Oxygen"}
 	}
 
-	handler := getCorporationSkyhookHandler("v1", "client-id", store, nil)
+	handler := getCorporationSkyhookHandler("v1", openStructuresFake[skyhookESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, GetCorporationSkyhookInput{CharacterID: 7, CorporationID: 98000001, SkyhookID: 2001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -486,10 +557,9 @@ func TestGetCorporationSkyhookHandler_ResolvesPlanetName(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCorporationSkyhook
-	t.Cleanup(func() { getCorporationSkyhook = orig })
-	getCorporationSkyhook = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID, skyhookID int64) (SkyhookDetail, error) {
-		return SkyhookDetail{ID: 1, PlanetID: 40009086}, nil
+	fake := &fakeStructuresESI{}
+	fake.getCorporationSkyhook = func(ctx context.Context, corporationID, skyhookID int64) (*esiapi.CorporationsStructuresSkyhooksDetail, error) {
+		return &esiapi.CorporationsStructuresSkyhooksDetail{Id: 1, PlanetId: 40009086}, nil
 	}
 
 	origPlanet := resolvePlanetNames
@@ -498,7 +568,7 @@ func TestGetCorporationSkyhookHandler_ResolvesPlanetName(t *testing.T) {
 		return map[int64]string{40009086: "Jita IV"}
 	}
 
-	handler := getCorporationSkyhookHandler("v1", "client-id", store, nil)
+	handler := getCorporationSkyhookHandler("v1", openStructuresFake[skyhookESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, GetCorporationSkyhookInput{CharacterID: 7, CorporationID: 98000001, SkyhookID: 1})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -512,14 +582,13 @@ func TestGetCorporationSkyhookHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := getCorporationSkyhook
-	t.Cleanup(func() { getCorporationSkyhook = orig })
-	getCorporationSkyhook = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID, skyhookID int64) (SkyhookDetail, error) {
+	fake := &fakeStructuresESI{}
+	fake.getCorporationSkyhook = func(ctx context.Context, corporationID, skyhookID int64) (*esiapi.CorporationsStructuresSkyhooksDetail, error) {
 		t.Fatal("getCorporationSkyhook should not be called for an unknown character")
-		return SkyhookDetail{}, nil
+		return nil, nil
 	}
 
-	handler := getCorporationSkyhookHandler("v1", "client-id", store, nil)
+	handler := getCorporationSkyhookHandler("v1", openStructuresFake[skyhookESI](fake), store, nil)
 	_, _, err := handler(context.Background(), nil, GetCorporationSkyhookInput{CharacterID: 999, CorporationID: 98000001, SkyhookID: 2001})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -533,14 +602,13 @@ func TestGetCorporationSkyhookHandler_PropagatesError(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCorporationSkyhook
-	t.Cleanup(func() { getCorporationSkyhook = orig })
+	fake := &fakeStructuresESI{}
 	wantErr := errors.New("upstream failure")
-	getCorporationSkyhook = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID, skyhookID int64) (SkyhookDetail, error) {
-		return SkyhookDetail{}, wantErr
+	fake.getCorporationSkyhook = func(ctx context.Context, corporationID, skyhookID int64) (*esiapi.CorporationsStructuresSkyhooksDetail, error) {
+		return nil, wantErr
 	}
 
-	handler := getCorporationSkyhookHandler("v1", "client-id", store, nil)
+	handler := getCorporationSkyhookHandler("v1", openStructuresFake[skyhookESI](fake), store, nil)
 	_, _, err := handler(context.Background(), nil, GetCorporationSkyhookInput{CharacterID: 7, CorporationID: 98000001, SkyhookID: 2001})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -556,13 +624,12 @@ func TestListCorporationSovereigntyHubsHandler_MapsFields(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationSovereigntyHubs
-	t.Cleanup(func() { listCorporationSovereigntyHubs = orig })
-	listCorporationSovereigntyHubs = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64) ([]StructureSovereigntyHub, error) {
-		return []StructureSovereigntyHub{{ID: 3001, SolarSystemID: 30000142}}, nil
+	fake := &fakeStructuresESI{}
+	fake.listCorporationSovereigntyHubs = func(ctx context.Context, corporationID int64) ([]esiapi.CorporationsStructuresSovereigntyHubsListingSovereigntyhub, error) {
+		return []esiapi.CorporationsStructuresSovereigntyHubsListingSovereigntyhub{{Id: 3001, SolarSystemId: 30000142}}, nil
 	}
 
-	handler := listCorporationSovereigntyHubsHandler("v1", "client-id", store, nil)
+	handler := listCorporationSovereigntyHubsHandler("v1", openStructuresFake[sovereigntyHubsESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, ListCorporationSovereigntyHubsInput{CharacterID: 7, CorporationID: 98000001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -579,10 +646,9 @@ func TestListCorporationSovereigntyHubsHandler_ResolvesSystemName(t *testing.T) 
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationSovereigntyHubs
-	t.Cleanup(func() { listCorporationSovereigntyHubs = orig })
-	listCorporationSovereigntyHubs = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64) ([]StructureSovereigntyHub, error) {
-		return []StructureSovereigntyHub{{ID: 1, SolarSystemID: 30000142}}, nil
+	fake := &fakeStructuresESI{}
+	fake.listCorporationSovereigntyHubs = func(ctx context.Context, corporationID int64) ([]esiapi.CorporationsStructuresSovereigntyHubsListingSovereigntyhub, error) {
+		return []esiapi.CorporationsStructuresSovereigntyHubsListingSovereigntyhub{{Id: 1, SolarSystemId: 30000142}}, nil
 	}
 
 	origSystem := resolveSystemNames
@@ -591,7 +657,7 @@ func TestListCorporationSovereigntyHubsHandler_ResolvesSystemName(t *testing.T) 
 		return map[int64]string{30000142: "Jita"}
 	}
 
-	handler := listCorporationSovereigntyHubsHandler("v1", "client-id", store, nil)
+	handler := listCorporationSovereigntyHubsHandler("v1", openStructuresFake[sovereigntyHubsESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, ListCorporationSovereigntyHubsInput{CharacterID: 7, CorporationID: 98000001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -605,14 +671,13 @@ func TestListCorporationSovereigntyHubsHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := listCorporationSovereigntyHubs
-	t.Cleanup(func() { listCorporationSovereigntyHubs = orig })
-	listCorporationSovereigntyHubs = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64) ([]StructureSovereigntyHub, error) {
+	fake := &fakeStructuresESI{}
+	fake.listCorporationSovereigntyHubs = func(ctx context.Context, corporationID int64) ([]esiapi.CorporationsStructuresSovereigntyHubsListingSovereigntyhub, error) {
 		t.Fatal("listCorporationSovereigntyHubs should not be called for an unknown character")
 		return nil, nil
 	}
 
-	handler := listCorporationSovereigntyHubsHandler("v1", "client-id", store, nil)
+	handler := listCorporationSovereigntyHubsHandler("v1", openStructuresFake[sovereigntyHubsESI](fake), store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationSovereigntyHubsInput{CharacterID: 999, CorporationID: 98000001})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -626,14 +691,13 @@ func TestListCorporationSovereigntyHubsHandler_PropagatesError(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationSovereigntyHubs
-	t.Cleanup(func() { listCorporationSovereigntyHubs = orig })
+	fake := &fakeStructuresESI{}
 	wantErr := errors.New("upstream failure")
-	listCorporationSovereigntyHubs = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64) ([]StructureSovereigntyHub, error) {
+	fake.listCorporationSovereigntyHubs = func(ctx context.Context, corporationID int64) ([]esiapi.CorporationsStructuresSovereigntyHubsListingSovereigntyhub, error) {
 		return nil, wantErr
 	}
 
-	handler := listCorporationSovereigntyHubsHandler("v1", "client-id", store, nil)
+	handler := listCorporationSovereigntyHubsHandler("v1", openStructuresFake[sovereigntyHubsESI](fake), store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationSovereigntyHubsInput{CharacterID: 7, CorporationID: 98000001})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -649,37 +713,39 @@ func TestGetCorporationSovereigntyHubHandler_MapsFields_ExportVariant(t *testing
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCorporationSovereigntyHub
-	t.Cleanup(func() { getCorporationSovereigntyHub = orig })
+	fake := &fakeStructuresESI{}
 	fuelAccessListID := int64(5001)
 	vwStart := time.Date(2026, 7, 25, 0, 0, 0, 0, time.UTC)
 	vwEnd := time.Date(2026, 7, 25, 2, 0, 0, 0, time.UTC)
 	exportAmount := int64(300)
 	exportSolarSystemID := int64(30000144)
 	stateExportAmount := int64(150)
-	getCorporationSovereigntyHub = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID, sovereigntyHubID int64) (StructureSovereigntyHubDetail, error) {
-		return StructureSovereigntyHubDetail{
-			FuelAccessListID: &fuelAccessListID,
-			ID:               3001, SolarSystemID: 30000142,
-			ReagentBay: StructureSovereigntyHubReagentBay{
+	fake.getCorporationSovereigntyHub = func(ctx context.Context, corporationID, sovereigntyHubID int64) (*esiapi.CorporationsStructuresSovereigntyHubsDetail, error) {
+		return &esiapi.CorporationsStructuresSovereigntyHubsDetail{
+			FuelAccessListId: &fuelAccessListID,
+			Id:               3001, SolarSystemId: 30000142,
+			ReagentBay: esiapi.CorporationsStructuresSovereigntyHubsDetailReagentbay{
 				LastUpdated: time.Date(2026, 7, 20, 0, 0, 0, 0, time.UTC),
-				Reagents:    []StructureSovereigntyHubReagent{{Amount: 1000, BurningPerHour: 10, TypeID: 16274}},
+				Reagents:    []esiapi.CorporationsStructuresSovereigntyHubsDetailReagent{{Amount: 1000, BurningPerHour: 10, TypeId: 16274}},
 			},
-			Resources: StructureSovereigntyHubResources{
-				Power:     StructureSovereigntyHubResourceLevel{Allocated: 100, Available: 200},
-				Workforce: StructureSovereigntyHubResourceLevel{Allocated: 50, Available: 75},
+			Resources: esiapi.CorporationsStructuresSovereigntyHubsDetailResources{
+				Power:     esiapi.CorporationsStructuresSovereigntyHubsDetailResourcepower{Allocated: 100, Available: 200},
+				Workforce: esiapi.CorporationsStructuresSovereigntyHubsDetailResourceworkforce{Allocated: 50, Available: 75},
 			},
-			Upgrades:                 []StructureSovereigntyHubUpgrade{{PowerState: "online", TypeID: 81000}},
-			VulnerabilityWindowStart: &vwStart,
-			VulnerabilityWindowEnd:   &vwEnd,
-			WorkforceTransport: StructureSovereigntyHubTransport{
-				Configuration: StructureSovereigntyHubTransportConfig{Kind: "export", ExportAmount: &exportAmount, ExportSolarSystemID: &exportSolarSystemID},
-				State:         StructureSovereigntyHubTransportState{Kind: "export", ExportAmount: &stateExportAmount, ExportSolarSystemID: &exportSolarSystemID},
+			Upgrades:            []esiapi.CorporationsStructuresSovereigntyHubsDetailUpgrade{{PowerState: "online", TypeId: 81000}},
+			VulnerabilityWindow: &esiapi.CorporationsStructuresSovereigntyHubsDetailVulnerabilitywindow{Start: vwStart, End: vwEnd},
+			WorkforceTransport: esiapi.CorporationsStructuresSovereigntyHubsDetailTransport{
+				Configuration: esiapi.CorporationsStructuresSovereigntyHubsDetailTransportConfiguration{
+					Export: &esiapi.Export{Export: &esiapi.CorporationsStructuresSovereigntyHubsDetailTransportconfigurationexport{Amount: exportAmount, SolarSystemId: &exportSolarSystemID}},
+				},
+				State: esiapi.CorporationsStructuresSovereigntyHubsDetailTransportState{
+					Export1: &esiapi.Export1{Export: &esiapi.CorporationsStructuresSovereigntyHubsDetailTransportstateexport{Amount: &stateExportAmount, SolarSystemId: &exportSolarSystemID}},
+				},
 			},
 		}, nil
 	}
 
-	handler := getCorporationSovereigntyHubHandler("v1", "client-id", store, nil)
+	handler := getCorporationSovereigntyHubHandler("v1", openStructuresFake[sovereigntyHubESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, GetCorporationSovereigntyHubInput{CharacterID: 7, CorporationID: 98000001, SovereigntyHubID: 3001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -727,22 +793,26 @@ func TestGetCorporationSovereigntyHubHandler_MapsFields_ImportVariant(t *testing
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCorporationSovereigntyHub
-	t.Cleanup(func() { getCorporationSovereigntyHub = orig })
-	getCorporationSovereigntyHub = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID, sovereigntyHubID int64) (StructureSovereigntyHubDetail, error) {
-		return StructureSovereigntyHubDetail{
-			ID: 3001, SolarSystemID: 30000142,
-			WorkforceTransport: StructureSovereigntyHubTransport{
-				Configuration: StructureSovereigntyHubTransportConfig{Kind: "import", ImportSolarSystemIDs: []int64{30000144}},
-				State: StructureSovereigntyHubTransportState{
-					Kind:          "import",
-					ImportSources: []StructureSovereigntyHubTransportImportSource{{Amount: 500, SolarSystemID: 30000144}},
+	fake := &fakeStructuresESI{}
+	fake.getCorporationSovereigntyHub = func(ctx context.Context, corporationID, sovereigntyHubID int64) (*esiapi.CorporationsStructuresSovereigntyHubsDetail, error) {
+		return &esiapi.CorporationsStructuresSovereigntyHubsDetail{
+			Id: 3001, SolarSystemId: 30000142,
+			WorkforceTransport: esiapi.CorporationsStructuresSovereigntyHubsDetailTransport{
+				Configuration: esiapi.CorporationsStructuresSovereigntyHubsDetailTransportConfiguration{
+					ModelImport: &esiapi.ModelImport{Import: &esiapi.CorporationsStructuresSovereigntyHubsDetailTransportconfigurationimport{
+						Sources: []esiapi.CorporationsStructuresSovereigntyHubsDetailTransportconfigurationsource{{SolarSystemId: 30000144}},
+					}},
+				},
+				State: esiapi.CorporationsStructuresSovereigntyHubsDetailTransportState{
+					Import1: &esiapi.Import1{Import: &esiapi.CorporationsStructuresSovereigntyHubsDetailTransportstateimport{
+						Sources: []esiapi.CorporationsStructuresSovereigntyHubsDetailTransportstateimportsource{{Amount: 500, SolarSystemId: 30000144}},
+					}},
 				},
 			},
 		}, nil
 	}
 
-	handler := getCorporationSovereigntyHubHandler("v1", "client-id", store, nil)
+	handler := getCorporationSovereigntyHubHandler("v1", openStructuresFake[sovereigntyHubESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, GetCorporationSovereigntyHubInput{CharacterID: 7, CorporationID: 98000001, SovereigntyHubID: 3001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -772,21 +842,24 @@ func TestGetCorporationSovereigntyHubHandler_MapsFields_TransitVariant(t *testin
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCorporationSovereigntyHub
-	t.Cleanup(func() { getCorporationSovereigntyHub = orig })
+	fake := &fakeStructuresESI{}
 	cfgTransit := true
 	stateTransit := false
-	getCorporationSovereigntyHub = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID, sovereigntyHubID int64) (StructureSovereigntyHubDetail, error) {
-		return StructureSovereigntyHubDetail{
-			ID: 3001, SolarSystemID: 30000142,
-			WorkforceTransport: StructureSovereigntyHubTransport{
-				Configuration: StructureSovereigntyHubTransportConfig{Kind: "transit", Transit: &cfgTransit},
-				State:         StructureSovereigntyHubTransportState{Kind: "transit", Transit: &stateTransit},
+	fake.getCorporationSovereigntyHub = func(ctx context.Context, corporationID, sovereigntyHubID int64) (*esiapi.CorporationsStructuresSovereigntyHubsDetail, error) {
+		return &esiapi.CorporationsStructuresSovereigntyHubsDetail{
+			Id: 3001, SolarSystemId: 30000142,
+			WorkforceTransport: esiapi.CorporationsStructuresSovereigntyHubsDetailTransport{
+				Configuration: esiapi.CorporationsStructuresSovereigntyHubsDetailTransportConfiguration{
+					Transit: &esiapi.Transit{Transit: *esiapi.NewNullableBool(&cfgTransit)},
+				},
+				State: esiapi.CorporationsStructuresSovereigntyHubsDetailTransportState{
+					Transit1: &esiapi.Transit1{Transit: *esiapi.NewNullableBool(&stateTransit)},
+				},
 			},
 		}, nil
 	}
 
-	handler := getCorporationSovereigntyHubHandler("v1", "client-id", store, nil)
+	handler := getCorporationSovereigntyHubHandler("v1", openStructuresFake[sovereigntyHubESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, GetCorporationSovereigntyHubInput{CharacterID: 7, CorporationID: 98000001, SovereigntyHubID: 3001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -816,12 +889,11 @@ func TestGetCorporationSovereigntyHubHandler_ResolvesTypeNames(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCorporationSovereigntyHub
-	t.Cleanup(func() { getCorporationSovereigntyHub = orig })
-	getCorporationSovereigntyHub = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID, sovereigntyHubID int64) (StructureSovereigntyHubDetail, error) {
-		return StructureSovereigntyHubDetail{
-			ReagentBay: StructureSovereigntyHubReagentBay{Reagents: []StructureSovereigntyHubReagent{{TypeID: 16273}}},
-			Upgrades:   []StructureSovereigntyHubUpgrade{{TypeID: 587}},
+	fake := &fakeStructuresESI{}
+	fake.getCorporationSovereigntyHub = func(ctx context.Context, corporationID, sovereigntyHubID int64) (*esiapi.CorporationsStructuresSovereigntyHubsDetail, error) {
+		return &esiapi.CorporationsStructuresSovereigntyHubsDetail{
+			ReagentBay: esiapi.CorporationsStructuresSovereigntyHubsDetailReagentbay{Reagents: []esiapi.CorporationsStructuresSovereigntyHubsDetailReagent{{TypeId: 16273}}},
+			Upgrades:   []esiapi.CorporationsStructuresSovereigntyHubsDetailUpgrade{{TypeId: 587}},
 		}, nil
 	}
 
@@ -836,7 +908,7 @@ func TestGetCorporationSovereigntyHubHandler_ResolvesTypeNames(t *testing.T) {
 		}
 	}
 
-	handler := getCorporationSovereigntyHubHandler("v1", "client-id", store, nil)
+	handler := getCorporationSovereigntyHubHandler("v1", openStructuresFake[sovereigntyHubESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, GetCorporationSovereigntyHubInput{CharacterID: 7, CorporationID: 98000001, SovereigntyHubID: 3001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -859,17 +931,19 @@ func TestGetCorporationSovereigntyHubHandler_ResolvesTransportSystemNames(t *tes
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCorporationSovereigntyHub
-	t.Cleanup(func() { getCorporationSovereigntyHub = orig })
+	fake := &fakeStructuresESI{}
 	exportID := int64(30000144)
-	getCorporationSovereigntyHub = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID, sovereigntyHubID int64) (StructureSovereigntyHubDetail, error) {
-		return StructureSovereigntyHubDetail{
-			ID: 1, SolarSystemID: 30000142,
-			WorkforceTransport: StructureSovereigntyHubTransport{
-				Configuration: StructureSovereigntyHubTransportConfig{Kind: "export", ExportSolarSystemID: &exportID},
-				State: StructureSovereigntyHubTransportState{
-					Kind:          "import",
-					ImportSources: []StructureSovereigntyHubTransportImportSource{{Amount: 100, SolarSystemID: 30002187}},
+	fake.getCorporationSovereigntyHub = func(ctx context.Context, corporationID, sovereigntyHubID int64) (*esiapi.CorporationsStructuresSovereigntyHubsDetail, error) {
+		return &esiapi.CorporationsStructuresSovereigntyHubsDetail{
+			Id: 1, SolarSystemId: 30000142,
+			WorkforceTransport: esiapi.CorporationsStructuresSovereigntyHubsDetailTransport{
+				Configuration: esiapi.CorporationsStructuresSovereigntyHubsDetailTransportConfiguration{
+					Export: &esiapi.Export{Export: &esiapi.CorporationsStructuresSovereigntyHubsDetailTransportconfigurationexport{SolarSystemId: &exportID}},
+				},
+				State: esiapi.CorporationsStructuresSovereigntyHubsDetailTransportState{
+					Import1: &esiapi.Import1{Import: &esiapi.CorporationsStructuresSovereigntyHubsDetailTransportstateimport{
+						Sources: []esiapi.CorporationsStructuresSovereigntyHubsDetailTransportstateimportsource{{Amount: 100, SolarSystemId: 30002187}},
+					}},
 				},
 			},
 		}, nil
@@ -881,7 +955,7 @@ func TestGetCorporationSovereigntyHubHandler_ResolvesTransportSystemNames(t *tes
 		return map[int64]string{30000142: "Jita", 30000144: "Perimeter", 30002187: "Amarr"}
 	}
 
-	handler := getCorporationSovereigntyHubHandler("v1", "client-id", store, nil)
+	handler := getCorporationSovereigntyHubHandler("v1", openStructuresFake[sovereigntyHubESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, GetCorporationSovereigntyHubInput{CharacterID: 7, CorporationID: 98000001, SovereigntyHubID: 1})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -904,15 +978,15 @@ func TestGetCorporationSovereigntyHubHandler_ImportSolarSystemNamesSurvivesParti
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCorporationSovereigntyHub
-	t.Cleanup(func() { getCorporationSovereigntyHub = orig })
-	getCorporationSovereigntyHub = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID, sovereigntyHubID int64) (StructureSovereigntyHubDetail, error) {
-		return StructureSovereigntyHubDetail{
-			ID: 3001, SolarSystemID: 30000142,
-			WorkforceTransport: StructureSovereigntyHubTransport{
-				Configuration: StructureSovereigntyHubTransportConfig{
-					Kind:                 "import",
-					ImportSolarSystemIDs: []int64{30000142, 999999999, 30000144},
+	fake := &fakeStructuresESI{}
+	fake.getCorporationSovereigntyHub = func(ctx context.Context, corporationID, sovereigntyHubID int64) (*esiapi.CorporationsStructuresSovereigntyHubsDetail, error) {
+		return &esiapi.CorporationsStructuresSovereigntyHubsDetail{
+			Id: 3001, SolarSystemId: 30000142,
+			WorkforceTransport: esiapi.CorporationsStructuresSovereigntyHubsDetailTransport{
+				Configuration: esiapi.CorporationsStructuresSovereigntyHubsDetailTransportConfiguration{
+					ModelImport: &esiapi.ModelImport{Import: &esiapi.CorporationsStructuresSovereigntyHubsDetailTransportconfigurationimport{
+						Sources: []esiapi.CorporationsStructuresSovereigntyHubsDetailTransportconfigurationsource{{SolarSystemId: 30000142}, {SolarSystemId: 999999999}, {SolarSystemId: 30000144}},
+					}},
 				},
 			},
 		}, nil
@@ -925,7 +999,7 @@ func TestGetCorporationSovereigntyHubHandler_ImportSolarSystemNamesSurvivesParti
 		return map[int64]string{30000142: "Jita", 30000144: "Perimeter"}
 	}
 
-	handler := getCorporationSovereigntyHubHandler("v1", "client-id", store, nil)
+	handler := getCorporationSovereigntyHubHandler("v1", openStructuresFake[sovereigntyHubESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, GetCorporationSovereigntyHubInput{CharacterID: 7, CorporationID: 98000001, SovereigntyHubID: 3001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -949,15 +1023,15 @@ func TestGetCorporationSovereigntyHubHandler_ImportSolarSystemNamesNilOnTotalMis
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCorporationSovereigntyHub
-	t.Cleanup(func() { getCorporationSovereigntyHub = orig })
-	getCorporationSovereigntyHub = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID, sovereigntyHubID int64) (StructureSovereigntyHubDetail, error) {
-		return StructureSovereigntyHubDetail{
-			ID: 3001, SolarSystemID: 999999996,
-			WorkforceTransport: StructureSovereigntyHubTransport{
-				Configuration: StructureSovereigntyHubTransportConfig{
-					Kind:                 "import",
-					ImportSolarSystemIDs: []int64{999999997, 999999998, 999999999},
+	fake := &fakeStructuresESI{}
+	fake.getCorporationSovereigntyHub = func(ctx context.Context, corporationID, sovereigntyHubID int64) (*esiapi.CorporationsStructuresSovereigntyHubsDetail, error) {
+		return &esiapi.CorporationsStructuresSovereigntyHubsDetail{
+			Id: 3001, SolarSystemId: 999999996,
+			WorkforceTransport: esiapi.CorporationsStructuresSovereigntyHubsDetailTransport{
+				Configuration: esiapi.CorporationsStructuresSovereigntyHubsDetailTransportConfiguration{
+					ModelImport: &esiapi.ModelImport{Import: &esiapi.CorporationsStructuresSovereigntyHubsDetailTransportconfigurationimport{
+						Sources: []esiapi.CorporationsStructuresSovereigntyHubsDetailTransportconfigurationsource{{SolarSystemId: 999999997}, {SolarSystemId: 999999998}, {SolarSystemId: 999999999}},
+					}},
 				},
 			},
 		}, nil
@@ -972,7 +1046,7 @@ func TestGetCorporationSovereigntyHubHandler_ImportSolarSystemNamesNilOnTotalMis
 		return map[int64]string{}
 	}
 
-	handler := getCorporationSovereigntyHubHandler("v1", "client-id", store, nil)
+	handler := getCorporationSovereigntyHubHandler("v1", openStructuresFake[sovereigntyHubESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, GetCorporationSovereigntyHubInput{CharacterID: 7, CorporationID: 98000001, SovereigntyHubID: 3001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -989,14 +1063,15 @@ func TestGetCorporationSovereigntyHubHandler_ResolvesStateExportSolarSystemName(
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCorporationSovereigntyHub
-	t.Cleanup(func() { getCorporationSovereigntyHub = orig })
+	fake := &fakeStructuresESI{}
 	exportID := int64(30002187)
-	getCorporationSovereigntyHub = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID, sovereigntyHubID int64) (StructureSovereigntyHubDetail, error) {
-		return StructureSovereigntyHubDetail{
-			ID: 1, SolarSystemID: 30000142,
-			WorkforceTransport: StructureSovereigntyHubTransport{
-				State: StructureSovereigntyHubTransportState{Kind: "export", ExportSolarSystemID: &exportID},
+	fake.getCorporationSovereigntyHub = func(ctx context.Context, corporationID, sovereigntyHubID int64) (*esiapi.CorporationsStructuresSovereigntyHubsDetail, error) {
+		return &esiapi.CorporationsStructuresSovereigntyHubsDetail{
+			Id: 1, SolarSystemId: 30000142,
+			WorkforceTransport: esiapi.CorporationsStructuresSovereigntyHubsDetailTransport{
+				State: esiapi.CorporationsStructuresSovereigntyHubsDetailTransportState{
+					Export1: &esiapi.Export1{Export: &esiapi.CorporationsStructuresSovereigntyHubsDetailTransportstateexport{SolarSystemId: &exportID}},
+				},
 			},
 		}, nil
 	}
@@ -1007,7 +1082,7 @@ func TestGetCorporationSovereigntyHubHandler_ResolvesStateExportSolarSystemName(
 		return map[int64]string{30000142: "Jita", 30002187: "Amarr"}
 	}
 
-	handler := getCorporationSovereigntyHubHandler("v1", "client-id", store, nil)
+	handler := getCorporationSovereigntyHubHandler("v1", openStructuresFake[sovereigntyHubESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, GetCorporationSovereigntyHubInput{CharacterID: 7, CorporationID: 98000001, SovereigntyHubID: 1})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -1024,14 +1099,13 @@ func TestGetCorporationSovereigntyHubHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := getCorporationSovereigntyHub
-	t.Cleanup(func() { getCorporationSovereigntyHub = orig })
-	getCorporationSovereigntyHub = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID, sovereigntyHubID int64) (StructureSovereigntyHubDetail, error) {
+	fake := &fakeStructuresESI{}
+	fake.getCorporationSovereigntyHub = func(ctx context.Context, corporationID, sovereigntyHubID int64) (*esiapi.CorporationsStructuresSovereigntyHubsDetail, error) {
 		t.Fatal("getCorporationSovereigntyHub should not be called for an unknown character")
-		return StructureSovereigntyHubDetail{}, nil
+		return nil, nil
 	}
 
-	handler := getCorporationSovereigntyHubHandler("v1", "client-id", store, nil)
+	handler := getCorporationSovereigntyHubHandler("v1", openStructuresFake[sovereigntyHubESI](fake), store, nil)
 	_, _, err := handler(context.Background(), nil, GetCorporationSovereigntyHubInput{CharacterID: 999, CorporationID: 98000001, SovereigntyHubID: 3001})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -1045,16 +1119,37 @@ func TestGetCorporationSovereigntyHubHandler_PropagatesError(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCorporationSovereigntyHub
-	t.Cleanup(func() { getCorporationSovereigntyHub = orig })
+	fake := &fakeStructuresESI{}
 	wantErr := errors.New("upstream failure")
-	getCorporationSovereigntyHub = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID, sovereigntyHubID int64) (StructureSovereigntyHubDetail, error) {
-		return StructureSovereigntyHubDetail{}, wantErr
+	fake.getCorporationSovereigntyHub = func(ctx context.Context, corporationID, sovereigntyHubID int64) (*esiapi.CorporationsStructuresSovereigntyHubsDetail, error) {
+		return nil, wantErr
 	}
 
-	handler := getCorporationSovereigntyHubHandler("v1", "client-id", store, nil)
+	handler := getCorporationSovereigntyHubHandler("v1", openStructuresFake[sovereigntyHubESI](fake), store, nil)
 	_, _, err := handler(context.Background(), nil, GetCorporationSovereigntyHubInput{CharacterID: 7, CorporationID: 98000001, SovereigntyHubID: 3001})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
+	}
+}
+
+func TestGetCorporationSovereigntyHubHandler_UnknownTransportVariant(t *testing.T) {
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+
+	fake := &fakeStructuresESI{}
+	fake.getCorporationSovereigntyHub = func(ctx context.Context, corporationID, sovereigntyHubID int64) (*esiapi.CorporationsStructuresSovereigntyHubsDetail, error) {
+		return &esiapi.CorporationsStructuresSovereigntyHubsDetail{Id: 3001, SolarSystemId: 30000142}, nil
+	}
+
+	handler := getCorporationSovereigntyHubHandler("v1", openStructuresFake[sovereigntyHubESI](fake), store, nil)
+	_, out, err := handler(context.Background(), nil, GetCorporationSovereigntyHubInput{CharacterID: 7, CorporationID: 98000001, SovereigntyHubID: 3001})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if out.WorkforceTransport.Configuration.Kind != "unknown" || out.WorkforceTransport.State.Kind != "unknown" {
+		t.Errorf("WorkforceTransport = %+v, want Kind=unknown for both configuration and state", out.WorkforceTransport)
 	}
 }

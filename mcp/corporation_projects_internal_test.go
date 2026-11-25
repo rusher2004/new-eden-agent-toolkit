@@ -13,6 +13,79 @@ import (
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
 )
 
+// fakeProjectsESI fakes every ESI call the corporation project tools make; a test
+// sets the function for the call it exercises.
+type fakeProjectsESI struct {
+	getCorporationProjectContribution  func(ctx context.Context, corporationID int64, projectID string, targetCharacterID int64) (*esiapi.CorporationsProjectsContribution, error)
+	listCorporationProjectContributors func(ctx context.Context, corporationID int64, projectID string, after, before string, limit int64) ([]esiapi.CorporationsProjectsContributorsContributor, *esiapi.Cursor, error)
+	getCorporationProjectDetail        func(ctx context.Context, corporationID int64, projectID string) (*esiapi.CorporationsProjectsDetail, error)
+	listCorporationProjects            func(ctx context.Context, corporationID int64, after, before string, limit int64, state string) ([]esiapi.CorporationsProjectsDetailProject, *esiapi.Cursor, error)
+}
+
+func (f *fakeProjectsESI) CorporationProjectContribution(ctx context.Context, corporationID int64, projectID string, targetCharacterID int64) (*esiapi.CorporationsProjectsContribution, error) {
+	return f.getCorporationProjectContribution(ctx, corporationID, projectID, targetCharacterID)
+}
+func (f *fakeProjectsESI) CorporationProjectContributors(ctx context.Context, corporationID int64, projectID string, after, before string, limit int64) ([]esiapi.CorporationsProjectsContributorsContributor, *esiapi.Cursor, error) {
+	return f.listCorporationProjectContributors(ctx, corporationID, projectID, after, before, limit)
+}
+func (f *fakeProjectsESI) CorporationProjectDetail(ctx context.Context, corporationID int64, projectID string) (*esiapi.CorporationsProjectsDetail, error) {
+	return f.getCorporationProjectDetail(ctx, corporationID, projectID)
+}
+func (f *fakeProjectsESI) CorporationProjectListing(ctx context.Context, corporationID int64, after, before string, limit int64, state string) ([]esiapi.CorporationsProjectsDetailProject, *esiapi.Cursor, error) {
+	return f.listCorporationProjects(ctx, corporationID, after, before, limit, state)
+}
+
+// openProjectsFake opens the fake as the small interface one tool needs.
+func openProjectsFake[C any](c C) func(context.Context, int32) (C, error) {
+	return func(context.Context, int32) (C, error) { return c, nil }
+}
+
+// projectsOpenErrStore is a config store with one logged-in character, for the
+// failing-opener tests.
+func projectsOpenErrStore(t *testing.T) *config.Store {
+	t.Helper()
+	keyring.MockInit()
+	store := config.NewStoreAt(t.TempDir() + "/config.json")
+	if err := store.Save(config.Config{Characters: []config.Character{{ID: 7, Name: "Test Pilot"}}}); err != nil {
+		t.Fatalf("store.Save: %v", err)
+	}
+	return store
+}
+
+func TestCorporationProjectHandlers_PropagateOpenError(t *testing.T) {
+	store := projectsOpenErrStore(t)
+	wantErr := errors.New("keychain locked")
+
+	t.Run("contribution", func(t *testing.T) {
+		open := func(context.Context, int32) (projectContributionESI, error) { return nil, wantErr }
+		_, _, err := getCorporationProjectContributionHandler(open, store)(context.Background(), nil, GetCorporationProjectContributionInput{CharacterID: 7})
+		if !errors.Is(err, wantErr) {
+			t.Errorf("err = %v, want wrapping %v", err, wantErr)
+		}
+	})
+	t.Run("contributors", func(t *testing.T) {
+		open := func(context.Context, int32) (projectContributorsESI, error) { return nil, wantErr }
+		_, _, err := listCorporationProjectContributorsHandler(open, store)(context.Background(), nil, ListCorporationProjectContributorsInput{CharacterID: 7})
+		if !errors.Is(err, wantErr) {
+			t.Errorf("err = %v, want wrapping %v", err, wantErr)
+		}
+	})
+	t.Run("detail", func(t *testing.T) {
+		open := func(context.Context, int32) (projectDetailESI, error) { return nil, wantErr }
+		_, _, err := getCorporationProjectDetailHandler("v1", open, store, nil)(context.Background(), nil, GetCorporationProjectDetailInput{CharacterID: 7})
+		if !errors.Is(err, wantErr) {
+			t.Errorf("err = %v, want wrapping %v", err, wantErr)
+		}
+	})
+	t.Run("listing", func(t *testing.T) {
+		open := func(context.Context, int32) (projectListingESI, error) { return nil, wantErr }
+		_, _, err := listCorporationProjectsHandler(open, store)(context.Background(), nil, ListCorporationProjectsInput{CharacterID: 7})
+		if !errors.Is(err, wantErr) {
+			t.Errorf("err = %v, want wrapping %v", err, wantErr)
+		}
+	})
+}
+
 func TestGetCorporationProjectContributionHandler_MapsFields(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
@@ -20,14 +93,13 @@ func TestGetCorporationProjectContributionHandler_MapsFields(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCorporationProjectContribution
-	t.Cleanup(func() { getCorporationProjectContribution = orig })
+	fake := &fakeProjectsESI{}
 	lastModified := time.Unix(1000, 0)
-	getCorporationProjectContribution = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, projectID string, targetCharacterID int64) (*esiapi.CorporationsProjectsContribution, error) {
+	fake.getCorporationProjectContribution = func(ctx context.Context, corporationID int64, projectID string, targetCharacterID int64) (*esiapi.CorporationsProjectsContribution, error) {
 		return &esiapi.CorporationsProjectsContribution{Contributed: 500, LastModified: &lastModified}, nil
 	}
 
-	handler := getCorporationProjectContributionHandler("v1", "client-id", store)
+	handler := getCorporationProjectContributionHandler(openProjectsFake[projectContributionESI](fake), store)
 	_, out, err := handler(context.Background(), nil, GetCorporationProjectContributionInput{
 		CharacterID: 7, CorporationID: 98000001, ProjectID: "abc-123", TargetCharacterID: 998878,
 	})
@@ -45,14 +117,13 @@ func TestGetCorporationProjectContributionHandler_UnknownCharacter(t *testing.T)
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := getCorporationProjectContribution
-	t.Cleanup(func() { getCorporationProjectContribution = orig })
-	getCorporationProjectContribution = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, projectID string, targetCharacterID int64) (*esiapi.CorporationsProjectsContribution, error) {
+	fake := &fakeProjectsESI{}
+	fake.getCorporationProjectContribution = func(ctx context.Context, corporationID int64, projectID string, targetCharacterID int64) (*esiapi.CorporationsProjectsContribution, error) {
 		t.Fatal("getCorporationProjectContribution should not be called for an unknown character")
 		return nil, nil
 	}
 
-	handler := getCorporationProjectContributionHandler("v1", "client-id", store)
+	handler := getCorporationProjectContributionHandler(openProjectsFake[projectContributionESI](fake), store)
 	_, _, err := handler(context.Background(), nil, GetCorporationProjectContributionInput{
 		CharacterID: 999, CorporationID: 98000001, ProjectID: "abc-123", TargetCharacterID: 998878,
 	})
@@ -68,17 +139,16 @@ func TestListCorporationProjectContributorsHandler_MapsFieldsAndCursor(t *testin
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationProjectContributors
-	t.Cleanup(func() { listCorporationProjectContributors = orig })
+	fake := &fakeProjectsESI{}
 	after := "a"
 	before := "b"
-	listCorporationProjectContributors = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, projectID string, afterIn, beforeIn string, limit int64) ([]esiapi.CorporationsProjectsContributorsContributor, *esiapi.Cursor, error) {
+	fake.listCorporationProjectContributors = func(ctx context.Context, corporationID int64, projectID string, afterIn, beforeIn string, limit int64) ([]esiapi.CorporationsProjectsContributorsContributor, *esiapi.Cursor, error) {
 		return []esiapi.CorporationsProjectsContributorsContributor{
 			{Contributed: 500, Id: 998879, Name: "Some Pilot"},
 		}, &esiapi.Cursor{After: &after, Before: &before}, nil
 	}
 
-	handler := listCorporationProjectContributorsHandler("v1", "client-id", store)
+	handler := listCorporationProjectContributorsHandler(openProjectsFake[projectContributorsESI](fake), store)
 	_, out, err := handler(context.Background(), nil, ListCorporationProjectContributorsInput{
 		CharacterID: 7, CorporationID: 98000001, ProjectID: "abc-123",
 	})
@@ -101,14 +171,13 @@ func TestListCorporationProjectContributorsHandler_UnknownCharacter(t *testing.T
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := listCorporationProjectContributors
-	t.Cleanup(func() { listCorporationProjectContributors = orig })
-	listCorporationProjectContributors = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, projectID string, after, before string, limit int64) ([]esiapi.CorporationsProjectsContributorsContributor, *esiapi.Cursor, error) {
+	fake := &fakeProjectsESI{}
+	fake.listCorporationProjectContributors = func(ctx context.Context, corporationID int64, projectID string, after, before string, limit int64) ([]esiapi.CorporationsProjectsContributorsContributor, *esiapi.Cursor, error) {
 		t.Fatal("listCorporationProjectContributors should not be called for an unknown character")
 		return nil, nil, nil
 	}
 
-	handler := listCorporationProjectContributorsHandler("v1", "client-id", store)
+	handler := listCorporationProjectContributorsHandler(openProjectsFake[projectContributorsESI](fake), store)
 	_, _, err := handler(context.Background(), nil, ListCorporationProjectContributorsInput{
 		CharacterID: 999, CorporationID: 98000001, ProjectID: "abc-123",
 	})
@@ -124,8 +193,7 @@ func TestGetCorporationProjectDetailHandler_MapsFields(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCorporationProjectDetail
-	t.Cleanup(func() { getCorporationProjectDetail = orig })
+	fake := &fakeProjectsESI{}
 
 	archetypeID := int64(1)
 	factionID := int64(500001)
@@ -137,7 +205,7 @@ func TestGetCorporationProjectDetailHandler_MapsFields(t *testing.T) {
 	created := time.Unix(2000, 0)
 	lastModified := time.Unix(3000, 0)
 
-	getCorporationProjectDetail = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, projectID string) (*esiapi.CorporationsProjectsDetail, error) {
+	fake.getCorporationProjectDetail = func(ctx context.Context, corporationID int64, projectID string) (*esiapi.CorporationsProjectsDetail, error) {
 		return &esiapi.CorporationsProjectsDetail{
 			Configuration: esiapi.CorporationsProjectsDetailConfiguration{
 				CaptureFwComplex: &esiapi.CaptureFwComplex{
@@ -169,7 +237,7 @@ func TestGetCorporationProjectDetailHandler_MapsFields(t *testing.T) {
 		}, nil
 	}
 
-	handler := getCorporationProjectDetailHandler("v1", "client-id", store, nil)
+	handler := getCorporationProjectDetailHandler("v1", openProjectsFake[projectDetailESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, GetCorporationProjectDetailInput{
 		CharacterID: 7, CorporationID: 98000001, ProjectID: "abc-123",
 	})
@@ -238,11 +306,10 @@ func TestGetCorporationProjectDetailHandler_ConfigurationManualVariant(t *testin
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCorporationProjectDetail
-	t.Cleanup(func() { getCorporationProjectDetail = orig })
+	fake := &fakeProjectsESI{}
 
 	manualData := map[string]any{"foo": "bar", "count": float64(3)}
-	getCorporationProjectDetail = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, projectID string) (*esiapi.CorporationsProjectsDetail, error) {
+	fake.getCorporationProjectDetail = func(ctx context.Context, corporationID int64, projectID string) (*esiapi.CorporationsProjectsDetail, error) {
 		return &esiapi.CorporationsProjectsDetail{
 			Configuration: esiapi.CorporationsProjectsDetailConfiguration{
 				Manual: &esiapi.Manual{Manual: manualData},
@@ -255,7 +322,7 @@ func TestGetCorporationProjectDetailHandler_ConfigurationManualVariant(t *testin
 		}, nil
 	}
 
-	handler := getCorporationProjectDetailHandler("v1", "client-id", store, nil)
+	handler := getCorporationProjectDetailHandler("v1", openProjectsFake[projectDetailESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, GetCorporationProjectDetailInput{
 		CharacterID: 7, CorporationID: 98000001, ProjectID: "abc-124",
 	})
@@ -277,11 +344,10 @@ func TestGetCorporationProjectDetailHandler_ConfigurationUnknownVariant(t *testi
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCorporationProjectDetail
-	t.Cleanup(func() { getCorporationProjectDetail = orig })
+	fake := &fakeProjectsESI{}
 
 	unknownData := map[string]any{"raw": "payload"}
-	getCorporationProjectDetail = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, projectID string) (*esiapi.CorporationsProjectsDetail, error) {
+	fake.getCorporationProjectDetail = func(ctx context.Context, corporationID int64, projectID string) (*esiapi.CorporationsProjectsDetail, error) {
 		return &esiapi.CorporationsProjectsDetail{
 			Configuration: esiapi.CorporationsProjectsDetailConfiguration{
 				Unknown: &esiapi.Unknown{
@@ -299,7 +365,7 @@ func TestGetCorporationProjectDetailHandler_ConfigurationUnknownVariant(t *testi
 		}, nil
 	}
 
-	handler := getCorporationProjectDetailHandler("v1", "client-id", store, nil)
+	handler := getCorporationProjectDetailHandler("v1", openProjectsFake[projectDetailESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, GetCorporationProjectDetailInput{
 		CharacterID: 7, CorporationID: 98000001, ProjectID: "abc-125",
 	})
@@ -322,14 +388,13 @@ func TestGetCorporationProjectDetailHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := getCorporationProjectDetail
-	t.Cleanup(func() { getCorporationProjectDetail = orig })
-	getCorporationProjectDetail = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, projectID string) (*esiapi.CorporationsProjectsDetail, error) {
+	fake := &fakeProjectsESI{}
+	fake.getCorporationProjectDetail = func(ctx context.Context, corporationID int64, projectID string) (*esiapi.CorporationsProjectsDetail, error) {
 		t.Fatal("getCorporationProjectDetail should not be called for an unknown character")
 		return nil, nil
 	}
 
-	handler := getCorporationProjectDetailHandler("v1", "client-id", store, nil)
+	handler := getCorporationProjectDetailHandler("v1", openProjectsFake[projectDetailESI](fake), store, nil)
 	_, _, err := handler(context.Background(), nil, GetCorporationProjectDetailInput{
 		CharacterID: 999, CorporationID: 98000001, ProjectID: "abc-123",
 	})
@@ -345,10 +410,9 @@ func TestGetCorporationProjectDetailHandler_ResolvesShipTypeMatcherTypeName(t *t
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCorporationProjectDetail
-	t.Cleanup(func() { getCorporationProjectDetail = orig })
+	fake := &fakeProjectsESI{}
 	typeID := int64(587)
-	getCorporationProjectDetail = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, projectID string) (*esiapi.CorporationsProjectsDetail, error) {
+	fake.getCorporationProjectDetail = func(ctx context.Context, corporationID int64, projectID string) (*esiapi.CorporationsProjectsDetail, error) {
 		return &esiapi.CorporationsProjectsDetail{
 			Configuration: esiapi.CorporationsProjectsDetailConfiguration{
 				DamageShip: &esiapi.DamageShip{DamageShip: &esiapi.CorporationsProjectsDetailConfigurationdamageship{
@@ -370,7 +434,7 @@ func TestGetCorporationProjectDetailHandler_ResolvesShipTypeMatcherTypeName(t *t
 		return map[int64]string{587: "Rifter"}
 	}
 
-	handler := getCorporationProjectDetailHandler("v1", "client-id", store, nil)
+	handler := getCorporationProjectDetailHandler("v1", openProjectsFake[projectDetailESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, GetCorporationProjectDetailInput{CharacterID: 7, CorporationID: 98000001, ProjectID: "abc-123"})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -414,12 +478,11 @@ func TestGetCorporationProjectDetailHandler_ResolvesLocationMatcherNames(t *test
 		return map[int64]string{20000020: "Kimotoro"}
 	}
 
-	orig := getCorporationProjectDetail
-	t.Cleanup(func() { getCorporationProjectDetail = orig })
-	handler := getCorporationProjectDetailHandler("v1", "client-id", store, nil)
+	fake := &fakeProjectsESI{}
+	handler := getCorporationProjectDetailHandler("v1", openProjectsFake[projectDetailESI](fake), store, nil)
 
 	solarSystemID := int64(30000142)
-	getCorporationProjectDetail = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, projectID string) (*esiapi.CorporationsProjectsDetail, error) {
+	fake.getCorporationProjectDetail = func(ctx context.Context, corporationID int64, projectID string) (*esiapi.CorporationsProjectsDetail, error) {
 		return &esiapi.CorporationsProjectsDetail{
 			Configuration: esiapi.CorporationsProjectsDetailConfiguration{
 				CaptureFwComplex: &esiapi.CaptureFwComplex{CaptureFwComplex: &esiapi.CorporationsProjectsDetailConfigurationcapturefwcomplex{
@@ -446,7 +509,7 @@ func TestGetCorporationProjectDetailHandler_ResolvesLocationMatcherNames(t *test
 
 	stationID := int64(60003760)
 	structureID := int64(1000000012345)
-	getCorporationProjectDetail = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, projectID string) (*esiapi.CorporationsProjectsDetail, error) {
+	fake.getCorporationProjectDetail = func(ctx context.Context, corporationID int64, projectID string) (*esiapi.CorporationsProjectsDetail, error) {
 		return &esiapi.CorporationsProjectsDetail{
 			Configuration: esiapi.CorporationsProjectsDetailConfiguration{
 				DeliverItem: &esiapi.DeliverItem{DeliverItem: &esiapi.CorporationsProjectsDetailConfigurationdeliveritem{
@@ -483,7 +546,7 @@ func TestGetCorporationProjectDetailHandler_ResolvesLocationMatcherNames(t *test
 
 	regionID := int64(10000002)
 	constellationID := int64(20000020)
-	getCorporationProjectDetail = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, projectID string) (*esiapi.CorporationsProjectsDetail, error) {
+	fake.getCorporationProjectDetail = func(ctx context.Context, corporationID int64, projectID string) (*esiapi.CorporationsProjectsDetail, error) {
 		return &esiapi.CorporationsProjectsDetail{
 			Configuration: esiapi.CorporationsProjectsDetailConfiguration{
 				CaptureFwComplex: &esiapi.CaptureFwComplex{CaptureFwComplex: &esiapi.CorporationsProjectsDetailConfigurationcapturefwcomplex{
@@ -520,11 +583,10 @@ func TestGetCorporationProjectDetailHandler_ResolvesGroupAndFactionNames(t *test
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCorporationProjectDetail
-	t.Cleanup(func() { getCorporationProjectDetail = orig })
+	fake := &fakeProjectsESI{}
 	groupID := int64(25)
 	factionID := int64(500001)
-	getCorporationProjectDetail = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, projectID string) (*esiapi.CorporationsProjectsDetail, error) {
+	fake.getCorporationProjectDetail = func(ctx context.Context, corporationID int64, projectID string) (*esiapi.CorporationsProjectsDetail, error) {
 		return &esiapi.CorporationsProjectsDetail{
 			Configuration: esiapi.CorporationsProjectsDetailConfiguration{
 				DamageShip: &esiapi.DamageShip{DamageShip: &esiapi.CorporationsProjectsDetailConfigurationdamageship{
@@ -556,7 +618,7 @@ func TestGetCorporationProjectDetailHandler_ResolvesGroupAndFactionNames(t *test
 		return map[int64]string{500001: "Caldari State"}
 	}
 
-	handler := getCorporationProjectDetailHandler("v1", "client-id", store, nil)
+	handler := getCorporationProjectDetailHandler("v1", openProjectsFake[projectDetailESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, GetCorporationProjectDetailInput{CharacterID: 7, CorporationID: 98000001, ProjectID: "abc-200"})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -582,8 +644,7 @@ func TestGetCorporationProjectDetailHandler_ResolvesMaterialsAndFactionsNames(t 
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCorporationProjectDetail
-	t.Cleanup(func() { getCorporationProjectDetail = orig })
+	fake := &fakeProjectsESI{}
 	origGroup := resolveGroupNames
 	t.Cleanup(func() { resolveGroupNames = origGroup })
 	origFaction := resolveFactionNames
@@ -591,7 +652,7 @@ func TestGetCorporationProjectDetailHandler_ResolvesMaterialsAndFactionsNames(t 
 
 	t.Run("materials", func(t *testing.T) {
 		materialGroupID := int64(18)
-		getCorporationProjectDetail = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, projectID string) (*esiapi.CorporationsProjectsDetail, error) {
+		fake.getCorporationProjectDetail = func(ctx context.Context, corporationID int64, projectID string) (*esiapi.CorporationsProjectsDetail, error) {
 			return &esiapi.CorporationsProjectsDetail{
 				Configuration: esiapi.CorporationsProjectsDetailConfiguration{
 					MineMaterial: &esiapi.MineMaterial{MineMaterial: &esiapi.CorporationsProjectsDetailConfigurationminematerial{
@@ -615,7 +676,7 @@ func TestGetCorporationProjectDetailHandler_ResolvesMaterialsAndFactionsNames(t 
 			return nil
 		}
 
-		handler := getCorporationProjectDetailHandler("v1", "client-id", store, nil)
+		handler := getCorporationProjectDetailHandler("v1", openProjectsFake[projectDetailESI](fake), store, nil)
 		_, out, err := handler(context.Background(), nil, GetCorporationProjectDetailInput{CharacterID: 7, CorporationID: 98000001, ProjectID: "abc-201"})
 		if err != nil {
 			t.Fatalf("handler returned error: %v", err)
@@ -627,7 +688,7 @@ func TestGetCorporationProjectDetailHandler_ResolvesMaterialsAndFactionsNames(t 
 
 	t.Run("factions", func(t *testing.T) {
 		fwFactionID := int64(500002)
-		getCorporationProjectDetail = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, projectID string) (*esiapi.CorporationsProjectsDetail, error) {
+		fake.getCorporationProjectDetail = func(ctx context.Context, corporationID int64, projectID string) (*esiapi.CorporationsProjectsDetail, error) {
 			return &esiapi.CorporationsProjectsDetail{
 				Configuration: esiapi.CorporationsProjectsDetailConfiguration{
 					CaptureFwComplex: &esiapi.CaptureFwComplex{CaptureFwComplex: &esiapi.CorporationsProjectsDetailConfigurationcapturefwcomplex{
@@ -651,7 +712,7 @@ func TestGetCorporationProjectDetailHandler_ResolvesMaterialsAndFactionsNames(t 
 			return map[int64]string{500002: "Minmatar Republic"}
 		}
 
-		handler := getCorporationProjectDetailHandler("v1", "client-id", store, nil)
+		handler := getCorporationProjectDetailHandler("v1", openProjectsFake[projectDetailESI](fake), store, nil)
 		_, out, err := handler(context.Background(), nil, GetCorporationProjectDetailInput{CharacterID: 7, CorporationID: 98000001, ProjectID: "abc-202"})
 		if err != nil {
 			t.Fatalf("handler returned error: %v", err)
@@ -669,12 +730,11 @@ func TestListCorporationProjectsHandler_MapsFieldsAndCursor(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationProjects
-	t.Cleanup(func() { listCorporationProjects = orig })
+	fake := &fakeProjectsESI{}
 	after := "cursor-after"
 	before := "cursor-before"
 	lastModified := time.Unix(4000, 0)
-	listCorporationProjects = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, afterIn, beforeIn string, limit int64, state string) ([]esiapi.CorporationsProjectsDetailProject, *esiapi.Cursor, error) {
+	fake.listCorporationProjects = func(ctx context.Context, corporationID int64, afterIn, beforeIn string, limit int64, state string) ([]esiapi.CorporationsProjectsDetailProject, *esiapi.Cursor, error) {
 		return []esiapi.CorporationsProjectsDetailProject{
 			{
 				Id: "proj-1", LastModified: lastModified, Name: "Test Project",
@@ -685,7 +745,7 @@ func TestListCorporationProjectsHandler_MapsFieldsAndCursor(t *testing.T) {
 		}, &esiapi.Cursor{After: &after, Before: &before}, nil
 	}
 
-	handler := listCorporationProjectsHandler("v1", "client-id", store)
+	handler := listCorporationProjectsHandler(openProjectsFake[projectListingESI](fake), store)
 	_, out, err := handler(context.Background(), nil, ListCorporationProjectsInput{
 		CharacterID: 7, CorporationID: 98000001,
 	})
@@ -710,14 +770,13 @@ func TestListCorporationProjectsHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := listCorporationProjects
-	t.Cleanup(func() { listCorporationProjects = orig })
-	listCorporationProjects = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, after, before string, limit int64, state string) ([]esiapi.CorporationsProjectsDetailProject, *esiapi.Cursor, error) {
+	fake := &fakeProjectsESI{}
+	fake.listCorporationProjects = func(ctx context.Context, corporationID int64, after, before string, limit int64, state string) ([]esiapi.CorporationsProjectsDetailProject, *esiapi.Cursor, error) {
 		t.Fatal("listCorporationProjects should not be called for an unknown character")
 		return nil, nil, nil
 	}
 
-	handler := listCorporationProjectsHandler("v1", "client-id", store)
+	handler := listCorporationProjectsHandler(openProjectsFake[projectListingESI](fake), store)
 	_, _, err := handler(context.Background(), nil, ListCorporationProjectsInput{
 		CharacterID: 999, CorporationID: 98000001,
 	})
@@ -807,14 +866,13 @@ func TestGetCorporationProjectContributionHandler_PropagatesError(t *testing.T) 
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCorporationProjectContribution
-	t.Cleanup(func() { getCorporationProjectContribution = orig })
+	fake := &fakeProjectsESI{}
 	wantErr := errors.New("upstream failure")
-	getCorporationProjectContribution = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, projectID string, targetCharacterID int64) (*esiapi.CorporationsProjectsContribution, error) {
+	fake.getCorporationProjectContribution = func(ctx context.Context, corporationID int64, projectID string, targetCharacterID int64) (*esiapi.CorporationsProjectsContribution, error) {
 		return nil, wantErr
 	}
 
-	handler := getCorporationProjectContributionHandler("v1", "client-id", store)
+	handler := getCorporationProjectContributionHandler(openProjectsFake[projectContributionESI](fake), store)
 	_, _, err := handler(context.Background(), nil, GetCorporationProjectContributionInput{
 		CharacterID: 7, CorporationID: 98000001, ProjectID: "abc-123", TargetCharacterID: 998878,
 	})
@@ -830,14 +888,13 @@ func TestListCorporationProjectContributorsHandler_PropagatesError(t *testing.T)
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationProjectContributors
-	t.Cleanup(func() { listCorporationProjectContributors = orig })
+	fake := &fakeProjectsESI{}
 	wantErr := errors.New("upstream failure")
-	listCorporationProjectContributors = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, projectID string, after, before string, limit int64) ([]esiapi.CorporationsProjectsContributorsContributor, *esiapi.Cursor, error) {
+	fake.listCorporationProjectContributors = func(ctx context.Context, corporationID int64, projectID string, after, before string, limit int64) ([]esiapi.CorporationsProjectsContributorsContributor, *esiapi.Cursor, error) {
 		return nil, nil, wantErr
 	}
 
-	handler := listCorporationProjectContributorsHandler("v1", "client-id", store)
+	handler := listCorporationProjectContributorsHandler(openProjectsFake[projectContributorsESI](fake), store)
 	_, _, err := handler(context.Background(), nil, ListCorporationProjectContributorsInput{
 		CharacterID: 7, CorporationID: 98000001, ProjectID: "abc-123",
 	})
@@ -853,14 +910,13 @@ func TestGetCorporationProjectDetailHandler_PropagatesError(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCorporationProjectDetail
-	t.Cleanup(func() { getCorporationProjectDetail = orig })
+	fake := &fakeProjectsESI{}
 	wantErr := errors.New("upstream failure")
-	getCorporationProjectDetail = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, projectID string) (*esiapi.CorporationsProjectsDetail, error) {
+	fake.getCorporationProjectDetail = func(ctx context.Context, corporationID int64, projectID string) (*esiapi.CorporationsProjectsDetail, error) {
 		return nil, wantErr
 	}
 
-	handler := getCorporationProjectDetailHandler("v1", "client-id", store, nil)
+	handler := getCorporationProjectDetailHandler("v1", openProjectsFake[projectDetailESI](fake), store, nil)
 	_, _, err := handler(context.Background(), nil, GetCorporationProjectDetailInput{
 		CharacterID: 7, CorporationID: 98000001, ProjectID: "abc-123",
 	})
@@ -876,14 +932,13 @@ func TestListCorporationProjectsHandler_PropagatesError(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationProjects
-	t.Cleanup(func() { listCorporationProjects = orig })
+	fake := &fakeProjectsESI{}
 	wantErr := errors.New("upstream failure")
-	listCorporationProjects = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, after, before string, limit int64, state string) ([]esiapi.CorporationsProjectsDetailProject, *esiapi.Cursor, error) {
+	fake.listCorporationProjects = func(ctx context.Context, corporationID int64, after, before string, limit int64, state string) ([]esiapi.CorporationsProjectsDetailProject, *esiapi.Cursor, error) {
 		return nil, nil, wantErr
 	}
 
-	handler := listCorporationProjectsHandler("v1", "client-id", store)
+	handler := listCorporationProjectsHandler(openProjectsFake[projectListingESI](fake), store)
 	_, _, err := handler(context.Background(), nil, ListCorporationProjectsInput{
 		CharacterID: 7, CorporationID: 98000001,
 	})

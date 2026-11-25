@@ -82,4 +82,7 @@ func addConvertedTools(s *mcpsdk.Server, d toolDeps) {
 	addRouteTools(s, d)
 	addSearchTools(s, d)
 	addStatusTools(s, d)
+	addFactionWarfareTools(s, d)
+	addCorporationProjectTools(s, d)
+	addStructureTools(s, d)
 }
