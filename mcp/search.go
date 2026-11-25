@@ -65,7 +65,7 @@ func searchCharacterHandler[C searchESI](userAgent string, open func(ctx context
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, SearchCharacterOutput{}, fmt.Errorf("build ESI client: %w", err)
+			return nil, SearchCharacterOutput{}, fmt.Errorf("search character: %w", err)
 		}
 		results, err := searchCharacter(ctx, client, in.Categories, in.Search, in.Strict)
 		if err != nil {

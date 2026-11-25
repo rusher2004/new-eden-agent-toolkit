@@ -12,7 +12,7 @@ import (
 // methods are nil-safe, so the server must still build.
 func TestNewMCPServer_BuildsWithNilSDE(t *testing.T) {
 	store := config.NewStoreAt(filepath.Join(t.TempDir(), "config.json"))
-	if _, err := commands.NewMCPServer("test", "client-id", store, nil); err != nil {
-		t.Fatalf("NewMCPServer with a nil SDE store: %v", err)
+	if commands.NewMCPServer("test", "client-id", store, nil) == nil {
+		t.Fatal("NewMCPServer with a nil SDE store returned no server")
 	}
 }

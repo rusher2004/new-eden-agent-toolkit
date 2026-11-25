@@ -1,9 +1,10 @@
 # Consumer-defined interfaces for the mcp package
 
-Status: in progress. The first PR of the stack settles the pattern: explicit
-wiring from `commands/`, the `loyalty.go` worked example, the audit and the
-standards. The remaining files follow in later PRs, and PRs written against the
-earlier `Deps`/`narrowESI` design are updated to it.
+Status: done. The foundation settled the pattern (explicit wiring from
+`commands/`, the `loyalty.go` worked example, the audit and the standards), the
+ported PRs moved every file in `mcp/` to it, and the cleanup deleted `Deps`,
+`ConfigStore`, `SDEStore` and `NewServer`'s registrations. `ifaceaudit` now
+fails CI on any `CONCRETE_*`, `PRODUCER_IFACE`, `IFACE_AWAY` or `TYPE_ONLY_FILE`.
 
 `tools/ifaceaudit` narrowed in that first PR: a CONCRETE_PARAM now needs a
 producer type that a pointer-returning exported `New*`/`Open*` constructor
@@ -52,20 +53,14 @@ overwrote.
 
 ## The wiring
 
-`commands.NewMCPServer(version, clientID, store, sdeStore)` builds the server.
-While files are being converted it also calls `mcp.NewServer(version, deps)`,
-which registers the not-yet-converted tools through the transitional
-`mcp.Deps{ClientID, Config, SDE}` with the `ConfigStore` and `SDEStore`
-unions. A file that moves:
+`commands.NewMCPServer(version, clientID, store, sdeStore)` calls
+`mcp.NewServer(version)`, which returns a server carrying only the
+instructions, then `addConvertedTools` (`commands/mcp_tools.go`), which
+registers every tool, grouped by area in `commands/mcp_tools_*.go`. A new tool:
 
-1. exports `Add...` functions, one per tool, with the tool's name and
-   description;
-2. deletes its registrations from `mcp.NewServer`;
-3. gains one line per tool in `addConvertedTools` (`commands/mcp_tools.go`).
-
-When the last file has moved, `Deps`, `ConfigStore`, `SDEStore` and
-`NewServer`'s registrations are deleted, and `NewServer` is `mcpsdk.NewServer`
-plus the instructions.
+1. is its own file in `mcp/` with an exported `Add...` function carrying the
+   tool's name and description;
+2. gains one line in the matching `add<Area>Tools` function in `commands/`.
 
 `toolDeps` in `commands/mcp_tools.go` holds the concrete producers and two
 methods, `openESI(ctx, characterID) (*esi.Client, error)` and
@@ -112,10 +107,10 @@ calls in `commands/mcp_tools.go`.
    kinds takes two type parameters.
 5. Config: a handler that only reads config takes `configLoader` (declared in
    `list_characters.go`, used by the other files). One that writes declares its
-   own small interface in its file. Do not use `ConfigStore` in a converted file.
+   own small interface in its file. There is no `ConfigStore`.
 6. SDE: a function that needs a few SDE calls declares its own interface (see
    the `*NameCache` interfaces in `enrich.go`). Reuse an existing one when it
-   matches. Do not use `SDEStore` in a converted file.
+   matches. There is no `SDEStore`.
 7. Tests: replace every `orig := x; x = func...; t.Cleanup` override of the ESI
    seam with a fake of the small interface declared in the `_test.go`, returning
    `esiapi` values, and call the handler constructor with it. Keep every
@@ -145,12 +140,14 @@ Package-level function variables that are not ESI seams (for example
 
 ## Stack
 
-1. Foundation (this PR): the pattern, `commands.NewMCPServer`, `loyalty.go` as
-   the worked example, the audit changes and the standards.
-2. The remaining PRs move files to the pattern: each deletes its registrations
-   from `mcp.NewServer`, exports `Add...` functions and adds its lines to
-   `addConvertedTools`. PRs already written against `Deps` and `narrowESI`
-   are updated to this wiring.
-3. Cleanup: delete `Deps`, `ConfigStore`, `SDEStore` and `NewServer`'s
-   registrations, add the CI test for `CONCRETE_*`, and update CLAUDE.md and
-   the docs.
+All three steps are done:
+
+1. Foundation: the pattern, `commands.NewMCPServer`, `loyalty.go` as the worked
+   example, the audit changes and the standards.
+2. Every other file in `mcp/` moved to the pattern, each exporting `Add...`
+   functions registered from `commands/`.
+3. Cleanup: `Deps`, `ConfigStore`, `SDEStore` and `NewServer`'s registrations
+   are deleted (`NewServer(version)` is the SDK server plus the instructions),
+   `add_character` reaches the login flow through its own `characterLogin`
+   interface that `commands/mcp_tools_admin.go` implements over `sso`, and
+   the CI tests above keep the repo clean.

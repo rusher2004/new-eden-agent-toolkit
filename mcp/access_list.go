@@ -65,7 +65,7 @@ func listAccessListsHandler[C accessListESI](open func(ctx context.Context, char
 
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, ListAccessListsOutput{}, fmt.Errorf("build ESI client: %w", err)
+			return nil, ListAccessListsOutput{}, fmt.Errorf("list access lists: %w", err)
 		}
 		ids, err := listAccessLists(ctx, client)
 		if err != nil {
@@ -168,7 +168,7 @@ func getAccessListHandler[C accessListESI](open func(ctx context.Context, charac
 
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, GetAccessListOutput{}, fmt.Errorf("build ESI client: %w", err)
+			return nil, GetAccessListOutput{}, fmt.Errorf("get access list: %w", err)
 		}
 		result, err := getAccessListDetail(ctx, client, in.AccessListID)
 		if err != nil {

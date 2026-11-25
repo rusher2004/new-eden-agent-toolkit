@@ -9,15 +9,67 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
-// addCharacters and grantedScopes are overridable in tests so no real
-// browser/network/OAuth2 flow runs during unit tests.
-var (
-	addCharacters = sso.AddCharacters
-	grantedScopes = sso.GrantedScopes
-)
+// LoginCharacter is a character the login flow knows about: one just logged
+// in, or one neat already has saved.
+type LoginCharacter struct {
+	ID   int32
+	Name string
+	// Account is the user's label for the EVE account the character is on;
+	// empty means unknown.
+	Account string
+	// Scopes are the ESI scopes the login granted, empty for a saved
+	// character that wasn't logged in this session.
+	Scopes []string
+}
+
+// AccountEdits saves the account grouping the user sets on the login page.
+// Each call is one change; an error is shown on the page.
+type AccountEdits struct {
+	// Set gives a character an account label; "" makes it unassigned.
+	Set func(characterID int32, label string) error
+	// Rename relabels every character in an account.
+	Rename func(from, to string) error
+	// Delete unassigns every character in an account.
+	Delete func(label string) error
+}
+
+// LoginOptions configures one browser login session.
+type LoginOptions struct {
+	// Scopes are the ESI scopes requested for every character.
+	Scopes []string
+	// OnAdded is called as each character's login completes, so it can be
+	// saved while the session is still open.
+	OnAdded func(LoginCharacter) error
+	// SavedCharacters lists the characters neat already knows, for the
+	// session page.
+	SavedCharacters func() ([]LoginCharacter, error)
+	// Accounts lets the user group characters by account on the session page.
+	Accounts *AccountEdits
+}
+
+// characterLogin is what add_character asks of the login flow: map scope
+// group names to scopes, read what a character already granted, and run a
+// browser session that logs in characters. The composition root implements it
+// over the ESI login flow.
+type characterLogin interface {
+	// ScopesFor returns the scopes for the always-included basic group plus
+	// groups, or an error naming an unknown group.
+	ScopesFor(groups []string) ([]string, error)
+	// GrantedGroups names the scope groups scopes fully cover.
+	GrantedGroups(scopes []string) []string
+	// GrantedScopes reads the scopes a logged-in character currently holds.
+	GrantedScopes(ctx context.Context, characterID int32) ([]string, error)
+	// AddCharacters runs a login session and returns every character added.
+	AddCharacters(ctx context.Context, opts LoginOptions) ([]LoginCharacter, error)
+}
+
+// scopeGroupCatalog is what list_scope_groups asks of the login flow.
+type scopeGroupCatalog interface {
+	// ScopeGroups lists every scope group a login can request.
+	ScopeGroups() []ScopeGroupInfo
+}
 
 // AddCharacterInput is add_character's input.
 type AddCharacterInput struct {
@@ -41,10 +93,28 @@ type AddCharacterOutput struct {
 	Warnings   []string         `json:"warnings,omitempty"`
 }
 
-func addCharacterHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[AddCharacterInput, AddCharacterOutput] {
+// AddAddCharacter registers add_character. login is the ESI login flow;
+// store is the config the added characters are saved to.
+func AddAddCharacter(s *mcpsdk.Server, login characterLogin, store addCharacterConfig) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name: "add_character",
+		Description: "Log in EVE Online characters via ESI OAuth2. Opens the user's browser at EVE's login page; afterwards the browser shows a neat page listing their characters, where they can log in more characters before clicking Done or closing the tab. Blocks until then and returns every character added, with the scope groups each granted. " +
+			"Every login grants the basic scope group plus scopeGroups: before calling, ask the user what they'll use neat for, including whether they want their corporation's data, and pick groups from list_scope_groups (or use only basic if they don't know). A login replaces each character's access with exactly what it requested, so to add a group to characters already logged in, either pass characterId or list every group they should end up with; list_characters doesn't show a character's current groups, so if you don't know them, pass characterId. " +
+			"If no browser tab opens, the user can open http://127.0.0.1:48211/ themselves while the tool waits. " +
+			"To grant more groups to a character later (e.g. after a tool fails because a scope is missing), pass its characterId: its existing scopes are kept. Check the result's warnings: they say when the user logged in as a different character, or when the character's earlier scope groups couldn't be read and may need granting again. Re-adding a known character refreshes its login.",
+	}, addCharacterHandler(login, store))
+}
+
+// addCharacterConfig is the config calls add_character makes: read the saved
+// characters, and change them under the store's lock.
+type addCharacterConfig interface {
+	configLoader
+	configUpdater
+}
+
+func addCharacterHandler(login characterLogin, store addCharacterConfig) mcpsdk.ToolHandlerFor[AddCharacterInput, AddCharacterOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in AddCharacterInput) (*mcpsdk.CallToolResult, AddCharacterOutput, error) {
-		userAgent := sso.UserAgent(version)
-		scopes, err := sso.ScopesFor(in.ScopeGroups)
+		scopes, err := login.ScopesFor(in.ScopeGroups)
 		if err != nil {
 			return nil, AddCharacterOutput{}, err
 		}
@@ -56,21 +126,21 @@ func addCharacterHandler(version, clientID string, store ConfigStore) mcpsdk.Too
 			// everything the character already granted. If they can't be
 			// read (most often a revoked refresh token, which this login
 			// is the fix for), go ahead, but say what may have been lost.
-			kept, err := grantedScopes(ctx, clientID, in.CharacterID, userAgent)
+			kept, err := login.GrantedScopes(ctx, in.CharacterID)
 			if err != nil {
 				slog.Default().WarnContext(ctx, "add_character: can't read the character's current scopes; requesting only the chosen groups", "characterId", in.CharacterID, "error", err)
 				scopesKept = false
-				warnings = append(warnings, fmt.Sprintf("couldn't read the scope groups character %d had already granted (%v), so this login requested only %v. Any other group it had before is no longer granted: ask the user whether it needs any back, and if so call add_character again with characterId %d and those groups.", in.CharacterID, err, sso.GrantedGroups(scopes), in.CharacterID))
+				warnings = append(warnings, fmt.Sprintf("couldn't read the scope groups character %d had already granted (%v), so this login requested only %v. Any other group it had before is no longer granted: ask the user whether it needs any back, and if so call add_character again with characterId %d and those groups.", in.CharacterID, err, login.GrantedGroups(scopes), in.CharacterID))
 			}
 			scopes = union(scopes, kept)
 		}
 
-		chars, err := addCharacters(ctx, clientID, userAgent, sso.AddOptions{
+		chars, err := login.AddCharacters(ctx, LoginOptions{
 			Scopes: scopes,
 			// Save each character as its login completes, not once the
 			// session ends, so the session page lists it and an abandoned
 			// session doesn't lose it.
-			OnAdded: func(c sso.Character) error {
+			OnAdded: func(c LoginCharacter) error {
 				if _, err := store.Update(func(cfg *config.Config) error {
 					cfg.UpsertCharacter(config.Character{ID: c.ID, Name: c.Name})
 					return nil
@@ -79,14 +149,14 @@ func addCharacterHandler(version, clientID string, store ConfigStore) mcpsdk.Too
 				}
 				return nil
 			},
-			SavedCharacters: func() ([]sso.Character, error) {
+			SavedCharacters: func() ([]LoginCharacter, error) {
 				cfg, err := store.Load()
 				if err != nil {
 					return nil, fmt.Errorf("load config: %w", err)
 				}
-				out := make([]sso.Character, len(cfg.Characters))
+				out := make([]LoginCharacter, len(cfg.Characters))
 				for i, c := range cfg.Characters {
-					out[i] = sso.Character{ID: c.ID, Name: c.Name, Account: c.Account}
+					out[i] = LoginCharacter{ID: c.ID, Name: c.Name, Account: c.Account}
 				}
 				return out, nil
 			},
@@ -99,7 +169,7 @@ func addCharacterHandler(version, clientID string, store ConfigStore) mcpsdk.Too
 		out := AddCharacterOutput{Characters: make([]AddedCharacter, len(chars))}
 		reauthorized := false
 		for i, c := range chars {
-			out.Characters[i] = AddedCharacter{CharacterID: c.ID, CharacterName: c.Name, ScopeGroups: sso.GrantedGroups(c.Scopes)}
+			out.Characters[i] = AddedCharacter{CharacterID: c.ID, CharacterName: c.Name, ScopeGroups: login.GrantedGroups(c.Scopes)}
 			if c.ID == in.CharacterID {
 				reauthorized = true
 			}
@@ -134,12 +204,12 @@ func addCharacterHandler(version, clientID string, store ConfigStore) mcpsdk.Too
 }
 
 // accountEditor saves the account grouping the user sets on the login page.
-func accountEditor(store ConfigStore) *sso.AccountEditor {
+func accountEditor(store configUpdater) *AccountEdits {
 	edit := func(change func(*config.Config) error) error {
 		_, err := store.Update(change)
 		return err
 	}
-	return &sso.AccountEditor{
+	return &AccountEdits{
 		Set: func(id int32, label string) error {
 			return edit(func(c *config.Config) error { _, err := c.SetCharacterAccount(id, label); return err })
 		},
@@ -182,12 +252,17 @@ type ListScopeGroupsOutput struct {
 	Groups []ScopeGroupInfo `json:"groups"`
 }
 
-func listScopeGroupsHandler() mcpsdk.ToolHandlerFor[any, ListScopeGroupsOutput] {
+// AddListScopeGroups registers list_scope_groups. catalog lists the scope
+// groups the login flow can grant.
+func AddListScopeGroups(s *mcpsdk.Server, catalog scopeGroupCatalog) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_scope_groups",
+		Description: "List the scope groups add_character can grant a character: each group's name, what it lets neat do, and its ESI scopes. The basic group is always granted.",
+	}, listScopeGroupsHandler(catalog))
+}
+
+func listScopeGroupsHandler(catalog scopeGroupCatalog) mcpsdk.ToolHandlerFor[any, ListScopeGroupsOutput] {
 	return func(context.Context, *mcpsdk.CallToolRequest, any) (*mcpsdk.CallToolResult, ListScopeGroupsOutput, error) {
-		out := ListScopeGroupsOutput{Groups: make([]ScopeGroupInfo, len(sso.ScopeGroups))}
-		for i, g := range sso.ScopeGroups {
-			out.Groups[i] = ScopeGroupInfo{Name: g.Name, Description: g.Description, Default: g.Name == sso.DefaultScopeGroup, Scopes: g.Scopes}
-		}
-		return nil, out, nil
+		return nil, ListScopeGroupsOutput{Groups: catalog.ScopeGroups()}, nil
 	}
 }

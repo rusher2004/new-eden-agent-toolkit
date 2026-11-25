@@ -1,6 +1,6 @@
 {
   "name": "neat",
-  "version": "0.20.13",
+  "version": "0.20.14",
   "description": "Connects Claude to EVE Online: wallets, assets, skills, mail, market, corporations and universe data through Fenris Creations' ESI API, plus industry build planning, compressed-ore buying, trade hub comparison, and planning any move of cargo, ships or characters (haulers and cyno lighters, fitted holds, jump clones, routes, docking and fuel), with skills that guide logins and planning. Needs the neat program on PATH.",
   "author": {
     "name": "rusher2004"

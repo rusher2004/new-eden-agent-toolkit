@@ -1,5 +1,8 @@
 # neat plugin — changelog
 
+## 0.20.14
+- No change for players. Internal refactor: the login, character list, character details and remove tools, and the rest of the server, now get their config, static data, ESI client and login flow from the command that starts the server, so no tool builds its own.
+
 ## 0.20.13
 - The logistics overview now names any character it couldn't re-check for an account conflict, and `save_structure` no longer blames docking access when the real problem is a missing login. Internal: one public ESI client per trade hub scan, clearer error text, and review follow-ups from the ESI client refactor.
 

@@ -161,10 +161,7 @@ func listTools(ctx context.Context) (_ []*mcpsdk.Tool, err error) {
 
 	// Listing tools never calls one, so the SDE is a nil store (every
 	// sde.Store method is nil-safe) and no ESI client is ever opened.
-	server, err := commands.NewMCPServer("docs", "docs", config.NewStoreAt(filepath.Join(dir, "config.json")), nil)
-	if err != nil {
-		return nil, fmt.Errorf("build server: %w", err)
-	}
+	server := commands.NewMCPServer("docs", "docs", config.NewStoreAt(filepath.Join(dir, "config.json")), nil)
 	serverTransport, clientTransport := mcpsdk.NewInMemoryTransports()
 	serverSession, err := server.Connect(ctx, serverTransport, nil)
 	if err != nil {

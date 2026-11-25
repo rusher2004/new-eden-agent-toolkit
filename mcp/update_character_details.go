@@ -40,7 +40,16 @@ type UpdateCharacterDetailsOutput struct {
 	Warnings   []string        `json:"warnings,omitempty"`
 }
 
-func updateCharacterDetailsHandler(store ConfigStore) mcpsdk.ToolHandlerFor[UpdateCharacterDetailsInput, UpdateCharacterDetailsOutput] {
+// AddUpdateCharacterDetails registers update_character_details, which writes
+// ~/.neat/characters.yaml through store.
+func AddUpdateCharacterDetails(s *mcpsdk.Server, store configUpdater) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "update_character_details",
+		Description: "Record what the user tells you about their characters: which EVE account each is on (an account label shared by the characters on that account), and notes on what a character is for. Also renames an account label for every character that has it. Ask about accounts whenever list_characters or add_character warns that one is unknown, and save notes the user gives you. Returns every value changed, old and new, so you can tell the user what was saved. Writes to ~/.neat/characters.yaml only.",
+	}, updateCharacterDetailsHandler(store))
+}
+
+func updateCharacterDetailsHandler(store configUpdater) mcpsdk.ToolHandlerFor[UpdateCharacterDetailsInput, UpdateCharacterDetailsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in UpdateCharacterDetailsInput) (*mcpsdk.CallToolResult, UpdateCharacterDetailsOutput, error) {
 		if in.Account == nil && in.Notes == nil && in.RenameAccount == nil {
 			return nil, UpdateCharacterDetailsOutput{}, fmt.Errorf("update character details: give account, notes or renameAccount")

@@ -105,7 +105,7 @@ func listCharacterMercenaryDensHandler[C mercenaryDensESI](userAgent string, ope
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, ListCharacterMercenaryDensOutput{}, fmt.Errorf("list character mercenary dens: build ESI client: %w", err)
+			return nil, ListCharacterMercenaryDensOutput{}, fmt.Errorf("list character mercenary dens: %w", err)
 		}
 		dens, err := listCharacterMercenaryDens(ctx, client)
 		if err != nil {
@@ -204,7 +204,7 @@ func getCharacterMercenaryDenHandler[C mercenaryDenESI](userAgent string, open f
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, MercenaryDenDetail{}, fmt.Errorf("get character mercenary den: build ESI client: %w", err)
+			return nil, MercenaryDenDetail{}, fmt.Errorf("get character mercenary den: %w", err)
 		}
 		detail, err := getCharacterMercenaryDen(ctx, client, in.MercenaryDenID)
 		if err != nil {
@@ -268,7 +268,7 @@ func listCorporationSkyhooksHandler[C corporationSkyhooksESI](userAgent string, 
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, ListCorporationSkyhooksOutput{}, fmt.Errorf("list corporation skyhooks: build ESI client: %w", err)
+			return nil, ListCorporationSkyhooksOutput{}, fmt.Errorf("list corporation skyhooks: %w", err)
 		}
 		hooks, err := listCorporationSkyhooks(ctx, client, in.CorporationID)
 		if err != nil {
@@ -365,7 +365,7 @@ func getCorporationSkyhookHandler[C skyhookESI](userAgent string, open func(ctx 
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, SkyhookDetail{}, fmt.Errorf("get corporation skyhook: build ESI client: %w", err)
+			return nil, SkyhookDetail{}, fmt.Errorf("get corporation skyhook: %w", err)
 		}
 		detail, err := getCorporationSkyhook(ctx, client, in.CorporationID, in.SkyhookID)
 		if err != nil {
@@ -435,7 +435,7 @@ func listCorporationSovereigntyHubsHandler[C sovereigntyHubsESI](userAgent strin
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, ListCorporationSovereigntyHubsOutput{}, fmt.Errorf("list corporation sovereignty hubs: build ESI client: %w", err)
+			return nil, ListCorporationSovereigntyHubsOutput{}, fmt.Errorf("list corporation sovereignty hubs: %w", err)
 		}
 		hubs, err := listCorporationSovereigntyHubs(ctx, client, in.CorporationID)
 		if err != nil {
@@ -631,7 +631,7 @@ func getCorporationSovereigntyHubHandler[C sovereigntyHubESI](userAgent string, 
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, StructureSovereigntyHubDetail{}, fmt.Errorf("get corporation sovereignty hub: build ESI client: %w", err)
+			return nil, StructureSovereigntyHubDetail{}, fmt.Errorf("get corporation sovereignty hub: %w", err)
 		}
 		detail, err := getCorporationSovereigntyHub(ctx, client, in.CorporationID, in.SovereigntyHubID)
 		if err != nil {

@@ -37,24 +37,17 @@ func (d toolDeps) openESI(ctx context.Context, characterID int32) (*esi.Client, 
 // openPublicESI builds an ESI client for endpoints that need no character.
 func (d toolDeps) openPublicESI() *esi.Client { return esi.NewPublicClient(d.userAgent) }
 
-// NewMCPServer builds neat's MCP server with every tool registered. sdeStore
-// may be nil: every sde.Store method is nil-safe, so name enrichment and the
-// Universe tools fall through to ESI.
-//
-// Tools whose file has moved to its own small interfaces are registered here,
-// one explicit call each (addConvertedTools); the rest are still registered by
-// mcp.NewServer through mcp.Deps. A file moves by exporting Add functions,
-// deleting its registrations from mcp.NewServer and adding one line below.
-func NewMCPServer(version, clientID string, store *config.Store, sdeStore *sde.Store) (*mcpsdk.Server, error) {
-	server, err := mcp.NewServer(version, mcp.Deps{ClientID: clientID, Config: store, SDE: sdeStore})
-	if err != nil {
-		return nil, fmt.Errorf("build MCP server: %w", err)
-	}
+// NewMCPServer builds neat's MCP server with every tool registered, one
+// explicit Add call each (addConvertedTools). sdeStore may be nil: every
+// sde.Store method is nil-safe, so name enrichment and the Universe tools fall
+// through to ESI. A new tool is its own file in mcp/ plus one line below.
+func NewMCPServer(version, clientID string, store *config.Store, sdeStore *sde.Store) *mcpsdk.Server {
+	server := mcp.NewServer(version)
 	addConvertedTools(server, toolDeps{userAgent: sso.UserAgent(version), store: store, sde: sdeStore, clientID: clientID})
-	return server, nil
+	return server
 }
 
-// addConvertedTools registers the tools in files converted to the pattern in
+// addConvertedTools registers every tool, grouped by area, in the pattern of
 // mcp/loyalty.go. Each call passes the concrete values the tool's interfaces
 // ask for; the compiler checks that they satisfy them.
 func addConvertedTools(s *mcpsdk.Server, d toolDeps) {
@@ -103,4 +96,5 @@ func addConvertedTools(s *mcpsdk.Server, d toolDeps) {
 	addContactWriteTools(s, d)
 	addMiningAndFacilityTools(s, d)
 	addMarketContractAssetTools(s, d)
+	addAdminTools(s, d)
 }

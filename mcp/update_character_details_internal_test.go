@@ -8,7 +8,6 @@ import (
 	"github.com/zalando/go-keyring"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
 
 func characterStore(t *testing.T, chars ...config.Character) *config.Store {
@@ -103,8 +102,8 @@ func TestListCharacters_NoAccountWarningForOneCharacter(t *testing.T) {
 
 func TestAddCharacter_KeepsAccountOnReAddAndWarnsAboutUnknown(t *testing.T) {
 	store := characterStore(t, config.Character{ID: 42, Name: "Main", Account: "Main account", Notes: "PvP"})
-	fakeAddCharacters(t, []sso.Character{{ID: 42, Name: "Main"}, {ID: 43, Name: "New Alt"}}, nil)
-	_, out, err := addCharacterHandler("v1", "client-id", store)(context.Background(), nil, AddCharacterInput{})
+	login := &fakeLogin{t: t, chars: []LoginCharacter{{ID: 42, Name: "Main"}, {ID: 43, Name: "New Alt"}}}
+	_, out, err := addCharacterHandler(login, store)(context.Background(), nil, AddCharacterInput{})
 	if err != nil {
 		t.Fatalf("handler: %v", err)
 	}

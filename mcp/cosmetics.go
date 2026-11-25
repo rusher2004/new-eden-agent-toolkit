@@ -50,7 +50,7 @@ func listCharacterSkinrLicensesHandler[C characterSkinrLicensesESI](open func(ct
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, ListCharacterSkinrLicensesOutput{}, fmt.Errorf("build ESI client: %w", err)
+			return nil, ListCharacterSkinrLicensesOutput{}, fmt.Errorf("list character skinr licenses: %w", err)
 		}
 		licenses, err := client.CharacterSkinrLicenses(ctx)
 		if err != nil {
@@ -110,7 +110,7 @@ func listCharacterSkinrComponentLicensesHandler[C characterSkinrComponentLicense
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, ListCharacterSkinrComponentLicensesOutput{}, fmt.Errorf("build ESI client: %w", err)
+			return nil, ListCharacterSkinrComponentLicensesOutput{}, fmt.Errorf("list character skinr component licenses: %w", err)
 		}
 		licenses, err := client.CharacterSkinrComponentLicenses(ctx)
 		if err != nil {

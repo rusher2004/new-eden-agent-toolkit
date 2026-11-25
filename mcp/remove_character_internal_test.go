@@ -18,7 +18,10 @@ func TestRemoveCharacterHandler_NotFound(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	handler := removeCharacterHandler(store)
+	handler := removeCharacterHandler(store, func(int32) error {
+		t.Error("credentials removed for a character that isn't saved")
+		return nil
+	})
 	_, _, err := handler(context.Background(), nil, RemoveCharacterInput{CharacterID: 42})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -38,7 +41,7 @@ func TestRemoveCharacterHandler_RemovesConfigAndCreds(t *testing.T) {
 		t.Fatalf("SaveCharacterRefreshToken: %v", err)
 	}
 
-	handler := removeCharacterHandler(store)
+	handler := removeCharacterHandler(store, creds.DeleteCharacterRefreshToken)
 	_, out, err := handler(context.Background(), nil, RemoveCharacterInput{CharacterID: 1})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -68,11 +71,7 @@ func TestRemoveCharacterHandler_RemovesCharacterCreds(t *testing.T) {
 	}
 
 	var removedID int32 = -1
-	orig := removeCharacterCreds
-	t.Cleanup(func() { removeCharacterCreds = orig })
-	removeCharacterCreds = func(characterID int32) error { removedID = characterID; return nil }
-
-	handler := removeCharacterHandler(store)
+	handler := removeCharacterHandler(store, func(characterID int32) error { removedID = characterID; return nil })
 	if _, _, err := handler(context.Background(), nil, RemoveCharacterInput{CharacterID: 5}); err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
@@ -111,11 +110,7 @@ func TestRemoveCharacterHandler_RemovesCredsEvenIfConfigSaveFails(t *testing.T) 
 	t.Cleanup(func() { os.Chmod(dir, 0o700) })
 
 	var removedID int32 = -1
-	orig := removeCharacterCreds
-	t.Cleanup(func() { removeCharacterCreds = orig })
-	removeCharacterCreds = func(characterID int32) error { removedID = characterID; return nil }
-
-	handler := removeCharacterHandler(store)
+	handler := removeCharacterHandler(store, func(characterID int32) error { removedID = characterID; return nil })
 	_, _, err := handler(context.Background(), nil, RemoveCharacterInput{CharacterID: 5})
 	if err == nil {
 		t.Fatal("handler returned nil error, want a save failure")

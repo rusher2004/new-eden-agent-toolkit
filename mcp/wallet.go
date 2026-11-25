@@ -58,7 +58,7 @@ func getWalletBalanceHandler[C walletBalanceESI](open func(ctx context.Context, 
 
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, GetWalletBalanceOutput{}, fmt.Errorf("build ESI client: %w", err)
+			return nil, GetWalletBalanceOutput{}, fmt.Errorf("get wallet balance: %w", err)
 		}
 		balance, err := client.WalletBalance(ctx)
 		if err != nil {
@@ -174,7 +174,7 @@ func listCharacterWalletJournalHandler[C characterWalletJournalESI](open func(ct
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, ListCharacterWalletJournalOutput{}, fmt.Errorf("build ESI client: %w", err)
+			return nil, ListCharacterWalletJournalOutput{}, fmt.Errorf("list character wallet journal: %w", err)
 		}
 		entries, totalPages, err := client.CharacterWalletJournal(ctx, in.Page)
 		if err != nil {
@@ -228,7 +228,7 @@ func listCharacterWalletTransactionsHandler[C characterWalletTransactionsESI](us
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, ListCharacterWalletTransactionsOutput{}, fmt.Errorf("build ESI client: %w", err)
+			return nil, ListCharacterWalletTransactionsOutput{}, fmt.Errorf("list character wallet transactions: %w", err)
 		}
 		txns, err := client.CharacterWalletTransactions(ctx, in.FromID)
 		if err != nil {
@@ -292,7 +292,7 @@ func listCorporationWalletsHandler[C corporationWalletsESI](open func(ctx contex
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, ListCorporationWalletsOutput{}, fmt.Errorf("build ESI client: %w", err)
+			return nil, ListCorporationWalletsOutput{}, fmt.Errorf("list corporation wallets: %w", err)
 		}
 		wallets, err := client.CorporationWallets(ctx, in.CorporationID)
 		if err != nil {
@@ -348,7 +348,7 @@ func listCorporationWalletJournalHandler[C corporationWalletJournalESI](open fun
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, ListCorporationWalletJournalOutput{}, fmt.Errorf("build ESI client: %w", err)
+			return nil, ListCorporationWalletJournalOutput{}, fmt.Errorf("list corporation wallet journal: %w", err)
 		}
 		entries, totalPages, err := client.CorporationWalletJournal(ctx, in.CorporationID, in.Division, in.Page)
 		if err != nil {
@@ -409,7 +409,7 @@ func listCorporationWalletTransactionsHandler[C corporationWalletTransactionsESI
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, ListCorporationWalletTransactionsOutput{}, fmt.Errorf("build ESI client: %w", err)
+			return nil, ListCorporationWalletTransactionsOutput{}, fmt.Errorf("list corporation wallet transactions: %w", err)
 		}
 		txns, err := client.CorporationWalletTransactions(ctx, in.CorporationID, in.Division, in.FromID)
 		if err != nil {
