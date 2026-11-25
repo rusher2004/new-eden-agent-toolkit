@@ -99,4 +99,7 @@ func addConvertedTools(s *mcpsdk.Server, d toolDeps) {
 	addSovereigntyTools(s, d)
 	addSkillTools(s, d)
 	addUniverseTools(s, d)
+	addCharacterInfoTools(s, d)
+	addContactWriteTools(s, d)
+	addMiningAndFacilityTools(s, d)
 }

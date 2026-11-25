@@ -230,91 +230,6 @@ func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
 	}, getCorporationAssetLocationsHandler(version, clientID, store))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_character",
-		Description: "Get public info (name, corporation, bloodline, security status) about an arbitrary character (public data, no character required).",
-	}, getCharacterHandler(version, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_character_corporation_history",
-		Description: "List an arbitrary character's corporation history (public data, no character required).",
-	}, listCharacterCorporationHistoryHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_character_portrait",
-		Description: "Get an arbitrary character's portrait URLs (public data, no character required).",
-	}, getCharacterPortraitHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_character_agents_research",
-		Description: "List a logged-in EVE Online character's agent research progress.",
-	}, listCharacterAgentsResearchHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_character_medals",
-		Description: "List a logged-in EVE Online character's medals.",
-	}, listCharacterMedalsHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_character_notifications",
-		Description: "List a logged-in EVE Online character's notifications.",
-	}, listCharacterNotificationsHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_character_notification_contacts",
-		Description: "List a logged-in EVE Online character's contact-standing notifications.",
-	}, listCharacterNotificationContactsHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_character_roles",
-		Description: "Get a logged-in EVE Online character's corporation roles.",
-	}, getCharacterRolesHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_character_standings",
-		Description: "List a logged-in EVE Online character's standings.",
-	}, listCharacterStandingsHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_character_titles",
-		Description: "List a logged-in EVE Online character's corporation titles.",
-	}, listCharacterTitlesHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_character_cspa_cost",
-		Description: "Calculate the CSPA charge cost for a logged-in character to contact a set of target characters.",
-	}, getCharacterCSPACostHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_character_contact_labels",
-		Description: "List a logged-in EVE Online character's contact labels.",
-	}, listCharacterContactLabelsHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_corporation_contact_labels",
-		Description: "List a corporation's contact labels, using a logged-in character's roles to authorize.",
-	}, listCorporationContactLabelsHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_alliance_contact_labels",
-		Description: "List an alliance's contact labels, using a logged-in character's roles to authorize.",
-	}, listAllianceContactLabelsHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "add_character_contacts",
-		Description: "Add contacts to a character's contact list with a given standing — this creates new contacts on EVE's server.",
-	}, addCharacterContactsHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "update_character_contacts",
-		Description: "Update the standing/label/watched status of existing contacts — this changes state on EVE's server.",
-	}, updateCharacterContactsHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "remove_character_contacts",
-		Description: "Remove contacts from a character's contact list — this deletes contacts on EVE's server.",
-	}, removeCharacterContactsHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_character_contracts",
 		Description: "List a logged-in EVE Online character's contracts.",
 	}, listCharacterContractsHandler(version, clientID, store))
@@ -348,31 +263,6 @@ func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
 		Name:        "list_public_contract_bids",
 		Description: "List the bids on a public contract (public data, no character required).",
 	}, listPublicContractBidsHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_character_mining",
-		Description: "List a logged-in EVE Online character's mining ledger.",
-	}, listCharacterMiningHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_corporation_mining_extractions",
-		Description: "List a corporation's moon mining extractions, using a logged-in character's roles to authorize.",
-	}, listCorporationMiningExtractionsHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_corporation_mining_observers",
-		Description: "List a corporation's mining observers, using a logged-in character's roles to authorize.",
-	}, listCorporationMiningObserversHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_corporation_mining_observer_detail",
-		Description: "Get the mining ledger recorded by one of a corporation's mining observers, using a logged-in character's roles to authorize.",
-	}, getCorporationMiningObserverDetailHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_industry_facilities",
-		Description: "List every industry facility in the game (public data, no character required).",
-	}, listIndustryFacilitiesHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_character_market_orders",

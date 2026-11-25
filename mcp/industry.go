@@ -7,11 +7,7 @@ import (
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
-
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
-
-	"github.com/rusher2004/new-eden-agent-toolkit/esi"
 )
 
 // IndustryJob is shared by list_character_industry_jobs and list_corporation_industry_jobs --
@@ -72,6 +68,13 @@ func toIndustryJobFromCorporation(j esiapi.CorporationsCorporationIdIndustryJobs
 }
 
 // --- list_character_industry_jobs (private) ---
+
+// characterIndustryJobNameCache is the SDE lookups list_character_industry_jobs's
+// name enrichment makes.
+type characterIndustryJobNameCache interface {
+	typeNameCache
+	stationNameCache
+}
 
 // characterIndustryJobsESI is the ESI call list_character_industry_jobs
 // makes; the industry planning tools read jobs through it too.
@@ -168,6 +171,12 @@ func enrichIndustryJobs(ctx context.Context, jobs []IndustryJob, sdeStore typeNa
 
 // --- list_character_mining (private, paginated) ---
 
+// miningNameCache is the SDE lookups list_character_mining's name enrichment makes.
+type miningNameCache interface {
+	typeNameCache
+	systemNameCache
+}
+
 type MiningLedgerEntry struct {
 	Date            string `json:"date"`
 	Quantity        int64  `json:"quantity"`
@@ -177,11 +186,12 @@ type MiningLedgerEntry struct {
 	TypeName        string `json:"typeName,omitempty"`
 }
 
-var listCharacterMining = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]esiapi.CharactersCharacterIdMiningGetInner, int32, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, 0, fmt.Errorf("build ESI client: %w", err)
-	}
+// characterMiningESI is the ESI call list_character_mining makes.
+type characterMiningESI interface {
+	CharacterMining(ctx context.Context, page int32) ([]esiapi.CharactersCharacterIdMiningGetInner, int32, error)
+}
+
+func listCharacterMining(ctx context.Context, client characterMiningESI, page int32) ([]esiapi.CharactersCharacterIdMiningGetInner, int32, error) {
 	return client.CharacterMining(ctx, page)
 }
 
@@ -196,7 +206,16 @@ type ListCharacterMiningOutput struct {
 	Ledger      []MiningLedgerEntry `json:"ledger"`
 }
 
-func listCharacterMiningHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCharacterMiningInput, ListCharacterMiningOutput] {
+// AddListCharacterMining registers list_character_mining. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListCharacterMining[C characterMiningESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore miningNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_character_mining",
+		Description: "List a logged-in EVE Online character's mining ledger.",
+	}, listCharacterMiningHandler(userAgent, open, store, sdeStore))
+}
+
+func listCharacterMiningHandler[C characterMiningESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore miningNameCache) mcpsdk.ToolHandlerFor[ListCharacterMiningInput, ListCharacterMiningOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterMiningInput) (*mcpsdk.CallToolResult, ListCharacterMiningOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -205,7 +224,11 @@ func listCharacterMiningHandler(version, clientID string, store ConfigStore, sde
 		if !found {
 			return nil, ListCharacterMiningOutput{}, fmt.Errorf("list character mining for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		ledger, totalPages, err := listCharacterMining(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.Page)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCharacterMiningOutput{}, fmt.Errorf("list character mining: %w", err)
+		}
+		ledger, totalPages, err := listCharacterMining(ctx, client, in.Page)
 		if err != nil {
 			return nil, ListCharacterMiningOutput{}, fmt.Errorf("list character mining: %w", err)
 		}
@@ -217,7 +240,7 @@ func listCharacterMiningHandler(version, clientID string, store ConfigStore, sde
 		for i, e := range out {
 			ids[i] = e.TypeID
 		}
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		names := resolveTypeNames(ctx, sdeStore, userAgent, ids)
 		for i := range out {
 			out[i].TypeName = names[out[i].TypeID]
 		}
@@ -225,7 +248,7 @@ func listCharacterMiningHandler(version, clientID string, store ConfigStore, sde
 		for i, e := range out {
 			systemIDs[i] = e.SolarSystemID
 		}
-		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), systemIDs)
+		systemNames := resolveSystemNames(ctx, sdeStore, userAgent, systemIDs)
 		for i := range out {
 			out[i].SolarSystemName = systemNames[out[i].SolarSystemID]
 		}
@@ -248,11 +271,12 @@ type MiningExtraction struct {
 	NaturalDecayTime    time.Time `json:"naturalDecayTime"`
 }
 
-var listCorporationMiningExtractions = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]esiapi.CorporationCorporationIdMiningExtractionsGetInner, int32, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, 0, fmt.Errorf("build ESI client: %w", err)
-	}
+// corporationMiningExtractionsESI is the ESI call list_corporation_mining_extractions makes.
+type corporationMiningExtractionsESI interface {
+	CorporationMiningExtractions(ctx context.Context, corporationID int64, page int32) ([]esiapi.CorporationCorporationIdMiningExtractionsGetInner, int32, error)
+}
+
+func listCorporationMiningExtractions(ctx context.Context, client corporationMiningExtractionsESI, corporationID int64, page int32) ([]esiapi.CorporationCorporationIdMiningExtractionsGetInner, int32, error) {
 	return client.CorporationMiningExtractions(ctx, corporationID, page)
 }
 
@@ -269,7 +293,16 @@ type ListCorporationMiningExtractionsOutput struct {
 	Extractions   []MiningExtraction `json:"extractions"`
 }
 
-func listCorporationMiningExtractionsHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListCorporationMiningExtractionsInput, ListCorporationMiningExtractionsOutput] {
+// AddListCorporationMiningExtractions registers list_corporation_mining_extractions. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListCorporationMiningExtractions[C corporationMiningExtractionsESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore moonNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_corporation_mining_extractions",
+		Description: "List a corporation's moon mining extractions, using a logged-in character's roles to authorize.",
+	}, listCorporationMiningExtractionsHandler(userAgent, open, store, sdeStore))
+}
+
+func listCorporationMiningExtractionsHandler[C corporationMiningExtractionsESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore moonNameCache) mcpsdk.ToolHandlerFor[ListCorporationMiningExtractionsInput, ListCorporationMiningExtractionsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationMiningExtractionsInput) (*mcpsdk.CallToolResult, ListCorporationMiningExtractionsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -278,7 +311,11 @@ func listCorporationMiningExtractionsHandler(version, clientID string, store Con
 		if !found {
 			return nil, ListCorporationMiningExtractionsOutput{}, fmt.Errorf("list corporation mining extractions for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		extractions, totalPages, err := listCorporationMiningExtractions(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.Page)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCorporationMiningExtractionsOutput{}, fmt.Errorf("list corporation mining extractions: %w", err)
+		}
+		extractions, totalPages, err := listCorporationMiningExtractions(ctx, client, in.CorporationID, in.Page)
 		if err != nil {
 			return nil, ListCorporationMiningExtractionsOutput{}, fmt.Errorf("list corporation mining extractions: %w", err)
 		}
@@ -293,7 +330,7 @@ func listCorporationMiningExtractionsHandler(version, clientID string, store Con
 		for i, e := range out {
 			moonIDs[i] = e.MoonID
 		}
-		moonNames := resolveMoonNames(ctx, sdeStore, sso.UserAgent(version), moonIDs)
+		moonNames := resolveMoonNames(ctx, sdeStore, userAgent, moonIDs)
 		for i := range out {
 			out[i].MoonName = moonNames[out[i].MoonID]
 		}
@@ -313,11 +350,12 @@ type MiningObserver struct {
 	ObserverType string `json:"observerType"`
 }
 
-var listCorporationMiningObservers = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]esiapi.CorporationCorporationIdMiningObserversGetInner, int32, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, 0, fmt.Errorf("build ESI client: %w", err)
-	}
+// corporationMiningObserversESI is the ESI call list_corporation_mining_observers makes.
+type corporationMiningObserversESI interface {
+	CorporationMiningObservers(ctx context.Context, corporationID int64, page int32) ([]esiapi.CorporationCorporationIdMiningObserversGetInner, int32, error)
+}
+
+func listCorporationMiningObservers(ctx context.Context, client corporationMiningObserversESI, corporationID int64, page int32) ([]esiapi.CorporationCorporationIdMiningObserversGetInner, int32, error) {
 	return client.CorporationMiningObservers(ctx, corporationID, page)
 }
 
@@ -334,7 +372,16 @@ type ListCorporationMiningObserversOutput struct {
 	Observers     []MiningObserver `json:"observers"`
 }
 
-func listCorporationMiningObserversHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCorporationMiningObserversInput, ListCorporationMiningObserversOutput] {
+// AddListCorporationMiningObservers registers list_corporation_mining_observers. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListCorporationMiningObservers[C corporationMiningObserversESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_corporation_mining_observers",
+		Description: "List a corporation's mining observers, using a logged-in character's roles to authorize.",
+	}, listCorporationMiningObserversHandler(open, store))
+}
+
+func listCorporationMiningObserversHandler[C corporationMiningObserversESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListCorporationMiningObserversInput, ListCorporationMiningObserversOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCorporationMiningObserversInput) (*mcpsdk.CallToolResult, ListCorporationMiningObserversOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -343,7 +390,11 @@ func listCorporationMiningObserversHandler(version, clientID string, store Confi
 		if !found {
 			return nil, ListCorporationMiningObserversOutput{}, fmt.Errorf("list corporation mining observers for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		observers, totalPages, err := listCorporationMiningObservers(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.Page)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCorporationMiningObserversOutput{}, fmt.Errorf("list corporation mining observers: %w", err)
+		}
+		observers, totalPages, err := listCorporationMiningObservers(ctx, client, in.CorporationID, in.Page)
 		if err != nil {
 			return nil, ListCorporationMiningObserversOutput{}, fmt.Errorf("list corporation mining observers: %w", err)
 		}
@@ -370,11 +421,12 @@ type MiningObserverEntry struct {
 	TypeName              string `json:"typeName,omitempty"`
 }
 
-var getCorporationMiningObserverDetail = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID, observerID int64, page int32) ([]esiapi.CorporationCorporationIdMiningObserversObserverIdGetInner, int32, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, 0, fmt.Errorf("build ESI client: %w", err)
-	}
+// corporationMiningObserverDetailESI is the ESI call get_corporation_mining_observer_detail makes.
+type corporationMiningObserverDetailESI interface {
+	CorporationMiningObserverDetail(ctx context.Context, corporationID, observerID int64, page int32) ([]esiapi.CorporationCorporationIdMiningObserversObserverIdGetInner, int32, error)
+}
+
+func getCorporationMiningObserverDetail(ctx context.Context, client corporationMiningObserverDetailESI, corporationID, observerID int64, page int32) ([]esiapi.CorporationCorporationIdMiningObserversObserverIdGetInner, int32, error) {
 	return client.CorporationMiningObserverDetail(ctx, corporationID, observerID, page)
 }
 
@@ -393,7 +445,16 @@ type GetCorporationMiningObserverDetailOutput struct {
 	Entries       []MiningObserverEntry `json:"entries"`
 }
 
-func getCorporationMiningObserverDetailHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[GetCorporationMiningObserverDetailInput, GetCorporationMiningObserverDetailOutput] {
+// AddGetCorporationMiningObserverDetail registers get_corporation_mining_observer_detail. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddGetCorporationMiningObserverDetail[C corporationMiningObserverDetailESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore typeNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_corporation_mining_observer_detail",
+		Description: "Get the mining ledger recorded by one of a corporation's mining observers, using a logged-in character's roles to authorize.",
+	}, getCorporationMiningObserverDetailHandler(userAgent, open, store, sdeStore))
+}
+
+func getCorporationMiningObserverDetailHandler[C corporationMiningObserverDetailESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore typeNameCache) mcpsdk.ToolHandlerFor[GetCorporationMiningObserverDetailInput, GetCorporationMiningObserverDetailOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCorporationMiningObserverDetailInput) (*mcpsdk.CallToolResult, GetCorporationMiningObserverDetailOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -402,7 +463,11 @@ func getCorporationMiningObserverDetailHandler(version, clientID string, store C
 		if !found {
 			return nil, GetCorporationMiningObserverDetailOutput{}, fmt.Errorf("get corporation mining observer detail for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		entries, totalPages, err := getCorporationMiningObserverDetail(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.CorporationID, in.ObserverID, in.Page)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, GetCorporationMiningObserverDetailOutput{}, fmt.Errorf("get corporation mining observer detail: %w", err)
+		}
+		entries, totalPages, err := getCorporationMiningObserverDetail(ctx, client, in.CorporationID, in.ObserverID, in.Page)
 		if err != nil {
 			return nil, GetCorporationMiningObserverDetailOutput{}, fmt.Errorf("get corporation mining observer detail: %w", err)
 		}
@@ -417,7 +482,7 @@ func getCorporationMiningObserverDetailHandler(version, clientID string, store C
 		for i, e := range out {
 			ids[i] = e.TypeID
 		}
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		names := resolveTypeNames(ctx, sdeStore, userAgent, ids)
 		for i := range out {
 			out[i].TypeName = names[out[i].TypeID]
 		}
@@ -515,8 +580,20 @@ type IndustryFacility struct {
 	Tax             *float64 `json:"tax,omitempty"`
 }
 
-var listIndustryFacilities = func(ctx context.Context, userAgent string) ([]esiapi.IndustryFacilitiesGetInner, error) {
-	client := esi.NewPublicClient(userAgent)
+// industryFacilitiesESI is the public ESI call list_industry_facilities makes.
+type industryFacilitiesESI interface {
+	IndustryFacilities(ctx context.Context) ([]esiapi.IndustryFacilitiesGetInner, error)
+}
+
+// industryFacilityNameCache is the SDE lookups list_industry_facilities's name
+// enrichment makes.
+type industryFacilityNameCache interface {
+	typeNameCache
+	regionNameCache
+	systemNameCache
+}
+
+func listIndustryFacilities(ctx context.Context, client industryFacilitiesESI) ([]esiapi.IndustryFacilitiesGetInner, error) {
 	return client.IndustryFacilities(ctx)
 }
 
@@ -525,9 +602,18 @@ type ListIndustryFacilitiesOutput struct {
 	Facilities []IndustryFacility `json:"facilities"`
 }
 
-func listIndustryFacilitiesHandler(version string, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListIndustryFacilitiesInput, ListIndustryFacilitiesOutput] {
+// AddListIndustryFacilities registers list_industry_facilities. open builds the ESI client; any client with
+// the methods this tool calls will do.
+func AddListIndustryFacilities[C industryFacilitiesESI](s *mcpsdk.Server, userAgent string, open func() C, sdeStore industryFacilityNameCache) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_industry_facilities",
+		Description: "List every industry facility in the game (public data, no character required).",
+	}, listIndustryFacilitiesHandler(userAgent, open, sdeStore))
+}
+
+func listIndustryFacilitiesHandler[C industryFacilitiesESI](userAgent string, open func() C, sdeStore industryFacilityNameCache) mcpsdk.ToolHandlerFor[ListIndustryFacilitiesInput, ListIndustryFacilitiesOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListIndustryFacilitiesInput) (*mcpsdk.CallToolResult, ListIndustryFacilitiesOutput, error) {
-		facilities, err := listIndustryFacilities(ctx, sso.UserAgent(version))
+		facilities, err := listIndustryFacilities(ctx, open())
 		if err != nil {
 			return nil, ListIndustryFacilitiesOutput{}, fmt.Errorf("list industry facilities: %w", err)
 		}
@@ -542,7 +628,7 @@ func listIndustryFacilitiesHandler(version string, sdeStore SDEStore) mcpsdk.Too
 		for i, f := range out {
 			ids[i] = f.TypeID
 		}
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		names := resolveTypeNames(ctx, sdeStore, userAgent, ids)
 		for i := range out {
 			out[i].TypeName = names[out[i].TypeID]
 		}
@@ -552,8 +638,8 @@ func listIndustryFacilitiesHandler(version string, sdeStore SDEStore) mcpsdk.Too
 			regionIDs[i] = f.RegionID
 			systemIDs[i] = f.SolarSystemID
 		}
-		regionNames := resolveRegionNames(ctx, sdeStore, sso.UserAgent(version), regionIDs)
-		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), systemIDs)
+		regionNames := resolveRegionNames(ctx, sdeStore, userAgent, regionIDs)
+		systemNames := resolveSystemNames(ctx, sdeStore, userAgent, systemIDs)
 		for i := range out {
 			out[i].RegionName = regionNames[out[i].RegionID]
 			out[i].SolarSystemName = systemNames[out[i].SolarSystemID]

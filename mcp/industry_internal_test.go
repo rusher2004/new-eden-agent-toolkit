@@ -95,15 +95,13 @@ func TestListCharacterMiningHandler_MapsFieldsAndDefaultsPageTo1(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCharacterMining
-	t.Cleanup(func() { listCharacterMining = orig })
-	listCharacterMining = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]esiapi.CharactersCharacterIdMiningGetInner, int32, error) {
+	fake := fakeCharacterMiningESI{characterMining: func(ctx context.Context, page int32) ([]esiapi.CharactersCharacterIdMiningGetInner, int32, error) {
 		return []esiapi.CharactersCharacterIdMiningGetInner{{
 			Date: "2023-01-01", Quantity: 100, SolarSystemId: 30000142, TypeId: 1230,
 		}}, 5, nil
-	}
+	}}
 
-	handler := listCharacterMiningHandler("v1", "client-id", store, nil)
+	handler := listCharacterMiningHandler("v1", openNarrow[characterMiningESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, ListCharacterMiningInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -121,14 +119,7 @@ func TestListCharacterMiningHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := listCharacterMining
-	t.Cleanup(func() { listCharacterMining = orig })
-	listCharacterMining = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]esiapi.CharactersCharacterIdMiningGetInner, int32, error) {
-		t.Fatal("listCharacterMining should not be called for an unknown character")
-		return nil, 0, nil
-	}
-
-	handler := listCharacterMiningHandler("v1", "client-id", store, nil)
+	handler := listCharacterMiningHandler("v1", noNarrow[characterMiningESI](t), store, nil)
 	_, _, err := handler(context.Background(), nil, ListCharacterMiningInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -142,19 +133,17 @@ func TestListCorporationMiningExtractionsHandler_MapsFieldsAndDefaultsPageTo1(t 
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationMiningExtractions
-	t.Cleanup(func() { listCorporationMiningExtractions = orig })
 	chunkArrivalTime := time.Unix(1000, 0)
 	extractionStartTime := time.Unix(500, 0)
 	naturalDecayTime := time.Unix(2000, 0)
-	listCorporationMiningExtractions = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]esiapi.CorporationCorporationIdMiningExtractionsGetInner, int32, error) {
+	fake := fakeCorporationMiningExtractionsESI{corporationMiningExtractions: func(ctx context.Context, corporationID int64, page int32) ([]esiapi.CorporationCorporationIdMiningExtractionsGetInner, int32, error) {
 		return []esiapi.CorporationCorporationIdMiningExtractionsGetInner{{
 			MoonId: 40000001, StructureId: 1000000000001, ChunkArrivalTime: chunkArrivalTime,
 			ExtractionStartTime: extractionStartTime, NaturalDecayTime: naturalDecayTime,
 		}}, 3, nil
-	}
+	}}
 
-	handler := listCorporationMiningExtractionsHandler("v1", "client-id", store, nil)
+	handler := listCorporationMiningExtractionsHandler("v1", openNarrow[corporationMiningExtractionsESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, ListCorporationMiningExtractionsInput{CharacterID: 7, CorporationID: 98000001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -174,14 +163,7 @@ func TestListCorporationMiningExtractionsHandler_UnknownCharacter(t *testing.T) 
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := listCorporationMiningExtractions
-	t.Cleanup(func() { listCorporationMiningExtractions = orig })
-	listCorporationMiningExtractions = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]esiapi.CorporationCorporationIdMiningExtractionsGetInner, int32, error) {
-		t.Fatal("listCorporationMiningExtractions should not be called for an unknown character")
-		return nil, 0, nil
-	}
-
-	handler := listCorporationMiningExtractionsHandler("v1", "client-id", store, nil)
+	handler := listCorporationMiningExtractionsHandler("v1", noNarrow[corporationMiningExtractionsESI](t), store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationMiningExtractionsInput{CharacterID: 999, CorporationID: 98000001})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -195,15 +177,13 @@ func TestListCorporationMiningObserversHandler_MapsFieldsAndDefaultsPageTo1(t *t
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationMiningObservers
-	t.Cleanup(func() { listCorporationMiningObservers = orig })
-	listCorporationMiningObservers = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]esiapi.CorporationCorporationIdMiningObserversGetInner, int32, error) {
+	fake := fakeCorporationMiningObserversESI{corporationMiningObservers: func(ctx context.Context, corporationID int64, page int32) ([]esiapi.CorporationCorporationIdMiningObserversGetInner, int32, error) {
 		return []esiapi.CorporationCorporationIdMiningObserversGetInner{{
 			LastUpdated: "2023-01-01", ObserverId: 900, ObserverType: "structure",
 		}}, 2, nil
-	}
+	}}
 
-	handler := listCorporationMiningObserversHandler("v1", "client-id", store)
+	handler := listCorporationMiningObserversHandler(openNarrow[corporationMiningObserversESI](fake), store)
 	_, out, err := handler(context.Background(), nil, ListCorporationMiningObserversInput{CharacterID: 7, CorporationID: 98000001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -221,14 +201,7 @@ func TestListCorporationMiningObserversHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := listCorporationMiningObservers
-	t.Cleanup(func() { listCorporationMiningObservers = orig })
-	listCorporationMiningObservers = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]esiapi.CorporationCorporationIdMiningObserversGetInner, int32, error) {
-		t.Fatal("listCorporationMiningObservers should not be called for an unknown character")
-		return nil, 0, nil
-	}
-
-	handler := listCorporationMiningObserversHandler("v1", "client-id", store)
+	handler := listCorporationMiningObserversHandler(noNarrow[corporationMiningObserversESI](t), store)
 	_, _, err := handler(context.Background(), nil, ListCorporationMiningObserversInput{CharacterID: 999, CorporationID: 98000001})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -242,15 +215,13 @@ func TestGetCorporationMiningObserverDetailHandler_MapsFieldsAndDefaultsPageTo1(
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCorporationMiningObserverDetail
-	t.Cleanup(func() { getCorporationMiningObserverDetail = orig })
-	getCorporationMiningObserverDetail = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID, observerID int64, page int32) ([]esiapi.CorporationCorporationIdMiningObserversObserverIdGetInner, int32, error) {
+	fake := fakeCorporationMiningObserverDetailESI{corporationMiningObserverDetail: func(ctx context.Context, corporationID, observerID int64, page int32) ([]esiapi.CorporationCorporationIdMiningObserversObserverIdGetInner, int32, error) {
 		return []esiapi.CorporationCorporationIdMiningObserversObserverIdGetInner{{
 			CharacterId: 100, LastUpdated: "2023-01-01", Quantity: 500, RecordedCorporationId: 98000001, TypeId: 1230,
 		}}, 4, nil
-	}
+	}}
 
-	handler := getCorporationMiningObserverDetailHandler("v1", "client-id", store, nil)
+	handler := getCorporationMiningObserverDetailHandler("v1", openNarrow[corporationMiningObserverDetailESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, GetCorporationMiningObserverDetailInput{CharacterID: 7, CorporationID: 98000001, ObserverID: 900})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -268,14 +239,7 @@ func TestGetCorporationMiningObserverDetailHandler_UnknownCharacter(t *testing.T
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := getCorporationMiningObserverDetail
-	t.Cleanup(func() { getCorporationMiningObserverDetail = orig })
-	getCorporationMiningObserverDetail = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID, observerID int64, page int32) ([]esiapi.CorporationCorporationIdMiningObserversObserverIdGetInner, int32, error) {
-		t.Fatal("getCorporationMiningObserverDetail should not be called for an unknown character")
-		return nil, 0, nil
-	}
-
-	handler := getCorporationMiningObserverDetailHandler("v1", "client-id", store, nil)
+	handler := getCorporationMiningObserverDetailHandler("v1", noNarrow[corporationMiningObserverDetailESI](t), store, nil)
 	_, _, err := handler(context.Background(), nil, GetCorporationMiningObserverDetailInput{CharacterID: 999, CorporationID: 98000001, ObserverID: 900})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -348,16 +312,14 @@ func TestListCorporationIndustryJobsHandler_UnknownCharacter(t *testing.T) {
 }
 
 func TestListIndustryFacilitiesHandler_MapsFields(t *testing.T) {
-	orig := listIndustryFacilities
-	t.Cleanup(func() { listIndustryFacilities = orig })
 	tax := 0.1
-	listIndustryFacilities = func(ctx context.Context, userAgent string) ([]esiapi.IndustryFacilitiesGetInner, error) {
+	fake := fakeIndustryFacilitiesESI{industryFacilities: func(ctx context.Context) ([]esiapi.IndustryFacilitiesGetInner, error) {
 		return []esiapi.IndustryFacilitiesGetInner{{
 			FacilityId: 500, OwnerId: 98000001, RegionId: 10000002, SolarSystemId: 30000142, TypeId: 2502, Tax: &tax,
 		}}, nil
-	}
+	}}
 
-	handler := listIndustryFacilitiesHandler("v1", nil)
+	handler := listIndustryFacilitiesHandler("v1", publicNarrow[industryFacilitiesESI](fake), nil)
 	_, out, err := handler(context.Background(), nil, ListIndustryFacilitiesInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -427,14 +389,12 @@ func TestListCharacterMiningHandler_PropagatesError(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCharacterMining
-	t.Cleanup(func() { listCharacterMining = orig })
 	wantErr := errors.New("upstream failure")
-	listCharacterMining = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]esiapi.CharactersCharacterIdMiningGetInner, int32, error) {
+	fake := fakeCharacterMiningESI{characterMining: func(ctx context.Context, page int32) ([]esiapi.CharactersCharacterIdMiningGetInner, int32, error) {
 		return nil, 0, wantErr
-	}
+	}}
 
-	handler := listCharacterMiningHandler("v1", "client-id", store, nil)
+	handler := listCharacterMiningHandler("v1", openNarrow[characterMiningESI](fake), store, nil)
 	_, _, err := handler(context.Background(), nil, ListCharacterMiningInput{CharacterID: 7})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -448,14 +408,12 @@ func TestListCorporationMiningExtractionsHandler_PropagatesError(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationMiningExtractions
-	t.Cleanup(func() { listCorporationMiningExtractions = orig })
 	wantErr := errors.New("upstream failure")
-	listCorporationMiningExtractions = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]esiapi.CorporationCorporationIdMiningExtractionsGetInner, int32, error) {
+	fake := fakeCorporationMiningExtractionsESI{corporationMiningExtractions: func(ctx context.Context, corporationID int64, page int32) ([]esiapi.CorporationCorporationIdMiningExtractionsGetInner, int32, error) {
 		return nil, 0, wantErr
-	}
+	}}
 
-	handler := listCorporationMiningExtractionsHandler("v1", "client-id", store, nil)
+	handler := listCorporationMiningExtractionsHandler("v1", openNarrow[corporationMiningExtractionsESI](fake), store, nil)
 	_, _, err := handler(context.Background(), nil, ListCorporationMiningExtractionsInput{CharacterID: 7, CorporationID: 98000001})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -469,14 +427,12 @@ func TestListCorporationMiningObserversHandler_PropagatesError(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCorporationMiningObservers
-	t.Cleanup(func() { listCorporationMiningObservers = orig })
 	wantErr := errors.New("upstream failure")
-	listCorporationMiningObservers = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]esiapi.CorporationCorporationIdMiningObserversGetInner, int32, error) {
+	fake := fakeCorporationMiningObserversESI{corporationMiningObservers: func(ctx context.Context, corporationID int64, page int32) ([]esiapi.CorporationCorporationIdMiningObserversGetInner, int32, error) {
 		return nil, 0, wantErr
-	}
+	}}
 
-	handler := listCorporationMiningObserversHandler("v1", "client-id", store)
+	handler := listCorporationMiningObserversHandler(openNarrow[corporationMiningObserversESI](fake), store)
 	_, _, err := handler(context.Background(), nil, ListCorporationMiningObserversInput{CharacterID: 7, CorporationID: 98000001})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -490,14 +446,12 @@ func TestGetCorporationMiningObserverDetailHandler_PropagatesError(t *testing.T)
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := getCorporationMiningObserverDetail
-	t.Cleanup(func() { getCorporationMiningObserverDetail = orig })
 	wantErr := errors.New("upstream failure")
-	getCorporationMiningObserverDetail = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID, observerID int64, page int32) ([]esiapi.CorporationCorporationIdMiningObserversObserverIdGetInner, int32, error) {
+	fake := fakeCorporationMiningObserverDetailESI{corporationMiningObserverDetail: func(ctx context.Context, corporationID, observerID int64, page int32) ([]esiapi.CorporationCorporationIdMiningObserversObserverIdGetInner, int32, error) {
 		return nil, 0, wantErr
-	}
+	}}
 
-	handler := getCorporationMiningObserverDetailHandler("v1", "client-id", store, nil)
+	handler := getCorporationMiningObserverDetailHandler("v1", openNarrow[corporationMiningObserverDetailESI](fake), store, nil)
 	_, _, err := handler(context.Background(), nil, GetCorporationMiningObserverDetailInput{CharacterID: 7, CorporationID: 98000001, ObserverID: 900})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -524,14 +478,12 @@ func TestListCorporationIndustryJobsHandler_PropagatesError(t *testing.T) {
 }
 
 func TestListIndustryFacilitiesHandler_PropagatesError(t *testing.T) {
-	orig := listIndustryFacilities
-	t.Cleanup(func() { listIndustryFacilities = orig })
 	wantErr := errors.New("upstream failure")
-	listIndustryFacilities = func(ctx context.Context, userAgent string) ([]esiapi.IndustryFacilitiesGetInner, error) {
+	fake := fakeIndustryFacilitiesESI{industryFacilities: func(ctx context.Context) ([]esiapi.IndustryFacilitiesGetInner, error) {
 		return nil, wantErr
-	}
+	}}
 
-	handler := listIndustryFacilitiesHandler("v1", nil)
+	handler := listIndustryFacilitiesHandler("v1", publicNarrow[industryFacilitiesESI](fake), nil)
 	_, _, err := handler(context.Background(), nil, ListIndustryFacilitiesInput{})
 	if !errors.Is(err, wantErr) {
 		t.Errorf("err = %v, want wrapping %v", err, wantErr)
@@ -659,11 +611,9 @@ func TestListCorporationIndustryJobsHandler_ResolvesTypeNames(t *testing.T) {
 func TestListCharacterMiningHandler_ResolvesTypeName(t *testing.T) {
 	store := industryTestStore(t)
 
-	orig := listCharacterMining
-	t.Cleanup(func() { listCharacterMining = orig })
-	listCharacterMining = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]esiapi.CharactersCharacterIdMiningGetInner, int32, error) {
+	fake := fakeCharacterMiningESI{characterMining: func(ctx context.Context, page int32) ([]esiapi.CharactersCharacterIdMiningGetInner, int32, error) {
 		return []esiapi.CharactersCharacterIdMiningGetInner{{Date: "2023-01-01", Quantity: 100, SolarSystemId: 30000142, TypeId: 1230}}, 1, nil
-	}
+	}}
 
 	origResolve := resolveTypeNames
 	t.Cleanup(func() { resolveTypeNames = origResolve })
@@ -671,7 +621,7 @@ func TestListCharacterMiningHandler_ResolvesTypeName(t *testing.T) {
 		return map[int64]string{1230: "Veldspar"}
 	}
 
-	handler := listCharacterMiningHandler("v1", "client-id", store, nil)
+	handler := listCharacterMiningHandler("v1", openNarrow[characterMiningESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, ListCharacterMiningInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -687,13 +637,11 @@ func TestListCharacterMiningHandler_ResolvesTypeName(t *testing.T) {
 func TestGetCorporationMiningObserverDetailHandler_ResolvesTypeName(t *testing.T) {
 	store := industryTestStore(t)
 
-	orig := getCorporationMiningObserverDetail
-	t.Cleanup(func() { getCorporationMiningObserverDetail = orig })
-	getCorporationMiningObserverDetail = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID, observerID int64, page int32) ([]esiapi.CorporationCorporationIdMiningObserversObserverIdGetInner, int32, error) {
+	fake := fakeCorporationMiningObserverDetailESI{corporationMiningObserverDetail: func(ctx context.Context, corporationID, observerID int64, page int32) ([]esiapi.CorporationCorporationIdMiningObserversObserverIdGetInner, int32, error) {
 		return []esiapi.CorporationCorporationIdMiningObserversObserverIdGetInner{{
 			CharacterId: 100, LastUpdated: "2023-01-01", Quantity: 500, RecordedCorporationId: 98000001, TypeId: 1230,
 		}}, 1, nil
-	}
+	}}
 
 	origResolve := resolveTypeNames
 	t.Cleanup(func() { resolveTypeNames = origResolve })
@@ -701,7 +649,7 @@ func TestGetCorporationMiningObserverDetailHandler_ResolvesTypeName(t *testing.T
 		return map[int64]string{1230: "Veldspar"}
 	}
 
-	handler := getCorporationMiningObserverDetailHandler("v1", "client-id", store, nil)
+	handler := getCorporationMiningObserverDetailHandler("v1", openNarrow[corporationMiningObserverDetailESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, GetCorporationMiningObserverDetailInput{CharacterID: 7, CorporationID: 98000001, ObserverID: 900})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -715,13 +663,11 @@ func TestGetCorporationMiningObserverDetailHandler_ResolvesTypeName(t *testing.T
 }
 
 func TestListIndustryFacilitiesHandler_ResolvesTypeName(t *testing.T) {
-	orig := listIndustryFacilities
-	t.Cleanup(func() { listIndustryFacilities = orig })
-	listIndustryFacilities = func(ctx context.Context, userAgent string) ([]esiapi.IndustryFacilitiesGetInner, error) {
+	fake := fakeIndustryFacilitiesESI{industryFacilities: func(ctx context.Context) ([]esiapi.IndustryFacilitiesGetInner, error) {
 		return []esiapi.IndustryFacilitiesGetInner{{
 			FacilityId: 500, OwnerId: 98000001, RegionId: 10000002, SolarSystemId: 30000142, TypeId: 2502,
 		}}, nil
-	}
+	}}
 
 	origResolve := resolveTypeNames
 	t.Cleanup(func() { resolveTypeNames = origResolve })
@@ -729,7 +675,7 @@ func TestListIndustryFacilitiesHandler_ResolvesTypeName(t *testing.T) {
 		return map[int64]string{2502: "Standup Manufacturing Plant I"}
 	}
 
-	handler := listIndustryFacilitiesHandler("v1", nil)
+	handler := listIndustryFacilitiesHandler("v1", publicNarrow[industryFacilitiesESI](fake), nil)
 	_, out, err := handler(context.Background(), nil, ListIndustryFacilitiesInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -743,13 +689,11 @@ func TestListIndustryFacilitiesHandler_ResolvesTypeName(t *testing.T) {
 }
 
 func TestListIndustryFacilitiesHandler_ResolvesLocationNames(t *testing.T) {
-	orig := listIndustryFacilities
-	t.Cleanup(func() { listIndustryFacilities = orig })
-	listIndustryFacilities = func(ctx context.Context, userAgent string) ([]esiapi.IndustryFacilitiesGetInner, error) {
+	fake := fakeIndustryFacilitiesESI{industryFacilities: func(ctx context.Context) ([]esiapi.IndustryFacilitiesGetInner, error) {
 		return []esiapi.IndustryFacilitiesGetInner{{
 			FacilityId: 500, OwnerId: 98000001, RegionId: 10000002, SolarSystemId: 30000142, TypeId: 2502,
 		}}, nil
-	}
+	}}
 
 	origRegion := resolveRegionNames
 	t.Cleanup(func() { resolveRegionNames = origRegion })
@@ -762,7 +706,7 @@ func TestListIndustryFacilitiesHandler_ResolvesLocationNames(t *testing.T) {
 		return map[int64]string{30000142: "Jita"}
 	}
 
-	handler := listIndustryFacilitiesHandler("v1", nil)
+	handler := listIndustryFacilitiesHandler("v1", publicNarrow[industryFacilitiesESI](fake), nil)
 	_, out, err := handler(context.Background(), nil, ListIndustryFacilitiesInput{})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -805,11 +749,9 @@ func TestListIndustrySystemsHandler_ResolvesSystemName(t *testing.T) {
 func TestListCharacterMiningHandler_ResolvesSystemName(t *testing.T) {
 	store := industryTestStore(t)
 
-	orig := listCharacterMining
-	t.Cleanup(func() { listCharacterMining = orig })
-	listCharacterMining = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]esiapi.CharactersCharacterIdMiningGetInner, int32, error) {
+	fake := fakeCharacterMiningESI{characterMining: func(ctx context.Context, page int32) ([]esiapi.CharactersCharacterIdMiningGetInner, int32, error) {
 		return []esiapi.CharactersCharacterIdMiningGetInner{{Date: "2026-07-30", Quantity: 100, SolarSystemId: 30000142, TypeId: 34}}, 1, nil
-	}
+	}}
 
 	origSystem := resolveSystemNames
 	t.Cleanup(func() { resolveSystemNames = origSystem })
@@ -817,7 +759,7 @@ func TestListCharacterMiningHandler_ResolvesSystemName(t *testing.T) {
 		return map[int64]string{30000142: "Jita"}
 	}
 
-	handler := listCharacterMiningHandler("v1", "client-id", store, nil)
+	handler := listCharacterMiningHandler("v1", openNarrow[characterMiningESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, ListCharacterMiningInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -833,11 +775,9 @@ func TestListCharacterMiningHandler_ResolvesSystemName(t *testing.T) {
 func TestListCorporationMiningExtractionsHandler_ResolvesMoonName(t *testing.T) {
 	store := industryTestStore(t)
 
-	orig := listCorporationMiningExtractions
-	t.Cleanup(func() { listCorporationMiningExtractions = orig })
-	listCorporationMiningExtractions = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]esiapi.CorporationCorporationIdMiningExtractionsGetInner, int32, error) {
+	fake := fakeCorporationMiningExtractionsESI{corporationMiningExtractions: func(ctx context.Context, corporationID int64, page int32) ([]esiapi.CorporationCorporationIdMiningExtractionsGetInner, int32, error) {
 		return []esiapi.CorporationCorporationIdMiningExtractionsGetInner{{MoonId: 40009087, StructureId: 1}}, 1, nil
-	}
+	}}
 
 	origMoon := resolveMoonNames
 	t.Cleanup(func() { resolveMoonNames = origMoon })
@@ -845,7 +785,7 @@ func TestListCorporationMiningExtractionsHandler_ResolvesMoonName(t *testing.T) 
 		return map[int64]string{40009087: "Jita IV - Moon 4"}
 	}
 
-	handler := listCorporationMiningExtractionsHandler("v1", "client-id", store, nil)
+	handler := listCorporationMiningExtractionsHandler("v1", openNarrow[corporationMiningExtractionsESI](fake), store, nil)
 	_, out, err := handler(context.Background(), nil, ListCorporationMiningExtractionsInput{CharacterID: 7, CorporationID: 98000001})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -963,6 +903,95 @@ func TestIndustryJobsHandlers_PropagateOpenError(t *testing.T) {
 	} {
 		if err := call(); !errors.Is(err, wantErr) {
 			t.Errorf("%s: err = %v, want wrapping %v", name, err, wantErr)
+		}
+	}
+}
+
+// fakeCharacterMiningESI fakes characterMiningESI; a nil characterMining fails as an unfaked call.
+type fakeCharacterMiningESI struct {
+	characterMining func(ctx context.Context, page int32) ([]esiapi.CharactersCharacterIdMiningGetInner, int32, error)
+}
+
+func (f fakeCharacterMiningESI) CharacterMining(ctx context.Context, page int32) ([]esiapi.CharactersCharacterIdMiningGetInner, int32, error) {
+	if f.characterMining == nil {
+		return nil, 0, errNotFaked
+	}
+	return f.characterMining(ctx, page)
+}
+
+// fakeCorporationMiningExtractionsESI fakes corporationMiningExtractionsESI; a nil corporationMiningExtractions fails as an unfaked call.
+type fakeCorporationMiningExtractionsESI struct {
+	corporationMiningExtractions func(ctx context.Context, corporationID int64, page int32) ([]esiapi.CorporationCorporationIdMiningExtractionsGetInner, int32, error)
+}
+
+func (f fakeCorporationMiningExtractionsESI) CorporationMiningExtractions(ctx context.Context, corporationID int64, page int32) ([]esiapi.CorporationCorporationIdMiningExtractionsGetInner, int32, error) {
+	if f.corporationMiningExtractions == nil {
+		return nil, 0, errNotFaked
+	}
+	return f.corporationMiningExtractions(ctx, corporationID, page)
+}
+
+// fakeCorporationMiningObserversESI fakes corporationMiningObserversESI; a nil corporationMiningObservers fails as an unfaked call.
+type fakeCorporationMiningObserversESI struct {
+	corporationMiningObservers func(ctx context.Context, corporationID int64, page int32) ([]esiapi.CorporationCorporationIdMiningObserversGetInner, int32, error)
+}
+
+func (f fakeCorporationMiningObserversESI) CorporationMiningObservers(ctx context.Context, corporationID int64, page int32) ([]esiapi.CorporationCorporationIdMiningObserversGetInner, int32, error) {
+	if f.corporationMiningObservers == nil {
+		return nil, 0, errNotFaked
+	}
+	return f.corporationMiningObservers(ctx, corporationID, page)
+}
+
+// fakeCorporationMiningObserverDetailESI fakes corporationMiningObserverDetailESI; a nil corporationMiningObserverDetail fails as an unfaked call.
+type fakeCorporationMiningObserverDetailESI struct {
+	corporationMiningObserverDetail func(ctx context.Context, corporationID, observerID int64, page int32) ([]esiapi.CorporationCorporationIdMiningObserversObserverIdGetInner, int32, error)
+}
+
+func (f fakeCorporationMiningObserverDetailESI) CorporationMiningObserverDetail(ctx context.Context, corporationID, observerID int64, page int32) ([]esiapi.CorporationCorporationIdMiningObserversObserverIdGetInner, int32, error) {
+	if f.corporationMiningObserverDetail == nil {
+		return nil, 0, errNotFaked
+	}
+	return f.corporationMiningObserverDetail(ctx, corporationID, observerID, page)
+}
+
+// fakeIndustryFacilitiesESI fakes industryFacilitiesESI; a nil industryFacilities fails as an unfaked call.
+type fakeIndustryFacilitiesESI struct {
+	industryFacilities func(ctx context.Context) ([]esiapi.IndustryFacilitiesGetInner, error)
+}
+
+func (f fakeIndustryFacilitiesESI) IndustryFacilities(ctx context.Context) ([]esiapi.IndustryFacilitiesGetInner, error) {
+	if f.industryFacilities == nil {
+		return nil, errNotFaked
+	}
+	return f.industryFacilities(ctx)
+}
+
+// Each mining handler reports a client that can't be opened, wrapping the cause.
+func TestMiningHandlers_PropagateOpenError(t *testing.T) {
+	store := characterStore(t, config.Character{ID: 7, Name: "Test Pilot"})
+	ctx := context.Background()
+	openErr := errors.New("no refresh token")
+	for name, call := range map[string]func() error{
+		"list_character_mining": func() error {
+			_, _, err := listCharacterMiningHandler("v1", failNarrow[characterMiningESI](openErr), store, nil)(ctx, nil, ListCharacterMiningInput{CharacterID: 7})
+			return err
+		},
+		"list_corporation_mining_extractions": func() error {
+			_, _, err := listCorporationMiningExtractionsHandler("v1", failNarrow[corporationMiningExtractionsESI](openErr), store, nil)(ctx, nil, ListCorporationMiningExtractionsInput{CharacterID: 7, CorporationID: 98000001})
+			return err
+		},
+		"list_corporation_mining_observers": func() error {
+			_, _, err := listCorporationMiningObserversHandler(failNarrow[corporationMiningObserversESI](openErr), store)(ctx, nil, ListCorporationMiningObserversInput{CharacterID: 7, CorporationID: 98000001})
+			return err
+		},
+		"get_corporation_mining_observer_detail": func() error {
+			_, _, err := getCorporationMiningObserverDetailHandler("v1", failNarrow[corporationMiningObserverDetailESI](openErr), store, nil)(ctx, nil, GetCorporationMiningObserverDetailInput{CharacterID: 7, CorporationID: 98000001, ObserverID: 1})
+			return err
+		},
+	} {
+		if err := call(); !errors.Is(err, openErr) {
+			t.Errorf("%s: err = %v, want wrapping %v", name, err, openErr)
 		}
 	}
 }
