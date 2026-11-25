@@ -8,10 +8,20 @@ import (
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	esiapi "github.com/fnt-eve/goesi-openapi/esi"
-
-	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
+
+// mailESI is the ESI calls the Mail tools make.
+type mailESI interface {
+	CharacterMailHeaders(ctx context.Context, labelIDs []int64, lastMailID int64) ([]esiapi.CharactersCharacterIdMailGetInner, error)
+	CharacterMailLabels(ctx context.Context) (*esiapi.CharactersCharacterIdMailLabelsGet, error)
+	CharacterMailLists(ctx context.Context) ([]esiapi.CharactersCharacterIdMailListsGetInner, error)
+	CharacterMail(ctx context.Context, mailID int64) (*esiapi.CharactersCharacterIdMailMailIdGet, error)
+	SendCharacterMail(ctx context.Context, subject, body string, recipients []esiapi.PostCharactersCharacterIdMailRequestRecipientsInner, approvedCost *int64) (int64, error)
+	CreateCharacterMailLabel(ctx context.Context, name string, color *string) (int64, error)
+	UpdateCharacterMail(ctx context.Context, mailID int64, labels []int64, read *bool) error
+	DeleteCharacterMail(ctx context.Context, mailID int64) error
+	DeleteCharacterMailLabel(ctx context.Context, labelID int64) error
+}
 
 // MailRecipient is shared by list_character_mail and get_character_mail's outputs since ESI
 // returns the exact same generated recipient shape from both endpoints
@@ -76,11 +86,7 @@ func minMailID(headers []MailHeader) *int64 {
 	return min
 }
 
-var listCharacterMail = func(ctx context.Context, clientID string, characterID int32, userAgent string, labelIDs []int64, lastMailID int64) ([]MailHeader, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
+func listCharacterMail(ctx context.Context, client mailESI, labelIDs []int64, lastMailID int64) ([]MailHeader, error) {
 	headers, err := client.CharacterMailHeaders(ctx, labelIDs, lastMailID)
 	if err != nil {
 		return nil, err
@@ -103,7 +109,16 @@ type ListCharacterMailOutput struct {
 	NextLastMailID *int64       `json:"nextLastMailId,omitempty"`
 }
 
-func listCharacterMailHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCharacterMailInput, ListCharacterMailOutput] {
+// AddListCharacterMail registers list_character_mail. open builds the character's ESI
+// client; any client with the mailESI methods will do.
+func AddListCharacterMail[C mailESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_character_mail",
+		Description: "List a logged-in EVE Online character's recent mail headers, optionally filtered by label and paged backwards via a mail ID cursor.",
+	}, listCharacterMailHandler(open, store))
+}
+
+func listCharacterMailHandler[C mailESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListCharacterMailInput, ListCharacterMailOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterMailInput) (*mcpsdk.CallToolResult, ListCharacterMailOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -112,7 +127,11 @@ func listCharacterMailHandler(version, clientID string, store ConfigStore) mcpsd
 		if !found {
 			return nil, ListCharacterMailOutput{}, fmt.Errorf("list character mail for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		headers, err := listCharacterMail(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.LabelIDs, in.LastMailID)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCharacterMailOutput{}, fmt.Errorf("list character mail: %w", err)
+		}
+		headers, err := listCharacterMail(ctx, client, in.LabelIDs, in.LastMailID)
 		if err != nil {
 			return nil, ListCharacterMailOutput{}, fmt.Errorf("list character mail: %w", err)
 		}
@@ -129,11 +148,7 @@ type MailLabel struct {
 	UnreadCount *int64  `json:"unreadCount,omitempty"`
 }
 
-var getCharacterMailLabels = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]MailLabel, *int64, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, nil, fmt.Errorf("build ESI client: %w", err)
-	}
+func getCharacterMailLabels(ctx context.Context, client mailESI) ([]MailLabel, *int64, error) {
 	labels, err := client.CharacterMailLabels(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -154,7 +169,16 @@ type GetCharacterMailLabelsOutput struct {
 	TotalUnreadCount *int64      `json:"totalUnreadCount,omitempty"`
 }
 
-func getCharacterMailLabelsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetCharacterMailLabelsInput, GetCharacterMailLabelsOutput] {
+// AddGetCharacterMailLabels registers get_character_mail_labels. open builds the character's ESI
+// client; any client with the mailESI methods will do.
+func AddGetCharacterMailLabels[C mailESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_character_mail_labels",
+		Description: "Get a logged-in EVE Online character's mail labels and unread counts.",
+	}, getCharacterMailLabelsHandler(open, store))
+}
+
+func getCharacterMailLabelsHandler[C mailESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[GetCharacterMailLabelsInput, GetCharacterMailLabelsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterMailLabelsInput) (*mcpsdk.CallToolResult, GetCharacterMailLabelsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -163,7 +187,11 @@ func getCharacterMailLabelsHandler(version, clientID string, store ConfigStore) 
 		if !found {
 			return nil, GetCharacterMailLabelsOutput{}, fmt.Errorf("get character mail labels for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		labels, totalUnread, err := getCharacterMailLabels(ctx, clientID, in.CharacterID, sso.UserAgent(version))
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, GetCharacterMailLabelsOutput{}, fmt.Errorf("get character mail labels: %w", err)
+		}
+		labels, totalUnread, err := getCharacterMailLabels(ctx, client)
 		if err != nil {
 			return nil, GetCharacterMailLabelsOutput{}, fmt.Errorf("get character mail labels: %w", err)
 		}
@@ -181,11 +209,7 @@ type MailList struct {
 	Name          string `json:"name"`
 }
 
-var listCharacterMailLists = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]MailList, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
+func listCharacterMailLists(ctx context.Context, client mailESI) ([]MailList, error) {
 	lists, err := client.CharacterMailLists(ctx)
 	if err != nil {
 		return nil, err
@@ -205,7 +229,16 @@ type ListCharacterMailListsOutput struct {
 	MailLists   []MailList `json:"mailLists"`
 }
 
-func listCharacterMailListsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListCharacterMailListsInput, ListCharacterMailListsOutput] {
+// AddListCharacterMailLists registers list_character_mail_lists. open builds the character's ESI
+// client; any client with the mailESI methods will do.
+func AddListCharacterMailLists[C mailESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_character_mail_lists",
+		Description: "List the mailing lists a logged-in EVE Online character is subscribed to.",
+	}, listCharacterMailListsHandler(open, store))
+}
+
+func listCharacterMailListsHandler[C mailESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListCharacterMailListsInput, ListCharacterMailListsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListCharacterMailListsInput) (*mcpsdk.CallToolResult, ListCharacterMailListsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -214,7 +247,11 @@ func listCharacterMailListsHandler(version, clientID string, store ConfigStore) 
 		if !found {
 			return nil, ListCharacterMailListsOutput{}, fmt.Errorf("list character mail lists for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		lists, err := listCharacterMailLists(ctx, clientID, in.CharacterID, sso.UserAgent(version))
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListCharacterMailListsOutput{}, fmt.Errorf("list character mail lists: %w", err)
+		}
+		lists, err := listCharacterMailLists(ctx, client)
 		if err != nil {
 			return nil, ListCharacterMailListsOutput{}, fmt.Errorf("list character mail lists: %w", err)
 		}
@@ -224,11 +261,7 @@ func listCharacterMailListsHandler(version, clientID string, store ConfigStore) 
 
 // --- get_character_mail (private, read) ---
 
-var getCharacterMail = func(ctx context.Context, clientID string, characterID int32, userAgent string, mailID int64) (GetCharacterMailOutput, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return GetCharacterMailOutput{}, fmt.Errorf("build ESI client: %w", err)
-	}
+func getCharacterMail(ctx context.Context, client mailESI, mailID int64) (GetCharacterMailOutput, error) {
 	mail, err := client.CharacterMail(ctx, mailID)
 	if err != nil {
 		return GetCharacterMailOutput{}, err
@@ -255,7 +288,16 @@ type GetCharacterMailOutput struct {
 	Recipients  []MailRecipient `json:"recipients,omitempty"`
 }
 
-func getCharacterMailHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetCharacterMailInput, GetCharacterMailOutput] {
+// AddGetCharacterMail registers get_character_mail. open builds the character's ESI
+// client; any client with the mailESI methods will do.
+func AddGetCharacterMail[C mailESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_character_mail",
+		Description: "Get the full body and recipients of one of a logged-in EVE Online character's mails.",
+	}, getCharacterMailHandler(open, store))
+}
+
+func getCharacterMailHandler[C mailESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[GetCharacterMailInput, GetCharacterMailOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterMailInput) (*mcpsdk.CallToolResult, GetCharacterMailOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -264,7 +306,11 @@ func getCharacterMailHandler(version, clientID string, store ConfigStore) mcpsdk
 		if !found {
 			return nil, GetCharacterMailOutput{}, fmt.Errorf("get character mail for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		out, err := getCharacterMail(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.MailID)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, GetCharacterMailOutput{}, fmt.Errorf("get character mail: %w", err)
+		}
+		out, err := getCharacterMail(ctx, client, in.MailID)
 		if err != nil {
 			return nil, GetCharacterMailOutput{}, fmt.Errorf("get character mail: %w", err)
 		}
@@ -282,11 +328,7 @@ type MailRecipientInput struct {
 	RecipientType string `json:"recipientType" jsonschema:"one of: character, corporation, alliance, mailing_list"`
 }
 
-var sendCharacterMail = func(ctx context.Context, clientID string, characterID int32, userAgent string, subject, body string, recipients []MailRecipientInput, approvedCost *int64) (int64, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return 0, fmt.Errorf("build ESI client: %w", err)
-	}
+func sendCharacterMail(ctx context.Context, client mailESI, subject, body string, recipients []MailRecipientInput, approvedCost *int64) (int64, error) {
 	esiRecipients := make([]esiapi.PostCharactersCharacterIdMailRequestRecipientsInner, len(recipients))
 	for i, r := range recipients {
 		esiRecipients[i] = esiapi.PostCharactersCharacterIdMailRequestRecipientsInner{RecipientId: r.RecipientID, RecipientType: r.RecipientType}
@@ -306,7 +348,16 @@ type SendCharacterMailOutput struct {
 	MailID      int64 `json:"mailId"`
 }
 
-func sendCharacterMailHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[SendCharacterMailInput, SendCharacterMailOutput] {
+// AddSendCharacterMail registers send_character_mail. open builds the character's ESI
+// client; any client with the mailESI methods will do.
+func AddSendCharacterMail[C mailESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "send_character_mail",
+		Description: "Send a new mail as a logged-in EVE Online character. This changes state on EVE's server.",
+	}, sendCharacterMailHandler(open, store))
+}
+
+func sendCharacterMailHandler[C mailESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[SendCharacterMailInput, SendCharacterMailOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in SendCharacterMailInput) (*mcpsdk.CallToolResult, SendCharacterMailOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -315,7 +366,11 @@ func sendCharacterMailHandler(version, clientID string, store ConfigStore) mcpsd
 		if !found {
 			return nil, SendCharacterMailOutput{}, fmt.Errorf("send character mail for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		mailID, err := sendCharacterMail(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.Subject, in.Body, in.Recipients, in.ApprovedCost)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, SendCharacterMailOutput{}, fmt.Errorf("send character mail: %w", err)
+		}
+		mailID, err := sendCharacterMail(ctx, client, in.Subject, in.Body, in.Recipients, in.ApprovedCost)
 		if err != nil {
 			return nil, SendCharacterMailOutput{}, fmt.Errorf("send character mail: %w", err)
 		}
@@ -325,11 +380,7 @@ func sendCharacterMailHandler(version, clientID string, store ConfigStore) mcpsd
 
 // --- create_character_mail_label (private, write) ---
 
-var createCharacterMailLabel = func(ctx context.Context, clientID string, characterID int32, userAgent string, name string, color *string) (int64, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return 0, fmt.Errorf("build ESI client: %w", err)
-	}
+func createCharacterMailLabel(ctx context.Context, client mailESI, name string, color *string) (int64, error) {
 	return client.CreateCharacterMailLabel(ctx, name, color)
 }
 
@@ -343,7 +394,16 @@ type CreateCharacterMailLabelOutput struct {
 	LabelID     int64 `json:"labelId"`
 }
 
-func createCharacterMailLabelHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[CreateCharacterMailLabelInput, CreateCharacterMailLabelOutput] {
+// AddCreateCharacterMailLabel registers create_character_mail_label. open builds the character's ESI
+// client; any client with the mailESI methods will do.
+func AddCreateCharacterMailLabel[C mailESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "create_character_mail_label",
+		Description: "Create a new mail label for a logged-in EVE Online character. This changes state on EVE's server.",
+	}, createCharacterMailLabelHandler(open, store))
+}
+
+func createCharacterMailLabelHandler[C mailESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[CreateCharacterMailLabelInput, CreateCharacterMailLabelOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in CreateCharacterMailLabelInput) (*mcpsdk.CallToolResult, CreateCharacterMailLabelOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -352,7 +412,11 @@ func createCharacterMailLabelHandler(version, clientID string, store ConfigStore
 		if !found {
 			return nil, CreateCharacterMailLabelOutput{}, fmt.Errorf("create character mail label for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		labelID, err := createCharacterMailLabel(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.Name, in.Color)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, CreateCharacterMailLabelOutput{}, fmt.Errorf("create character mail label: %w", err)
+		}
+		labelID, err := createCharacterMailLabel(ctx, client, in.Name, in.Color)
 		if err != nil {
 			return nil, CreateCharacterMailLabelOutput{}, fmt.Errorf("create character mail label: %w", err)
 		}
@@ -362,11 +426,7 @@ func createCharacterMailLabelHandler(version, clientID string, store ConfigStore
 
 // --- update_character_mail (private, write) ---
 
-var updateCharacterMail = func(ctx context.Context, clientID string, characterID int32, userAgent string, mailID int64, labels []int64, read *bool) error {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return fmt.Errorf("build ESI client: %w", err)
-	}
+func updateCharacterMail(ctx context.Context, client mailESI, mailID int64, labels []int64, read *bool) error {
 	return client.UpdateCharacterMail(ctx, mailID, labels, read)
 }
 
@@ -381,7 +441,16 @@ type UpdateCharacterMailOutput struct {
 	MailID      int64 `json:"mailId"`
 }
 
-func updateCharacterMailHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[UpdateCharacterMailInput, UpdateCharacterMailOutput] {
+// AddUpdateCharacterMail registers update_character_mail. open builds the character's ESI
+// client; any client with the mailESI methods will do.
+func AddUpdateCharacterMail[C mailESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "update_character_mail",
+		Description: "Update the read status and/or labels of one of a logged-in EVE Online character's mails. This changes state on EVE's server.",
+	}, updateCharacterMailHandler(open, store))
+}
+
+func updateCharacterMailHandler[C mailESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[UpdateCharacterMailInput, UpdateCharacterMailOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in UpdateCharacterMailInput) (*mcpsdk.CallToolResult, UpdateCharacterMailOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -390,7 +459,11 @@ func updateCharacterMailHandler(version, clientID string, store ConfigStore) mcp
 		if !found {
 			return nil, UpdateCharacterMailOutput{}, fmt.Errorf("update character mail for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		if err := updateCharacterMail(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.MailID, in.Labels, in.Read); err != nil {
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, UpdateCharacterMailOutput{}, fmt.Errorf("update character mail: %w", err)
+		}
+		if err := updateCharacterMail(ctx, client, in.MailID, in.Labels, in.Read); err != nil {
 			return nil, UpdateCharacterMailOutput{}, fmt.Errorf("update character mail: %w", err)
 		}
 		return nil, UpdateCharacterMailOutput{CharacterID: in.CharacterID, MailID: in.MailID}, nil
@@ -399,11 +472,7 @@ func updateCharacterMailHandler(version, clientID string, store ConfigStore) mcp
 
 // --- delete_character_mail (private, write) ---
 
-var deleteCharacterMail = func(ctx context.Context, clientID string, characterID int32, userAgent string, mailID int64) error {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return fmt.Errorf("build ESI client: %w", err)
-	}
+func deleteCharacterMail(ctx context.Context, client mailESI, mailID int64) error {
 	return client.DeleteCharacterMail(ctx, mailID)
 }
 
@@ -416,7 +485,16 @@ type DeleteCharacterMailOutput struct {
 	MailID      int64 `json:"mailId"`
 }
 
-func deleteCharacterMailHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[DeleteCharacterMailInput, DeleteCharacterMailOutput] {
+// AddDeleteCharacterMail registers delete_character_mail. open builds the character's ESI
+// client; any client with the mailESI methods will do.
+func AddDeleteCharacterMail[C mailESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "delete_character_mail",
+		Description: "Delete one of a logged-in EVE Online character's mails. This changes state on EVE's server.",
+	}, deleteCharacterMailHandler(open, store))
+}
+
+func deleteCharacterMailHandler[C mailESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[DeleteCharacterMailInput, DeleteCharacterMailOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in DeleteCharacterMailInput) (*mcpsdk.CallToolResult, DeleteCharacterMailOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -425,7 +503,11 @@ func deleteCharacterMailHandler(version, clientID string, store ConfigStore) mcp
 		if !found {
 			return nil, DeleteCharacterMailOutput{}, fmt.Errorf("delete character mail for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		if err := deleteCharacterMail(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.MailID); err != nil {
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, DeleteCharacterMailOutput{}, fmt.Errorf("delete character mail: %w", err)
+		}
+		if err := deleteCharacterMail(ctx, client, in.MailID); err != nil {
 			return nil, DeleteCharacterMailOutput{}, fmt.Errorf("delete character mail: %w", err)
 		}
 		return nil, DeleteCharacterMailOutput{CharacterID: in.CharacterID, MailID: in.MailID}, nil
@@ -434,11 +516,7 @@ func deleteCharacterMailHandler(version, clientID string, store ConfigStore) mcp
 
 // --- delete_character_mail_label (private, write) ---
 
-var deleteCharacterMailLabel = func(ctx context.Context, clientID string, characterID int32, userAgent string, labelID int64) error {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return fmt.Errorf("build ESI client: %w", err)
-	}
+func deleteCharacterMailLabel(ctx context.Context, client mailESI, labelID int64) error {
 	return client.DeleteCharacterMailLabel(ctx, labelID)
 }
 
@@ -451,7 +529,16 @@ type DeleteCharacterMailLabelOutput struct {
 	LabelID     int64 `json:"labelId"`
 }
 
-func deleteCharacterMailLabelHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[DeleteCharacterMailLabelInput, DeleteCharacterMailLabelOutput] {
+// AddDeleteCharacterMailLabel registers delete_character_mail_label. open builds the character's ESI
+// client; any client with the mailESI methods will do.
+func AddDeleteCharacterMailLabel[C mailESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "delete_character_mail_label",
+		Description: "Delete one of a logged-in EVE Online character's mail labels. This changes state on EVE's server.",
+	}, deleteCharacterMailLabelHandler(open, store))
+}
+
+func deleteCharacterMailLabelHandler[C mailESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[DeleteCharacterMailLabelInput, DeleteCharacterMailLabelOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in DeleteCharacterMailLabelInput) (*mcpsdk.CallToolResult, DeleteCharacterMailLabelOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -460,7 +547,11 @@ func deleteCharacterMailLabelHandler(version, clientID string, store ConfigStore
 		if !found {
 			return nil, DeleteCharacterMailLabelOutput{}, fmt.Errorf("delete character mail label for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		if err := deleteCharacterMailLabel(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.LabelID); err != nil {
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, DeleteCharacterMailLabelOutput{}, fmt.Errorf("delete character mail label: %w", err)
+		}
+		if err := deleteCharacterMailLabel(ctx, client, in.LabelID); err != nil {
 			return nil, DeleteCharacterMailLabelOutput{}, fmt.Errorf("delete character mail label: %w", err)
 		}
 		return nil, DeleteCharacterMailLabelOutput{CharacterID: in.CharacterID, LabelID: in.LabelID}, nil

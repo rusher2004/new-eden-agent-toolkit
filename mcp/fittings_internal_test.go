@@ -3,8 +3,10 @@ package mcp
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	"github.com/zalando/go-keyring"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/config"
@@ -17,16 +19,15 @@ func TestListCharacterFittingsHandler_MapsFields(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCharacterFittings
-	t.Cleanup(func() { listCharacterFittings = orig })
-	listCharacterFittings = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]Fitting, error) {
-		return []Fitting{{
-			FittingID: 1, ShipTypeID: 600, Description: "PvP fit", Name: "My Fit",
-			Items: []FittingItem{{Flag: "HiSlot0", Quantity: 1, TypeID: 2456}},
+	fake := &fittingsFake{}
+	fake.characterFittings = func(ctx context.Context) ([]esiapi.CharactersCharacterIdFittingsGetInner, error) {
+		return []esiapi.CharactersCharacterIdFittingsGetInner{{
+			FittingId: 1, ShipTypeId: 600, Description: "PvP fit", Name: "My Fit",
+			Items: []esiapi.CharactersCharacterIdFittingsGetInnerItemsInner{{Flag: "HiSlot0", Quantity: 1, TypeId: 2456}},
 		}}, nil
 	}
 
-	handler := listCharacterFittingsHandler("v1", "client-id", store, nil)
+	handler := listCharacterFittingsHandler("v1", fake.open, store, nil)
 	_, out, err := handler(context.Background(), nil, ListCharacterFittingsInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -48,14 +49,13 @@ func TestListCharacterFittingsHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := listCharacterFittings
-	t.Cleanup(func() { listCharacterFittings = orig })
-	listCharacterFittings = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]Fitting, error) {
+	fake := &fittingsFake{}
+	fake.characterFittings = func(ctx context.Context) ([]esiapi.CharactersCharacterIdFittingsGetInner, error) {
 		t.Fatal("listCharacterFittings should not be called for an unknown character")
 		return nil, nil
 	}
 
-	handler := listCharacterFittingsHandler("v1", "client-id", store, nil)
+	handler := listCharacterFittingsHandler("v1", fake.open, store, nil)
 	_, _, err := handler(context.Background(), nil, ListCharacterFittingsInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -69,12 +69,11 @@ func TestListCharacterFittingsHandler_ResolvesTypeNames(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := listCharacterFittings
-	t.Cleanup(func() { listCharacterFittings = orig })
-	listCharacterFittings = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]Fitting, error) {
-		return []Fitting{{
-			FittingID: 1, ShipTypeID: 587,
-			Items: []FittingItem{{Flag: "HiSlot0", Quantity: 1, TypeID: 588}},
+	fake := &fittingsFake{}
+	fake.characterFittings = func(ctx context.Context) ([]esiapi.CharactersCharacterIdFittingsGetInner, error) {
+		return []esiapi.CharactersCharacterIdFittingsGetInner{{
+			FittingId: 1, ShipTypeId: 587,
+			Items: []esiapi.CharactersCharacterIdFittingsGetInnerItemsInner{{Flag: "HiSlot0", Quantity: 1, TypeId: 588}},
 		}}, nil
 	}
 
@@ -84,7 +83,7 @@ func TestListCharacterFittingsHandler_ResolvesTypeNames(t *testing.T) {
 		return map[int64]string{587: "Rifter", 588: "150mm Railgun II"}
 	}
 
-	handler := listCharacterFittingsHandler("v1", "client-id", store, nil)
+	handler := listCharacterFittingsHandler("v1", fake.open, store, nil)
 	_, out, err := handler(context.Background(), nil, ListCharacterFittingsInput{CharacterID: 7})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -104,13 +103,12 @@ func TestCreateCharacterFittingHandler_MapsFields(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := createCharacterFitting
-	t.Cleanup(func() { createCharacterFitting = orig })
+	fake := &fittingsFake{}
 
 	var gotDescription, gotName string
 	var gotShipTypeID int64
-	var gotItems []FittingItemInput
-	createCharacterFitting = func(ctx context.Context, clientID string, characterID int32, userAgent string, description, name string, shipTypeID int64, items []FittingItemInput) (int64, error) {
+	var gotItems []esiapi.PostCharactersCharacterIdFittingsRequestItemsInner
+	fake.createCharacterFitting = func(ctx context.Context, description string, items []esiapi.PostCharactersCharacterIdFittingsRequestItemsInner, name string, shipTypeID int64) (int64, error) {
 		gotDescription = description
 		gotName = name
 		gotShipTypeID = shipTypeID
@@ -128,7 +126,7 @@ func TestCreateCharacterFittingHandler_MapsFields(t *testing.T) {
 		},
 	}
 
-	handler := createCharacterFittingHandler("v1", "client-id", store)
+	handler := createCharacterFittingHandler(fake.open, store)
 	_, out, err := handler(context.Background(), nil, input)
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -141,8 +139,9 @@ func TestCreateCharacterFittingHandler_MapsFields(t *testing.T) {
 		t.Fatalf("captured items = %+v, want %+v", gotItems, input.Items)
 	}
 	for i, it := range gotItems {
-		if it != input.Items[i] {
-			t.Errorf("captured items[%d] = %+v, want %+v", i, it, input.Items[i])
+		want := input.Items[i]
+		if it.Flag != want.Flag || it.Quantity != want.Quantity || it.TypeId != want.TypeID {
+			t.Errorf("captured items[%d] = %+v, want %+v", i, it, want)
 		}
 	}
 
@@ -155,14 +154,13 @@ func TestCreateCharacterFittingHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := createCharacterFitting
-	t.Cleanup(func() { createCharacterFitting = orig })
-	createCharacterFitting = func(ctx context.Context, clientID string, characterID int32, userAgent string, description, name string, shipTypeID int64, items []FittingItemInput) (int64, error) {
+	fake := &fittingsFake{}
+	fake.createCharacterFitting = func(ctx context.Context, description string, items []esiapi.PostCharactersCharacterIdFittingsRequestItemsInner, name string, shipTypeID int64) (int64, error) {
 		t.Fatal("createCharacterFitting should not be called for an unknown character")
 		return 0, nil
 	}
 
-	handler := createCharacterFittingHandler("v1", "client-id", store)
+	handler := createCharacterFittingHandler(fake.open, store)
 	_, _, err := handler(context.Background(), nil, CreateCharacterFittingInput{CharacterID: 999})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
@@ -176,13 +174,12 @@ func TestDeleteCharacterFittingHandler_Succeeds(t *testing.T) {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	orig := deleteCharacterFitting
-	t.Cleanup(func() { deleteCharacterFitting = orig })
-	deleteCharacterFitting = func(ctx context.Context, clientID string, characterID int32, userAgent string, fittingID int64) error {
+	fake := &fittingsFake{}
+	fake.deleteCharacterFitting = func(ctx context.Context, fittingID int64) error {
 		return nil
 	}
 
-	handler := deleteCharacterFittingHandler("v1", "client-id", store)
+	handler := deleteCharacterFittingHandler(fake.open, store)
 	_, out, err := handler(context.Background(), nil, DeleteCharacterFittingInput{CharacterID: 7, FittingID: 12345})
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -196,16 +193,86 @@ func TestDeleteCharacterFittingHandler_UnknownCharacter(t *testing.T) {
 	keyring.MockInit()
 	store := config.NewStoreAt(t.TempDir() + "/config.json")
 
-	orig := deleteCharacterFitting
-	t.Cleanup(func() { deleteCharacterFitting = orig })
-	deleteCharacterFitting = func(ctx context.Context, clientID string, characterID int32, userAgent string, fittingID int64) error {
+	fake := &fittingsFake{}
+	fake.deleteCharacterFitting = func(ctx context.Context, fittingID int64) error {
 		t.Fatal("deleteCharacterFitting should not be called for an unknown character")
 		return nil
 	}
 
-	handler := deleteCharacterFittingHandler("v1", "client-id", store)
+	handler := deleteCharacterFittingHandler(fake.open, store)
 	_, _, err := handler(context.Background(), nil, DeleteCharacterFittingInput{CharacterID: 999, FittingID: 12345})
 	if !errors.Is(err, ErrCharacterNotFound) {
 		t.Errorf("err = %v, want wrapping ErrCharacterNotFound", err)
 	}
+}
+
+// TestFittingsHandlers_OpenFailure: every handler that opens an ESI client wraps and returns
+// the opener's error, and never reaches an ESI call.
+func TestFittingsHandlers_OpenFailure(t *testing.T) {
+	store := newTestStoreWithCharacter(t)
+	openErr := errors.New("keychain locked")
+	fake := &fittingsFake{openErr: openErr}
+	tests := []struct {
+		name string
+		call func() error
+	}{
+		{"list_character_fittings", func() error {
+			return callHandlerForOpenFailure(listCharacterFittingsHandler("v1", fake.open, store, nil), ListCharacterFittingsInput{CharacterID: 7})
+		}},
+		{"create_character_fitting", func() error {
+			return callHandlerForOpenFailure(createCharacterFittingHandler(fake.open, store), CreateCharacterFittingInput{CharacterID: 7})
+		}},
+		{"delete_character_fitting", func() error {
+			return callHandlerForOpenFailure(deleteCharacterFittingHandler(fake.open, store), DeleteCharacterFittingInput{CharacterID: 7})
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.call()
+			if !errors.Is(err, openErr) {
+				t.Fatalf("err = %v, want wrapping %v", err, openErr)
+			}
+			if !strings.Contains(err.Error(), strings.ReplaceAll(tt.name, "_", " ")) {
+				t.Errorf("err = %q, want it to start with the tool name %q", err, tt.name)
+			}
+		})
+	}
+}
+
+// fittingsFake fakes fittingsESI: set a field to answer that call, and open records the character IDs it was asked for.
+type fittingsFake struct {
+	characterFittings      func(ctx context.Context) ([]esiapi.CharactersCharacterIdFittingsGetInner, error)
+	createCharacterFitting func(ctx context.Context, description string, items []esiapi.PostCharactersCharacterIdFittingsRequestItemsInner, name string, shipTypeID int64) (int64, error)
+	deleteCharacterFitting func(ctx context.Context, fittingID int64) error
+	openErr                error
+	openedFor              []int32
+}
+
+func (f *fittingsFake) open(ctx context.Context, characterID int32) (fittingsESI, error) {
+	f.openedFor = append(f.openedFor, characterID)
+	if f.openErr != nil {
+		return nil, f.openErr
+	}
+	return f, nil
+}
+
+func (f *fittingsFake) CharacterFittings(ctx context.Context) ([]esiapi.CharactersCharacterIdFittingsGetInner, error) {
+	if f.characterFittings == nil {
+		return nil, errors.New("fittingsFake: unexpected CharacterFittings call")
+	}
+	return f.characterFittings(ctx)
+}
+
+func (f *fittingsFake) CreateCharacterFitting(ctx context.Context, description string, items []esiapi.PostCharactersCharacterIdFittingsRequestItemsInner, name string, shipTypeID int64) (int64, error) {
+	if f.createCharacterFitting == nil {
+		return 0, errors.New("fittingsFake: unexpected CreateCharacterFitting call")
+	}
+	return f.createCharacterFitting(ctx, description, items, name, shipTypeID)
+}
+
+func (f *fittingsFake) DeleteCharacterFitting(ctx context.Context, fittingID int64) error {
+	if f.deleteCharacterFitting == nil {
+		return errors.New("fittingsFake: unexpected DeleteCharacterFitting call")
+	}
+	return f.deleteCharacterFitting(ctx, fittingID)
 }

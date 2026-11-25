@@ -715,91 +715,6 @@ func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
 	}, listFwWarsHandler(version, sdeStore))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_character_fittings",
-		Description: "List a logged-in EVE Online character's saved ship fittings.",
-	}, listCharacterFittingsHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "create_character_fitting",
-		Description: "Save a new ship fitting for a logged-in character — this creates a new fitting on EVE's server.",
-	}, createCharacterFittingHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "delete_character_fitting",
-		Description: "Delete one of a logged-in character's saved ship fittings — this deletes the fitting on EVE's server.",
-	}, deleteCharacterFittingHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_character_fleet",
-		Description: "Get a logged-in EVE Online character's current fleet membership.",
-	}, getCharacterFleetHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_fleet",
-		Description: "Get a fleet's settings, using a logged-in character's fleet membership to authorize.",
-	}, getFleetHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "update_fleet",
-		Description: "Update a fleet's settings — this changes state on EVE's server.",
-	}, updateFleetHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_fleet_members",
-		Description: "List a fleet's members, using a logged-in character's fleet membership to authorize.",
-	}, listFleetMembersHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "invite_fleet_member",
-		Description: "Invite a character into a fleet — this changes state on EVE's server.",
-	}, inviteFleetMemberHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "move_fleet_member",
-		Description: "Move a fleet member to a new role, wing, or squad — this changes state on EVE's server.",
-	}, moveFleetMemberHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "kick_fleet_member",
-		Description: "Remove a member from a fleet — this changes state on EVE's server.",
-	}, kickFleetMemberHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_fleet_wings",
-		Description: "List a fleet's wings and their nested squads, using a logged-in character's fleet membership to authorize.",
-	}, listFleetWingsHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "create_fleet_wing",
-		Description: "Create a new wing in a fleet — this changes state on EVE's server.",
-	}, createFleetWingHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "rename_fleet_wing",
-		Description: "Rename a fleet wing — this changes state on EVE's server.",
-	}, renameFleetWingHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "delete_fleet_wing",
-		Description: "Delete a fleet wing — this changes state on EVE's server.",
-	}, deleteFleetWingHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "create_fleet_squad",
-		Description: "Create a new squad within a fleet wing — this changes state on EVE's server.",
-	}, createFleetSquadHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "rename_fleet_squad",
-		Description: "Rename a fleet squad — this changes state on EVE's server.",
-	}, renameFleetSquadHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "delete_fleet_squad",
-		Description: "Delete a fleet squad — this changes state on EVE's server.",
-	}, deleteFleetSquadHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_character_freelance_jobs",
 		Description: "List a logged-in EVE Online character's freelance jobs.",
 	}, listCharacterFreelanceJobsHandler(version, clientID, store))
@@ -908,51 +823,6 @@ func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
 		Name:        "get_character_ship",
 		Description: "Get a logged-in EVE Online character's current ship.",
 	}, getCharacterShipHandler(version, clientID, store, sdeStore))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_character_mail",
-		Description: "List a logged-in EVE Online character's recent mail headers, optionally filtered by label and paged backwards via a mail ID cursor.",
-	}, listCharacterMailHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_character_mail_labels",
-		Description: "Get a logged-in EVE Online character's mail labels and unread counts.",
-	}, getCharacterMailLabelsHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "list_character_mail_lists",
-		Description: "List the mailing lists a logged-in EVE Online character is subscribed to.",
-	}, listCharacterMailListsHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "get_character_mail",
-		Description: "Get the full body and recipients of one of a logged-in EVE Online character's mails.",
-	}, getCharacterMailHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "send_character_mail",
-		Description: "Send a new mail as a logged-in EVE Online character. This changes state on EVE's server.",
-	}, sendCharacterMailHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "create_character_mail_label",
-		Description: "Create a new mail label for a logged-in EVE Online character. This changes state on EVE's server.",
-	}, createCharacterMailLabelHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "update_character_mail",
-		Description: "Update the read status and/or labels of one of a logged-in EVE Online character's mails. This changes state on EVE's server.",
-	}, updateCharacterMailHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "delete_character_mail",
-		Description: "Delete one of a logged-in EVE Online character's mails. This changes state on EVE's server.",
-	}, deleteCharacterMailHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "delete_character_mail_label",
-		Description: "Delete one of a logged-in EVE Online character's mail labels. This changes state on EVE's server.",
-	}, deleteCharacterMailLabelHandler(version, clientID, store))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_character_market_orders",
@@ -1268,31 +1138,6 @@ func NewServer(version string, deps Deps) (*mcpsdk.Server, error) {
 		Name:        "resolve_universe_names",
 		Description: "Resolve a list of IDs to their names and categories. Accepts 1-1000 IDs per call (public data, no character required).",
 	}, resolveUniverseNamesHandler(version))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "set_autopilot_waypoint",
-		Description: "Set an autopilot waypoint on the given character's live EVE client — this changes the character's active autopilot route.",
-	}, setAutopilotWaypointHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "open_contract_window",
-		Description: "Open a contract window on the given character's live EVE client — this changes what's displayed on the character's screen.",
-	}, openContractWindowHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "open_information_window",
-		Description: "Open an information window on the given character's live EVE client — this changes what's displayed on the character's screen.",
-	}, openInformationWindowHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "open_market_details_window",
-		Description: "Open a market details window on the given character's live EVE client — this changes what's displayed on the character's screen.",
-	}, openMarketDetailsWindowHandler(version, clientID, store))
-
-	mcpsdk.AddTool(server, &mcpsdk.Tool{
-		Name:        "open_new_mail_window",
-		Description: "Open a pre-filled new mail window on the given character's live EVE client — this changes what's displayed on the character's screen.",
-	}, openNewMailWindowHandler(version, clientID, store))
 
 	mcpsdk.AddTool(server, &mcpsdk.Tool{
 		Name:        "list_wars",

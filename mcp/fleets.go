@@ -13,11 +13,34 @@ import (
 	"fmt"
 	"time"
 
+	esiapi "github.com/fnt-eve/goesi-openapi/esi"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-
-	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
+
+// fleetsESI is the ESI calls the Fleets tools make.
+type fleetsESI interface {
+	CharacterFleet(ctx context.Context) (*esiapi.CharactersCharacterIdFleetGet, error)
+	FleetInfo(ctx context.Context, fleetID int64) (*esiapi.FleetsFleetIdGet, error)
+	UpdateFleet(ctx context.Context, fleetID int64, isFreeMove *bool, motd *string) error
+	FleetMembers(ctx context.Context, fleetID int64) ([]esiapi.FleetsFleetIdMembersGetInner, error)
+	InviteFleetMember(ctx context.Context, fleetID, characterID int64, role string, wingID, squadID *int64) error
+	MoveFleetMember(ctx context.Context, fleetID, memberID int64, role string, wingID, squadID *int64) error
+	KickFleetMember(ctx context.Context, fleetID, memberID int64) error
+	FleetWings(ctx context.Context, fleetID int64) ([]esiapi.FleetsFleetIdWingsGetInner, error)
+	CreateFleetWing(ctx context.Context, fleetID int64) (int64, error)
+	RenameFleetWing(ctx context.Context, fleetID, wingID int64, name string) error
+	DeleteFleetWing(ctx context.Context, fleetID, wingID int64) error
+	CreateFleetSquad(ctx context.Context, fleetID, wingID int64) (int64, error)
+	RenameFleetSquad(ctx context.Context, fleetID, squadID int64, name string) error
+	DeleteFleetSquad(ctx context.Context, fleetID, squadID int64) error
+}
+
+// fleetMemberNames is the SDE lookups list_fleet_members enriches with.
+type fleetMemberNames interface {
+	typeNameCache
+	systemNameCache
+	stationNameCache
+}
 
 // validFleetRoles are ESI's own accepted values for a fleet member's role, used by
 // invite_fleet_member and move_fleet_member.
@@ -41,11 +64,7 @@ type GetCharacterFleetOutput struct {
 	WingID      int64  `json:"wingId"`
 }
 
-var getCharacterFleet = func(ctx context.Context, clientID string, characterID int32, userAgent string) (GetCharacterFleetOutput, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return GetCharacterFleetOutput{}, fmt.Errorf("build ESI client: %w", err)
-	}
+func getCharacterFleet(ctx context.Context, client fleetsESI, characterID int32) (GetCharacterFleetOutput, error) {
 	fleet, err := client.CharacterFleet(ctx)
 	if err != nil {
 		return GetCharacterFleetOutput{}, err
@@ -60,7 +79,16 @@ type GetCharacterFleetInput struct {
 	CharacterID int32 `json:"characterId" jsonschema:"the character ID to check"`
 }
 
-func getCharacterFleetHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetCharacterFleetInput, GetCharacterFleetOutput] {
+// AddGetCharacterFleet registers get_character_fleet. open builds the character's ESI
+// client; any client with the fleetsESI methods will do.
+func AddGetCharacterFleet[C fleetsESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_character_fleet",
+		Description: "Get a logged-in EVE Online character's current fleet membership.",
+	}, getCharacterFleetHandler(open, store))
+}
+
+func getCharacterFleetHandler[C fleetsESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[GetCharacterFleetInput, GetCharacterFleetOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetCharacterFleetInput) (*mcpsdk.CallToolResult, GetCharacterFleetOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -69,7 +97,11 @@ func getCharacterFleetHandler(version, clientID string, store ConfigStore) mcpsd
 		if !found {
 			return nil, GetCharacterFleetOutput{}, fmt.Errorf("get character fleet for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		out, err := getCharacterFleet(ctx, clientID, in.CharacterID, sso.UserAgent(version))
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, GetCharacterFleetOutput{}, fmt.Errorf("get character fleet: %w", err)
+		}
+		out, err := getCharacterFleet(ctx, client, in.CharacterID)
 		if err != nil {
 			return nil, GetCharacterFleetOutput{}, fmt.Errorf("get character fleet: %w", err)
 		}
@@ -89,11 +121,7 @@ type GetFleetOutput struct {
 	Motd           string `json:"motd"`
 }
 
-var getFleet = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID int64) (GetFleetOutput, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return GetFleetOutput{}, fmt.Errorf("build ESI client: %w", err)
-	}
+func getFleet(ctx context.Context, client fleetsESI, characterID int32, fleetID int64) (GetFleetOutput, error) {
 	fleet, err := client.FleetInfo(ctx, fleetID)
 	if err != nil {
 		return GetFleetOutput{}, err
@@ -109,7 +137,16 @@ type GetFleetInput struct {
 	FleetID     int64 `json:"fleetId" jsonschema:"the fleet ID, from get_character_fleet"`
 }
 
-func getFleetHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[GetFleetInput, GetFleetOutput] {
+// AddGetFleet registers get_fleet. open builds the character's ESI
+// client; any client with the fleetsESI methods will do.
+func AddGetFleet[C fleetsESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "get_fleet",
+		Description: "Get a fleet's settings, using a logged-in character's fleet membership to authorize.",
+	}, getFleetHandler(open, store))
+}
+
+func getFleetHandler[C fleetsESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[GetFleetInput, GetFleetOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in GetFleetInput) (*mcpsdk.CallToolResult, GetFleetOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -118,7 +155,11 @@ func getFleetHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHan
 		if !found {
 			return nil, GetFleetOutput{}, fmt.Errorf("get fleet for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		out, err := getFleet(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.FleetID)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, GetFleetOutput{}, fmt.Errorf("get fleet: %w", err)
+		}
+		out, err := getFleet(ctx, client, in.CharacterID, in.FleetID)
 		if err != nil {
 			return nil, GetFleetOutput{}, fmt.Errorf("get fleet: %w", err)
 		}
@@ -128,11 +169,7 @@ func getFleetHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHan
 
 // --- update_fleet (private, write) ---
 
-var updateFleet = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID int64, isFreeMove *bool, motd *string) error {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return fmt.Errorf("build ESI client: %w", err)
-	}
+func updateFleet(ctx context.Context, client fleetsESI, fleetID int64, isFreeMove *bool, motd *string) error {
 	return client.UpdateFleet(ctx, fleetID, isFreeMove, motd)
 }
 
@@ -149,7 +186,16 @@ type UpdateFleetOutput struct {
 	Motd        *string `json:"motd,omitempty"`
 }
 
-func updateFleetHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[UpdateFleetInput, UpdateFleetOutput] {
+// AddUpdateFleet registers update_fleet. open builds the character's ESI
+// client; any client with the fleetsESI methods will do.
+func AddUpdateFleet[C fleetsESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "update_fleet",
+		Description: "Update a fleet's settings — this changes state on EVE's server.",
+	}, updateFleetHandler(open, store))
+}
+
+func updateFleetHandler[C fleetsESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[UpdateFleetInput, UpdateFleetOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in UpdateFleetInput) (*mcpsdk.CallToolResult, UpdateFleetOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -158,7 +204,11 @@ func updateFleetHandler(version, clientID string, store ConfigStore) mcpsdk.Tool
 		if !found {
 			return nil, UpdateFleetOutput{}, fmt.Errorf("update fleet for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		if err := updateFleet(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.FleetID, in.IsFreeMove, in.Motd); err != nil {
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, UpdateFleetOutput{}, fmt.Errorf("update fleet: %w", err)
+		}
+		if err := updateFleet(ctx, client, in.FleetID, in.IsFreeMove, in.Motd); err != nil {
 			return nil, UpdateFleetOutput{}, fmt.Errorf("update fleet: %w", err)
 		}
 		return nil, UpdateFleetOutput{CharacterID: in.CharacterID, FleetID: in.FleetID, IsFreeMove: in.IsFreeMove, Motd: in.Motd}, nil
@@ -184,11 +234,7 @@ type FleetMember struct {
 	WingID          int64     `json:"wingId"`
 }
 
-var listFleetMembers = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID int64) ([]FleetMember, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
+func listFleetMembers(ctx context.Context, client fleetsESI, fleetID int64) ([]FleetMember, error) {
 	members, err := client.FleetMembers(ctx, fleetID)
 	if err != nil {
 		return nil, err
@@ -214,7 +260,16 @@ type ListFleetMembersOutput struct {
 	Members     []FleetMember `json:"members"`
 }
 
-func listFleetMembersHandler(version, clientID string, store ConfigStore, sdeStore SDEStore) mcpsdk.ToolHandlerFor[ListFleetMembersInput, ListFleetMembersOutput] {
+// AddListFleetMembers registers list_fleet_members. open builds the character's ESI
+// client; any client with the fleetsESI methods will do.
+func AddListFleetMembers[C fleetsESI](s *mcpsdk.Server, userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore fleetMemberNames) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_fleet_members",
+		Description: "List a fleet's members, using a logged-in character's fleet membership to authorize.",
+	}, listFleetMembersHandler(userAgent, open, store, sdeStore))
+}
+
+func listFleetMembersHandler[C fleetsESI](userAgent string, open func(ctx context.Context, characterID int32) (C, error), store configLoader, sdeStore fleetMemberNames) mcpsdk.ToolHandlerFor[ListFleetMembersInput, ListFleetMembersOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListFleetMembersInput) (*mcpsdk.CallToolResult, ListFleetMembersOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -223,7 +278,11 @@ func listFleetMembersHandler(version, clientID string, store ConfigStore, sdeSto
 		if !found {
 			return nil, ListFleetMembersOutput{}, fmt.Errorf("list fleet members for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		members, err := listFleetMembers(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.FleetID)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListFleetMembersOutput{}, fmt.Errorf("list fleet members: %w", err)
+		}
+		members, err := listFleetMembers(ctx, client, in.FleetID)
 		if err != nil {
 			return nil, ListFleetMembersOutput{}, fmt.Errorf("list fleet members: %w", err)
 		}
@@ -231,7 +290,7 @@ func listFleetMembersHandler(version, clientID string, store ConfigStore, sdeSto
 		for i, m := range members {
 			ids[i] = m.ShipTypeID
 		}
-		names := resolveTypeNames(ctx, sdeStore, sso.UserAgent(version), ids)
+		names := resolveTypeNames(ctx, sdeStore, userAgent, ids)
 		for i := range members {
 			members[i].ShipTypeName = names[members[i].ShipTypeID]
 		}
@@ -243,8 +302,8 @@ func listFleetMembersHandler(version, clientID string, store ConfigStore, sdeSto
 				stationIDs = append(stationIDs, *m.StationID)
 			}
 		}
-		systemNames := resolveSystemNames(ctx, sdeStore, sso.UserAgent(version), systemIDs)
-		stationNames := resolveStationNames(ctx, sdeStore, sso.UserAgent(version), stationIDs)
+		systemNames := resolveSystemNames(ctx, sdeStore, userAgent, systemIDs)
+		stationNames := resolveStationNames(ctx, sdeStore, userAgent, stationIDs)
 		for i := range members {
 			members[i].SolarSystemName = systemNames[members[i].SolarSystemID]
 			if members[i].StationID != nil {
@@ -257,11 +316,7 @@ func listFleetMembersHandler(version, clientID string, store ConfigStore, sdeSto
 
 // --- invite_fleet_member (private, write) ---
 
-var inviteFleetMember = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID, inviteCharacterID int64, role string, wingID, squadID *int64) error {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return fmt.Errorf("build ESI client: %w", err)
-	}
+func inviteFleetMember(ctx context.Context, client fleetsESI, fleetID, inviteCharacterID int64, role string, wingID, squadID *int64) error {
 	return client.InviteFleetMember(ctx, fleetID, inviteCharacterID, role, wingID, squadID)
 }
 
@@ -280,9 +335,18 @@ type InviteFleetMemberOutput struct {
 	Role              string `json:"role"`
 }
 
+// AddInviteFleetMember registers invite_fleet_member. open builds the character's ESI
+// client; any client with the fleetsESI methods will do.
+func AddInviteFleetMember[C fleetsESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "invite_fleet_member",
+		Description: "Invite a character into a fleet — this changes state on EVE's server.",
+	}, inviteFleetMemberHandler(open, store))
+}
+
 // inviteFleetMemberHandler is a write tool: it changes state on FC's server, so -- like
 // respond_calendar_event -- it validates its input BEFORE loading config.Store or calling ESI.
-func inviteFleetMemberHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[InviteFleetMemberInput, InviteFleetMemberOutput] {
+func inviteFleetMemberHandler[C fleetsESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[InviteFleetMemberInput, InviteFleetMemberOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in InviteFleetMemberInput) (*mcpsdk.CallToolResult, InviteFleetMemberOutput, error) {
 		if !validFleetRoles[in.Role] {
 			return nil, InviteFleetMemberOutput{}, fmt.Errorf("invite fleet member: invalid role %q, must be one of fleet_commander, wing_commander, squad_commander, squad_member", in.Role)
@@ -294,7 +358,11 @@ func inviteFleetMemberHandler(version, clientID string, store ConfigStore) mcpsd
 		if !found {
 			return nil, InviteFleetMemberOutput{}, fmt.Errorf("invite fleet member for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		if err := inviteFleetMember(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.FleetID, in.InviteCharacterID, in.Role, in.WingID, in.SquadID); err != nil {
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, InviteFleetMemberOutput{}, fmt.Errorf("invite fleet member: %w", err)
+		}
+		if err := inviteFleetMember(ctx, client, in.FleetID, in.InviteCharacterID, in.Role, in.WingID, in.SquadID); err != nil {
 			return nil, InviteFleetMemberOutput{}, fmt.Errorf("invite fleet member: %w", err)
 		}
 		return nil, InviteFleetMemberOutput{CharacterID: in.CharacterID, FleetID: in.FleetID, InviteCharacterID: in.InviteCharacterID, Role: in.Role}, nil
@@ -303,11 +371,7 @@ func inviteFleetMemberHandler(version, clientID string, store ConfigStore) mcpsd
 
 // --- move_fleet_member (private, write) ---
 
-var moveFleetMember = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID, memberID int64, role string, wingID, squadID *int64) error {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return fmt.Errorf("build ESI client: %w", err)
-	}
+func moveFleetMember(ctx context.Context, client fleetsESI, fleetID, memberID int64, role string, wingID, squadID *int64) error {
 	return client.MoveFleetMember(ctx, fleetID, memberID, role, wingID, squadID)
 }
 
@@ -326,7 +390,16 @@ type MoveFleetMemberOutput struct {
 	Role        string `json:"role"`
 }
 
-func moveFleetMemberHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[MoveFleetMemberInput, MoveFleetMemberOutput] {
+// AddMoveFleetMember registers move_fleet_member. open builds the character's ESI
+// client; any client with the fleetsESI methods will do.
+func AddMoveFleetMember[C fleetsESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "move_fleet_member",
+		Description: "Move a fleet member to a new role, wing, or squad — this changes state on EVE's server.",
+	}, moveFleetMemberHandler(open, store))
+}
+
+func moveFleetMemberHandler[C fleetsESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[MoveFleetMemberInput, MoveFleetMemberOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in MoveFleetMemberInput) (*mcpsdk.CallToolResult, MoveFleetMemberOutput, error) {
 		if !validFleetRoles[in.Role] {
 			return nil, MoveFleetMemberOutput{}, fmt.Errorf("move fleet member: invalid role %q, must be one of fleet_commander, wing_commander, squad_commander, squad_member", in.Role)
@@ -338,7 +411,11 @@ func moveFleetMemberHandler(version, clientID string, store ConfigStore) mcpsdk.
 		if !found {
 			return nil, MoveFleetMemberOutput{}, fmt.Errorf("move fleet member for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		if err := moveFleetMember(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.FleetID, in.MemberID, in.Role, in.WingID, in.SquadID); err != nil {
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, MoveFleetMemberOutput{}, fmt.Errorf("move fleet member: %w", err)
+		}
+		if err := moveFleetMember(ctx, client, in.FleetID, in.MemberID, in.Role, in.WingID, in.SquadID); err != nil {
 			return nil, MoveFleetMemberOutput{}, fmt.Errorf("move fleet member: %w", err)
 		}
 		return nil, MoveFleetMemberOutput{CharacterID: in.CharacterID, FleetID: in.FleetID, MemberID: in.MemberID, Role: in.Role}, nil
@@ -347,11 +424,7 @@ func moveFleetMemberHandler(version, clientID string, store ConfigStore) mcpsdk.
 
 // --- kick_fleet_member (private, write) ---
 
-var kickFleetMember = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID, memberID int64) error {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return fmt.Errorf("build ESI client: %w", err)
-	}
+func kickFleetMember(ctx context.Context, client fleetsESI, fleetID, memberID int64) error {
 	return client.KickFleetMember(ctx, fleetID, memberID)
 }
 
@@ -366,7 +439,16 @@ type KickFleetMemberOutput struct {
 	MemberID    int64 `json:"memberId"`
 }
 
-func kickFleetMemberHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[KickFleetMemberInput, KickFleetMemberOutput] {
+// AddKickFleetMember registers kick_fleet_member. open builds the character's ESI
+// client; any client with the fleetsESI methods will do.
+func AddKickFleetMember[C fleetsESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "kick_fleet_member",
+		Description: "Remove a member from a fleet — this changes state on EVE's server.",
+	}, kickFleetMemberHandler(open, store))
+}
+
+func kickFleetMemberHandler[C fleetsESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[KickFleetMemberInput, KickFleetMemberOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in KickFleetMemberInput) (*mcpsdk.CallToolResult, KickFleetMemberOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -375,7 +457,11 @@ func kickFleetMemberHandler(version, clientID string, store ConfigStore) mcpsdk.
 		if !found {
 			return nil, KickFleetMemberOutput{}, fmt.Errorf("kick fleet member for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		if err := kickFleetMember(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.FleetID, in.MemberID); err != nil {
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, KickFleetMemberOutput{}, fmt.Errorf("kick fleet member: %w", err)
+		}
+		if err := kickFleetMember(ctx, client, in.FleetID, in.MemberID); err != nil {
 			return nil, KickFleetMemberOutput{}, fmt.Errorf("kick fleet member: %w", err)
 		}
 		return nil, KickFleetMemberOutput{CharacterID: in.CharacterID, FleetID: in.FleetID, MemberID: in.MemberID}, nil
@@ -397,11 +483,7 @@ type FleetWing struct {
 	Squads []FleetSquad `json:"squads"`
 }
 
-var listFleetWings = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID int64) ([]FleetWing, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
-	}
+func listFleetWings(ctx context.Context, client fleetsESI, fleetID int64) ([]FleetWing, error) {
 	wings, err := client.FleetWings(ctx, fleetID)
 	if err != nil {
 		return nil, err
@@ -427,7 +509,16 @@ type ListFleetWingsOutput struct {
 	Wings       []FleetWing `json:"wings"`
 }
 
-func listFleetWingsHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[ListFleetWingsInput, ListFleetWingsOutput] {
+// AddListFleetWings registers list_fleet_wings. open builds the character's ESI
+// client; any client with the fleetsESI methods will do.
+func AddListFleetWings[C fleetsESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "list_fleet_wings",
+		Description: "List a fleet's wings and their nested squads, using a logged-in character's fleet membership to authorize.",
+	}, listFleetWingsHandler(open, store))
+}
+
+func listFleetWingsHandler[C fleetsESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[ListFleetWingsInput, ListFleetWingsOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in ListFleetWingsInput) (*mcpsdk.CallToolResult, ListFleetWingsOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -436,7 +527,11 @@ func listFleetWingsHandler(version, clientID string, store ConfigStore) mcpsdk.T
 		if !found {
 			return nil, ListFleetWingsOutput{}, fmt.Errorf("list fleet wings for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		wings, err := listFleetWings(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.FleetID)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, ListFleetWingsOutput{}, fmt.Errorf("list fleet wings: %w", err)
+		}
+		wings, err := listFleetWings(ctx, client, in.FleetID)
 		if err != nil {
 			return nil, ListFleetWingsOutput{}, fmt.Errorf("list fleet wings: %w", err)
 		}
@@ -446,11 +541,7 @@ func listFleetWingsHandler(version, clientID string, store ConfigStore) mcpsdk.T
 
 // --- create_fleet_wing (private, write) ---
 
-var createFleetWing = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID int64) (int64, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return 0, fmt.Errorf("build ESI client: %w", err)
-	}
+func createFleetWing(ctx context.Context, client fleetsESI, fleetID int64) (int64, error) {
 	return client.CreateFleetWing(ctx, fleetID)
 }
 
@@ -464,7 +555,16 @@ type CreateFleetWingOutput struct {
 	WingID      int64 `json:"wingId"`
 }
 
-func createFleetWingHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[CreateFleetWingInput, CreateFleetWingOutput] {
+// AddCreateFleetWing registers create_fleet_wing. open builds the character's ESI
+// client; any client with the fleetsESI methods will do.
+func AddCreateFleetWing[C fleetsESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "create_fleet_wing",
+		Description: "Create a new wing in a fleet — this changes state on EVE's server.",
+	}, createFleetWingHandler(open, store))
+}
+
+func createFleetWingHandler[C fleetsESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[CreateFleetWingInput, CreateFleetWingOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in CreateFleetWingInput) (*mcpsdk.CallToolResult, CreateFleetWingOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -473,7 +573,11 @@ func createFleetWingHandler(version, clientID string, store ConfigStore) mcpsdk.
 		if !found {
 			return nil, CreateFleetWingOutput{}, fmt.Errorf("create fleet wing for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		wingID, err := createFleetWing(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.FleetID)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, CreateFleetWingOutput{}, fmt.Errorf("create fleet wing: %w", err)
+		}
+		wingID, err := createFleetWing(ctx, client, in.FleetID)
 		if err != nil {
 			return nil, CreateFleetWingOutput{}, fmt.Errorf("create fleet wing: %w", err)
 		}
@@ -483,11 +587,7 @@ func createFleetWingHandler(version, clientID string, store ConfigStore) mcpsdk.
 
 // --- rename_fleet_wing (private, write) ---
 
-var renameFleetWing = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID, wingID int64, name string) error {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return fmt.Errorf("build ESI client: %w", err)
-	}
+func renameFleetWing(ctx context.Context, client fleetsESI, fleetID, wingID int64, name string) error {
 	return client.RenameFleetWing(ctx, fleetID, wingID, name)
 }
 
@@ -504,7 +604,16 @@ type RenameFleetWingOutput struct {
 	Name        string `json:"name"`
 }
 
-func renameFleetWingHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[RenameFleetWingInput, RenameFleetWingOutput] {
+// AddRenameFleetWing registers rename_fleet_wing. open builds the character's ESI
+// client; any client with the fleetsESI methods will do.
+func AddRenameFleetWing[C fleetsESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "rename_fleet_wing",
+		Description: "Rename a fleet wing — this changes state on EVE's server.",
+	}, renameFleetWingHandler(open, store))
+}
+
+func renameFleetWingHandler[C fleetsESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[RenameFleetWingInput, RenameFleetWingOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in RenameFleetWingInput) (*mcpsdk.CallToolResult, RenameFleetWingOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -513,7 +622,11 @@ func renameFleetWingHandler(version, clientID string, store ConfigStore) mcpsdk.
 		if !found {
 			return nil, RenameFleetWingOutput{}, fmt.Errorf("rename fleet wing for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		if err := renameFleetWing(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.FleetID, in.WingID, in.Name); err != nil {
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, RenameFleetWingOutput{}, fmt.Errorf("rename fleet wing: %w", err)
+		}
+		if err := renameFleetWing(ctx, client, in.FleetID, in.WingID, in.Name); err != nil {
 			return nil, RenameFleetWingOutput{}, fmt.Errorf("rename fleet wing: %w", err)
 		}
 		return nil, RenameFleetWingOutput{CharacterID: in.CharacterID, FleetID: in.FleetID, WingID: in.WingID, Name: in.Name}, nil
@@ -522,11 +635,7 @@ func renameFleetWingHandler(version, clientID string, store ConfigStore) mcpsdk.
 
 // --- delete_fleet_wing (private, write) ---
 
-var deleteFleetWing = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID, wingID int64) error {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return fmt.Errorf("build ESI client: %w", err)
-	}
+func deleteFleetWing(ctx context.Context, client fleetsESI, fleetID, wingID int64) error {
 	return client.DeleteFleetWing(ctx, fleetID, wingID)
 }
 
@@ -541,7 +650,16 @@ type DeleteFleetWingOutput struct {
 	WingID      int64 `json:"wingId"`
 }
 
-func deleteFleetWingHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[DeleteFleetWingInput, DeleteFleetWingOutput] {
+// AddDeleteFleetWing registers delete_fleet_wing. open builds the character's ESI
+// client; any client with the fleetsESI methods will do.
+func AddDeleteFleetWing[C fleetsESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "delete_fleet_wing",
+		Description: "Delete a fleet wing — this changes state on EVE's server.",
+	}, deleteFleetWingHandler(open, store))
+}
+
+func deleteFleetWingHandler[C fleetsESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[DeleteFleetWingInput, DeleteFleetWingOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in DeleteFleetWingInput) (*mcpsdk.CallToolResult, DeleteFleetWingOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -550,7 +668,11 @@ func deleteFleetWingHandler(version, clientID string, store ConfigStore) mcpsdk.
 		if !found {
 			return nil, DeleteFleetWingOutput{}, fmt.Errorf("delete fleet wing for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		if err := deleteFleetWing(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.FleetID, in.WingID); err != nil {
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, DeleteFleetWingOutput{}, fmt.Errorf("delete fleet wing: %w", err)
+		}
+		if err := deleteFleetWing(ctx, client, in.FleetID, in.WingID); err != nil {
 			return nil, DeleteFleetWingOutput{}, fmt.Errorf("delete fleet wing: %w", err)
 		}
 		return nil, DeleteFleetWingOutput{CharacterID: in.CharacterID, FleetID: in.FleetID, WingID: in.WingID}, nil
@@ -559,11 +681,7 @@ func deleteFleetWingHandler(version, clientID string, store ConfigStore) mcpsdk.
 
 // --- create_fleet_squad (private, write) ---
 
-var createFleetSquad = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID, wingID int64) (int64, error) {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return 0, fmt.Errorf("build ESI client: %w", err)
-	}
+func createFleetSquad(ctx context.Context, client fleetsESI, fleetID, wingID int64) (int64, error) {
 	return client.CreateFleetSquad(ctx, fleetID, wingID)
 }
 
@@ -579,7 +697,16 @@ type CreateFleetSquadOutput struct {
 	SquadID     int64 `json:"squadId"`
 }
 
-func createFleetSquadHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[CreateFleetSquadInput, CreateFleetSquadOutput] {
+// AddCreateFleetSquad registers create_fleet_squad. open builds the character's ESI
+// client; any client with the fleetsESI methods will do.
+func AddCreateFleetSquad[C fleetsESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "create_fleet_squad",
+		Description: "Create a new squad within a fleet wing — this changes state on EVE's server.",
+	}, createFleetSquadHandler(open, store))
+}
+
+func createFleetSquadHandler[C fleetsESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[CreateFleetSquadInput, CreateFleetSquadOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in CreateFleetSquadInput) (*mcpsdk.CallToolResult, CreateFleetSquadOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -588,7 +715,11 @@ func createFleetSquadHandler(version, clientID string, store ConfigStore) mcpsdk
 		if !found {
 			return nil, CreateFleetSquadOutput{}, fmt.Errorf("create fleet squad for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		squadID, err := createFleetSquad(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.FleetID, in.WingID)
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, CreateFleetSquadOutput{}, fmt.Errorf("create fleet squad: %w", err)
+		}
+		squadID, err := createFleetSquad(ctx, client, in.FleetID, in.WingID)
 		if err != nil {
 			return nil, CreateFleetSquadOutput{}, fmt.Errorf("create fleet squad: %w", err)
 		}
@@ -598,11 +729,7 @@ func createFleetSquadHandler(version, clientID string, store ConfigStore) mcpsdk
 
 // --- rename_fleet_squad (private, write) ---
 
-var renameFleetSquad = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID, squadID int64, name string) error {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return fmt.Errorf("build ESI client: %w", err)
-	}
+func renameFleetSquad(ctx context.Context, client fleetsESI, fleetID, squadID int64, name string) error {
 	return client.RenameFleetSquad(ctx, fleetID, squadID, name)
 }
 
@@ -619,7 +746,16 @@ type RenameFleetSquadOutput struct {
 	Name        string `json:"name"`
 }
 
-func renameFleetSquadHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[RenameFleetSquadInput, RenameFleetSquadOutput] {
+// AddRenameFleetSquad registers rename_fleet_squad. open builds the character's ESI
+// client; any client with the fleetsESI methods will do.
+func AddRenameFleetSquad[C fleetsESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "rename_fleet_squad",
+		Description: "Rename a fleet squad — this changes state on EVE's server.",
+	}, renameFleetSquadHandler(open, store))
+}
+
+func renameFleetSquadHandler[C fleetsESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[RenameFleetSquadInput, RenameFleetSquadOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in RenameFleetSquadInput) (*mcpsdk.CallToolResult, RenameFleetSquadOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -628,7 +764,11 @@ func renameFleetSquadHandler(version, clientID string, store ConfigStore) mcpsdk
 		if !found {
 			return nil, RenameFleetSquadOutput{}, fmt.Errorf("rename fleet squad for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		if err := renameFleetSquad(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.FleetID, in.SquadID, in.Name); err != nil {
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, RenameFleetSquadOutput{}, fmt.Errorf("rename fleet squad: %w", err)
+		}
+		if err := renameFleetSquad(ctx, client, in.FleetID, in.SquadID, in.Name); err != nil {
 			return nil, RenameFleetSquadOutput{}, fmt.Errorf("rename fleet squad: %w", err)
 		}
 		return nil, RenameFleetSquadOutput{CharacterID: in.CharacterID, FleetID: in.FleetID, SquadID: in.SquadID, Name: in.Name}, nil
@@ -637,11 +777,7 @@ func renameFleetSquadHandler(version, clientID string, store ConfigStore) mcpsdk
 
 // --- delete_fleet_squad (private, write) ---
 
-var deleteFleetSquad = func(ctx context.Context, clientID string, characterID int32, userAgent string, fleetID, squadID int64) error {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return fmt.Errorf("build ESI client: %w", err)
-	}
+func deleteFleetSquad(ctx context.Context, client fleetsESI, fleetID, squadID int64) error {
 	return client.DeleteFleetSquad(ctx, fleetID, squadID)
 }
 
@@ -656,7 +792,16 @@ type DeleteFleetSquadOutput struct {
 	SquadID     int64 `json:"squadId"`
 }
 
-func deleteFleetSquadHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[DeleteFleetSquadInput, DeleteFleetSquadOutput] {
+// AddDeleteFleetSquad registers delete_fleet_squad. open builds the character's ESI
+// client; any client with the fleetsESI methods will do.
+func AddDeleteFleetSquad[C fleetsESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "delete_fleet_squad",
+		Description: "Delete a fleet squad — this changes state on EVE's server.",
+	}, deleteFleetSquadHandler(open, store))
+}
+
+func deleteFleetSquadHandler[C fleetsESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[DeleteFleetSquadInput, DeleteFleetSquadOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in DeleteFleetSquadInput) (*mcpsdk.CallToolResult, DeleteFleetSquadOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -665,7 +810,11 @@ func deleteFleetSquadHandler(version, clientID string, store ConfigStore) mcpsdk
 		if !found {
 			return nil, DeleteFleetSquadOutput{}, fmt.Errorf("delete fleet squad for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		if err := deleteFleetSquad(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.FleetID, in.SquadID); err != nil {
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, DeleteFleetSquadOutput{}, fmt.Errorf("delete fleet squad: %w", err)
+		}
+		if err := deleteFleetSquad(ctx, client, in.FleetID, in.SquadID); err != nil {
 			return nil, DeleteFleetSquadOutput{}, fmt.Errorf("delete fleet squad: %w", err)
 		}
 		return nil, DeleteFleetSquadOutput{CharacterID: in.CharacterID, FleetID: in.FleetID, SquadID: in.SquadID}, nil

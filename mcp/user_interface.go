@@ -5,10 +5,17 @@ import (
 	"fmt"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
-
-	"github.com/rusher2004/new-eden-agent-toolkit/esi"
-	"github.com/rusher2004/new-eden-agent-toolkit/sso"
 )
+
+// userInterfaceESI is the ESI calls the User Interface tools make; each changes state in
+// the character's live EVE client.
+type userInterfaceESI interface {
+	SetAutopilotWaypoint(ctx context.Context, destinationID int64, addToBeginning, clearOtherWaypoints bool) error
+	OpenContractWindow(ctx context.Context, contractID int64) error
+	OpenInformationWindow(ctx context.Context, targetID int64) error
+	OpenMarketDetailsWindow(ctx context.Context, typeID int64) error
+	OpenNewMailWindow(ctx context.Context, recipients []int64, subject, body string, toCorpOrAllianceID, toMailingListID *int64) error
+}
 
 // --- set_autopilot_waypoint (private, write) ---
 //
@@ -16,11 +23,7 @@ import (
 // destination) -- verb-first name, no confirmation parameter, same convention as every other
 // write tool in this project (e.g. respond_calendar_event).
 
-var setAutopilotWaypoint = func(ctx context.Context, clientID string, characterID int32, userAgent string, destinationID int64, addToBeginning, clearOtherWaypoints bool) error {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return fmt.Errorf("build ESI client: %w", err)
-	}
+func setAutopilotWaypoint(ctx context.Context, client userInterfaceESI, destinationID int64, addToBeginning, clearOtherWaypoints bool) error {
 	return client.SetAutopilotWaypoint(ctx, destinationID, addToBeginning, clearOtherWaypoints)
 }
 
@@ -37,7 +40,16 @@ type SetAutopilotWaypointOutput struct {
 	ClearOtherWaypoints bool  `json:"clearOtherWaypoints"`
 }
 
-func setAutopilotWaypointHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[SetAutopilotWaypointInput, SetAutopilotWaypointOutput] {
+// AddSetAutopilotWaypoint registers set_autopilot_waypoint. open builds the character's ESI
+// client; any client with the userInterfaceESI methods will do.
+func AddSetAutopilotWaypoint[C userInterfaceESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "set_autopilot_waypoint",
+		Description: "Set an autopilot waypoint on the given character's live EVE client — this changes the character's active autopilot route.",
+	}, setAutopilotWaypointHandler(open, store))
+}
+
+func setAutopilotWaypointHandler[C userInterfaceESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[SetAutopilotWaypointInput, SetAutopilotWaypointOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in SetAutopilotWaypointInput) (*mcpsdk.CallToolResult, SetAutopilotWaypointOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -46,7 +58,11 @@ func setAutopilotWaypointHandler(version, clientID string, store ConfigStore) mc
 		if !found {
 			return nil, SetAutopilotWaypointOutput{}, fmt.Errorf("set autopilot waypoint for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		if err := setAutopilotWaypoint(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.DestinationID, in.AddToBeginning, in.ClearOtherWaypoints); err != nil {
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, SetAutopilotWaypointOutput{}, fmt.Errorf("set autopilot waypoint: %w", err)
+		}
+		if err := setAutopilotWaypoint(ctx, client, in.DestinationID, in.AddToBeginning, in.ClearOtherWaypoints); err != nil {
 			return nil, SetAutopilotWaypointOutput{}, fmt.Errorf("set autopilot waypoint: %w", err)
 		}
 		return nil, SetAutopilotWaypointOutput{
@@ -58,11 +74,7 @@ func setAutopilotWaypointHandler(version, clientID string, store ConfigStore) mc
 
 // --- open_contract_window (private, write) ---
 
-var openContractWindow = func(ctx context.Context, clientID string, characterID int32, userAgent string, contractID int64) error {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return fmt.Errorf("build ESI client: %w", err)
-	}
+func openContractWindow(ctx context.Context, client userInterfaceESI, contractID int64) error {
 	return client.OpenContractWindow(ctx, contractID)
 }
 
@@ -75,7 +87,16 @@ type OpenContractWindowOutput struct {
 	ContractID  int64 `json:"contractId"`
 }
 
-func openContractWindowHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[OpenContractWindowInput, OpenContractWindowOutput] {
+// AddOpenContractWindow registers open_contract_window. open builds the character's ESI
+// client; any client with the userInterfaceESI methods will do.
+func AddOpenContractWindow[C userInterfaceESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "open_contract_window",
+		Description: "Open a contract window on the given character's live EVE client — this changes what's displayed on the character's screen.",
+	}, openContractWindowHandler(open, store))
+}
+
+func openContractWindowHandler[C userInterfaceESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[OpenContractWindowInput, OpenContractWindowOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in OpenContractWindowInput) (*mcpsdk.CallToolResult, OpenContractWindowOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -84,7 +105,11 @@ func openContractWindowHandler(version, clientID string, store ConfigStore) mcps
 		if !found {
 			return nil, OpenContractWindowOutput{}, fmt.Errorf("open contract window for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		if err := openContractWindow(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.ContractID); err != nil {
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, OpenContractWindowOutput{}, fmt.Errorf("open contract window: %w", err)
+		}
+		if err := openContractWindow(ctx, client, in.ContractID); err != nil {
 			return nil, OpenContractWindowOutput{}, fmt.Errorf("open contract window: %w", err)
 		}
 		return nil, OpenContractWindowOutput{CharacterID: in.CharacterID, ContractID: in.ContractID}, nil
@@ -93,11 +118,7 @@ func openContractWindowHandler(version, clientID string, store ConfigStore) mcps
 
 // --- open_information_window (private, write) ---
 
-var openInformationWindow = func(ctx context.Context, clientID string, characterID int32, userAgent string, targetID int64) error {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return fmt.Errorf("build ESI client: %w", err)
-	}
+func openInformationWindow(ctx context.Context, client userInterfaceESI, targetID int64) error {
 	return client.OpenInformationWindow(ctx, targetID)
 }
 
@@ -110,7 +131,16 @@ type OpenInformationWindowOutput struct {
 	TargetID    int64 `json:"targetId"`
 }
 
-func openInformationWindowHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[OpenInformationWindowInput, OpenInformationWindowOutput] {
+// AddOpenInformationWindow registers open_information_window. open builds the character's ESI
+// client; any client with the userInterfaceESI methods will do.
+func AddOpenInformationWindow[C userInterfaceESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "open_information_window",
+		Description: "Open an information window on the given character's live EVE client — this changes what's displayed on the character's screen.",
+	}, openInformationWindowHandler(open, store))
+}
+
+func openInformationWindowHandler[C userInterfaceESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[OpenInformationWindowInput, OpenInformationWindowOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in OpenInformationWindowInput) (*mcpsdk.CallToolResult, OpenInformationWindowOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -119,7 +149,11 @@ func openInformationWindowHandler(version, clientID string, store ConfigStore) m
 		if !found {
 			return nil, OpenInformationWindowOutput{}, fmt.Errorf("open information window for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		if err := openInformationWindow(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.TargetID); err != nil {
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, OpenInformationWindowOutput{}, fmt.Errorf("open information window: %w", err)
+		}
+		if err := openInformationWindow(ctx, client, in.TargetID); err != nil {
 			return nil, OpenInformationWindowOutput{}, fmt.Errorf("open information window: %w", err)
 		}
 		return nil, OpenInformationWindowOutput{CharacterID: in.CharacterID, TargetID: in.TargetID}, nil
@@ -128,11 +162,7 @@ func openInformationWindowHandler(version, clientID string, store ConfigStore) m
 
 // --- open_market_details_window (private, write) ---
 
-var openMarketDetailsWindow = func(ctx context.Context, clientID string, characterID int32, userAgent string, typeID int64) error {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return fmt.Errorf("build ESI client: %w", err)
-	}
+func openMarketDetailsWindow(ctx context.Context, client userInterfaceESI, typeID int64) error {
 	return client.OpenMarketDetailsWindow(ctx, typeID)
 }
 
@@ -145,7 +175,16 @@ type OpenMarketDetailsWindowOutput struct {
 	TypeID      int64 `json:"typeId"`
 }
 
-func openMarketDetailsWindowHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[OpenMarketDetailsWindowInput, OpenMarketDetailsWindowOutput] {
+// AddOpenMarketDetailsWindow registers open_market_details_window. open builds the character's ESI
+// client; any client with the userInterfaceESI methods will do.
+func AddOpenMarketDetailsWindow[C userInterfaceESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "open_market_details_window",
+		Description: "Open a market details window on the given character's live EVE client — this changes what's displayed on the character's screen.",
+	}, openMarketDetailsWindowHandler(open, store))
+}
+
+func openMarketDetailsWindowHandler[C userInterfaceESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[OpenMarketDetailsWindowInput, OpenMarketDetailsWindowOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in OpenMarketDetailsWindowInput) (*mcpsdk.CallToolResult, OpenMarketDetailsWindowOutput, error) {
 		found, err := characterExists(store, in.CharacterID)
 		if err != nil {
@@ -154,7 +193,11 @@ func openMarketDetailsWindowHandler(version, clientID string, store ConfigStore)
 		if !found {
 			return nil, OpenMarketDetailsWindowOutput{}, fmt.Errorf("open market details window for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		if err := openMarketDetailsWindow(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.TypeID); err != nil {
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, OpenMarketDetailsWindowOutput{}, fmt.Errorf("open market details window: %w", err)
+		}
+		if err := openMarketDetailsWindow(ctx, client, in.TypeID); err != nil {
 			return nil, OpenMarketDetailsWindowOutput{}, fmt.Errorf("open market details window: %w", err)
 		}
 		return nil, OpenMarketDetailsWindowOutput{CharacterID: in.CharacterID, TypeID: in.TypeID}, nil
@@ -163,11 +206,7 @@ func openMarketDetailsWindowHandler(version, clientID string, store ConfigStore)
 
 // --- open_new_mail_window (private, write) ---
 
-var openNewMailWindow = func(ctx context.Context, clientID string, characterID int32, userAgent string, recipients []int64, subject, body string, toCorpOrAllianceID, toMailingListID *int64) error {
-	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
-	if err != nil {
-		return fmt.Errorf("build ESI client: %w", err)
-	}
+func openNewMailWindow(ctx context.Context, client userInterfaceESI, recipients []int64, subject, body string, toCorpOrAllianceID, toMailingListID *int64) error {
 	return client.OpenNewMailWindow(ctx, recipients, subject, body, toCorpOrAllianceID, toMailingListID)
 }
 
@@ -188,7 +227,16 @@ type OpenNewMailWindowOutput struct {
 	ToMailingListID    *int64  `json:"toMailingListId,omitempty"`
 }
 
-func openNewMailWindowHandler(version, clientID string, store ConfigStore) mcpsdk.ToolHandlerFor[OpenNewMailWindowInput, OpenNewMailWindowOutput] {
+// AddOpenNewMailWindow registers open_new_mail_window. open builds the character's ESI
+// client; any client with the userInterfaceESI methods will do.
+func AddOpenNewMailWindow[C userInterfaceESI](s *mcpsdk.Server, open func(ctx context.Context, characterID int32) (C, error), store configLoader) {
+	mcpsdk.AddTool(s, &mcpsdk.Tool{
+		Name:        "open_new_mail_window",
+		Description: "Open a pre-filled new mail window on the given character's live EVE client — this changes what's displayed on the character's screen.",
+	}, openNewMailWindowHandler(open, store))
+}
+
+func openNewMailWindowHandler[C userInterfaceESI](open func(ctx context.Context, characterID int32) (C, error), store configLoader) mcpsdk.ToolHandlerFor[OpenNewMailWindowInput, OpenNewMailWindowOutput] {
 	return func(ctx context.Context, _ *mcpsdk.CallToolRequest, in OpenNewMailWindowInput) (*mcpsdk.CallToolResult, OpenNewMailWindowOutput, error) {
 		if in.ToCorpOrAllianceID != nil && in.ToMailingListID != nil {
 			return nil, OpenNewMailWindowOutput{}, fmt.Errorf("open new mail window: toCorpOrAllianceId and toMailingListId are mutually exclusive, set at most one")
@@ -200,7 +248,11 @@ func openNewMailWindowHandler(version, clientID string, store ConfigStore) mcpsd
 		if !found {
 			return nil, OpenNewMailWindowOutput{}, fmt.Errorf("open new mail window for character %d: %w", in.CharacterID, ErrCharacterNotFound)
 		}
-		if err := openNewMailWindow(ctx, clientID, in.CharacterID, sso.UserAgent(version), in.Recipients, in.Subject, in.Body, in.ToCorpOrAllianceID, in.ToMailingListID); err != nil {
+		client, err := open(ctx, in.CharacterID)
+		if err != nil {
+			return nil, OpenNewMailWindowOutput{}, fmt.Errorf("open new mail window: %w", err)
+		}
+		if err := openNewMailWindow(ctx, client, in.Recipients, in.Subject, in.Body, in.ToCorpOrAllianceID, in.ToMailingListID); err != nil {
 			return nil, OpenNewMailWindowOutput{}, fmt.Errorf("open new mail window: %w", err)
 		}
 		return nil, OpenNewMailWindowOutput{
