@@ -1,5 +1,8 @@
 # neat plugin — changelog
 
+## 0.21.1
+- No change for players. Internal: the loyalty tools now run on a shared operation layer, and a new check keeps the packages' import boundaries from drifting.
+
 ## 0.21.0
 - No change for players. Internal groundwork for a command line interface: new `operation`, `character` and `universe` packages.
 
