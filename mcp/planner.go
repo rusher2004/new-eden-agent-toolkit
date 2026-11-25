@@ -278,7 +278,8 @@ func (p *planner) skills(ctx context.Context, characterID int32) (map[int64]int,
 	}
 	client, err := p.esi(ctx, characterID)
 	if err != nil {
-		return nil, fmt.Errorf("skills of %d: %w", characterID, err)
+		// The opener's error already names the character.
+		return nil, fmt.Errorf("read skills: %w", err)
 	}
 	raw, _, _, err := listCharacterSkills(ctx, client)
 	if err != nil {

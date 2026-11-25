@@ -256,7 +256,7 @@ func TestPlannerReads_ReportUnopenableClients(t *testing.T) {
 		read func() error
 		want string
 	}{
-		"skills":                 {func() error { _, err := p.skills(ctx, testPilot); return err }, fmt.Sprintf("skills of %d", testPilot)},
+		"skills":                 {func() error { _, err := p.skills(ctx, testPilot); return err }, "read skills"},
 		"character blueprints":   {func() error { _, err := p.loadOwnership(ctx, testPilot, 0, false); return err }, "character blueprints"},
 		"corporation blueprints": {func() error { _, err := p.loadOwnership(ctx, testPilot, testCorp, false); return err }, "corporation blueprints"},
 		"character jobs":         {func() error { _, err := p.findJob(ctx, testPilot, 0, 1); return err }, "character jobs"},
