@@ -140,3 +140,49 @@ func TestPrintFindingsWriteFailureIsError(t *testing.T) {
 		t.Fatalf("err = %v, want the write error", err)
 	}
 }
+
+func TestAuditIgnoresPlainDataStructs(t *testing.T) {
+	fs, err := Audit("testdata")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range fs {
+		if f.Kind == "CONCRETE_PARAM" && f.Type == "sde.Record" {
+			t.Errorf("plain data struct reported as a concrete client: %s", f)
+		}
+	}
+}
+
+func TestAuditSkipsHiddenDirectories(t *testing.T) {
+	fs, err := Audit("testdata")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range fs {
+		if strings.Contains(f.File, ".hidden") {
+			t.Errorf("hidden directory was scanned: %s", f)
+		}
+	}
+}
+
+func TestAuditKeepsSamePackageNameDirectoriesApart(t *testing.T) {
+	fs, err := Audit("testdata")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string][]string{}
+	for _, f := range fs {
+		if f.Kind == "INTERFACE" && strings.HasPrefix(f.File, "dup/") {
+			got[f.File] = f.UsedBy
+		}
+	}
+	if len(got) != 2 {
+		t.Fatalf("want one INTERFACE per dup directory, got %v", got)
+	}
+	if u := got["dup/a/a.go"]; len(u) != 1 || u[0] != "-" {
+		t.Errorf("dup/a Runner used-by = %v, want [-]: dup/b's use must not leak in", u)
+	}
+	if u := got["dup/b/b.go"]; len(u) != 1 || u[0] != "dup" {
+		t.Errorf("dup/b Runner used-by = %v, want [dup]", u)
+	}
+}

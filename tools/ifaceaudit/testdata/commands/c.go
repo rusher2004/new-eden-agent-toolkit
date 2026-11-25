@@ -20,3 +20,6 @@ type local interface{ Do() }
 var _ = sde.Lister(nil)
 
 var factory = func() (*sde.Client, error) { return sde.New("x"), nil }
+
+// useRecord takes producer data, which is not a concrete-client finding.
+func useRecord(r sde.Record) int { return r.ID }

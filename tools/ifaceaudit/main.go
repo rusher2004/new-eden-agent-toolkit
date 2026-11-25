@@ -4,8 +4,9 @@
 // It prints, sorted by file then line:
 //
 //	CONCRETE_PARAM  a parameter, struct field or variable outside a producer
-//	                package whose type is a concrete type (pkg.Type) from a
-//	                producer package (sde, esi, sso, creds,
+//	                package whose type is a concrete client or store (pkg.Type:
+//	                a type with methods or returned by a New... constructor, not
+//	                a plain data struct) from a producer package (sde, esi, sso, creds,
 //	                config, analytics).
 //	CONCRETE_CTOR   a reference to a producer constructor (pkg.New...) outside
 //	                a producer package: the place a concrete client is built.
@@ -35,6 +36,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -69,6 +71,7 @@ func (f Finding) String() string {
 
 type parsedFile struct {
 	rel     string
+	dir     string // slash-separated directory of the file, relative to the root
 	pkg     string
 	imports map[string]string // local name -> imported package name (last path element)
 	ast     *ast.File
@@ -83,7 +86,10 @@ func Audit(root string) ([]Finding, error) {
 			return fmt.Errorf("walk %s: %w", p, err)
 		}
 		if d.IsDir() {
-			if d.Name() == "testdata" && p != root || d.Name() == ".git" || d.Name() == "vendor" {
+			// Hidden directories (.git, .claude/worktrees, ...) can hold whole
+			// copies of the repo; scanning them would double every finding.
+			hidden := p != root && strings.HasPrefix(d.Name(), ".")
+			if d.Name() == "testdata" && p != root || d.Name() == "vendor" || hidden {
 				return filepath.SkipDir
 			}
 			return nil
@@ -99,7 +105,7 @@ func Audit(root string) ([]Finding, error) {
 		if err != nil {
 			return fmt.Errorf("relative path of %s: %w", p, err)
 		}
-		pf := parsedFile{rel: filepath.ToSlash(rel), pkg: f.Name.Name, imports: map[string]string{}, ast: f}
+		pf := parsedFile{rel: filepath.ToSlash(rel), dir: path.Dir(filepath.ToSlash(rel)), pkg: f.Name.Name, imports: map[string]string{}, ast: f}
 		for _, im := range f.Imports {
 			ip := strings.Trim(im.Path.Value, `"`)
 			// Known limit: keyed by path.Base, so a versioned path (.../v2) or an
@@ -121,8 +127,43 @@ func Audit(root string) ([]Finding, error) {
 		return nil, fmt.Errorf("audit %s: %w", root, err)
 	}
 
+	// Only clients and stores are reported as CONCRETE_PARAM, not plain data
+	// structs: a producer type with methods, or one a New... constructor returns.
+	clients := map[string]bool{}
+	for _, pf := range files {
+		if !producers[pf.pkg] {
+			continue
+		}
+		for _, d := range pf.ast.Decls {
+			fd, ok := d.(*ast.FuncDecl)
+			if !ok {
+				continue
+			}
+			if fd.Recv != nil && len(fd.Recv.List) > 0 {
+				clients[pf.pkg+"."+recvName(fd.Recv.List[0].Type)] = true
+				continue
+			}
+			if strings.HasPrefix(fd.Name.Name, "New") && fd.Type.Results != nil {
+				for _, r := range fd.Type.Results.List {
+					if id, ok := baseIdent(r.Type); ok {
+						clients[pf.pkg+"."+id] = true
+					}
+				}
+			}
+		}
+	}
+
 	var out []Finding
-	type ifaceKey struct{ pkg, name string }
+	// Keyed by directory, not package name: several directories share a package
+	// name (every tool is package main; sde and sdetest), and keying on the name
+	// would let one overwrite another's interfaces and merge their usage.
+	type ifaceKey struct{ dir, name string }
+	pkgDirs := map[string][]string{} // package name -> directories declaring it
+	for _, pf := range files {
+		if !slices.Contains(pkgDirs[pf.pkg], pf.dir) {
+			pkgDirs[pf.pkg] = append(pkgDirs[pf.pkg], pf.dir)
+		}
+	}
 	ifaces := map[ifaceKey]*Finding{}
 	for _, pf := range files {
 		inProducer := producers[pf.pkg]
@@ -140,7 +181,7 @@ func Audit(root string) ([]Finding, error) {
 					name = recvName(d.Recv.List[0].Type) + "." + name
 				}
 				for _, p := range d.Type.Params.List {
-					out = append(out, concrete(fset, pf, name, p.Type, false)...)
+					out = append(out, concrete(fset, pf, clients, name, p.Type, false)...)
 				}
 			case *ast.GenDecl:
 				for _, spec := range d.Specs {
@@ -153,7 +194,7 @@ func Audit(root string) ([]Finding, error) {
 								k = "PRODUCER_IFACE"
 							}
 							fd := &Finding{Kind: k, File: pf.rel, Line: fset.Position(s.Pos()).Line, Context: pf.pkg + "." + s.Name.Name}
-							ifaces[ifaceKey{pf.pkg, s.Name.Name}] = fd
+							ifaces[ifaceKey{pf.dir, s.Name.Name}] = fd
 						case *ast.StructType:
 							if inProducer {
 								continue
@@ -167,7 +208,7 @@ func Audit(root string) ([]Finding, error) {
 									}
 								}
 								for _, n := range names {
-									out = append(out, concrete(fset, pf, s.Name.Name+"."+n, fld.Type, false)...)
+									out = append(out, concrete(fset, pf, clients, s.Name.Name+"."+n, fld.Type, false)...)
 								}
 							}
 						}
@@ -177,11 +218,11 @@ func Audit(root string) ([]Finding, error) {
 						}
 						for _, n := range s.Names {
 							if s.Type != nil {
-								out = append(out, concrete(fset, pf, n.Name, s.Type, true)...)
+								out = append(out, concrete(fset, pf, clients, n.Name, s.Type, true)...)
 							}
 							for _, v := range s.Values {
 								if fl, ok := v.(*ast.FuncLit); ok {
-									out = append(out, concrete(fset, pf, n.Name, fl.Type, true)...)
+									out = append(out, concrete(fset, pf, clients, n.Name, fl.Type, true)...)
 								}
 							}
 						}
@@ -203,16 +244,17 @@ func Audit(root string) ([]Finding, error) {
 			case *ast.SelectorExpr:
 				if x, ok := n.X.(*ast.Ident); ok {
 					if base, ok := pf.imports[x.Name]; ok {
-						k := ifaceKey{base, n.Sel.Name}
-						if u, ok := used[k]; ok && base != pf.pkg {
-							u[pf.pkg] = true
+						for _, dir := range pkgDirs[base] {
+							if u, ok := used[ifaceKey{dir, n.Sel.Name}]; ok && dir != pf.dir {
+								u[pf.pkg] = true
+							}
 						}
 					}
 				}
 			case *ast.Field:
 				// bare identifier uses of a same-package interface type
 				if id, ok := baseIdent(n.Type); ok {
-					k := ifaceKey{pf.pkg, id}
+					k := ifaceKey{pf.dir, id}
 					if u, ok := used[k]; ok {
 						u[pf.pkg] = true
 					}
@@ -327,7 +369,7 @@ func recvName(e ast.Expr) string {
 
 // concrete reports every pkg.Type selector in a type expression where pkg is a
 // producer package. Function types contribute their parameters, and their results when results is set.
-func concrete(fset *token.FileSet, pf parsedFile, ctx string, e ast.Expr, results bool) []Finding {
+func concrete(fset *token.FileSet, pf parsedFile, clients map[string]bool, ctx string, e ast.Expr, results bool) []Finding {
 	var out []Finding
 	var walk func(ast.Expr)
 	walk = func(e ast.Expr) {
@@ -362,7 +404,7 @@ func concrete(fset *token.FileSet, pf parsedFile, ctx string, e ast.Expr, result
 			}
 		case *ast.SelectorExpr:
 			if x, ok := t.X.(*ast.Ident); ok {
-				if base, ok := pf.imports[x.Name]; ok && producers[base] {
+				if base, ok := pf.imports[x.Name]; ok && producers[base] && clients[base+"."+t.Sel.Name] {
 					out = append(out, Finding{
 						Kind: "CONCRETE_PARAM", File: pf.rel, Line: fset.Position(t.Pos()).Line,
 						Context: ctx, Type: base + "." + t.Sel.Name,
@@ -380,21 +422,23 @@ func main() {
 	if len(os.Args) > 1 {
 		root = os.Args[1]
 	}
-	fs, err := Audit(root)
+	findings, err := Audit(root)
 	if err == nil {
-		err = printFindings(os.Stdout, fs)
+		err = printFindings(os.Stdout, findings)
 	}
 	if err != nil {
-		// Exception to the no-dropped-errors rule: main is the last place to
-		// report; if stderr fails too, exit code 1 still carries the failure.
-		_, _ = fmt.Fprintln(os.Stderr, "ifaceaudit:", err)
+		// main is the last place to report. If stderr itself fails there is
+		// nowhere left to say so, so exit 2 (not 1) carries that.
+		if _, werr := fmt.Fprintln(os.Stderr, "ifaceaudit:", err); werr != nil {
+			os.Exit(2)
+		}
 		os.Exit(1)
 	}
 }
 
 // printFindings writes one line per finding to w.
-func printFindings(w io.Writer, fs []Finding) error {
-	for _, f := range fs {
+func printFindings(w io.Writer, findings []Finding) error {
+	for _, f := range findings {
 		if _, err := fmt.Fprintln(w, f); err != nil {
 			return fmt.Errorf("print findings: %w", err)
 		}
