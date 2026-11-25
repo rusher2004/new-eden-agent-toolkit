@@ -256,7 +256,7 @@ func listCharacterMilitaryCampaignObjectivesHandler[C characterMilitaryCampaignO
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, ListCharacterMilitaryCampaignObjectivesOutput{}, fmt.Errorf("build ESI client: %w", err)
+			return nil, ListCharacterMilitaryCampaignObjectivesOutput{}, err
 		}
 		objectives, cursor, err := client.CharacterMilitaryCampaignObjectives(ctx, in.After, in.Before, in.Limit)
 		if err != nil {
@@ -315,7 +315,7 @@ func getCharacterMilitaryCampaignObjectiveParticipationHandler[C characterMilita
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, GetCharacterMilitaryCampaignObjectiveParticipationOutput{}, fmt.Errorf("build ESI client: %w", err)
+			return nil, GetCharacterMilitaryCampaignObjectiveParticipationOutput{}, err
 		}
 		p, err := client.CharacterMilitaryCampaignObjectiveParticipation(ctx, in.ObjectiveID)
 		if err != nil {

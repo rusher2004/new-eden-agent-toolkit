@@ -164,7 +164,7 @@ func listCharacterParagonHubSkinrListingsHandler[C characterParagonHubSkinrListi
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, ListCharacterParagonHubSkinrListingsOutput{}, fmt.Errorf("build ESI client: %w", err)
+			return nil, ListCharacterParagonHubSkinrListingsOutput{}, err
 		}
 		items, cursor, err := client.CharacterParagonHubSkinrListings(ctx, in.After, in.Before, in.Limit)
 		if err != nil {
@@ -225,7 +225,7 @@ func listParagonHubSkinrListingsForAllianceHandler[C paragonHubSkinrListingsForA
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, ListParagonHubSkinrListingsForAllianceOutput{}, fmt.Errorf("build ESI client: %w", err)
+			return nil, ListParagonHubSkinrListingsForAllianceOutput{}, err
 		}
 		items, cursor, err := client.ParagonHubSkinrListingsForAlliance(ctx, in.AllianceID, in.After, in.Before, in.Limit)
 		if err != nil {
@@ -279,7 +279,7 @@ func listParagonHubSkinrListingsForCorporationHandler[C paragonHubSkinrListingsF
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, ListParagonHubSkinrListingsForCorporationOutput{}, fmt.Errorf("build ESI client: %w", err)
+			return nil, ListParagonHubSkinrListingsForCorporationOutput{}, err
 		}
 		items, cursor, err := client.ParagonHubSkinrListingsForCorporation(ctx, in.CorporationID, in.After, in.Before, in.Limit)
 		if err != nil {
@@ -331,7 +331,7 @@ func listParagonHubSkinrListingsForCharacterHandler[C paragonHubSkinrListingsFor
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, ListParagonHubSkinrListingsForCharacterOutput{}, fmt.Errorf("build ESI client: %w", err)
+			return nil, ListParagonHubSkinrListingsForCharacterOutput{}, err
 		}
 		items, cursor, err := client.ParagonHubSkinrListingsForCharacter(ctx, in.After, in.Before, in.Limit)
 		if err != nil {

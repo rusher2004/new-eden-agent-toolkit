@@ -66,10 +66,14 @@ func inCompositionRoot(rel string) bool {
 	return compositionRoots[top]
 }
 
-// isTestSupport reports a package that exists to build fixtures for tests
-// (sde/sdetest), whose name ends in "test": it constructs producers by design,
-// like a composition root.
-func isTestSupport(pkg string) bool { return strings.HasSuffix(pkg, "test") }
+// testSupportPackages names the packages that exist to build fixtures for
+// tests: they construct producers by design, like a composition root. They are
+// listed explicitly so a new package that merely ends in "test" is audited like
+// any other.
+var testSupportPackages = map[string]bool{"sdetest": true}
+
+// isTestSupport reports whether pkg is one of testSupportPackages.
+func isTestSupport(pkg string) bool { return testSupportPackages[pkg] }
 
 // isConstructorName reports whether an exported function name marks a
 // constructor: the same rule picks the producer types that count as clients and

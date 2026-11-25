@@ -80,7 +80,7 @@ func listCharacterKillmailsRecentHandler[C killmailsESI](open func(ctx context.C
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, ListCharacterKillmailsRecentOutput{}, fmt.Errorf("build ESI client: %w", err)
+			return nil, ListCharacterKillmailsRecentOutput{}, err
 		}
 		refs, totalPages, err := listCharacterKillmailsRecent(ctx, client, in.Page)
 		if err != nil {
@@ -133,7 +133,7 @@ func listCorporationKillmailsRecentHandler[C killmailsESI](open func(ctx context
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, ListCorporationKillmailsRecentOutput{}, fmt.Errorf("build ESI client: %w", err)
+			return nil, ListCorporationKillmailsRecentOutput{}, err
 		}
 		refs, totalPages, err := listCorporationKillmailsRecent(ctx, client, in.CorporationID, in.Page)
 		if err != nil {

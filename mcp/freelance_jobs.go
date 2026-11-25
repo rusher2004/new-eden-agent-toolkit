@@ -92,7 +92,7 @@ func listCharacterFreelanceJobsHandler[C characterFreelanceJobsESI](open func(ct
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, ListCharacterFreelanceJobsOutput{}, fmt.Errorf("build ESI client: %w", err)
+			return nil, ListCharacterFreelanceJobsOutput{}, err
 		}
 		jobs, err := client.CharacterFreelanceJobs(ctx)
 		if err != nil {
@@ -141,7 +141,7 @@ func getCharacterFreelanceJobParticipationHandler[C characterFreelanceJobPartici
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, GetCharacterFreelanceJobParticipationOutput{}, fmt.Errorf("build ESI client: %w", err)
+			return nil, GetCharacterFreelanceJobParticipationOutput{}, err
 		}
 		p, err := client.CharacterFreelanceJobParticipation(ctx, in.JobID)
 		if err != nil {
@@ -195,7 +195,7 @@ func listCorporationFreelanceJobsHandler[C corporationFreelanceJobsESI](open fun
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, ListCorporationFreelanceJobsOutput{}, fmt.Errorf("build ESI client: %w", err)
+			return nil, ListCorporationFreelanceJobsOutput{}, err
 		}
 		jobs, cursor, err := client.CorporationFreelanceJobs(ctx, in.CorporationID, in.After, in.Before, in.Limit)
 		if err != nil {
@@ -261,7 +261,7 @@ func listCorporationFreelanceJobParticipantsHandler[C corporationFreelanceJobPar
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, ListCorporationFreelanceJobParticipantsOutput{}, fmt.Errorf("build ESI client: %w", err)
+			return nil, ListCorporationFreelanceJobParticipantsOutput{}, err
 		}
 		participants, cursor, err := client.CorporationFreelanceJobParticipants(ctx, in.CorporationID, in.JobID, in.After, in.Before, in.Limit)
 		if err != nil {

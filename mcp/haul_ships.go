@@ -280,22 +280,20 @@ func (p *planner) haulShips(ctx context.Context, cfg config.Config, o haulShipOw
 		client, err := p.esi(ctx, o.id)
 		if err != nil {
 			warning = fmt.Sprintf("couldn't read the names of %s's ships, so they're left out: %v", o.name, err)
-		}
-		for chunk := range slices.Chunk(ships, maxAssetNameIDs) {
-			if client == nil {
-				break
-			}
-			var shipIDs []int64
-			for _, s := range chunk {
-				shipIDs = append(shipIDs, s.ItemID)
-			}
-			got, err := getAssetNames(ctx, client, shipIDs)
-			if err != nil {
-				warning = fmt.Sprintf("couldn't read the names of %s's ships, so they're left out: %v", o.name, err)
-				continue
-			}
-			for _, n := range got {
-				names[n.ItemID] = n.Name
+		} else {
+			for chunk := range slices.Chunk(ships, maxAssetNameIDs) {
+				var shipIDs []int64
+				for _, s := range chunk {
+					shipIDs = append(shipIDs, s.ItemID)
+				}
+				got, err := getAssetNames(ctx, client, shipIDs)
+				if err != nil {
+					warning = fmt.Sprintf("couldn't read the names of %s's ships, so they're left out: %v", o.name, err)
+					continue
+				}
+				for _, n := range got {
+					names[n.ItemID] = n.Name
+				}
 			}
 		}
 		for i := range ships {

@@ -158,7 +158,7 @@ type AssetLocation struct {
 var getAssetLocations = func(ctx context.Context, clientID string, characterID int32, userAgent string, itemIDs []int64) ([]AssetLocation, error) {
 	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
 	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
+		return nil, err
 	}
 	locs, err := client.AssetLocations(ctx, itemIDs)
 	if err != nil {
@@ -366,7 +366,7 @@ func listCorporationAssetsHandler[C corporationAssetsESI](userAgent string, open
 var getCorporationAssetLocations = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, itemIDs []int64) ([]AssetLocation, error) {
 	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
 	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
+		return nil, err
 	}
 	locs, err := client.CorporationAssetLocations(ctx, corporationID, itemIDs)
 	if err != nil {

@@ -74,7 +74,7 @@ type ContractItem struct {
 var listCharacterContracts = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]Contract, int32, error) {
 	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
 	if err != nil {
-		return nil, 0, fmt.Errorf("build ESI client: %w", err)
+		return nil, 0, err
 	}
 	contracts, totalPages, err := client.CharacterContracts(ctx, page)
 	if err != nil {
@@ -132,7 +132,7 @@ func listCharacterContractsHandler(version, clientID string, store ConfigStore) 
 var listCharacterContractBids = func(ctx context.Context, clientID string, characterID int32, userAgent string, contractID int64) ([]ContractBid, error) {
 	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
 	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
+		return nil, err
 	}
 	bids, err := client.CharacterContractBids(ctx, contractID)
 	if err != nil {
@@ -178,7 +178,7 @@ func listCharacterContractBidsHandler(version, clientID string, store ConfigStor
 var listCharacterContractItems = func(ctx context.Context, clientID string, characterID int32, userAgent string, contractID int64) ([]ContractItem, error) {
 	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
 	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
+		return nil, err
 	}
 	items, err := client.CharacterContractItems(ctx, contractID)
 	if err != nil {
@@ -231,7 +231,7 @@ func listCharacterContractItemsHandler(version, clientID string, store ConfigSto
 var listCorporationContracts = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]Contract, int32, error) {
 	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
 	if err != nil {
-		return nil, 0, fmt.Errorf("build ESI client: %w", err)
+		return nil, 0, err
 	}
 	contracts, totalPages, err := client.CorporationContracts(ctx, corporationID, page)
 	if err != nil {
@@ -291,7 +291,7 @@ func listCorporationContractsHandler(version, clientID string, store ConfigStore
 var listCorporationContractBids = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, contractID int64, page int32) ([]ContractBid, int32, error) {
 	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
 	if err != nil {
-		return nil, 0, fmt.Errorf("build ESI client: %w", err)
+		return nil, 0, err
 	}
 	bids, totalPages, err := client.CorporationContractBids(ctx, corporationID, contractID, page)
 	if err != nil {
@@ -346,7 +346,7 @@ func listCorporationContractBidsHandler(version, clientID string, store ConfigSt
 var listCorporationContractItems = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, contractID int64) ([]ContractItem, error) {
 	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
 	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
+		return nil, err
 	}
 	items, err := client.CorporationContractItems(ctx, corporationID, contractID)
 	if err != nil {

@@ -90,7 +90,7 @@ func listCharacterPlanetsHandler[C planetsESI](userAgent string, open func(ctx c
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, ListCharacterPlanetsOutput{}, fmt.Errorf("build ESI client: %w", err)
+			return nil, ListCharacterPlanetsOutput{}, err
 		}
 		planets, err := listCharacterPlanets(ctx, client)
 		if err != nil {
@@ -272,7 +272,7 @@ func getCharacterPlanetHandler[C planetsESI](userAgent string, open func(ctx con
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, GetCharacterPlanetOutput{}, fmt.Errorf("build ESI client: %w", err)
+			return nil, GetCharacterPlanetOutput{}, err
 		}
 		detail, err := getCharacterPlanet(ctx, client, in.PlanetID)
 		if err != nil {
@@ -374,7 +374,7 @@ func listCorporationCustomsOfficesHandler[C planetsESI](userAgent string, open f
 		}
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, ListCorporationCustomsOfficesOutput{}, fmt.Errorf("build ESI client: %w", err)
+			return nil, ListCorporationCustomsOfficesOutput{}, err
 		}
 		offices, totalPages, err := listCorporationCustomsOffices(ctx, client, in.CorporationID, in.Page)
 		if err != nil {

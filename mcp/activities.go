@@ -76,7 +76,7 @@ func listMercenaryTacticalOperationsHandler[C operationsESI](open func(ctx conte
 
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, ListMercenaryTacticalOperationsOutput{}, fmt.Errorf("build ESI client: %w", err)
+			return nil, ListMercenaryTacticalOperationsOutput{}, err
 		}
 		ops, err := listMercenaryTacticalOperations(ctx, client)
 		if err != nil {
@@ -147,7 +147,7 @@ func getMercenaryTacticalOperationHandler[C operationsESI](userAgent string, ope
 
 		client, err := open(ctx, in.CharacterID)
 		if err != nil {
-			return nil, GetMercenaryTacticalOperationOutput{}, fmt.Errorf("build ESI client: %w", err)
+			return nil, GetMercenaryTacticalOperationOutput{}, err
 		}
 		result, err := getMercenaryTacticalOperationDetail(ctx, client, in.OperationID)
 		if err != nil {

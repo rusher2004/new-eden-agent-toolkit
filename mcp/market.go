@@ -129,7 +129,7 @@ func toMarketOrderBookEntryFromStructure(o esiapi.MarketsStructuresStructureIdGe
 var listCharacterMarketOrders = func(ctx context.Context, clientID string, characterID int32, userAgent string) ([]esiapi.CharactersCharacterIdOrdersGetInner, error) {
 	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
 	if err != nil {
-		return nil, fmt.Errorf("build ESI client: %w", err)
+		return nil, err
 	}
 	return client.CharacterMarketOrders(ctx)
 }
@@ -184,7 +184,7 @@ func listCharacterMarketOrdersHandler(version, clientID string, store ConfigStor
 var listCharacterMarketOrderHistory = func(ctx context.Context, clientID string, characterID int32, userAgent string, page int32) ([]esiapi.CharactersCharacterIdOrdersHistoryGetInner, int32, error) {
 	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
 	if err != nil {
-		return nil, 0, fmt.Errorf("build ESI client: %w", err)
+		return nil, 0, err
 	}
 	return client.CharacterMarketOrderHistory(ctx, page)
 }
@@ -246,7 +246,7 @@ func listCharacterMarketOrderHistoryHandler(version, clientID string, store Conf
 var listCorporationMarketOrders = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdOrdersGetInner, int32, error) {
 	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
 	if err != nil {
-		return nil, 0, fmt.Errorf("build ESI client: %w", err)
+		return nil, 0, err
 	}
 	return client.CorporationMarketOrders(ctx, corporationID, page)
 }
@@ -310,7 +310,7 @@ func listCorporationMarketOrdersHandler(version, clientID string, store ConfigSt
 var listCorporationMarketOrderHistory = func(ctx context.Context, clientID string, characterID int32, userAgent string, corporationID int64, page int32) ([]esiapi.CorporationsCorporationIdOrdersHistoryGetInner, int32, error) {
 	client, err := esi.NewClient(ctx, clientID, characterID, userAgent)
 	if err != nil {
-		return nil, 0, fmt.Errorf("build ESI client: %w", err)
+		return nil, 0, err
 	}
 	return client.CorporationMarketOrderHistory(ctx, corporationID, page)
 }
