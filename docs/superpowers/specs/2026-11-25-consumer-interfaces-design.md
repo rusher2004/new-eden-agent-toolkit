@@ -6,6 +6,9 @@ ported PRs moved every file in `mcp/` to it, and the cleanup deleted `Deps`,
 `ConfigStore`, `SDEStore` and `NewServer`'s registrations. `ifaceaudit` now
 fails CI on any `CONCRETE_*`, `PRODUCER_IFACE`, `IFACE_AWAY` or `TYPE_ONLY_FILE`
 (`TestRepoConformsToConsumerInterfaceRules`); only `INTERFACE` stays informational.
+Since then the loyalty tools moved to the `loyalty/` domain package under the CLI
+interface design (`2026-11-25-cli-interface-design.md`): `mcp/loyalty.go` no
+longer exists, and `loyalty/loyalty.go` is the worked example of the same pattern.
 
 `tools/ifaceaudit` narrowed in that first PR: a CONCRETE_PARAM now needs a
 producer type that a pointer-returning exported `New*`/`Open*` constructor

@@ -17,9 +17,12 @@ Logins use EVE's SSO with OAuth2 PKCE, so the binary carries a public client ID 
 The packages sit flat at the repo root, one per responsibility, with no `internal/`:
 
 - `cmd/`: the `main.go` entrypoint.
-- `commands/`: the CLI (`neat version`, `neat setup`, `neat mcp`, `neat analytics on|off|status`).
+- `commands/`: the CLI (`neat version`, `neat setup`, `neat mcp`, `neat analytics on|off|status`, and the operation command groups) and the composition root: it builds the real sources, the domain services and their operation list (`operations.go`), and hands that list to the MCP server and the CLI (`cli.go`).
 - `analytics/`: anonymous usage statistics via Aptabase. `neat mcp` sends one `app_started` event per launch (version, `runtime.GOOS`/`runtime.GOARCH`, and a random ID that rotates each calendar month), and a `tool_called` event per tool call (tool name and `ok`/`error` only), recorded by SDK middleware, batched about once a minute, and sent under a separate session ID with no monthly ID. See `PRIVACY.md`.
-- `mcp/`: the MCP server, every tool's definition and handler, the server's onboarding instructions (`instructions.go`), and the name enrichment that adds `TypeName`, `SystemName` and similar fields next to the bare IDs ESI returns.
+- `operation/`: the contract between domain packages and adapters: an operation's name, description, read or write kind, input and output types and schemas, and its run function. No logic.
+- Domain packages, named for game concepts, each holding neat's behavior for one concept and exposing it as operations: so far `character/` (the logged-in character check), `universe/` (type names from the SDE) and `loyalty/` (loyalty points and loyalty stores, the first area moved out of `mcp/`).
+- `mcp/`: the MCP server. `Register` adds the operations as tools; the tools not yet moved to a domain package keep their definitions and handlers here. Also the server's onboarding instructions (`instructions.go`) and the name enrichment that adds `TypeName`, `SystemName` and similar fields next to the bare IDs ESI returns.
+- `cli/`: the command line adapter: builds `neat <group> <command>` from the operations, with flags from each input's fields, JSON on stdout and `{"error": ...}` on stderr. `paths.go` names every command.
 - `esi/`: a thin facade over [`goesi-openapi`](https://github.com/fnt-eve/goesi-openapi), one file per ESI tag. Every request is checked against a generated table of each endpoint's required scope before it is sent.
 - `sso/`: the login flow, the loopback callback session and its page (`sso/web/`, which also groups characters by account), scope groups, the ESI User-Agent, and the cached, auto-refreshing HTTP client per character.
 - `sde/`: the local Static Data Export: syncing, and SQL lookups for universe data, industry data and routing.
@@ -30,9 +33,11 @@ The packages sit flat at the repo root, one per responsibility, with no `interna
 - `industry/`: pure industry calculations (facilities, jobs, research, invention, the blueprint tree, build-vs-buy, reprocessing, ore mixes, scheduling). It uses `nav/` and `market/`; neither uses it, nor does `cargo/`.
 - `config/`: neat's saved state under `~/.neat/`: YAML files the user can also edit (`characters.yaml`, `facilities.yaml`, `haul_profiles.yaml`, `routes.yaml`, `structures.yaml`, `hubs.yaml`), written by patching only the fields that changed so comments and the user's own keys survive, and `config.json` for internal settings.
 - `creds/`: the OS keychain wrapper (service name `neat`).
-- `tools/`: code generators and CI checks (`genscopes`, `gentooldocs`, `genversion`, `versiongate`, `ifaceaudit`).
+- `tools/`: code generators and CI checks (`genscopes`, `gentooldocs`, `genversion`, `versiongate`, `ifaceaudit`, and `archaudit`, which fails the tests when a domain package imports an adapter, the MCP SDK, urfave/cli or `net/http`, or when `cli/` imports anything of neat's but `operation/`).
 
 The pure packages (`nav/`, `cargo/`, `market/`, `industry/`) have no network, disk or clock access. Every number the SDE doesn't carry is a sourced constant in that package's `constants.go`.
+
+A migration is under way ([design](superpowers/specs/2026-11-25-cli-interface-design.md)): every tool's logic moves out of `mcp/` into a domain package, so the MCP server, the CLI and later a REST API are thin adapters over one operation list. The tool-to-package assignment is [`superpowers/plans/2026-11-25-tool-package-assignment.md`](superpowers/plans/2026-11-25-tool-package-assignment.md). Until it is done the CLI is a preview: it covers only `neat loyalty points --character <id>` and `neat loyalty store-offers --corporation <id>`.
 
 ## Building
 
