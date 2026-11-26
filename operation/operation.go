@@ -40,10 +40,14 @@ type Operation struct {
 	// anything else is an error. The result is an Out.
 	Run func(ctx context.Context, in any) (any, error)
 
-	inputSchema   *jsonschema.Schema
-	inputResolved *jsonschema.Resolved
-	outputSchema  *jsonschema.Schema
-	decodeInto    func(raw []byte) (any, error)
+	inputSchema    *jsonschema.Schema
+	inputResolved  *jsonschema.Resolved
+	outputSchema   *jsonschema.Schema
+	outputResolved *jsonschema.Resolved
+	// outputZero is the zero value of Out's element type when Out is a
+	// pointer, used in place of a typed nil; nil otherwise.
+	outputZero any
+	decodeInto func(raw []byte) (any, error)
 }
 
 // New wraps a typed function as an Operation, deriving its input and output
@@ -67,11 +71,18 @@ func New[In, Out any](name, description string, kind Kind, run func(context.Cont
 	if err != nil {
 		panic(fmt.Sprintf("operation.New: %q: input schema: %v", name, err))
 	}
-	var outSchema *jsonschema.Schema
+	var (
+		outSchema   *jsonschema.Schema
+		outResolved *jsonschema.Resolved
+		outZero     any
+	)
 	if reflect.TypeFor[Out]() != reflect.TypeFor[any]() {
-		outSchema, _, err = schemaFor[Out]()
+		outSchema, outResolved, err = schemaFor[Out]()
 		if err != nil {
 			panic(fmt.Sprintf("operation.New: %q: output schema: %v", name, err))
+		}
+		if rt := reflect.TypeFor[Out](); rt.Kind() == reflect.Pointer {
+			outZero = reflect.Zero(rt.Elem()).Interface()
 		}
 	}
 
@@ -88,9 +99,11 @@ func New[In, Out any](name, description string, kind Kind, run func(context.Cont
 			}
 			return run(ctx, *p)
 		},
-		inputSchema:   inSchema,
-		inputResolved: inResolved,
-		outputSchema:  outSchema,
+		inputSchema:    inSchema,
+		inputResolved:  inResolved,
+		outputSchema:   outSchema,
+		outputResolved: outResolved,
+		outputZero:     outZero,
 		decodeInto: func(raw []byte) (any, error) {
 			in := new(In)
 			dec := json.NewDecoder(bytes.NewReader(raw))
@@ -162,6 +175,63 @@ func (o Operation) Decode(raw []byte) (any, error) {
 		return nil, fmt.Errorf("%w: %s: decoding arguments: %w", ErrInvalidInput, o.Name, err)
 	}
 	return in, nil
+}
+
+// EncodeOutput marshals out, a value Run returned, to JSON, validates it
+// against the output schema and applies the schema's defaults. A typed nil
+// pointer encodes as its element type's zero value rather than null. It
+// returns nil, nil for a nil out from an operation whose Out is any, which has
+// no output schema.
+//
+// It mirrors the output half of go-sdk v1.8.0's typed tool handler
+// (toolForErr in its mcp/server.go, applySchema with forOutput in its
+// mcp/tool.go): the JSON is decoded into an untyped value, defaults are
+// applied when it is an object, it is validated, and it is marshaled again
+// when defaults were applied, so the bytes match what the SDK sends.
+func (o Operation) EncodeOutput(out any) (json.RawMessage, error) {
+	if o.outputZero != nil {
+		if v := reflect.ValueOf(out); out == nil || (v.Kind() == reflect.Pointer && v.IsNil()) {
+			out = o.outputZero
+		}
+	}
+	if out == nil {
+		return nil, nil
+	}
+	data, err := json.Marshal(out)
+	if err != nil {
+		return nil, fmt.Errorf("%s: marshaling output: %w", o.Name, err)
+	}
+	if o.outputResolved == nil {
+		return data, nil
+	}
+	var v any
+	if err := json.Unmarshal(data, &v); err != nil {
+		return nil, fmt.Errorf("%s: unmarshaling output: %w", o.Name, err)
+	}
+	applied := false
+	if _, ok := v.(map[string]any); ok {
+		if err := o.outputResolved.ApplyDefaults(&v); err != nil {
+			return nil, fmt.Errorf("%s: applying output schema defaults: %w", o.Name, err)
+		}
+		applied = true
+	} else if v == nil && o.outputResolved.Schema().Type == "object" {
+		v = map[string]any{}
+		if err := o.outputResolved.ApplyDefaults(&v); err != nil {
+			return nil, fmt.Errorf("%s: applying output schema defaults: %w", o.Name, err)
+		}
+		applied = true
+	}
+	if err := o.outputResolved.Validate(&v); err != nil {
+		return nil, fmt.Errorf("%s: validating output: %w", o.Name, err)
+	}
+	if !applied {
+		return data, nil
+	}
+	data, err = json.Marshal(v)
+	if err != nil {
+		return nil, fmt.Errorf("%s: marshaling output with defaults: %w", o.Name, err)
+	}
+	return data, nil
 }
 
 // InputSchema is the JSON schema of the operation's input. Callers must not

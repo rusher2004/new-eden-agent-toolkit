@@ -132,3 +132,51 @@ func TestProgress_ReachesSink(t *testing.T) {
 	// Without a sink, Progress is a no-op and must not panic.
 	operation.Progress(context.Background(), "ignored")
 }
+
+func TestEncodeOutput_MarshalsOutput(t *testing.T) {
+	op := newDoubleOp()
+	got, err := op.EncodeOutput(doubleOut{B: 3})
+	if err != nil {
+		t.Fatalf("EncodeOutput: %v", err)
+	}
+	if string(got) != `{"b":3}` {
+		t.Errorf("EncodeOutput = %s, want {\"b\":3}", got)
+	}
+}
+
+func TestEncodeOutput_RejectsOutputNotMatchingSchema(t *testing.T) {
+	op := newDoubleOp()
+	// A value of the wrong type marshals to JSON the schema rejects (b missing).
+	if _, err := op.EncodeOutput(struct {
+		C int `json:"c"`
+	}{C: 1}); err == nil {
+		t.Fatal("EncodeOutput of a value lacking required b returned no error")
+	}
+}
+
+func TestEncodeOutput_TypedNilPointerIsElementZero(t *testing.T) {
+	op := operation.New("ptr", "", operation.Read,
+		func(context.Context, doubleIn) (*doubleOut, error) { return nil, nil })
+	got, err := op.EncodeOutput((*doubleOut)(nil))
+	if err != nil {
+		t.Fatalf("EncodeOutput: %v", err)
+	}
+	if string(got) != `{"b":0}` {
+		t.Errorf("EncodeOutput(nil *doubleOut) = %s, want {\"b\":0}", got)
+	}
+}
+
+func TestEncodeOutput_AnyOutHasNoSchema(t *testing.T) {
+	op := operation.New("anyout", "", operation.Read,
+		func(context.Context, doubleIn) (any, error) { return nil, nil })
+	got, err := op.EncodeOutput([]int{1, 2})
+	if err != nil {
+		t.Fatalf("EncodeOutput: %v", err)
+	}
+	if string(got) != `[1,2]` {
+		t.Errorf("EncodeOutput = %s, want [1,2]", got)
+	}
+	if got, err := op.EncodeOutput(nil); err != nil || got != nil {
+		t.Errorf("EncodeOutput(nil) = %s, %v; want nil, nil", got, err)
+	}
+}

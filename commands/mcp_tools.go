@@ -47,12 +47,12 @@ func NewMCPServer(version, clientID string, store *config.Store, sdeStore *sde.S
 	return server
 }
 
-// addConvertedTools registers every tool, grouped by area, in the pattern of
-// mcp/loyalty.go. Each call passes the concrete values the tool's interfaces
+// addConvertedTools registers every tool, grouped by area: the operations
+// (Operations) through mcp.Register, and the tools not yet moved to a domain
+// package in the pattern of mcp/access_list.go. Each call passes the concrete values the tool's interfaces
 // ask for; the compiler checks that they satisfy them.
 func addConvertedTools(s *mcpsdk.Server, d toolDeps) {
-	mcp.AddListCharacterLoyaltyPoints(s, d.openESI, d.store)
-	mcp.AddListLoyaltyStoreOffers(s, d.userAgent, d.openPublicESI, d.sde)
+	mcp.Register(s, Operations(d))
 	addFittingsTools(s, d)
 	addFleetTools(s, d)
 	addMailTools(s, d)
