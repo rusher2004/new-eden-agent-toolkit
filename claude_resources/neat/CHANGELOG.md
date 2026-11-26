@@ -1,5 +1,8 @@
 # neat plugin — changelog
 
+## 0.22.0
+- A command line preview: `neat loyalty points --character <id>` and `neat loyalty store-offers --corporation <id>` print the same JSON as the `list_character_loyalty_points` and `list_loyalty_store_offers` tools. Output is compact JSON on stdout (`--pretty` to indent); errors are JSON on stderr, and bad input exits with code 2. More commands will follow; until then, keep using the MCP tools.
+
 ## 0.21.1
 - No change for players. Internal: the loyalty tools now run on a shared operation layer, and a new check keeps the packages' import boundaries from drifting.
 

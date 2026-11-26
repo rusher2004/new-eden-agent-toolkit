@@ -49,8 +49,9 @@ func NewMCPServer(version, clientID string, store *config.Store, sdeStore *sde.S
 
 // addConvertedTools registers every tool, grouped by area: the operations
 // (Operations) through mcp.Register, and the tools not yet moved to a domain
-// package in the pattern of mcp/access_list.go. Each call passes the concrete values the tool's interfaces
-// ask for; the compiler checks that they satisfy them.
+// package in the pattern of mcp/access_list.go. Each call passes the concrete
+// values the tool's interfaces ask for; the compiler checks that they satisfy
+// them.
 func addConvertedTools(s *mcpsdk.Server, d toolDeps) {
 	mcp.Register(s, Operations(d))
 	addFittingsTools(s, d)

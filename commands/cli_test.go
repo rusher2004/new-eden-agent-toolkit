@@ -1,0 +1,377 @@
+package commands_test
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+	urfave "github.com/urfave/cli/v3"
+	"github.com/zalando/go-keyring"
+
+	"github.com/rusher2004/new-eden-agent-toolkit/cli"
+	"github.com/rusher2004/new-eden-agent-toolkit/commands"
+	"github.com/rusher2004/new-eden-agent-toolkit/mcp"
+	"github.com/rusher2004/new-eden-agent-toolkit/operation"
+)
+
+func TestCLIPathsCoverOperations(t *testing.T) {
+	seen := map[string]string{}
+	for _, op := range commands.Catalog() {
+		if strings.TrimSpace(op.Description) == "" {
+			t.Errorf("%s has no description", op.Name)
+		}
+		path, ok := cli.Paths[op.Name]
+		if !ok {
+			t.Errorf("%s has no entry in cli.Paths", op.Name)
+			continue
+		}
+		if len(path) < 2 {
+			t.Errorf("%s: path %q needs a group and a leaf", op.Name, path)
+			continue
+		}
+		key := strings.Join(path, " ")
+		if other, dup := seen[key]; dup {
+			t.Errorf("%s and %s share the path %q", other, op.Name, key)
+		}
+		seen[key] = op.Name
+		for i := 1; i < len(path); i++ {
+			group := strings.Join(path[:i], " ")
+			if strings.TrimSpace(cli.Groups[group]) == "" {
+				t.Errorf("%s: group %q has no help in cli.Groups", op.Name, group)
+			}
+		}
+	}
+}
+
+type parityIn struct {
+	CharacterID int32 `json:"characterId" jsonschema:"the character"`
+}
+
+type parityItem struct {
+	TypeID   int64  `json:"typeId"`
+	TypeName string `json:"typeName,omitempty"`
+}
+
+type parityOut struct {
+	CharacterID int32        `json:"characterId"`
+	Name        string       `json:"name"`
+	Items       []parityItem `json:"items"`
+	Missing     *int64       `json:"missing,omitempty"`
+}
+
+func parityOp() operation.Operation {
+	return operation.New("parity_demo", "A demo for adapter parity.", operation.Read,
+		func(_ context.Context, in parityIn) (parityOut, error) {
+			return parityOut{CharacterID: in.CharacterID, Name: "Pilot <&> \"quoted\"",
+				Items: []parityItem{{TypeID: 34, TypeName: "Tritanium"}, {TypeID: 35}}}, nil
+		})
+}
+
+func TestCLIAndMCPReturnTheSameJSON(t *testing.T) {
+	cli.Paths["parity_demo"] = []string{"parity", "demo"}
+	cli.Groups["parity"] = "parity demo"
+	t.Cleanup(func() {
+		delete(cli.Paths, "parity_demo")
+		delete(cli.Groups, "parity")
+	})
+	ops := []operation.Operation{parityOp()}
+
+	// Through the CLI.
+	cmds, err := cli.Build(ops, func(context.Context, func(string)) ([]operation.Operation, func() error, error) {
+		return ops, func() error { return nil }, nil
+	})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	var stdout, stderr bytes.Buffer
+	root := &urfave.Command{Name: "neat", Commands: cmds, Writer: &stdout, ErrWriter: &stderr,
+		ExitErrHandler: func(context.Context, *urfave.Command, error) {}}
+	if err := root.Run(context.Background(), []string{"neat", "parity", "demo", "--character", "7"}); err != nil {
+		t.Fatalf("cli run: %v (stderr %q)", err, stderr.String())
+	}
+	cliJSON := strings.TrimSuffix(stdout.String(), "\n")
+
+	// Through MCP.
+	ctx := context.Background()
+	s := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "neat", Version: "test"}, nil)
+	mcp.Register(s, ops)
+	st, ct := mcpsdk.NewInMemoryTransports()
+	ss, err := s.Connect(ctx, st, nil)
+	if err != nil {
+		t.Fatalf("server connect: %v", err)
+	}
+	cs, err := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "test", Version: "0"}, nil).Connect(ctx, ct, nil)
+	if err != nil {
+		t.Fatalf("client connect: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := cs.Close(); err != nil {
+			t.Errorf("close client: %v", err)
+		}
+		if err := ss.Wait(); err != nil {
+			t.Errorf("wait server: %v", err)
+		}
+	})
+	res, err := cs.CallTool(ctx, &mcpsdk.CallToolParams{Name: "parity_demo", Arguments: map[string]any{"characterId": 7}})
+	if err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	if res.IsError || len(res.Content) != 1 {
+		t.Fatalf("CallTool result = %+v", res)
+	}
+	text, ok := res.Content[0].(*mcpsdk.TextContent)
+	if !ok {
+		t.Fatalf("content is %T, want *TextContent", res.Content[0])
+	}
+	if cliJSON != text.Text {
+		t.Errorf("CLI JSON %s differs from MCP JSON %s", cliJSON, text.Text)
+	}
+	// The structured content is the same value.
+	structured, err := json.Marshal(res.StructuredContent)
+	if err != nil {
+		t.Fatalf("marshal structured content: %v", err)
+	}
+	if string(structured) != cliJSON {
+		t.Errorf("CLI JSON %s differs from MCP structured content %s", cliJSON, structured)
+	}
+}
+
+// runNeat runs the real root command with captured writers and a no-op exit
+// handler, returning stdout, stderr and the exit code the error carries.
+func runNeat(t *testing.T, args ...string) (stdout, stderr string, code int) {
+	t.Helper()
+	var out, errOut bytes.Buffer
+	root := commands.Root("dev", "test-client-id", "", false)
+	root.Writer, root.ErrWriter, root.Reader = &out, &errOut, strings.NewReader("")
+	err := root.Run(context.Background(), append([]string{"neat"}, args...))
+	if err != nil {
+		var ec urfave.ExitCoder
+		if !errors.As(err, &ec) {
+			t.Fatalf("Run(%v) = %v, which carries no exit code", args, err)
+		}
+		code = ec.ExitCode()
+	}
+	return out.String(), errOut.String(), code
+}
+
+func TestCLI_UnknownCharacterNoESI(t *testing.T) {
+	keyring.MockInit()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	stdout, stderr, code := runNeat(t, "loyalty", "points", "--character", "999")
+	if code != 1 {
+		t.Errorf("exit %d, want 1 (stderr %q)", code, stderr)
+	}
+	if stdout != "" {
+		t.Errorf("stdout = %q, want empty", stdout)
+	}
+	var e struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stderr)), &e); err != nil {
+		t.Fatalf("stderr %q is not one {\"error\"} line: %v", stderr, err)
+	}
+	// This exact message comes from the logged-in check, which returns before
+	// the ESI client is opened; opening one would fail with a message naming
+	// the keychain token instead ("list character loyalty points: character
+	// 999: ...").
+	if want := "list character loyalty points for character 999: character not found"; e.Error != want {
+		t.Errorf("error = %q, want %q", e.Error, want)
+	}
+}
+
+func TestCLI_UsageErrorIsExit2(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	_, stderr, code := runNeat(t, "loyalty", "store-offers", "--corporation", "abc")
+	if code != 2 {
+		t.Errorf("exit %d, want 2 (stderr %q)", code, stderr)
+	}
+	if !strings.HasPrefix(stderr, `{"error":`) {
+		t.Errorf("stderr = %q, want a JSON error", stderr)
+	}
+	entries, err := os.ReadDir(home)
+	if err != nil {
+		t.Fatalf("read HOME: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("a usage error created %d entries under HOME, want none", len(entries))
+	}
+}
+
+func TestCLI_HelpAndVersionTouchNothing(t *testing.T) {
+	// HOME is a regular file, so anything that tries to create ~/.neat fails.
+	home := filepath.Join(t.TempDir(), "home")
+	if err := os.WriteFile(home, []byte("not a directory"), 0o600); err != nil {
+		t.Fatalf("write HOME file: %v", err)
+	}
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	for _, args := range [][]string{{"--help"}, {"loyalty", "--help"}, {"loyalty", "points", "--help"}, {"version"}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			stdout, stderr, code := runNeat(t, args...)
+			if code != 0 {
+				t.Fatalf("exit %d, stderr %q", code, stderr)
+			}
+			if stdout == "" {
+				t.Error("printed nothing")
+			}
+			if stderr != "" {
+				t.Errorf("stderr = %q, want empty", stderr)
+			}
+		})
+	}
+	stdout, _, _ := runNeat(t, "--help")
+	if !strings.Contains(stdout, "loyalty") {
+		t.Errorf("neat --help does not list the loyalty group:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "store-offers") {
+		t.Errorf("neat --help lists leaf commands; it should list groups only:\n%s", stdout)
+	}
+	stdout, _, _ = runNeat(t, "loyalty", "--help")
+	for _, want := range []string{"points", "store-offers"} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("neat loyalty --help lacks %q:\n%s", want, stdout)
+		}
+	}
+}
+
+// jsonLines decodes every line of stderr as a JSON object.
+func jsonLines(t *testing.T, stderr string) []map[string]string {
+	t.Helper()
+	var out []map[string]string
+	for line := range strings.SplitSeq(strings.TrimRight(stderr, "\n"), "\n") {
+		var m map[string]string
+		if err := json.Unmarshal([]byte(line), &m); err != nil {
+			t.Fatalf("stderr line %q is not a JSON object: %v (stderr %q)", line, err, stderr)
+		}
+		out = append(out, m)
+	}
+	return out
+}
+
+func TestCLI_UnknownCommandIsExit2WithJSONError(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	for _, args := range [][]string{{"bogus"}, {"loyalty", "bogus"}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			stdout, stderr, code := runNeat(t, args...)
+			if code != 2 {
+				t.Errorf("exit %d, want 2 (stderr %q)", code, stderr)
+			}
+			if stdout != "" {
+				t.Errorf("stdout = %q, want empty", stdout)
+			}
+			lines := jsonLines(t, stderr)
+			if len(lines) != 1 || !strings.Contains(lines[0]["error"], "bogus") {
+				t.Errorf("stderr = %q, want one {\"error\"} line naming bogus", stderr)
+			}
+		})
+	}
+	entries, err := os.ReadDir(home)
+	if err != nil {
+		t.Fatalf("read HOME: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("an unknown command created %d entries under HOME, want none", len(entries))
+	}
+}
+
+func TestCLI_BareRootAndGroupShowHelp(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	for _, args := range [][]string{nil, {"loyalty"}} {
+		t.Run(strings.Join(append([]string{"neat"}, args...), " "), func(t *testing.T) {
+			stdout, stderr, code := runNeat(t, args...)
+			if code != 0 || stderr != "" {
+				t.Errorf("exit %d, stderr %q; want 0 and empty", code, stderr)
+			}
+			if !strings.Contains(stdout, "USAGE") {
+				t.Errorf("stdout is not help:\n%s", stdout)
+			}
+		})
+	}
+}
+
+func TestCLI_FixedCommandsKeepTheirBehavior(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	stdout, stderr, code := runNeat(t, "version")
+	if code != 0 || !strings.Contains(stdout, "dev") || stderr != "" {
+		t.Errorf("version: exit %d, stdout %q, stderr %q", code, stdout, stderr)
+	}
+	stdout, _, code = runNeat(t, "analytics", "--help")
+	if code != 0 || !strings.Contains(stdout, "status") {
+		t.Errorf("analytics --help: exit %d, stdout %q", code, stdout)
+	}
+	stdout, _, code = runNeat(t, "mcp", "--help")
+	if code != 0 || stdout == "" {
+		t.Errorf("mcp --help: exit %d, stdout %q", code, stdout)
+	}
+	stdout, _, code = runNeat(t, "setup", "--help")
+	if code != 0 || stdout == "" {
+		t.Errorf("setup --help: exit %d, stdout %q", code, stdout)
+	}
+}
+
+func TestCLI_SDEOpenFailureIsJSONWarning(t *testing.T) {
+	keyring.MockInit()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	// ~/.neat/sde is a file, so the SDE cache directory can't be created.
+	if err := os.MkdirAll(filepath.Join(home, ".neat"), 0o700); err != nil {
+		t.Fatalf("create ~/.neat: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".neat", "sde"), []byte("not a directory"), 0o600); err != nil {
+		t.Fatalf("write ~/.neat/sde: %v", err)
+	}
+
+	_, stderr, code := runNeat(t, "loyalty", "points", "--character", "999")
+	if code != 1 {
+		t.Errorf("exit %d, want 1 (stderr %q)", code, stderr)
+	}
+	lines := jsonLines(t, stderr)
+	if len(lines) != 2 {
+		t.Fatalf("stderr = %q, want a warning line then an error line", stderr)
+	}
+	if !strings.Contains(lines[0]["warning"], "sde") {
+		t.Errorf("first line = %v, want a warning about the SDE cache", lines[0])
+	}
+	if !strings.Contains(lines[1]["error"], "character not found") {
+		t.Errorf("second line = %v, want the operation's error", lines[1])
+	}
+}
+
+func TestCLI_MissingFlagNamesTheFlag(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	_, stderr, code := runNeat(t, "loyalty", "points")
+	if code != 2 {
+		t.Errorf("exit %d, want 2 (stderr %q)", code, stderr)
+	}
+	lines := jsonLines(t, stderr)
+	if len(lines) != 1 {
+		t.Fatalf("stderr = %q, want one error line", stderr)
+	}
+	if msg := lines[0]["error"]; !strings.Contains(msg, "--character") || strings.Contains(msg, "characterId") {
+		t.Errorf("error %q should name --character and not characterId", msg)
+	}
+}

@@ -3,18 +3,45 @@
 // Named commands, not cli, to avoid shadowing the github.com/urfave/cli/v3 import.
 package commands
 
-import "github.com/urfave/cli/v3"
+import (
+	"context"
 
-// Root builds the top-level neat command, wiring in every subcommand.
+	"github.com/urfave/cli/v3"
+
+	neatcli "github.com/rusher2004/new-eden-agent-toolkit/cli"
+)
+
+// Root builds the top-level neat command, wiring in every subcommand: the
+// fixed ones (version, setup, mcp, analytics) and one group per area of
+// operations (cliCommands).
+//
+// Root does not exit the process: an error carrying an exit code
+// (cli.ExitCoder) is returned to the caller, which prints its message, if
+// any, and exits with its code (cmd/main.go). A leaf command prints its own
+// JSON error and returns an exit error with an empty message.
+//
+// Root panics if the operation commands can't be built (an operation with no
+// cli.Paths entry, two sharing a path): that is a programming error in fixed
+// tables, caught by TestCLIPathsCoverOperations, like operation.New's panic
+// on an underivable schema.
 func Root(version, clientID, aptabaseAppKey string, analyticsDebug bool) *cli.Command {
+	opCommands, err := cliCommands(version, clientID)
+	if err != nil {
+		panic(err)
+	}
 	return &cli.Command{
 		Name:  "neat",
 		Usage: "New Eden Agent Toolkit",
-		Commands: []*cli.Command{
+		Commands: append([]*cli.Command{
 			versionCommand(version),
 			setupCommand(),
 			mcpCommand(version, clientID, aptabaseAppKey, analyticsDebug),
 			analyticsCommand(),
-		},
+		}, opCommands...),
+		// neat alone shows help; neat <unknown> is a usage error, exit 2 with
+		// {"error": ...} on stderr, like an unknown command under a group.
+		Action: neatcli.HelpOrUnknown,
+		// The caller maps exit codes; urfave's default would call os.Exit.
+		ExitErrHandler: func(context.Context, *cli.Command, error) {},
 	}
 }
