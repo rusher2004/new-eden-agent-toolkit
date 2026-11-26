@@ -1,5 +1,8 @@
 # neat plugin — changelog
 
+## 0.21.0
+- No change for players. Internal groundwork for a command line interface: new `operation`, `character` and `universe` packages.
+
 ## 0.20.14
 - No change for players. Internal refactor: the login, character list, character details and remove tools, and the rest of the server, now get their config, static data, ESI client and login flow from the command that starts the server, so no tool builds its own.
 

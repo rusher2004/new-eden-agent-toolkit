@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/rusher2004/new-eden-agent-toolkit/sde"
+	"github.com/rusher2004/new-eden-agent-toolkit/universe"
 )
 
 // Every resolver in this file treats a nil cache interface as "nothing to
@@ -34,23 +35,7 @@ type typeNameCache interface {
 // required, so one bad ID must not fail an entire tool call over data ESI
 // already returned successfully.
 var resolveTypeNames = func(ctx context.Context, sdeStore typeNameCache, userAgent string, ids []int64) map[int64]string {
-	if len(ids) == 0 || sdeStore == nil {
-		return nil
-	}
-	seen := make(map[int64]struct{}, len(ids))
-	names := make(map[int64]string, len(ids))
-	for _, id := range ids {
-		if _, ok := seen[id]; ok {
-			continue
-		}
-		seen[id] = struct{}{}
-		t, ok, err := sdeStore.Type(ctx, userAgent, id)
-		if err != nil || !ok {
-			continue
-		}
-		names[id] = t.Name
-	}
-	return names
+	return universe.NewTypeNamer(sdeStore, userAgent).TypeNames(ctx, ids)
 }
 
 // systemNameCache is the minimal read-only view of sde.Store.System() that
