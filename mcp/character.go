@@ -260,9 +260,9 @@ func getCharacterPortraitHandler[C characterPortraitESI](open func() C) mcpsdk.T
 
 // --- shared existence-check helper for the private tools below ---
 
-// characterExists reports whether characterID is a logged-in character in store. New in this
-// file: with 10 private tools sharing the same check, duplicating the loop 10 times crosses the
-// DRY threshold that made sense for smaller batches.
+// characterExists reports whether characterID is a logged-in character in
+// store; it is character.Known, kept as a short name for the private tools
+// below.
 func characterExists(store configLoader, characterID int32) (bool, error) {
 	return character.Known(store, characterID)
 }

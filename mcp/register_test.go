@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -45,13 +46,19 @@ func demoRun(_ context.Context, in demoIn) (demoOut, error) {
 // session serves s over an in-memory transport and returns a client session.
 func session(t *testing.T, s *mcpsdk.Server) *mcpsdk.ClientSession {
 	t.Helper()
+	return sessionWith(t, s, nil)
+}
+
+// sessionWith is session with the given client options.
+func sessionWith(t *testing.T, s *mcpsdk.Server, opts *mcpsdk.ClientOptions) *mcpsdk.ClientSession {
+	t.Helper()
 	ctx := context.Background()
 	st, ct := mcpsdk.NewInMemoryTransports()
 	ss, err := s.Connect(ctx, st, nil)
 	if err != nil {
 		t.Fatalf("server.Connect: %v", err)
 	}
-	cs, err := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "test", Version: "0"}, nil).Connect(ctx, ct, nil)
+	cs, err := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "test", Version: "0"}, opts).Connect(ctx, ct, nil)
 	if err != nil {
 		t.Fatalf("client.Connect: %v", err)
 	}
@@ -239,5 +246,101 @@ func TestRegister_OutputFailingSchemaIsProtocolError(t *testing.T) {
 	mcp.Register(s, []operation.Operation{op})
 	if _, err := call(t, session(t, s), map[string]any{"characterId": 7}); err == nil {
 		t.Fatal("CallTool with output failing the schema returned no error")
+	}
+}
+
+// progressOp reports two progress messages, then fails for character 13.
+func progressOp() operation.Operation {
+	return operation.New(demoName, demoDescription, operation.Read,
+		func(ctx context.Context, in demoIn) (demoOut, error) {
+			operation.Progress(ctx, "first step")
+			operation.Progress(ctx, "second step")
+			return demoRun(ctx, in)
+		})
+}
+
+// receive collects n messages from ch, failing after a timeout.
+func receive(t *testing.T, ch <-chan string, n int) []string {
+	t.Helper()
+	var got []string
+	for range n {
+		select {
+		case m := <-ch:
+			got = append(got, m)
+		case <-time.After(5 * time.Second):
+			t.Fatalf("received %v, want %d messages", got, n)
+		}
+	}
+	return got
+}
+
+func TestRegister_ProgressWithTokenIsProgressNotification(t *testing.T) {
+	msgs := make(chan string, 10)
+	var progress []float64
+	opts := &mcpsdk.ClientOptions{
+		ProgressNotificationHandler: func(_ context.Context, req *mcpsdk.ProgressNotificationClientRequest) {
+			if req.Params.ProgressToken != "tok" {
+				msgs <- "wrong token"
+				return
+			}
+			progress = append(progress, req.Params.Progress)
+			msgs <- req.Params.Message
+		},
+	}
+	s := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "neat", Version: "test"}, nil)
+	mcp.Register(s, []operation.Operation{progressOp()})
+	cs := sessionWith(t, s, opts)
+	params := &mcpsdk.CallToolParams{Name: demoName, Arguments: map[string]any{"characterId": 7}}
+	params.SetProgressToken("tok")
+	got, err := cs.CallTool(context.Background(), params)
+	if err != nil || got.IsError {
+		t.Fatalf("CallTool = %v, %v", got, err)
+	}
+	if m := receive(t, msgs, 2); m[0] != "first step" || m[1] != "second step" {
+		t.Errorf("progress messages = %q, want the two steps in order", m)
+	}
+	if len(progress) != 2 || progress[0] >= progress[1] {
+		t.Errorf("progress values = %v, want two increasing values", progress)
+	}
+	// Progress changes nothing on the wire result.
+	want, err := call(t, typed(t), map[string]any{"characterId": 7})
+	if err != nil {
+		t.Fatalf("CallTool (typed): %v", err)
+	}
+	if g, w := mustJSON(t, got), mustJSON(t, want); g != w {
+		t.Errorf("result differs from the SDK's typed AddTool:\n got %s\nwant %s", g, w)
+	}
+}
+
+func TestRegister_ProgressWithoutTokenIsLogMessage(t *testing.T) {
+	msgs := make(chan string, 10)
+	opts := &mcpsdk.ClientOptions{
+		LoggingMessageHandler: func(_ context.Context, req *mcpsdk.LoggingMessageRequest) {
+			text, _ := req.Params.Data.(string)
+			msgs <- string(req.Params.Level) + " " + req.Params.Logger + ": " + text
+		},
+	}
+	s := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "neat", Version: "test"}, nil)
+	mcp.Register(s, []operation.Operation{progressOp()})
+	cs := sessionWith(t, s, opts)
+	// The client asks for info-level messages on the call itself, as the
+	// current protocol does (the SDK drops log messages until a level is set).
+	params := &mcpsdk.CallToolParams{Name: demoName, Arguments: map[string]any{"characterId": 13},
+		Meta: mcpsdk.Meta{mcpsdk.MetaKeyLogLevel: "info"}}
+	// A failing call still sends its progress, and stays a tool error.
+	got, err := cs.CallTool(context.Background(), params)
+	if err != nil || !got.IsError {
+		t.Fatalf("CallTool = %v, %v; want a tool error", got, err)
+	}
+	m := receive(t, msgs, 2)
+	if want := []string{"info demo_lookup: first step", "info demo_lookup: second step"}; m[0] != want[0] || m[1] != want[1] {
+		t.Errorf("log messages = %q, want %q", m, want)
+	}
+	want, err := call(t, typed(t), map[string]any{"characterId": 13})
+	if err != nil {
+		t.Fatalf("CallTool (typed): %v", err)
+	}
+	if g, w := mustJSON(t, got), mustJSON(t, want); g != w {
+		t.Errorf("result differs from the SDK's typed AddTool:\n got %s\nwant %s", g, w)
 	}
 }
