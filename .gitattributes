@@ -1,0 +1,3 @@
+# The golden MCP tool list is compared byte for byte; keep LF endings on every platform
+# (Windows checkouts convert to CRLF otherwise).
+commands/testdata/*.golden.json text eol=lf
