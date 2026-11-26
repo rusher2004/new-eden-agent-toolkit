@@ -83,7 +83,7 @@ func TestCLIAndMCPReturnTheSameJSON(t *testing.T) {
 	ops := []operation.Operation{parityOp()}
 
 	// Through the CLI.
-	cmds, err := cli.Build(ops, func(context.Context) ([]operation.Operation, func() error, error) {
+	cmds, err := cli.Build(ops, func(context.Context, func(string)) ([]operation.Operation, func() error, error) {
 		return ops, func() error { return nil }, nil
 	})
 	if err != nil {
@@ -227,6 +227,9 @@ func TestCLI_HelpAndVersionTouchNothing(t *testing.T) {
 			if stdout == "" {
 				t.Error("printed nothing")
 			}
+			if stderr != "" {
+				t.Errorf("stderr = %q, want empty", stderr)
+			}
 		})
 	}
 	stdout, _, _ := runNeat(t, "--help")
@@ -241,5 +244,134 @@ func TestCLI_HelpAndVersionTouchNothing(t *testing.T) {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("neat loyalty --help lacks %q:\n%s", want, stdout)
 		}
+	}
+}
+
+// jsonLines decodes every line of stderr as a JSON object.
+func jsonLines(t *testing.T, stderr string) []map[string]string {
+	t.Helper()
+	var out []map[string]string
+	for line := range strings.SplitSeq(strings.TrimRight(stderr, "\n"), "\n") {
+		var m map[string]string
+		if err := json.Unmarshal([]byte(line), &m); err != nil {
+			t.Fatalf("stderr line %q is not a JSON object: %v (stderr %q)", line, err, stderr)
+		}
+		out = append(out, m)
+	}
+	return out
+}
+
+func TestCLI_UnknownCommandIsExit2WithJSONError(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	for _, args := range [][]string{{"bogus"}, {"loyalty", "bogus"}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			stdout, stderr, code := runNeat(t, args...)
+			if code != 2 {
+				t.Errorf("exit %d, want 2 (stderr %q)", code, stderr)
+			}
+			if stdout != "" {
+				t.Errorf("stdout = %q, want empty", stdout)
+			}
+			lines := jsonLines(t, stderr)
+			if len(lines) != 1 || !strings.Contains(lines[0]["error"], "bogus") {
+				t.Errorf("stderr = %q, want one {\"error\"} line naming bogus", stderr)
+			}
+		})
+	}
+	entries, err := os.ReadDir(home)
+	if err != nil {
+		t.Fatalf("read HOME: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("an unknown command created %d entries under HOME, want none", len(entries))
+	}
+}
+
+func TestCLI_BareRootAndGroupShowHelp(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	for _, args := range [][]string{nil, {"loyalty"}} {
+		t.Run(strings.Join(append([]string{"neat"}, args...), " "), func(t *testing.T) {
+			stdout, stderr, code := runNeat(t, args...)
+			if code != 0 || stderr != "" {
+				t.Errorf("exit %d, stderr %q; want 0 and empty", code, stderr)
+			}
+			if !strings.Contains(stdout, "USAGE") {
+				t.Errorf("stdout is not help:\n%s", stdout)
+			}
+		})
+	}
+}
+
+func TestCLI_FixedCommandsKeepTheirBehavior(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	stdout, stderr, code := runNeat(t, "version")
+	if code != 0 || !strings.Contains(stdout, "dev") || stderr != "" {
+		t.Errorf("version: exit %d, stdout %q, stderr %q", code, stdout, stderr)
+	}
+	stdout, _, code = runNeat(t, "analytics", "--help")
+	if code != 0 || !strings.Contains(stdout, "status") {
+		t.Errorf("analytics --help: exit %d, stdout %q", code, stdout)
+	}
+	stdout, _, code = runNeat(t, "mcp", "--help")
+	if code != 0 || stdout == "" {
+		t.Errorf("mcp --help: exit %d, stdout %q", code, stdout)
+	}
+	stdout, _, code = runNeat(t, "setup", "--help")
+	if code != 0 || stdout == "" {
+		t.Errorf("setup --help: exit %d, stdout %q", code, stdout)
+	}
+}
+
+func TestCLI_SDEOpenFailureIsJSONWarning(t *testing.T) {
+	keyring.MockInit()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	// ~/.neat/sde is a file, so the SDE cache directory can't be created.
+	if err := os.MkdirAll(filepath.Join(home, ".neat"), 0o700); err != nil {
+		t.Fatalf("create ~/.neat: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".neat", "sde"), []byte("not a directory"), 0o600); err != nil {
+		t.Fatalf("write ~/.neat/sde: %v", err)
+	}
+
+	_, stderr, code := runNeat(t, "loyalty", "points", "--character", "999")
+	if code != 1 {
+		t.Errorf("exit %d, want 1 (stderr %q)", code, stderr)
+	}
+	lines := jsonLines(t, stderr)
+	if len(lines) != 2 {
+		t.Fatalf("stderr = %q, want a warning line then an error line", stderr)
+	}
+	if !strings.Contains(lines[0]["warning"], "sde") {
+		t.Errorf("first line = %v, want a warning about the SDE cache", lines[0])
+	}
+	if !strings.Contains(lines[1]["error"], "character not found") {
+		t.Errorf("second line = %v, want the operation's error", lines[1])
+	}
+}
+
+func TestCLI_MissingFlagNamesTheFlag(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	_, stderr, code := runNeat(t, "loyalty", "points")
+	if code != 2 {
+		t.Errorf("exit %d, want 2 (stderr %q)", code, stderr)
+	}
+	lines := jsonLines(t, stderr)
+	if len(lines) != 1 {
+		t.Fatalf("stderr = %q, want one error line", stderr)
+	}
+	if msg := lines[0]["error"]; !strings.Contains(msg, "--character") || strings.Contains(msg, "characterId") {
+		t.Errorf("error %q should name --character and not characterId", msg)
 	}
 }

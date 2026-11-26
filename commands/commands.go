@@ -7,6 +7,8 @@ import (
 	"context"
 
 	"github.com/urfave/cli/v3"
+
+	neatcli "github.com/rusher2004/new-eden-agent-toolkit/cli"
 )
 
 // Root builds the top-level neat command, wiring in every subcommand: the
@@ -36,6 +38,9 @@ func Root(version, clientID, aptabaseAppKey string, analyticsDebug bool) *cli.Co
 			mcpCommand(version, clientID, aptabaseAppKey, analyticsDebug),
 			analyticsCommand(),
 		}, opCommands...),
+		// neat alone shows help; neat <unknown> is a usage error, exit 2 with
+		// {"error": ...} on stderr, like an unknown command under a group.
+		Action: neatcli.HelpOrUnknown,
 		// The caller maps exit codes; urfave's default would call os.Exit.
 		ExitErrHandler: func(context.Context, *cli.Command, error) {},
 	}

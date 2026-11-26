@@ -3,7 +3,6 @@ package commands
 import (
 	"context"
 	"fmt"
-	"log/slog"
 
 	"github.com/urfave/cli/v3"
 
@@ -19,8 +18,8 @@ import (
 // operations are built by cliSources only when a leaf command runs, so
 // neat --help and a group's --help open no file, keychain or network.
 func cliCommands(version, clientID string) ([]*cli.Command, error) {
-	cmds, err := neatcli.Build(Catalog(), func(ctx context.Context) ([]operation.Operation, func() error, error) {
-		return cliSources(ctx, version, clientID)
+	cmds, err := neatcli.Build(Catalog(), func(ctx context.Context, warn func(string)) ([]operation.Operation, func() error, error) {
+		return cliSources(ctx, version, clientID, warn)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build operation commands: %w", err)
@@ -29,8 +28,9 @@ func cliCommands(version, clientID string) ([]*cli.Command, error) {
 }
 
 // cliSources builds the operations over the config store and SDE cache, as
-// neat mcp does, and returns a function that closes the SDE cache.
-func cliSources(ctx context.Context, version, clientID string) ([]operation.Operation, func() error, error) {
+// neat mcp does, and returns a function that closes the SDE cache. warn is the
+// CLI's stderr warning sink, which keeps stderr JSON only.
+func cliSources(_ context.Context, version, clientID string, warn func(string)) ([]operation.Operation, func() error, error) {
 	store, err := config.NewStore()
 	if err != nil {
 		return nil, nil, fmt.Errorf("resolve config store: %w", err)
@@ -44,7 +44,7 @@ func cliSources(ctx context.Context, version, clientID string) ([]operation.Oper
 	// commands that don't need the SDE.
 	sdeStore, err := sde.Open(sdePath)
 	if err != nil {
-		slog.Default().WarnContext(ctx, "sde: failed to open cache, names will read through to ESI directly", "error", err)
+		warn(fmt.Sprintf("sde: failed to open cache, names will read through to ESI directly: %v", err))
 		sdeStore = nil
 	}
 	deps := toolDeps{userAgent: sso.UserAgent(version), store: store, sde: sdeStore, clientID: clientID}

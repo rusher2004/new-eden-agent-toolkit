@@ -8,6 +8,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	urfave "github.com/urfave/cli/v3"
@@ -79,8 +80,8 @@ func withDemoPath(t *testing.T) {
 }
 
 // staticSource returns ops as the run-time operations, counting calls.
-func staticSource(calls *int, ops ...operation.Operation) func(context.Context) ([]operation.Operation, func() error, error) {
-	return func(context.Context) ([]operation.Operation, func() error, error) {
+func staticSource(calls *int, ops ...operation.Operation) cli.Source {
+	return func(context.Context, func(string)) ([]operation.Operation, func() error, error) {
 		*calls++
 		return ops, func() error { return nil }, nil
 	}
@@ -323,8 +324,21 @@ func TestBuild_MissingRequiredIsUsageError(t *testing.T) {
 	if res.code != 2 {
 		t.Errorf("exit %d, want 2 (stderr %q)", res.code, res.stderr)
 	}
-	if msg := errorLine(t, res.stderr); !strings.Contains(msg, "characterId") {
-		t.Errorf("error %q does not name the missing field", msg)
+	// Given with flags, the message names the flag to pass, not the field.
+	msg := errorLine(t, res.stderr)
+	if !strings.Contains(msg, "--character") || strings.Contains(msg, "characterId") {
+		t.Errorf("error %q should name --character and not characterId", msg)
+	}
+}
+
+func TestBuild_MissingRequiredWithJSONNamesTheField(t *testing.T) {
+	withDemoPath(t)
+	res := run(t, build(t, demoOp()), "", "demo", "lookup", "--json", `{"corporationId":1}`)
+	if res.code != 2 {
+		t.Errorf("exit %d, want 2 (stderr %q)", res.code, res.stderr)
+	}
+	if msg := errorLine(t, res.stderr); !strings.Contains(msg, `"characterId"`) {
+		t.Errorf("error %q does not name the missing field as written in --json", msg)
 	}
 }
 
@@ -354,10 +368,10 @@ func TestBuild_InvalidInputFromRunIsExit2(t *testing.T) {
 	}
 }
 
-func TestBuild_SourceErrorIsExit1AndCloseErrorIsReported(t *testing.T) {
+func TestBuild_SourceErrorIsExit1(t *testing.T) {
 	withDemoPath(t)
 	ops := []operation.Operation{demoOp()}
-	cmds, err := cli.Build(ops, func(context.Context) ([]operation.Operation, func() error, error) {
+	cmds, err := cli.Build(ops, func(context.Context, func(string)) ([]operation.Operation, func() error, error) {
 		return nil, nil, errors.New("config unreadable")
 	})
 	if err != nil {
@@ -367,20 +381,179 @@ func TestBuild_SourceErrorIsExit1AndCloseErrorIsReported(t *testing.T) {
 	if res.code != 1 || !strings.Contains(errorLine(t, res.stderr), "config unreadable") {
 		t.Errorf("source error: exit %d, stderr %q; want exit 1 naming it", res.code, res.stderr)
 	}
+}
 
+// failingClose is a source whose close fails, counting the closes.
+func failingClose(closed *int, ops ...operation.Operation) cli.Source {
+	return func(context.Context, func(string)) ([]operation.Operation, func() error, error) {
+		return ops, func() error { *closed++; return errors.New("sde close failed") }, nil
+	}
+}
+
+// warningLine decodes line as {"warning": "..."}.
+func warningLine(t *testing.T, line string) string {
+	t.Helper()
+	var w struct {
+		Warning string `json:"warning"`
+	}
+	if err := json.Unmarshal([]byte(line), &w); err != nil || w.Warning == "" {
+		t.Fatalf("line %q is not {\"warning\": ...} (%v)", line, err)
+	}
+	return w.Warning
+}
+
+func TestBuild_CloseErrorAfterSuccessIsWarning(t *testing.T) {
+	withDemoPath(t)
 	closed := 0
-	cmds, err = cli.Build(ops, func(context.Context) ([]operation.Operation, func() error, error) {
-		return ops, func() error { closed++; return errors.New("sde close failed") }, nil
+	cmds, err := cli.Build([]operation.Operation{demoOp()}, failingClose(&closed, demoOp()))
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	res := run(t, cmds, "", "demo", "lookup", "--character", "7")
+	if closed != 1 {
+		t.Errorf("close called %d times, want 1", closed)
+	}
+	if res.code != 0 {
+		t.Errorf("exit %d, want 0 (stderr %q)", res.code, res.stderr)
+	}
+	if want := `{"characterId":7,"corporationId":0,"types":[]}` + "\n"; res.stdout != want {
+		t.Errorf("stdout = %q, want the result %q", res.stdout, want)
+	}
+	lines := strings.Split(strings.TrimRight(res.stderr, "\n"), "\n")
+	if len(lines) != 2 || lines[0] != "looking up the demo character" {
+		t.Fatalf("stderr = %q, want the progress line then one warning line", res.stderr)
+	}
+	if msg := warningLine(t, lines[1]); !strings.Contains(msg, "sde close failed") {
+		t.Errorf("warning %q does not name the close failure", msg)
+	}
+}
+
+func TestBuild_CloseErrorAfterFailureJoinsAndKeepsExitCode(t *testing.T) {
+	withDemoPath(t)
+	for name, tc := range map[string]struct {
+		op   operation.Operation
+		code int
+		want string
+	}{
+		"operation error": {op: demoOp(), code: 1, want: "demo failed"},
+		"invalid input from Run": {op: operation.New(demoName, demoDescription, operation.Read,
+			func(context.Context, demoIn) (demoOut, error) {
+				return demoOut{}, errors.Join(operation.ErrInvalidInput, errors.New("no such corporation"))
+			}), code: 2, want: "no such corporation"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			closed := 0
+			cmds, err := cli.Build([]operation.Operation{tc.op}, failingClose(&closed, tc.op))
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			res := run(t, cmds, "", "demo", "lookup", "--character", "13")
+			if closed != 1 {
+				t.Errorf("close called %d times, want 1", closed)
+			}
+			if res.code != tc.code {
+				t.Errorf("exit %d, want %d (stderr %q)", res.code, tc.code, res.stderr)
+			}
+			msg := errorLine(t, res.stderr)
+			for _, want := range []string{tc.want, "sde close failed"} {
+				if !strings.Contains(msg, want) {
+					t.Errorf("error %q does not name %q", msg, want)
+				}
+			}
+			if res.stdout != "" {
+				t.Errorf("stdout = %q, want empty", res.stdout)
+			}
+		})
+	}
+}
+
+func TestBuild_SourceWarningIsJSONLine(t *testing.T) {
+	withDemoPath(t)
+	ops := []operation.Operation{demoOp()}
+	cmds, err := cli.Build(ops, func(_ context.Context, warn func(string)) ([]operation.Operation, func() error, error) {
+		warn(`cache "x" unavailable`)
+		return ops, nil, nil
 	})
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
-	res = run(t, cmds, "", "demo", "lookup", "--character", "7")
-	if closed != 1 {
-		t.Errorf("close called %d times, want 1", closed)
+	res := run(t, cmds, "", "demo", "lookup", "--character", "7")
+	if res.code != 0 {
+		t.Fatalf("exit %d, stderr %q", res.code, res.stderr)
 	}
-	if res.code != 1 || !strings.Contains(errorLine(t, res.stderr), "sde close failed") {
-		t.Errorf("close error: exit %d, stderr %q; want exit 1 naming it", res.code, res.stderr)
+	first, _, _ := strings.Cut(res.stderr, "\n")
+	if msg := warningLine(t, first); msg != `cache "x" unavailable` {
+		t.Errorf("warning = %q, want the source's message", msg)
+	}
+}
+
+func TestBuild_ProgressFromManyGoroutines(t *testing.T) {
+	const workers, each = 8, 50
+	op := operation.New(demoName, demoDescription, operation.Read,
+		func(ctx context.Context, in demoIn) (demoOut, error) {
+			var wg sync.WaitGroup
+			for range workers {
+				wg.Go(func() {
+					for range each {
+						operation.Progress(ctx, "step")
+					}
+				})
+			}
+			wg.Wait()
+			return demoOut{CharacterID: in.CharacterID, Types: []int64{}}, nil
+		})
+	withDemoPath(t)
+	res := run(t, build(t, op), "", "demo", "lookup", "--character", "7")
+	if res.code != 0 {
+		t.Fatalf("exit %d, stderr %q", res.code, res.stderr)
+	}
+	if want := strings.Repeat("step\n", workers*each); res.stderr != want {
+		t.Errorf("stderr has %d bytes, want %d whole step lines", len(res.stderr), workers*each)
+	}
+}
+
+func TestBuild_ZeroFieldInput(t *testing.T) {
+	type emptyIn struct{}
+	op := operation.New(demoName, demoDescription, operation.Read,
+		func(context.Context, emptyIn) (demoOut, error) { return demoOut{CharacterID: 1, Types: []int64{}}, nil })
+	withDemoPath(t)
+	cmds := build(t, op)
+	leaf := cmds[0].Command("lookup")
+	var names []string
+	for _, f := range leaf.Flags {
+		names = append(names, f.Names()...)
+	}
+	if want := []string{"json", "pretty"}; !slices.Equal(names, want) {
+		t.Errorf("flags = %v, want only %v", names, want)
+	}
+	want := `{"characterId":1,"corporationId":0,"types":[]}` + "\n"
+	for _, args := range [][]string{{"demo", "lookup"}, {"demo", "lookup", "--json", "{}"}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			res := run(t, cmds, "", args...)
+			if res.code != 0 {
+				t.Fatalf("exit %d, stderr %q", res.code, res.stderr)
+			}
+			if res.stdout != want {
+				t.Errorf("stdout = %q, want %q", res.stdout, want)
+			}
+		})
+	}
+}
+
+func TestBuild_UnknownCommandUnderGroupIsUsageError(t *testing.T) {
+	withDemoPath(t)
+	res := run(t, build(t, demoOp()), "", "demo", "bogus")
+	if res.code != 2 {
+		t.Errorf("exit %d, want 2 (stderr %q)", res.code, res.stderr)
+	}
+	if msg := errorLine(t, res.stderr); !strings.Contains(msg, "bogus") {
+		t.Errorf("error %q does not name the unknown command", msg)
+	}
+	if strings.Count(res.stderr, "\n") != 1 {
+		t.Errorf("stderr = %q, want only the error line", res.stderr)
+	}
+	if res.stdout != "" {
+		t.Errorf("stdout = %q, want empty", res.stdout)
 	}
 }
 
@@ -414,7 +587,7 @@ func TestBuild_StdoutHoldsOnlyResult(t *testing.T) {
 func TestBuild_HelpDoesNotCallSource(t *testing.T) {
 	withDemoPath(t)
 	ops := []operation.Operation{demoOp()}
-	panicking := func(context.Context) ([]operation.Operation, func() error, error) {
+	panicking := func(context.Context, func(string)) ([]operation.Operation, func() error, error) {
 		panic("source called for help")
 	}
 	for _, args := range [][]string{{"--help"}, {"demo", "--help"}, {"demo", "lookup", "--help"}, {"demo"}} {

@@ -2,7 +2,11 @@
 // command tree from operation.Operation values. Each operation is a leaf
 // command at its Paths entry; its flags come from its input struct, it writes
 // its result as JSON on stdout, and it reports a failure as {"error": "..."}
-// on stderr with exit code 1, or 2 for a usage error.
+// on stderr with exit code 1, or 2 for a usage error. Stdout holds nothing
+// but the result; stderr holds progress lines, warnings as
+// {"warning": "..."}, and the error. A failure to release the sources after
+// a successful run is a warning, not a failure. An unknown command under a
+// group (or under the root, through HelpOrUnknown) is a usage error too.
 //
 // It imports only the standard library, urfave/cli and operation (enforced by
 // tools/archaudit), so it knows nothing about any domain or data source.
@@ -16,7 +20,9 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 
 	urfave "github.com/urfave/cli/v3"
 
@@ -31,7 +37,10 @@ const (
 
 // Source builds the working operations when a leaf runs, with a function that
 // releases what it opened. Build never calls it while building or for help.
-type Source = func(ctx context.Context) (ops []operation.Operation, closeFn func() error, err error)
+// warn reports something the caller should know that does not stop the run
+// (a cache that could not open); the leaf writes it on stderr as
+// {"warning": "..."}.
+type Source = func(ctx context.Context, warn func(msg string)) (ops []operation.Operation, closeFn func() error, err error)
 
 // Build returns the top-level group commands for describe, the operations
 // whose names, descriptions and input types give the commands, help and
@@ -104,7 +113,7 @@ func group(path []string, groups map[string]*urfave.Command, top *[]*urfave.Comm
 			if !ok {
 				return nil, fmt.Errorf("command group %q has no help in cli.Groups", key)
 			}
-			g = &urfave.Command{Name: path[i], Usage: usage}
+			g = &urfave.Command{Name: path[i], Usage: usage, Action: HelpOrUnknown}
 			groups[key] = g
 			if parent == nil {
 				*top = append(*top, g)
@@ -115,6 +124,25 @@ func group(path []string, groups map[string]*urfave.Command, top *[]*urfave.Comm
 		parent = g
 	}
 	return parent, nil
+}
+
+// HelpOrUnknown is the action of a command that only groups others: with no
+// argument it shows the command's help, and with one (a command name that
+// matched none of its subcommands) it fails as a usage error, writing
+// {"error": "..."} on stderr and exiting 2. Build sets it on every group;
+// the root command sets it itself.
+func HelpOrUnknown(_ context.Context, cmd *urfave.Command) error {
+	if !cmd.Args().Present() {
+		show := urfave.ShowSubcommandHelp
+		if cmd.Root() == cmd {
+			show = urfave.ShowRootCommandHelp
+		}
+		if err := show(cmd); err != nil {
+			return fmt.Errorf("show help for %q: %w", cmd.FullName(), err)
+		}
+		return nil
+	}
+	return fail(cmd, fmt.Errorf("unknown command %q for %q; run %q for the list", cmd.Args().First(), cmd.FullName(), cmd.FullName()+" --help"), exitUsage)
 }
 
 func sortCommands(cmds []*urfave.Command) {
@@ -165,92 +193,178 @@ func leafCommand(op operation.Operation, name string, source Source) (*urfave.Co
 }
 
 func (l leaf) action(ctx context.Context, cmd *urfave.Command) error {
-	data, code, err := l.run(ctx, cmd)
+	stderr := &stderrLines{w: cmd.Root().ErrWriter}
+	data, closeFn, code, err := l.run(ctx, cmd, stderr)
 	if err != nil {
-		return fail(cmd, err, code)
+		// The operation failed: a close failure joins its error, and the exit
+		// code stays the one the failure chose.
+		err = errors.Join(err, l.close(closeFn))
+		return fail(cmd, l.usageMessage(cmd, err, code), code)
 	}
-	if cmd.Bool(prettyFlag) {
-		var buf bytes.Buffer
-		if err := json.Indent(&buf, data, "", "  "); err != nil {
-			return fail(cmd, fmt.Errorf("%s: indent output: %w", l.op.Name, err), exitFailure)
-		}
-		data = buf.Bytes()
+	if err := l.write(cmd, data); err != nil {
+		return fail(cmd, errors.Join(err, l.close(closeFn)), exitFailure)
 	}
-	if _, err := fmt.Fprintf(cmd.Root().Writer, "%s\n", data); err != nil {
-		return fail(cmd, fmt.Errorf("%s: write output: %w", l.op.Name, err), exitFailure)
+	// The result is out, so a close failure no longer makes the run a
+	// failure: it is reported as a warning and the exit code stays 0.
+	if cerr := l.close(closeFn); cerr != nil {
+		stderr.warning(cerr.Error())
+	}
+	if err := stderr.Err(); err != nil {
+		return fail(cmd, fmt.Errorf("%s: %w", l.op.Name, err), exitFailure)
 	}
 	return nil
 }
 
+// write prints data, indented with --pretty, as one line on stdout.
+func (l leaf) write(cmd *urfave.Command, data json.RawMessage) error {
+	if cmd.Bool(prettyFlag) {
+		var buf bytes.Buffer
+		if err := json.Indent(&buf, data, "", "  "); err != nil {
+			return fmt.Errorf("%s: indent output: %w", l.op.Name, err)
+		}
+		data = buf.Bytes()
+	}
+	if _, err := fmt.Fprintf(cmd.Root().Writer, "%s\n", data); err != nil {
+		return fmt.Errorf("%s: write output: %w", l.op.Name, err)
+	}
+	return nil
+}
+
+// close calls closeFn, when there is one, and wraps its error.
+func (l leaf) close(closeFn func() error) error {
+	if closeFn == nil {
+		return nil
+	}
+	if err := closeFn(); err != nil {
+		return fmt.Errorf("%s: close sources: %w", l.op.Name, err)
+	}
+	return nil
+}
+
+// usageMessage names flags instead of JSON fields in an invalid-input error
+// given with flags: a schema error such as missing properties: ["characterId"]
+// becomes missing properties: [--character], so the caller is pointed at the
+// flag to pass. The rest of the message is left as it is. Input given with
+// --json keeps the field names, which are what the caller wrote.
+func (l leaf) usageMessage(cmd *urfave.Command, err error, code int) error {
+	if code != exitUsage || !errors.Is(err, operation.ErrInvalidInput) || cmd.IsSet(jsonFlag) {
+		return err
+	}
+	msg := err.Error()
+	for _, f := range l.flags {
+		msg = strings.ReplaceAll(msg, strconv.Quote(f.jsonName), "--"+f.name)
+	}
+	if msg == err.Error() {
+		return err
+	}
+	return errors.New(msg)
+}
+
 // run decodes the input, builds the sources, runs the operation and encodes
-// its output, returning the exit code that goes with an error.
-func (l leaf) run(ctx context.Context, cmd *urfave.Command) (data json.RawMessage, code int, err error) {
+// its output, returning the exit code that goes with an error and the
+// function that closes the sources, which the caller calls once the result is
+// written (or the failure known). closeFn is returned with an error too.
+func (l leaf) run(ctx context.Context, cmd *urfave.Command, stderr *stderrLines) (data json.RawMessage, closeFn func() error, code int, err error) {
 	if cmd.Args().Present() {
-		return nil, exitUsage, fmt.Errorf("unexpected argument %q: input is given with flags or --json", cmd.Args().First())
+		return nil, nil, exitUsage, fmt.Errorf("unexpected argument %q: input is given with flags or --json", cmd.Args().First())
 	}
 	raw, err := l.input(cmd)
 	if err != nil {
-		return nil, exitUsage, err
+		return nil, nil, exitUsage, err
 	}
 	// Validate before building any source, so bad input touches nothing.
 	if _, err := l.op.Decode(raw); err != nil {
-		return nil, exitUsage, err
+		return nil, nil, exitUsage, err
 	}
 
-	ops, closeFn, err := l.source(ctx)
+	ops, closeFn, err := l.source(ctx, stderr.warning)
 	if err != nil {
-		return nil, exitFailure, fmt.Errorf("%s: open sources: %w", l.op.Name, err)
-	}
-	if closeFn != nil {
-		defer func() {
-			if cerr := closeFn(); cerr != nil {
-				// A result the caller can't trust its cleanup for is still
-				// reported as a failure: the error is never dropped.
-				data, code, err = nil, exitFailure, errors.Join(err, fmt.Errorf("%s: close sources: %w", l.op.Name, cerr))
-			}
-		}()
+		return nil, closeFn, exitFailure, fmt.Errorf("%s: open sources: %w", l.op.Name, err)
 	}
 	i := slices.IndexFunc(ops, func(o operation.Operation) bool { return o.Name == l.op.Name })
 	if i < 0 {
-		return nil, exitFailure, fmt.Errorf("%s: the source provides no operation of that name", l.op.Name)
+		return nil, closeFn, exitFailure, fmt.Errorf("%s: the source provides no operation of that name", l.op.Name)
 	}
 	op := ops[i]
 	in, err := op.Decode(raw)
 	if err != nil {
-		return nil, exitUsage, err
+		return nil, closeFn, exitUsage, err
 	}
 
-	var progressErr error
-	errW := cmd.Root().ErrWriter
-	ctx = operation.WithProgress(ctx, func(msg string) {
-		if progressErr != nil {
-			return
-		}
-		if _, err := fmt.Fprintln(errW, msg); err != nil {
-			progressErr = fmt.Errorf("%s: write progress: %w", op.Name, err)
-		}
-	})
-	out, err := op.Run(ctx, in)
+	out, err := op.Run(operation.WithProgress(ctx, stderr.progress), in)
 	if err != nil {
 		code := exitFailure
 		if errors.Is(err, operation.ErrInvalidInput) {
 			code = exitUsage
 		}
-		return nil, code, errors.Join(err, progressErr)
+		if serr := stderr.Err(); serr != nil {
+			err = errors.Join(err, fmt.Errorf("%s: %w", op.Name, serr))
+		}
+		return nil, closeFn, code, err
 	}
-	if progressErr != nil {
-		return nil, exitFailure, progressErr
+	if serr := stderr.Err(); serr != nil {
+		return nil, closeFn, exitFailure, fmt.Errorf("%s: %w", op.Name, serr)
 	}
 	// The same encoding mcp.Register uses, so both adapters return the same
 	// bytes for the same result.
 	data, err = op.EncodeOutput(out)
 	if err != nil {
-		return nil, exitFailure, err
+		return nil, closeFn, exitFailure, err
 	}
 	if data == nil {
 		data = json.RawMessage("null")
 	}
-	return data, 0, nil
+	return data, closeFn, 0, nil
+}
+
+// stderrLines writes a leaf's progress and warning lines on stderr. An
+// operation may report progress from several goroutines, so writes are
+// serialized. The sinks can't return an error, so the first failed write is
+// kept, later lines are dropped, and the leaf reads it with Err: a failure if
+// the operation had not already failed, joined into its error if it had.
+type stderrLines struct {
+	mu  sync.Mutex
+	w   io.Writer
+	err error
+}
+
+// progress writes msg as a plain line.
+func (s *stderrLines) progress(msg string) {
+	s.writeLine([]byte(msg), "progress")
+}
+
+// warning writes msg as {"warning": "..."}.
+func (s *stderrLines) warning(msg string) {
+	line, err := json.Marshal(struct {
+		Warning string `json:"warning"`
+	}{Warning: msg})
+	if err != nil {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.err == nil {
+			s.err = fmt.Errorf("encode warning %q: %w", msg, err)
+		}
+		return
+	}
+	s.writeLine(line, "warning")
+}
+
+func (s *stderrLines) writeLine(line []byte, what string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.err != nil {
+		return
+	}
+	if _, err := fmt.Fprintf(s.w, "%s\n", line); err != nil {
+		s.err = fmt.Errorf("write %s: %w", what, err)
+	}
+}
+
+// Err is the first failed write, or nil.
+func (s *stderrLines) Err() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.err
 }
 
 // input builds the operation's input JSON from --json or the input flags.
